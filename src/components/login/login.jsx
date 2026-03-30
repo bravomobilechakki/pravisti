@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,119 +6,147 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 
-const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+const Login = ({ onNavigate }) => {
+  const { width, height } = useWindowDimensions();
+  const [identity, setIdentity] = useState('Broker'); // Broker, Trader, Both
+  const [mobile, setMobile] = useState('');
+  const [otp, setOtp] = useState(['', '', '', '']);
+  const otpRefs = useRef([]);
+
+  const themeColor = '#3170cdff';
+
+  const handleOtpChange = (text, index) => {
+    const formattedText = text.replace(/[^0-9]/g, '');
+    const newOtp = [...otp];
+    newOtp[index] = formattedText;
+    setOtp(newOtp);
+
+    if (formattedText !== '' && index < 3) {
+      otpRefs.current[index + 1].focus();
+    }
+  };
+
+  const handleOtpKeyPress = (e, index) => {
+    if (e.nativeEvent.key === 'Backspace' && otp[index] === '' && index > 0) {
+      otpRefs.current[index - 1].focus();
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton}>
-              <Text style={styles.backIcon}>←</Text>
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>PRAVISTI</Text>
-            <View style={{ width: 24 }} /> {/* Placeholder to balance the flex layout */}
-          </View>
+      {/* Top Logo — fixed height */}
+      <View style={styles.topLogoContainer}>
+        <Image
+          source={require('../../images/trader1.png')}
+          style={[styles.mainLogoImage, { width: width * 0.5, height: (width * 0.5) / 2.5 }]}
+          resizeMode="contain"
+        />
+      </View>
 
-          {/* Hero Image */}
-          <Image
-            source={require('../../images/login.png')}
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
+      {/* Hero image — flexible, fills remaining space above the card */}
+      <Image
+        source={require('../../images/login1.png')}
+        style={[styles.heroImage, { height: height * 0.22 }]}
+        resizeMode="cover"
+      />
 
-          {/* Title Section */}
-          <View style={styles.titleContainer}>
-            <Text style={styles.welcomeTitle}>Welcome To Pravisti</Text>
-            <Text style={styles.welcomeSubtitle}>Sign in to continue your journey</Text>
-          </View>
+      {/* Form card — fixed, overlaps the hero image */}
+      <View style={styles.formCard}>
+        <Text style={styles.titleText}>Welcome to Pravisti</Text>
+        <Text style={styles.subtitleText}>Enter your credentials to manage your sovereign ledger.</Text>
 
-          {/* Input Section */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Mobile or Email</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your mobile or email"
-                placeholderTextColor="#9CA3AF"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-
-            <Text style={styles.inputLabel}>Password</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your password"
-                placeholderTextColor="#9CA3AF"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity
-                style={styles.eyeIconContainer}
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Text style={styles.eyeIcon}>{showPassword ? '🫣' : '👁️'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.forgotPasswordContainer}>
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Sign In Button */}
-          <TouchableOpacity style={styles.signInButton}>
-            <Text style={styles.signInButtonText}>Sign In</Text>
+        {/* Role tabs */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tabButton, identity === 'Broker' && { backgroundColor: themeColor }]}
+            onPress={() => setIdentity('Broker')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabIcon, identity === 'Broker' ? styles.activeText : styles.inactiveText]}>🧑‍💼</Text>
+            <Text style={[styles.tabText, identity === 'Broker' ? styles.activeText : styles.inactiveText]}>Broker</Text>
           </TouchableOpacity>
 
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          <TouchableOpacity
+            style={[styles.tabButton, identity === 'Trader' && { backgroundColor: themeColor }]}
+            onPress={() => setIdentity('Trader')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabIcon, identity === 'Trader' ? styles.activeText : styles.inactiveText]}>💼</Text>
+            <Text style={[styles.tabText, identity === 'Trader' ? styles.activeText : styles.inactiveText]}>Trader</Text>
+          </TouchableOpacity>
 
-          {/* Social Buttons */}
-          <View style={styles.socialButtonsContainer}>
-            <TouchableOpacity style={styles.socialButton}>
-              {/* Using "G" text as placeholder for Google logo */}
-              <Text style={styles.socialIconGoogle}>G</Text>
-              <Text style={styles.socialButtonText}>Google</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton}>
-              {/* Using unicode symbol as placeholder for biometrics/fingerprint icon */}
-              <Text style={styles.socialIconBiometrics}>▦</Text>
-              <Text style={styles.socialButtonText}>Biometrics</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={[styles.tabButton, identity === 'Both' && { backgroundColor: themeColor }]}
+            onPress={() => setIdentity('Both')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.tabIcon, identity === 'Both' ? styles.activeText : styles.inactiveText]}>🔄</Text>
+            <Text style={[styles.tabText, identity === 'Both' ? styles.activeText : styles.inactiveText]}>Both</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Footer */}
-          <View style={styles.footerContainer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
-            <TouchableOpacity>
-              <Text style={styles.createAccountText}>Create an account</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        {/* Mobile input */}
+        <Text style={styles.inputLabel}>Mobile Number</Text>
+        <View style={styles.inputWrapper}>
+          <Text style={styles.prefixText}>+91</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="00000 00000"
+            placeholderTextColor="#CBD5E1"
+            value={mobile}
+            onChangeText={setMobile}
+            keyboardType="phone-pad"
+            maxLength={10}
+          />
+        </View>
+
+        {/* OTP */}
+        <View style={styles.otpHeaderRow}>
+          <Text style={styles.inputLabel}>Verification Code</Text>
+          <TouchableOpacity>
+            <Text style={[styles.resendText, { color: themeColor }]}>Resend in 0:45</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.otpContainer}>
+          {[0, 1, 2, 3].map((index) => (
+            <TextInput
+              key={index}
+              ref={(ref) => (otpRefs.current[index] = ref)}
+              style={styles.otpInput}
+              keyboardType="number-pad"
+              maxLength={1}
+              value={otp[index]}
+              onChangeText={(text) => handleOtpChange(text, index)}
+              onKeyPress={(e) => handleOtpKeyPress(e, index)}
+              selectTextOnFocus
+            />
+          ))}
+        </View>
+
+        {/* Login button */}
+        <TouchableOpacity
+          style={[styles.verifyButton, { backgroundColor: themeColor, shadowColor: themeColor }]}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (onNavigate) {
+              onNavigate('Dashboard', { role: identity });
+            }
+          }}
+        >
+          <Text style={styles.verifyButtonText}>
+            {identity === 'Both' ? 'Login with Combined Access' : `${identity} Login`}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.switchRoleContainer}>
+          <Text style={styles.switchRoleLabel}>Join as Member?</Text>
+        </View>
+      </View>
     </SafeAreaView>
   );
 };
@@ -126,171 +154,154 @@ const Login = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F0F7FF',
   },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-  },
-  header: {
-    flexDirection: 'row',
+  topLogoContainer: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
+    paddingTop: 38,
   },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#111827',
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
-    letterSpacing: 2,
+  mainLogoImage: {
+    width: 200,
+    height: 60,
   },
   heroImage: {
     width: '100%',
-    height: 180,
-    borderRadius: 16,
-    marginTop: 16,
   },
-  titleContainer: {
+  formCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    marginTop: -30,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
+    shadowColor: '#3170CD',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  titleText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  subtitleText: {
+    fontSize: 13,
+    color: '#64748B',
+    marginBottom: 20,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 20,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 32,
-    marginBottom: 32,
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 6,
   },
-  welcomeTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 8,
+  tabIcon: {
+    fontSize: 13,
+    marginRight: 5,
   },
-  welcomeSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
-  inputContainer: {
-    width: '100%',
+  activeText: {
+    color: '#FFFFFF',
+  },
+  inactiveText: {
+    color: '#475569',
   },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4B5563',
-    marginBottom: 8,
-    marginTop: 16,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    backgroundColor: '#F8FAFC',
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    height: 48,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  prefixText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#475569',
+    marginRight: 10,
   },
   input: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    color: '#111827',
-  },
-  eyeIconContainer: {
-    padding: 12,
-  },
-  eyeIcon: {
-    fontSize: 16,
-  },
-  forgotPasswordContainer: {
-    alignSelf: 'flex-end',
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
+    fontSize: 15,
+    color: '#1E293B',
     fontWeight: '500',
-    color: '#71A1CF', // Adjusted to match the blue in the design
   },
-  signInButton: {
-    backgroundColor: '#71A1CF', // Light blue button color from the screenshot
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    width: '100%',
-  },
-  signInButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 32,
-    marginBottom: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E5E7EB',
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#9CA3AF',
-  },
-  socialButtonsContainer: {
+  otpHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 16,
-  },
-  socialButton: {
-    flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    marginBottom: 8,
+  },
+  resendText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  otpInput: {
+    width: '22%',
+    height: 52,
+    backgroundColor: '#F8FAFC',
     borderRadius: 8,
+    textAlign: 'center',
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  socialIconGoogle: {
-    fontSize: 18,
-    color: '#DB4437', // Google red approximation
+  verifyButton: {
+    height: 52,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  verifyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: 'bold',
-    marginRight: 8,
   },
-  socialIconBiometrics: {
-    fontSize: 18,
-    color: '#71A1CF',
-    marginRight: 8,
-  },
-  socialButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  footerContainer: {
+  switchRoleContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 32,
+    alignItems: 'center',
+    marginTop: 16,
   },
-  footerText: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  createAccountText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#71A1CF', // Same blue
+  switchRoleLabel: {
+    fontSize: 13,
+    color: '#64748B',
   },
 });
 

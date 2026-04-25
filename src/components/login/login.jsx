@@ -79,14 +79,7 @@ const Login = ({ onNavigate }) => {
             <Text style={[styles.tabText, identity === 'Trader' ? styles.activeText : styles.inactiveText]}>Trader</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.tabButton, identity === 'Both' && { backgroundColor: themeColor }]}
-            onPress={() => setIdentity('Both')}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.tabIcon, identity === 'Both' ? styles.activeText : styles.inactiveText]}>🔄</Text>
-            <Text style={[styles.tabText, identity === 'Both' ? styles.activeText : styles.inactiveText]}>Both</Text>
-          </TouchableOpacity>
+
         </View>
 
         {/* Mobile input */}
@@ -134,7 +127,7 @@ const Login = ({ onNavigate }) => {
           activeOpacity={0.8}
           onPress={() => {
             if (onNavigate) {
-              onNavigate('Dashboard', { role: identity });
+              onNavigate('ChooseIndustry', { role: identity });
             }
           }}
         >

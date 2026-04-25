@@ -7,12 +7,16 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  ImageBackground,
   useWindowDimensions,
+  StatusBar,
 } from 'react-native';
+
+import d1 from '../../images/d1.jpeg';
 
 const Dashboard = ({ onNavigate }) => {
   const { width } = useWindowDimensions();
-  const [hasCompany, setHasCompany] = React.useState(true); // Demo: company exists
+  const [hasCompany, setHasCompany] = React.useState(true);
 
   const registeredCompanies = [
     {
@@ -92,21 +96,25 @@ const Dashboard = ({ onNavigate }) => {
     },
   ];
 
+  const themeColor = '#3170cdff';
+
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FAFBFC" />
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.backButtonCircle}
           onPress={() => onNavigate('Login')}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <Text style={styles.backButtonIcon}>‹</Text>
         </TouchableOpacity>
         <Image
           source={require('../../images/trader1.png')}
           style={[
             styles.navLogoImage,
-            { width: width * 0.35, height: (width * 0.35) / 2.3 },
+            { width: width * 0.3, height: (width * 0.3) / 2.5 },
           ]}
           resizeMode="contain"
         />
@@ -114,7 +122,7 @@ const Dashboard = ({ onNavigate }) => {
           style={styles.profileButton}
           onPress={() => onNavigate('Profile')}
         >
-          <Text style={styles.profileIcon}>👤</Text>
+          <Text style={{ fontSize: 18, color: '#FFFFFF' }}>👤</Text>
         </TouchableOpacity>
       </View>
 
@@ -123,7 +131,6 @@ const Dashboard = ({ onNavigate }) => {
         showsVerticalScrollIndicator={false}
       >
         {!hasCompany ? (
-          /* Onboarding / Empty State - Mandatory Company Registration (SRS 4.1) */
           <View style={styles.emptyStateContainer}>
             <View style={styles.emptyCard}>
               <View style={styles.emptyIconCircle}>
@@ -139,7 +146,6 @@ const Dashboard = ({ onNavigate }) => {
                 onPress={() => onNavigate('AddCompany')}
                 activeOpacity={0.7}
               >
-                <Text style={styles.emptyButtonIcon}>🏢</Text>
                 <Text style={styles.emptyButtonText}>
                   Register Your Company
                 </Text>
@@ -149,131 +155,115 @@ const Dashboard = ({ onNavigate }) => {
           </View>
         ) : (
           <>
+            {/* Hero Banner Section */}
+            <TouchableOpacity
+              style={styles.heroContainer}
+              activeOpacity={0.95}
+              onPress={() => onNavigate('DealsList')}
+            >
+              <ImageBackground
+                source={d1}
+                style={styles.heroImage}
+                imageStyle={{ borderRadius: 24 }}
+              >
+                <View style={styles.heroOverlay}>
+                  <View style={styles.heroBadge}>
+                    <Text style={styles.heroBadgeText}>TRENDING</Text>
+                  </View>
+                  <Text style={styles.heroTitle}>Start Your Business</Text>
+                  <Text style={styles.heroSubtitle}>
+                    Manage your business portfolio & sauda deals with Pravisti's intelligent interface.
+                  </Text>
+                </View>
+              </ImageBackground>
+            </TouchableOpacity>
+
             {/* Quick Actions */}
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <View style={styles.actionsGrid}>
-              <TouchableOpacity
-                style={styles.actionCard}
-                onPress={() => onNavigate('AddCompany')}
-                activeOpacity={0.7}
-              >
-                <View style={styles.actionCardIconBg}>
-                  <Text style={styles.actionCardIcon}>🏢</Text>
-                </View>
-                <Text style={styles.actionCardTitle}>
-                  Manage{'\n'}Companies
-                </Text>
-                <Text style={styles.actionCardSub}>3 registered</Text>
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.actionCard}
-                onPress={() => onNavigate('DealsList')}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[
-                    styles.actionCardIconBg,
-                    { backgroundColor: '#ECFDF5' },
-                  ]}
-                >
-                  <Text style={styles.actionCardIcon}>🤝</Text>
-                </View>
-                <Text style={styles.actionCardTitle}>My{'\n'}Saudas</Text>
-                <Text style={styles.actionCardSub}>12 active</Text>
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.actionCard}
-                onPress={() => onNavigate('CreateDeal')}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[
-                    styles.actionCardIconBg,
-                    { backgroundColor: '#FEF2F2' },
-                  ]}
-                >
-                  <Text style={styles.actionCardIcon}>➕</Text>
-                </View>
-                <Text style={styles.actionCardTitle}>Create{'\n'}Deal</Text>
-                <Text style={styles.actionCardSub}>new sauda</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* My Companies */}
+            {/* My Companies Section */}
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>My Companies</Text>
-              <TouchableOpacity onPress={() => onNavigate('AddCompany')}>
-                <Text style={styles.viewAllText}>+ Add New</Text>
+              <View style={styles.stylishTitleRow}>
+                <View style={styles.sectionAccent} />
+                <Text style={styles.sectionTitleStylish}>My Registered Companies</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.premiumAddButton}
+                onPress={() => onNavigate('AddCompany')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.premiumAddButtonIcon}>＋</Text>
+                <Text style={styles.premiumAddButtonText}>Add New</Text>
               </TouchableOpacity>
             </View>
 
-            {registeredCompanies.map(company => (
+            {registeredCompanies.map((company, index) => (
               <TouchableOpacity
                 key={company.id}
-                style={styles.companyCard}
+                style={[
+                  styles.companyCard,
+                  index === registeredCompanies.length - 1 && {
+                    marginBottom: 0,
+                  },
+                ]}
                 onPress={() => onNavigate('CompanyDetails', { company })}
                 activeOpacity={0.7}
               >
                 <View
                   style={[
-                    styles.companyIconContainer,
+                    styles.companyAvatar,
                     { backgroundColor: company.bgColor },
                   ]}
                 >
-                  <Text style={styles.companyIcon}>{company.icon}</Text>
+                  <Text style={styles.companyAvatarText}>{company.icon}</Text>
                 </View>
                 <View style={styles.companyInfo}>
                   <Text style={styles.companyName} numberOfLines={1}>
                     {company.name}
                   </Text>
-                  <Text style={styles.companyContact}>
-                    {company.contact} • {company.deals} Deals
+                  <Text style={styles.companyMeta}>
+                    {company.contact} · {company.deals} deals
                   </Text>
                 </View>
-                <View style={styles.companyStatusContainer}>
+                <View style={styles.companyRight}>
                   <View
                     style={[
-                      styles.companyStatusBadge,
-                      { backgroundColor: company.bgColor },
+                      styles.statusDot,
+                      { backgroundColor: company.color },
                     ]}
-                  >
-                    <Text
-                      style={[
-                        styles.companyStatusText,
-                        { color: company.color },
-                      ]}
-                    >
-                      {company.status}
-                    </Text>
-                  </View>
+                  />
                   <Text style={styles.companyArrow}>›</Text>
                 </View>
               </TouchableOpacity>
             ))}
 
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Recent Activities</Text>
-              <TouchableOpacity onPress={() => onNavigate('DealsList')}>
-                <Text style={styles.viewAllText}>View All</Text>
-              </TouchableOpacity>
+            {/* Recent Sauda Activity Section */}
+            <View style={styles.sectionHeader1}>
+              <View style={styles.stylishTitleRow}>
+                <View style={styles.sectionAccent} />
+                <Text style={styles.sectionTitleStylish}>Recent Sauda Activity</Text>
+              </View>
+
             </View>
 
-            {recentDeals.map(deal => (
+            {recentDeals.map((deal, index) => (
               <TouchableOpacity
                 key={deal.id}
-                style={styles.dealItem}
+                style={[
+                  styles.dealCard,
+                  index === recentDeals.length - 1 && { marginBottom: 0 },
+                ]}
                 onPress={() => onNavigate('DealDetails')}
+                activeOpacity={0.7}
               >
-                <View style={styles.dealIconContainer}>
+                <View style={styles.dealLeft}>
                   <Text style={styles.dealIcon}>{deal.icon}</Text>
                 </View>
                 <View style={styles.dealInfo}>
                   <Text style={styles.dealTitle}>{deal.title}</Text>
-                  <Text style={styles.dealBroker}>{deal.broker}</Text>
+                  <Text style={styles.dealMeta}>{deal.broker}</Text>
                 </View>
-                <View style={styles.dealPriceContainer}>
+                <View style={styles.dealRight}>
                   <Text style={styles.dealPrice}>{deal.price}</Text>
                   <View
                     style={[
@@ -303,293 +293,339 @@ const Dashboard = ({ onNavigate }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAFBFC',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    marginTop: 30,
+    backgroundColor: '#FAFBFC',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#E8ECF0',
   },
-  backButton: {
-    padding: 8,
-    marginRight: 8,
+  backButtonCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5F6F8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E8ECF0',
   },
-  backIcon: {
-    fontSize: 28,
-    color: '#111827',
+  backButtonIcon: {
+    fontSize: 24,
+    color: '#1A1D1F',
+    fontWeight: '300',
+    marginTop: -2,
+    marginLeft: -2,
   },
   navLogoImage: {
     width: 100,
     height: 40,
   },
   profileButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#EFF6FF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#e6e7e9ff',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-  },
-  profileIcon: {
-    fontSize: 20,
   },
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 100, // Space for tab bar
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 16,
-    marginTop: 24,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  statTrend: {
-    fontSize: 12,
-    color: '#10B981',
-    fontWeight: '600',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusTextActive: {
-    fontSize: 12,
-    color: '#F59E0B',
-    fontWeight: '600',
-  },
-  commissionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    marginBottom: 32,
-    // Subtle shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  commissionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  commissionLabel: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#6B7280',
-  },
-  commissionIcon: {
-    fontSize: 16,
-  },
-  commissionValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  targetLabel: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  commissionProgressBg: {
-    height: 6,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 3,
-  },
-  commissionProgressFill: {
-    width: '84%',
-    height: '100%',
-    backgroundColor: '#8CB6D3',
-    borderRadius: 3,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 120,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 16,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    marginTop: 8,
+    marginBottom: 26,
   },
-  viewAllText: {
+
+  sectionHeader1: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 26,
+    marginBottom: 26,
+
+  },
+
+
+  stylishTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  sectionAccent: {
+    width: 4,
+    height: 21,
+    backgroundColor: '#0284C7',
+    borderRadius: 2,
+  },
+  sectionTitleStylish: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0C4A6E',
+    letterSpacing: 0.3,
+  },
+  addNewText: {
+    fontSize: 13,
+    color: '#0284C7',
+    fontWeight: '700',
+  },
+  premiumAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284C7',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    gap: 6,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  premiumAddButtonIcon: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  premiumAddButtonText: {
+    color: '#FFFFFF',
     fontSize: 12,
-    color: '#3B82F6',
-    fontWeight: '600',
+    fontWeight: '700',
   },
+
+  /* Quick Actions */
   actionsGrid: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 28,
+    marginBottom: 4,
   },
   actionCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 16,
+    padding: 18,
     alignItems: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    borderWidth: 0.5,
+    borderColor: '#ECEEF1',
   },
-  actionCardIconBg: {
-    width: 42,
-    height: 42,
+  actionIconWrap: {
+    width: 40,
+    height: 40,
     borderRadius: 12,
-    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  actionCardIcon: {
-    fontSize: 20,
+  actionIcon: {
+    fontSize: 18,
   },
-  actionCardTitle: {
-    fontSize: 13,
+  actionLabel: {
+    fontSize: 14,
     fontWeight: '700',
-    color: '#111827',
-    lineHeight: 18,
-    marginBottom: 6,
+    color: '#1A1D1F',
   },
-  actionCardSub: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    fontWeight: '500',
+  /* Tabs */
+  tabsWrapper: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 6,
+    marginTop: 20,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#E8ECF0',
   },
-  dealsList: {
-    gap: 12,
+  tabItem: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    position: 'relative',
   },
-  dealItem: {
+  activeTabItem: {
+    // Optional active tab styling
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  activeTabText: {
+    color: '#3170cdff',
+    fontWeight: '700',
+  },
+  activeIndicator: {
+    position: 'absolute',
+    bottom: -6,
+    width: 24,
+    height: 3,
+    backgroundColor: '#3170cdff',
+    borderRadius: 1.5,
+  },
+
+  /* Company Cards */
+  companyCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 0.5,
+    borderColor: '#ECEEF1',
   },
-  dealIconContainer: {
+  companyAvatar: {
     width: 44,
     height: 44,
-    borderRadius: 10,
-    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 14,
+  },
+  companyAvatarText: {
+    fontSize: 20,
+  },
+  companyInfo: {
+    flex: 1,
+  },
+  companyName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1A1D1F',
+    marginBottom: 3,
+  },
+  companyMeta: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  companyRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  companyArrow: {
+    fontSize: 20,
+    color: '#C5CAD0',
+    fontWeight: '300',
+  },
+
+  /* Deal Cards */
+  dealCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 0.5,
+    borderColor: '#ECEEF1',
+  },
+  dealLeft: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#F5F6F8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
   },
   dealIcon: {
-    fontSize: 20,
+    fontSize: 18,
   },
   dealInfo: {
     flex: 1,
   },
   dealTitle: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 2,
+    fontWeight: '700',
+    color: '#1A1D1F',
+    marginBottom: 3,
   },
-  dealBroker: {
-    fontSize: 12,
-    color: '#6B7280',
+  dealMeta: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontWeight: '500',
   },
-  dealPriceContainer: {
+  dealRight: {
     alignItems: 'flex-end',
-    gap: 4,
+    gap: 5,
   },
   dealPrice: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: '800',
+    color: '#1A1D1F',
   },
   dealStatusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 10,
+    borderRadius: 6,
   },
   dealStatusText: {
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
+
+  /* Empty State */
   emptyStateContainer: {
     marginBottom: 24,
   },
   emptyCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 20,
+    padding: 32,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E8ECF0',
     borderStyle: 'dashed',
   },
   emptyIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#F0F7FF',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   emptyIcon: {
-    fontSize: 30,
+    fontSize: 28,
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#0F172A',
+    fontWeight: '800',
+    color: '#1A1D1F',
     marginBottom: 8,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13,
+    color: '#6B7280',
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   emptyButton: {
     backgroundColor: '#3170cdff',
@@ -599,82 +635,68 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    shadowColor: '#3170cdff',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  emptyButtonIcon: {
-    fontSize: 16,
   },
   emptyButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
-    fontSize: 15,
-    letterSpacing: 0.3,
+    fontSize: 14,
   },
   emptyButtonArrow: {
     color: 'rgba(255,255,255,0.8)',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
   },
-  companyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+  /* Hero Banner Styles */
+  heroContainer: {
+    height: 180,
+    width: '100%',
+    marginBottom: 26,
+    shadowColor: '#0C4A6E',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 8,
   },
-  companyIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  companyIcon: {
-    fontSize: 22,
-  },
-  companyInfo: {
+  heroImage: {
     flex: 1,
+    justifyContent: 'flex-end',
   },
-  companyName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 3,
+  heroOverlay: {
+    padding: 20,
+    backgroundColor: 'rgba(12, 74, 110, 0.4)', // Deep blue-tinted overlay
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    height: '100%',
+    justifyContent: 'flex-end',
   },
-  companyContact: {
-    fontSize: 12,
-    color: '#6B7280',
+  heroBadge: {
+    backgroundColor: '#3170cdff',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
   },
-  companyStatusContainer: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  companyStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  companyStatusText: {
+  heroBadgeText: {
+    color: '#FFFFFF',
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '900',
+    letterSpacing: 1,
   },
-  companyArrow: {
+  heroTitle: {
+    color: '#FFFFFF',
     fontSize: 22,
-    color: '#9CA3AF',
-    fontWeight: '300',
+    fontWeight: '900',
+    marginBottom: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  heroSubtitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
   },
 });
 

@@ -5,7 +5,7 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard' }) => {
   const tabs = [
     { screen: 'Dashboard', icon: '📊', label: 'Home' },
     { screen: 'DealsList', icon: '💎', label: 'Saudas' },
-    { screen: 'CreateDeal', icon: '+', label: '', isCenter: true },
+    { screen: 'AddCompany', icon: '+', label: '', isCenter: true },
     { screen: 'ChatList', icon: '💬', label: 'Chat' },
     { screen: 'Profile', icon: '👤', label: 'Profile' },
   ];

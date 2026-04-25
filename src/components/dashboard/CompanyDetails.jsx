@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 const CompanyDetails = ({ onNavigate, routeData }) => {
+  const [activeTab, setActiveTab] = React.useState('my_sauda');
   const company = routeData?.company || {
     name: 'Unknown Company',
     gst: 'N/A',
@@ -22,6 +23,10 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     color: '#3B82F6',
     bgColor: '#EFF6FF',
   };
+
+  const themeColor = '#0284C7';
+  const themeBg = '#F0F9FF';
+  const themeSoftBorder = '#E0F2FE';
 
   const recentDeals = [
     {
@@ -66,187 +71,181 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         </TouchableOpacity>
       </View>
 
+      {/* Small Action Buttons at Top */}
+      <View style={styles.smallButtonsRow}>
+        <TouchableOpacity
+          style={[styles.smallButton, activeTab === 'my_sauda' && styles.activeSmallButton]}
+          onPress={() => setActiveTab('my_sauda')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.smallButtonIcon}>{activeTab === 'my_sauda' ? '📁' : '📂'}</Text>
+          <Text style={[styles.smallButtonText, activeTab === 'my_sauda' && styles.activeSmallButtonText]}>My Sauda</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.smallButton, activeTab === 'create_sauda' && styles.activeSmallButton]}
+          onPress={() => setActiveTab('create_sauda')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.smallButtonIcon}>➕</Text>
+          <Text style={[styles.smallButtonText, activeTab === 'create_sauda' && styles.activeSmallButtonText]}>Create Sauda</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Company Hero Card */}
-        <View style={styles.heroCard}>
-          <View
-            style={[
-              styles.heroIconCircle,
-              { backgroundColor: company.bgColor },
-            ]}
-          >
-            <Text style={styles.heroIcon}>{company.icon}</Text>
+        {/* Soft Blue Hero Section */}
+        <View style={styles.softHeroContainer}>
+          <View style={styles.softHeroHeader}>
+            <View style={[styles.softAvatar, { backgroundColor: company.bgColor }]}>
+              <Text style={styles.softAvatarText}>{company.icon}</Text>
+            </View>
+            <View style={styles.softHeroInfo}>
+              <Text style={styles.softHeroName} numberOfLines={2}>{company.name}</Text>
+              <View style={styles.softStatusBadge}>
+                <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+                <Text style={styles.softStatusText}>{company.status}</Text>
+              </View>
+            </View>
           </View>
-          <Text style={styles.heroName}>{company.name}</Text>
-          <View
-            style={[styles.statusPill, { backgroundColor: company.bgColor }]}
-          >
-            <View
-              style={[styles.statusDot, { backgroundColor: company.color }]}
-            />
-            <Text style={[styles.statusText, { color: company.color }]}>
-              {company.status}
+
+          {/* Activity Banner */}
+          <View style={styles.activityBanner}>
+            <Text style={styles.activityIcon}>⚡</Text>
+            <Text style={styles.activityText}>
+              <Text style={styles.activityValue}>{company.deals}</Text> Active deals in progress
             </Text>
           </View>
         </View>
 
-        {/* Stats Row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{company.deals}</Text>
-            <Text style={styles.statLabel}>Total Deals</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>₹2.4Cr</Text>
-            <Text style={styles.statLabel}>Trade Volume</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>4.8</Text>
-            <Text style={styles.statLabel}>Rating</Text>
-          </View>
-        </View>
-
-        {/* Company Information */}
-        <Text style={styles.sectionTitle}>Company Information</Text>
-        <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconBox}>
-              <Text style={styles.infoIcon}>🏢</Text>
+        {activeTab === 'my_sauda' ? (
+          <>
+            {/* My Sauda History Section */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Transaction History</Text>
+              <TouchableOpacity onPress={() => onNavigate('DealsList')}>
+                <Text style={styles.viewAllText}>View All</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Company Name</Text>
-              <Text style={styles.infoValue}>{company.name}</Text>
-            </View>
-          </View>
 
-          <View style={styles.divider} />
-
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconBox}>
-              <Text style={styles.infoIcon}>📋</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>GST Number</Text>
-              <Text style={styles.infoValue}>{company.gst}</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconBox}>
-              <Text style={styles.infoIcon}>👤</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Contact Person</Text>
-              <Text style={styles.infoValue}>{company.contact}</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconBox}>
-              <Text style={styles.infoIcon}>📞</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Mobile Number</Text>
-              <Text style={styles.infoValue}>{company.mobile}</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconBox}>
-              <Text style={styles.infoIcon}>✉️</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Email Address</Text>
-              <Text style={styles.infoValue}>{company.email}</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconBox}>
-              <Text style={styles.infoIcon}>📍</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Office Address</Text>
-              <Text style={styles.infoValue}>{company.address}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Recent Deals */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Deals</Text>
-          <TouchableOpacity onPress={() => onNavigate('DealsList')}>
-            <Text style={styles.viewAllText}>View All</Text>
-          </TouchableOpacity>
-        </View>
-
-        {recentDeals.map(deal => (
-          <TouchableOpacity
-            key={deal.id}
-            style={styles.dealCard}
-            onPress={() => onNavigate('DealDetails')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.dealHeader}>
-              <Text style={styles.dealTitle} numberOfLines={1}>
-                {deal.title}
-              </Text>
-              <View
-                style={[
-                  styles.dealTypeBadge,
-                  {
-                    backgroundColor:
-                      deal.type === 'Buy' ? '#ECFDF5' : '#FEF2F2',
-                  },
-                ]}
+            {recentDeals.map(deal => (
+              <TouchableOpacity
+                key={deal.id}
+                style={styles.dealCard}
+                onPress={() => onNavigate('DealDetails')}
+                activeOpacity={0.7}
               >
-                <Text
-                  style={[
-                    styles.dealTypeText,
-                    { color: deal.type === 'Buy' ? '#10B981' : '#EF4444' },
-                  ]}
-                >
-                  {deal.type}
-                </Text>
+                <View style={styles.dealHeader}>
+                  <Text style={styles.dealTitle} numberOfLines={1}>
+                    {deal.title}
+                  </Text>
+                  <View
+                    style={[
+                      styles.dealTypeBadge,
+                      {
+                        backgroundColor:
+                          deal.type === 'Buy' ? '#F0FDF4' : '#FEF2F2',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.dealTypeText,
+                        { color: deal.type === 'Buy' ? '#166534' : '#991B1B' },
+                      ]}
+                    >
+                      {deal.type}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.dealFooter}>
+                  <Text style={styles.dealMeta}>
+                    {deal.tons} • {deal.date}
+                  </Text>
+                  <Text style={styles.dealPrice}>{deal.price}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+
+            {/* Company Identity Info */}
+            <View style={{ marginTop: 24 }}>
+              <Text style={styles.sectionTitle}>Company Verification</Text>
+              <View style={styles.infoCard}>
+                <View style={styles.infoRow}>
+                  <View style={styles.infoIconBox}>
+                    <Text style={styles.infoIcon}>🏢</Text>
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Reg. Name</Text>
+                    <Text style={styles.infoValue}>{company.name}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.divider} />
+
+                <View style={styles.infoRow}>
+                  <View style={styles.infoIconBox}>
+                    <Text style={styles.infoIcon}>👤</Text>
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Primary Contact</Text>
+                    <Text style={styles.infoValue}>{company.contact}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.divider} />
+
+                <View style={styles.infoRow}>
+                  <View style={styles.infoIconBox}>
+                    <Text style={styles.infoIcon}>📞</Text>
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Verified Mobile</Text>
+                    <Text style={styles.infoValue}>{company.mobile}</Text>
+                  </View>
+                </View>
               </View>
             </View>
-            <View style={styles.dealFooter}>
-              <Text style={styles.dealMeta}>
-                {deal.tons} • {deal.date}
+
+            {/* Quick Edit */}
+            <TouchableOpacity style={styles.secondaryAction} activeOpacity={0.8}>
+              <Text style={styles.secondaryActionIcon}>📝</Text>
+              <Text style={styles.secondaryActionText}>Update Company Profile</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <View style={styles.createSaudaContent}>
+            <View style={styles.createHeroCard}>
+              <View style={styles.createHeroIconWrap}>
+                <Text style={styles.createHeroIcon}>🤝</Text>
+              </View>
+              <Text style={styles.createHeroTitle}>New Sauda Transaction</Text>
+              <Text style={styles.createHeroSub}>
+                Initialize a secure buy/sell agreement with {company.name}. Fill in the deal details to notify all parties.
               </Text>
-              <Text style={styles.dealPrice}>{deal.price}</Text>
             </View>
-          </TouchableOpacity>
-        ))}
 
-        {/* Action Buttons */}
-        <TouchableOpacity
-          style={styles.primaryAction}
-          onPress={() => onNavigate('CreateDeal')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.primaryActionIcon}>🤝</Text>
-          <Text style={styles.primaryActionText}>Create New Sauda</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.secondaryAction} activeOpacity={0.8}>
-          <Text style={styles.secondaryActionIcon}>✎</Text>
-          <Text style={styles.secondaryActionText}>Edit Company Details</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 20 }} />
+            <TouchableOpacity
+              style={styles.primaryAction}
+              onPress={() => onNavigate('CreateDeal')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.primaryActionIcon}>+</Text>
+              <Text style={styles.primaryActionText}>Create New Sauda</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => onNavigate('CreateDeal')}
+        activeOpacity={0.9}
+      >
+        <Text style={styles.fabIcon}>+</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -254,7 +253,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#fbfeffff',
   },
   header: {
     flexDirection: 'row',
@@ -264,7 +263,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#E0F2FE',
   },
   backButton: {
     padding: 8,
@@ -272,199 +271,128 @@ const styles = StyleSheet.create({
   },
   backIcon: {
     fontSize: 24,
-    color: '#111827',
+    color: '#0369A1',
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
+    color: '#0C4A6E',
   },
   editButton: {
     padding: 8,
     marginRight: -8,
   },
-  editIcon: {
-    fontSize: 18,
-    color: '#3170cdff',
-  },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 10,
     paddingBottom: 40,
   },
-  heroCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  heroIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  heroIcon: {
-    fontSize: 32,
-  },
-  heroName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0C4A6E',
     marginBottom: 12,
+    letterSpacing: 0.3,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
     marginTop: 4,
   },
   viewAllText: {
     fontSize: 12,
-    color: '#3170cdff',
-    fontWeight: '600',
+    color: '#0284C7',
+    fontWeight: '700',
   },
   infoCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 24,
+    padding: 8,
     marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+    shadowColor: '#0369A1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 12,
   },
   infoIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#F0F9FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   infoIcon: {
-    fontSize: 16,
+    fontSize: 18,
   },
   infoContent: {
     flex: 1,
   },
   infoLabel: {
     fontSize: 11,
-    color: '#9CA3AF',
-    fontWeight: '500',
+    color: '#7DD3FC',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 2,
   },
   infoValue: {
     fontSize: 14,
-    color: '#111827',
+    color: '#0C4A6E',
     fontWeight: '600',
   },
   divider: {
     height: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F0F9FF',
     marginLeft: 60,
   },
   dealCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F0F9FF',
+    shadowColor: '#0369A1',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   dealHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   dealTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#111827',
+    color: '#0F172A',
     flex: 1,
     marginRight: 10,
   },
   dealTypeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   dealTypeText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
   dealFooter: {
     flexDirection: 'row',
@@ -473,57 +401,271 @@ const styles = StyleSheet.create({
   },
   dealMeta: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: '#64748B',
     fontWeight: '500',
   },
   dealPrice: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#0284C7',
   },
   primaryAction: {
-    backgroundColor: '#3170cdff',
-    borderRadius: 12,
-    height: 52,
+    backgroundColor: '#0284C7',
+    borderRadius: 18,
+    height: 56,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 10,
-    marginTop: 16,
-    shadowColor: '#3170cdff',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    gap: 12,
+    marginTop: 20,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
   },
   primaryActionIcon: {
-    fontSize: 18,
+    fontSize: 20,
   },
   primaryActionText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
   },
   secondaryAction: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    height: 48,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 18,
+    height: 52,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 10,
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E0F2FE',
   },
   secondaryActionIcon: {
-    fontSize: 16,
-    color: '#6B7280',
+    fontSize: 18,
+    color: '#0284C7',
   },
   secondaryActionText: {
-    color: '#374151',
+    color: '#0369A1',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  /* Create Sauda Tab */
+  createSaudaContent: {
+    paddingVertical: 10,
+  },
+  createHeroCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 28,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E0F2FE',
+    borderStyle: 'dashed',
+    marginBottom: 24,
+  },
+  createHeroIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E0F2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  createHeroIcon: {
+    fontSize: 30,
+  },
+  createHeroTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0C4A6E',
+    marginBottom: 8,
+  },
+  createHeroSub: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  quickFormPlaceholder: {
+    marginTop: 10,
+  },
+  quickFormTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#7DD3FC',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  quickOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'center',
+  },
+  quickOption: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+    shadowColor: '#0369A1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  quickOptionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0C4A6E',
+  },
+  /* Small Action Buttons Styling */
+  smallButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 16,
+  },
+  smallButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    flex: 1,
+    gap: 8,
+    shadowColor: '#0369A1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+  },
+  activeSmallButton: {
+    backgroundColor: '#0284C7',
+    borderColor: '#0284C7',
+    shadowOpacity: 0.2,
+  },
+  smallButtonIcon: {
+    fontSize: 14,
+  },
+  smallButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  activeSmallButtonText: {
+    color: '#FFFFFF',
+  },
+  softHeroContainer: {
+    backgroundColor: 'rgba(125, 195, 199, 0.9)',
+    borderRadius: 28,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  softHeroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  softAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+  },
+  softAvatarText: {
+    fontSize: 30,
+  },
+  softHeroInfo: {
+    flex: 1,
+  },
+  softHeroName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0C4A6E',
+    marginBottom: 6,
+  },
+  softStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  softStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#166534',
+    textTransform: 'uppercase',
+  },
+  activityBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderRadius: 16,
+    padding: 10,
+    gap: 12,
+  },
+  activityIcon: {
+    fontSize: 18,
+  },
+  activityText: {
+    fontSize: 14,
+    color: '#0369A1',
     fontWeight: '600',
+  },
+  activityValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0284C7',
+  },
+  fab: {
+    position: 'absolute',
+    right: 24,
+    bottom: 24,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#0284C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 8,
+  },
+  fabIcon: {
+    color: '#FFFFFF',
+    fontSize: 36,
+    fontWeight: '300',
+    marginTop: -2,
   },
 });
 

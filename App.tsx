@@ -11,10 +11,13 @@ import DealDetails from './src/components/sauda/DealDetails';
 import DealChat from './src/components/sauda/DealChat';
 import ChatList from './src/components/sauda/ChatList';
 import Profile from './src/components/profile/profile';
+import MyCompanies from './src/components/profile/MyCompanies';
 import ContactPicker from './src/components/sauda/ContactPicker';
 import Footer from './src/components/footer/footer';
+import ChooseIndustry from './src/components/login/ChooseIndustry';
 
 const LoginScreen = Login as any;
+const ChooseIndustryScreen = ChooseIndustry as any;
 const DashboardScreen = Dashboard as any;
 const AddCompanyScreen = AddCompany as any;
 const CompanyDetailsScreen = CompanyDetails as any;
@@ -24,6 +27,7 @@ const DealDetailsScreen = DealDetails as any;
 const DealChatScreen = DealChat as any;
 const ChatListScreen = ChatList as any;
 const ProfileScreen = Profile as any;
+const MyCompaniesScreen = MyCompanies as any;
 const ContactPickerScreen = ContactPicker as any;
 
 function App() {
@@ -66,6 +70,8 @@ function App() {
     switch (screen) {
       case 'Login':
         return <LoginScreen onNavigate={onNavigate} routeData={data} />;
+      case 'ChooseIndustry':
+        return <ChooseIndustryScreen onNavigate={onNavigate} routeData={data} />;
       case 'Dashboard':
         return <DashboardScreen onNavigate={onNavigate} routeData={data} />;
       case 'AddCompany':
@@ -86,6 +92,8 @@ function App() {
         return <ChatListScreen onNavigate={onNavigate} routeData={data} />;
       case 'Profile':
         return <ProfileScreen onNavigate={onNavigate} routeData={data} />;
+      case 'MyCompanies':
+        return <MyCompaniesScreen onNavigate={onNavigate} routeData={data} />;
       case 'ContactPicker':
         return <ContactPickerScreen onNavigate={onNavigate} routeData={data} />;
       default:

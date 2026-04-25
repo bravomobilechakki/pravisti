@@ -140,6 +140,13 @@ const Profile = ({ onNavigate }) => {
                 styles.menuItem,
                 index === menuItems.length - 1 && { borderBottomWidth: 0 },
               ]}
+              onPress={() => {
+                if (item.label === 'My Companies') {
+                  onNavigate('MyCompanies');
+                } else if (item.label === 'My Deals') {
+                  onNavigate('DealsList');
+                }
+              }}
               activeOpacity={0.7}
             >
               <View style={styles.menuIconContainer}>

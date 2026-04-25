@@ -5,14 +5,13 @@ import {
   Text,
   TouchableOpacity,
   SafeAreaView,
-  Image,
   ScrollView,
-  useWindowDimensions,
+  StatusBar,
+  Image,
 } from 'react-native';
 
 const DealDetails = ({ onNavigate, routeData }) => {
-  const { height } = useWindowDimensions();
-  // Mock data for the demonstration
+
   const deal = routeData?.deal || {
     id: '1',
     product: 'Wheat',
@@ -20,342 +19,304 @@ const DealDetails = ({ onNavigate, routeData }) => {
     price: '₹2500',
     dealDate: '26 Mar 2024',
     validityDate: '30 Mar 2024',
-    party1: 'ABC Traders',
-    party2: 'XYZ Traders',
-    broker: 'PQR Broker',
-    status: routeData?.status || 'Expired', // Default to Expired for demo of recreate feature
-    image: require('../../images/login.png'),
+    party1: 'qqqqq Traders',
+    party2: 'oooo Traders',
+    broker: 'aaaaa Broker',
+    status: routeData?.status || 'Expired',
+    image: null,
   };
+
+  const isExpired = deal.status === 'Expired';
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('DealsList')}>
-            <Text style={styles.backIcon}>←</Text>
+      <StatusBar barStyle="dark-content" />
+
+      {/* 🖼️ HERO IMAGE */}
+      <View style={styles.heroContainer}>
+        <Image
+          source={
+            deal.image
+              ? deal.image
+              : {
+                uri: 'https://images.unsplash.com/photo-1601597111158-2fceff292cdc',
+              }
+          }
+          style={styles.heroImage}
+        />
+
+        <View style={styles.heroOverlay}>
+          <Text style={styles.heroTitle}>{deal.product}</Text>
+          <Text style={styles.heroSubtitle}>Deal #{deal.id}</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.heroBackBtn}
+          onPress={() => onNavigate('DealsList')}
+        >
+          <Text style={{ fontSize: 20 }}>‹</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false}>
+
+        {/* 📊 STATS */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{deal.price}</Text>
+            <Text style={styles.statLabel}>Total Value</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{deal.qty}</Text>
+            <Text style={styles.statLabel}>Quantity</Text>
+          </View>
+
+          <View style={styles.statCard}>
+            <Text style={styles.statValueSmall}>{deal.dealDate}</Text>
+            <Text style={styles.statLabel}>Date</Text>
+          </View>
+        </View>
+
+        {/* 👥 PARTIES */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Trade Parties</Text>
+
+          <View style={styles.partyCard}>
+            <Text style={styles.partyLabel}>Seller</Text>
+            <Text style={styles.partyName}>{deal.party1}</Text>
+          </View>
+
+          <View style={styles.partyCard}>
+            <Text style={styles.partyLabel}>Buyer</Text>
+            <Text style={styles.partyName}>{deal.party2}</Text>
+          </View>
+
+          <View style={styles.brokerCard}>
+            <Text style={styles.brokerText}>
+              Broker: <Text style={{ fontWeight: '800' }}>{deal.broker}</Text>
+            </Text>
+          </View>
+        </View>
+
+        {/* 📅 TIMELINE */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Timeline</Text>
+
+          <View style={styles.timelineItem}>
+            <Text style={styles.timelineDate}>{deal.dealDate}</Text>
+            <Text style={styles.timelineText}>Deal Created</Text>
+          </View>
+
+          <View style={styles.timelineItem}>
+            <Text style={styles.timelineDate}>{deal.validityDate}</Text>
+            <Text style={styles.timelineText}>
+              {isExpired ? 'Expired' : 'Valid Till'}
+            </Text>
+          </View>
+        </View>
+
+        {/* ⚡ ACTION BUTTON */}
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() =>
+            isExpired
+              ? onNavigate('CreateDeal', { prefill: deal })
+              : onNavigate('DealChat')
+          }
+        >
+          <Text style={styles.primaryText}>
+            {isExpired ? 'Recreate Deal' : 'Open Chat'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* EXTRA ACTIONS */}
+        <View style={styles.row}>
+          <TouchableOpacity style={styles.smallBtn}>
+            <Text>📤 Share</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Deal Details</Text>
-          <View style={{ width: 40 }} />
+
+          <TouchableOpacity style={styles.smallBtn}>
+            <Text>📄 PDF</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.smallBtn}>
+            <Text>✏️ Edit</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Product Image */}
-        <View style={[styles.imageContainer, { height: height * 0.35 }]}>
-          <Image source={deal.image} style={styles.productImage} resizeMode="cover" />
-          <View style={[styles.statusLabel, deal.status === 'Expired' && { backgroundColor: '#EF4444' }]}>
-            <Text style={styles.statusText}>{deal.status}</Text>
-          </View>
-        </View>
-
-        {/* Content Card */}
-        <View style={styles.detailsCard}>
-          <View style={styles.titleRow}>
-            <View>
-              <Text style={styles.productLabel}>Product</Text>
-              <Text style={styles.productTitle}>{deal.product}</Text>
-            </View>
-            <TouchableOpacity style={styles.editButton}>
-               <Text style={styles.editIcon}>✏️</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.statsGrid}>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Quantity</Text>
-              <Text style={styles.statValue}>{deal.qty}</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Price</Text>
-              <Text style={styles.statValue}>{deal.price}</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.infoSection}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Deal Date</Text>
-                <Text style={styles.infoValue}>📅 {deal.dealDate}</Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Valid Till</Text>
-                <Text style={styles.infoValue}>⏳ {deal.validityDate}</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.sectionDivider} />
-
-          <Text style={styles.sectionHeader}>Involved Companies</Text>
-          
-          <View style={styles.partyItem}>
-            <View style={styles.partyIconContainer}>
-              <Text style={styles.partyIcon}>🏢</Text>
-            </View>
-            <View style={styles.partyInfo}>
-              <Text style={styles.partyRole}>Party 1 (Seller)</Text>
-              <Text style={styles.partyName}>{deal.party1}</Text>
-            </View>
-          </View>
-
-          <View style={styles.partyItem}>
-            <View style={[styles.partyIconContainer, { backgroundColor: '#F0F9FF' }]}>
-              <Text style={styles.partyIcon}>🛒</Text>
-            </View>
-            <View style={styles.partyInfo}>
-              <Text style={styles.partyRole}>Party 2 (Buyer)</Text>
-              <Text style={styles.partyName}>{deal.party2}</Text>
-            </View>
-          </View>
-
-          <View style={styles.partyItem}>
-            <View style={[styles.partyIconContainer, { backgroundColor: '#FDF2F8' }]}>
-              <Text style={styles.partyIcon}>🤝</Text>
-            </View>
-            <View style={styles.partyInfo}>
-              <Text style={styles.partyRole}>Broker</Text>
-              <Text style={styles.partyName}>{deal.broker}</Text>
-            </View>
-          </View>
-
-          {deal.status === 'Expired' ? (
-            /* SRS 10.3: Recreate Deal from Expired Sauda */
-            <TouchableOpacity 
-              style={[styles.chatButton, { backgroundColor: '#F59E0B' }]}
-              activeOpacity={0.8}
-              onPress={() => onNavigate('CreateDeal', { prefill: deal })}
-            >
-              <Text style={styles.chatIcon}>🔄</Text>
-              <Text style={styles.chatButtonText}>Recreate Deal</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity 
-              style={styles.chatButton}
-              activeOpacity={0.8}
-              onPress={() => onNavigate('DealChat')}
-            >
-              <Text style={styles.chatIcon}>💬</Text>
-              <Text style={styles.chatButtonText}>Open Chat</Text>
-            </TouchableOpacity>
-          )}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
+export default DealDetails;
+
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#F8FAFC',
   },
-  scrollContent: {
-    flexGrow: 1,
+
+  /* HERO */
+  heroContainer: {
+    height: 200,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#FFFFFF',
-  },
-  backButton: {
-    padding: 8,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#0F172A',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  imageContainer: {
-    width: '100%',
-    height: 300,
-    backgroundColor: '#E2E8F0',
-    marginBottom: -40,
-  },
-  productImage: {
+
+  heroImage: {
     width: '100%',
     height: '100%',
   },
-  statusLabel: {
+
+  heroOverlay: {
     position: 'absolute',
-    top: 20,
-    right: 20,
-    backgroundColor: '#3170cdff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    bottom: 0,
+    width: '100%',
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  statusText: {
-    color: '#FFFFFF',
+
+  heroTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+
+  heroSubtitle: {
+    color: '#E2E8F0',
     fontSize: 12,
-    fontWeight: '700',
   },
-  detailsCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
-    padding: 24,
-    minHeight: 600,
-    shadowColor: '#3170CD',
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 15,
-    elevation: 10,
+
+  heroBackBtn: {
+    position: 'absolute',
+    top: 40,
+    left: 16,
+    backgroundColor: '#fff',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  titleRow: {
+
+  /* STATS */
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
+    margin: 16,
+    gap: 10,
   },
-  productLabel: {
-    fontSize: 13,
-    color: '#94A3B8',
-    fontWeight: '500',
-    marginBottom: 4,
+
+  statCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    elevation: 3,
   },
-  productTitle: {
-    fontSize: 24,
+
+  statValue: {
+    fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
   },
-  editButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
+
+  statValueSmall: {
+    fontSize: 12,
+    fontWeight: '700',
   },
-  editIcon: {
-    fontSize: 20,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 15,
-    marginBottom: 20,
-  },
-  statBox: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
+
   statLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#64748B',
-    marginBottom: 6,
-    fontWeight: '600',
+    marginTop: 4,
   },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#3170cdff',
+
+  /* SECTION */
+  section: {
+    marginHorizontal: 16,
+    marginTop: 16,
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginBottom: 20,
-  },
-  infoSection: {
-    marginBottom: 24,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    gap: 20,
-  },
-  infoItem: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  infoValue: {
-    fontSize: 14,
-    color: '#475569',
-    fontWeight: '500',
-  },
-  sectionDivider: {
-    height: 8,
-    backgroundColor: '#F8FAFC',
-    marginHorizontal: -24,
-    marginBottom: 24,
-  },
-  sectionHeader: {
+
+  sectionTitle: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 16,
+    fontWeight: '800',
+    marginBottom: 10,
   },
-  partyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+
+  /* PARTY */
+  partyCard: {
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 10,
+  },
+
+  partyLabel: {
+    fontSize: 10,
+    color: '#94A3B8',
+  },
+
+  partyName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+
+  brokerCard: {
+    backgroundColor: '#FEF2F2',
     padding: 12,
     borderRadius: 12,
-    marginBottom: 12,
   },
-  partyIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#F0FDF4',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  partyIcon: {
-    fontSize: 24,
-  },
-  partyInfo: {
-    flex: 1,
-  },
-  partyRole: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  partyName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  chatButton: {
-    flexDirection: 'row',
-    backgroundColor: '#3170cdff',
-    borderRadius: 16,
-    height: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 30,
-    shadowColor: '#3170cdff',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  chatIcon: {
-    fontSize: 22,
-    marginRight: 10,
-  },
-  chatButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-});
 
-export default DealDetails;
+  brokerText: {
+    color: '#DC2626',
+    fontSize: 12,
+  },
+
+  /* TIMELINE */
+  timelineItem: {
+    backgroundColor: '#fff',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+
+  timelineDate: {
+    fontWeight: '800',
+  },
+
+  timelineText: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+
+  /* BUTTON */
+  primaryBtn: {
+    backgroundColor: '#3B82F6',
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+
+  primaryText: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 40,
+  },
+
+  smallBtn: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    elevation: 2,
+  },
+
+});

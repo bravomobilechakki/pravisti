@@ -103,7 +103,7 @@ const DealChat = ({ onNavigate, routeData }) => {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => onNavigate('ChatList')}
+            onPress={() => onNavigate('pop')}
           >
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>

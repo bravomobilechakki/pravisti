@@ -16,24 +16,27 @@ import {
   TouchableWithoutFeedback,
   Keyboard
 } from 'react-native';
-import { loginUser, verifyOtp } from '../../services/api';
-// Fallback if AsyncStorage is still not installed properly:
+import { signUpUser, verifyOtp } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const Login = ({ onNavigate }) => {
+const Signup = ({ onNavigate, routeData }) => {
   const { width, height } = useWindowDimensions();
-  const [identity, setIdentity] = useState('Broker'); // Broker, Trader, Both
-  const [mobile, setMobile] = useState('');
+  const [name, setName] = useState('');
+  const [number, setNumber] = useState(''); // dummy/custom field
+  const [mobile, setMobile] = useState(routeData?.mobile || '');
+  const [role, setRole] = useState('Broker'); // 'Broker' or 'Trader'
+  const [isLoading, setIsLoading] = useState(false);
+
+  // OTP Verification States
+  const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '']);
   const otpRefs = useRef([]);
-
-  const [otpSent, setOtpSent] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [timer, setTimer] = useState(600); // 10 minutes in seconds
 
   const themeColor = '#3170cdff';
 
+  // Timer Effect
   useEffect(() => {
     let interval;
     if (otpSent && timer > 0) {
@@ -92,28 +95,28 @@ const Login = ({ onNavigate }) => {
     }
   };
 
-  const handleSendOtp = async () => {
+  const handleSignup = async () => {
+    if (!name || !mobile) {
+      Alert.alert('Error', 'Please fill in Name and Mobile Number.');
+      return;
+    }
     if (mobile.length !== 10) {
       Alert.alert('Error', 'Please enter a valid 10-digit mobile number.');
       return;
     }
+
     setIsLoading(true);
     try {
-      const response = await loginUser(mobile);
+      const response = await signUpUser(name, role, mobile);
       if (response && response.success) {
-        if (response.data && response.data.isNewUser) {
-          if (onNavigate) {
-            onNavigate('Signup', { mobile });
-          }
-          return;
-        }
         setOtpSent(true);
         setTimer(response.data?.expiresIn || 600);
+        Alert.alert('Success', 'Signup initiated! OTP has been sent.');
       } else {
         Alert.alert('Error', response.message || 'Failed to send OTP.');
       }
     } catch (error) {
-      Alert.alert('API Error', error.message || 'An error occurred while sending OTP.');
+      Alert.alert('API Error', error.message || 'An error occurred during signup.');
     } finally {
       setIsLoading(false);
     }
@@ -136,10 +139,10 @@ const Login = ({ onNavigate }) => {
         } catch (e) {
           console.error("AsyncStorage error", e);
         }
-        
-        // Pass to App state or just navigate
+
+        // Pass to App state or navigate
         if (onNavigate) {
-          const userRole = user && user.roles && user.roles[0] ? user.roles[0] : 'Broker';
+          const userRole = user && user.roles && user.roles[0] ? user.roles[0] : role;
           onNavigate('Dashboard', { role: userRole, user });
         }
       } else {
@@ -171,7 +174,6 @@ const Login = ({ onNavigate }) => {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={{ flex: 1 }}>
-              {/* Top Logo — fixed height */}
               <View style={styles.topLogoContainer}>
                 <Image
                   source={require('../../images/trader1.png')}
@@ -180,21 +182,70 @@ const Login = ({ onNavigate }) => {
                 />
               </View>
 
-              {/* Hero image — flexible, fills remaining space above the card */}
               <Image
                 source={require('../../images/login1.png')}
                 style={[styles.heroImage, { height: height * 0.22 }]}
                 resizeMode="cover"
               />
 
-              {/* Form card — fixed, overlaps the hero image */}
               <View style={styles.formCard}>
-                <Text style={styles.titleText}>Welcome to Pravisti</Text>
-                <Text style={styles.subtitleText}>Enter your credentials to manage your sovereign ledger.</Text>
+                <Text style={styles.titleText}>Create an Account</Text>
+                <Text style={styles.subtitleText}>Join Pravisti to manage your sovereign ledger.</Text>
 
+                {/* Role Checkboxes */}
+                <Text style={styles.inputLabel}>Select Role</Text>
+                <View style={styles.checkboxRow}>
+                  <TouchableOpacity
+                    style={styles.checkboxContainer}
+                    onPress={() => !otpSent && setRole('Broker')}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.checkbox, role === 'Broker' && styles.checkboxChecked]}>
+                      {role === 'Broker' && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.checkboxLabel}>Broker</Text>
+                  </TouchableOpacity>
 
+                  <TouchableOpacity
+                    style={styles.checkboxContainer}
+                    onPress={() => !otpSent && setRole('Trader')}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.checkbox, role === 'Trader' && styles.checkboxChecked]}>
+                      {role === 'Trader' && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.checkboxLabel}>Trader</Text>
+                  </TouchableOpacity>
+                </View>
 
-                {/* Mobile input */}
+                {/* Name */}
+                <Text style={styles.inputLabel}>Name</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your name"
+                    placeholderTextColor="#CBD5E1"
+                    value={name}
+                    onChangeText={setName}
+                    editable={!otpSent}
+                  />
+                </View>
+
+                {/* Number */}
+                <Text style={styles.inputLabel}>Number</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter number"
+                    placeholderTextColor="#CBD5E1"
+                    value={number}
+                    onChangeText={setNumber}
+                    keyboardType="numeric"
+                    editable={!otpSent}
+                  />
+                </View>
+
+                {/* Mobile Number */}
                 <Text style={styles.inputLabel}>Mobile Number</Text>
                 <View style={styles.inputWrapper}>
                   <Text style={styles.prefixText}>+91</Text>
@@ -210,13 +261,15 @@ const Login = ({ onNavigate }) => {
                   />
                 </View>
 
-                {/* OTP */}
+                {/* OTP Section */}
                 {otpSent && (
                   <>
                     <View style={styles.otpHeaderRow}>
                       <Text style={styles.inputLabel}>Verification Code</Text>
-                      <TouchableOpacity onPress={() => handleSendOtp()} disabled={timer > 0}>
-                        <Text style={[styles.resendText, { color: timer > 0 ? '#999' : themeColor }]}>Resend in {formatTimer()}</Text>
+                      <TouchableOpacity onPress={handleSignup} disabled={timer > 0}>
+                        <Text style={[styles.resendText, { color: timer > 0 ? '#999' : themeColor }]}>
+                          Resend in {formatTimer()}
+                        </Text>
                       </TouchableOpacity>
                     </View>
 
@@ -230,7 +283,7 @@ const Login = ({ onNavigate }) => {
                             focusedIndex === index && { borderColor: themeColor, borderWidth: 2 }
                           ]}
                           keyboardType="number-pad"
-                          maxLength={index === 0 && otp[0] === '' ? 4 : 1} // Allow pasting up to 4 chars in first box
+                          maxLength={index === 0 && otp[0] === '' ? 4 : 1}
                           value={otp[index]}
                           onChangeText={(text) => handleOtpChange(text, index)}
                           onKeyPress={(e) => handleOtpKeyPress(e, index)}
@@ -243,25 +296,24 @@ const Login = ({ onNavigate }) => {
                   </>
                 )}
 
-                {/* Login/Send OTP button */}
                 <TouchableOpacity
                   style={[styles.verifyButton, { backgroundColor: themeColor, shadowColor: themeColor }]}
                   activeOpacity={0.8}
-                  onPress={otpSent ? handleVerifyOtp : handleSendOtp}
+                  onPress={otpSent ? handleVerifyOtp : handleSignup}
                   disabled={isLoading}
                 >
                   {isLoading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
                     <Text style={styles.verifyButtonText}>
-                      {otpSent ? 'Verify & Login' : 'Send OTP'}
+                      {otpSent ? 'Verify & Sign Up' : `Sign Up as ${role}`}
                     </Text>
                   )}
                 </TouchableOpacity>
 
                 <View style={styles.switchRoleContainer}>
-                  <TouchableOpacity onPress={() => onNavigate && onNavigate('Signup')}>
-                    <Text style={styles.switchRoleLabel}>Join as Member? Sign Up</Text>
+                  <TouchableOpacity onPress={() => onNavigate && onNavigate('Login')}>
+                    <Text style={styles.switchRoleLabel}>Already have an account? Login</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -315,35 +367,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginBottom: 20,
   },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 20,
-  },
-  tabButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 6,
-  },
-  tabIcon: {
-    fontSize: 13,
-    marginRight: 5,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  activeText: {
-    color: '#FFFFFF',
-  },
-  inactiveText: {
-    color: '#475569',
-  },
   inputLabel: {
     fontSize: 12,
     fontWeight: '700',
@@ -370,6 +393,66 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 15,
+    color: '#1E293B',
+    fontWeight: '500',
+  },
+  verifyButton: {
+    height: 52,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+    marginTop: 8,
+  },
+  verifyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  switchRoleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  switchRoleLabel: {
+    fontSize: 13,
+    color: '#3170cdff',
+    fontWeight: '600'
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 24,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#3170cdff',
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  checkboxChecked: {
+    backgroundColor: '#3170cdff',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  checkboxLabel: {
+    fontSize: 14,
     color: '#1E293B',
     fontWeight: '500',
   },
@@ -400,32 +483,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  verifyButton: {
-    height: 52,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  verifyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  switchRoleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  switchRoleLabel: {
-    fontSize: 13,
-    color: '#3170cdff',
-    fontWeight: '600'
-  },
 });
 
-export default Login;
+export default Signup;

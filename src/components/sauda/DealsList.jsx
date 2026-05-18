@@ -9,93 +9,137 @@ import {
   TextInput,
   Image,
   useWindowDimensions,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+  StatusBar,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDeals, getExpiredDeals } from '../../services/api';
 
-const DealsList = ({ onNavigate }) => {
+const DealsList = ({ onNavigate, routeData }) => {
   const { width } = useWindowDimensions();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('Active'); // Active / Expired
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [deals, setDeals] = useState([]);
 
-  const deals = [
-    {
-      id: '1',
-      product: 'Wheat',
-      qty: '100kg',
-      price: '₹2500',
-      parties: 'ABC Traders → XYZ Traders',
-      status: 'Active',
-      date: '26 Mar',
-      image: require('../../images/login.png'), // Placeholder image
-    },
-    {
-      id: '2',
-      product: 'Rice',
-      qty: '500kg',
-      price: '₹15000',
-      parties: 'Global Foods → Metro Mart',
-      status: 'Active',
-      date: '25 Mar',
-      image: require('../../images/login.png'),
-    },
-    {
-      id: '3',
-      product: 'Sugar',
-      qty: '200kg',
-      price: '₹8000',
-      parties: 'Sweet Corp → Retail Ind',
-      status: 'Expired',
-      date: '20 Mar',
-      image: require('../../images/login.png'),
-    },
-  ];
+  const fetchDeals = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) return;
 
-  const filteredDeals = deals.filter(deal => 
-    deal.status === filter && 
-    deal.product.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      const response = filter === 'Active' 
+        ? await getDeals(token, 1, 50)
+        : await getExpiredDeals(token, 1, 50);
 
-  const renderDealItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.dealCard}
-      onPress={() => onNavigate('DealDetails', { dealId: item.id })}
-      activeOpacity={0.9}
-    >
-      <Image source={item.image} style={[styles.dealImage, { width: width * 0.2, height: width * 0.2 }]} />
-      <View style={styles.dealContent}>
-        <View style={styles.dealHeader}>
-          <Text style={styles.productName}>{item.product}</Text>
-          <View style={[styles.statusBadge, item.status === 'Active' ? styles.activeBadge : styles.expiredBadge]}>
-            <Text style={styles.statusText}>{item.status}</Text>
+      if (response && response.success) {
+        setDeals(response.data.deals || []);
+      }
+    } catch (error) {
+      console.error('Error fetching deals:', error);
+      // Alert.alert('Error', 'Failed to fetch deals');
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchDeals();
+  }, [filter]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchDeals();
+  };
+
+  const filteredDeals = deals.filter(deal => {
+    const pName = deal.product?.name || deal.product || '';
+    return pName.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  const renderDealItem = ({ item }) => {
+    const isActuallyActive = item.status === 'active' || item.status === 'pending';
+    const isCompleted = item.status === 'completed';
+    const productName = item.product?.name || item.product || 'Unknown Product';
+    const qty = item.product?.quantity || item.qty || 'N/A';
+    const price = item.product?.price || item.price || 'N/A';
+    const dealId = item._id || item.id;
+    const date = item.createdAt ? new Date(item.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'N/A';
+
+    return (
+      <TouchableOpacity 
+        style={styles.dealCard}
+        onPress={() => onNavigate('DealDetails', { dealId: dealId, deal: item })}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.statusAccent, { backgroundColor: isActuallyActive ? '#3B82F6' : isCompleted ? '#10B981' : '#EF4444' }]} />
+        
+        <View style={styles.cardImageContainer}>
+           <View style={styles.iconCircle}>
+             <Text style={styles.iconEmoji}>{isActuallyActive ? '📦' : isCompleted ? '✅' : '📜'}</Text>
+           </View>
+        </View>
+
+        <View style={styles.cardContent}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.productName} numberOfLines={1}>{productName}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: isActuallyActive ? '#EFF6FF' : isCompleted ? '#ECFDF5' : '#FEF2F2' }]}>
+              <Text style={[styles.statusText, { color: isActuallyActive ? '#1D4ED8' : isCompleted ? '#059669' : '#B91C1C' }]}>
+                {item.status.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.dealMetrics}>
+            <View style={styles.metricItem}>
+              <Text style={styles.metricLabel}>Qty:</Text>
+              <Text style={styles.metricValue}>{qty}</Text>
+            </View>
+            <View style={styles.metricDivider} />
+            <View style={styles.metricItem}>
+              <Text style={styles.metricLabel}>Val:</Text>
+              <Text style={styles.metricValue}>₹{price}</Text>
+            </View>
+          </View>
+
+          <View style={styles.cardFooter}>
+             <Text style={styles.dealNumber}>{item.dealNumber || 'NO-REF'}</Text>
+             <View style={styles.dateWrap}>
+               <Text style={styles.dateText}>{date}</Text>
+             </View>
           </View>
         </View>
-        <Text style={styles.dealDetail}>Qty: {item.qty} | Price: {item.price}</Text>
-        <Text style={styles.partiesText}>{item.parties}</Text>
-        <View style={styles.dealFooter}>
-          <Text style={styles.dateText}>{item.date}</Text>
-          <Text style={styles.viewDetailLink}>View Details →</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+      
+      {/* PREMIUM HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('Dashboard')}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Sauda Deals</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => onNavigate('CreateDeal')}>
-          <Text style={styles.addIcon}>+</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('pop')}>
+            <Text style={styles.backArrow}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Sauda Exchange</Text>
+        </View>
+        <TouchableOpacity style={styles.premiumAdd} onPress={() => onNavigate('CreateDeal')}>
+          <Text style={styles.plusIcon}>+</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputWrapper}>
-          <Text style={styles.searchIcon}>🔍</Text>
+      {/* SEARCH ENGINE */}
+      <View style={styles.searchSection}>
+        <View style={styles.searchBox}>
+          <Text style={styles.searchLens}>🔍</Text>
           <TextInput
             style={styles.searchInput}
-            placeholder="Search Deals..."
+            placeholder="Find deals, products, or IDs..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -103,27 +147,54 @@ const DealsList = ({ onNavigate }) => {
         </View>
       </View>
 
-      <View style={styles.filterContainer}>
+      {/* TAB FILTERS */}
+      <View style={styles.tabContainer}>
         {['Active', 'Expired'].map((f) => (
           <TouchableOpacity
             key={f}
-            style={[styles.filterChip, filter === f && styles.activeFilterChip]}
-            onPress={() => setFilter(f)}
+            style={[styles.tab, filter === f && styles.activeTab]}
+            onPress={() => {
+              setIsLoading(true);
+              setFilter(f);
+            }}
           >
-            <Text style={[styles.filterChipText, filter === f && styles.activeFilterChipText]}>
-              {f}
+            <Text style={[styles.tabText, filter === f && styles.activeTabText]}>
+              {f} Saudas
             </Text>
+            {filter === f && <View style={styles.tabIndicator} />}
           </TouchableOpacity>
         ))}
       </View>
 
-      <FlatList
-        data={filteredDeals}
-        renderItem={renderDealItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-      />
+      {isLoading ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#0F172A" />
+          <Text style={styles.loadingMessage}>Synchronizing trades...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredDeals}
+          renderItem={renderDealItem}
+          keyExtractor={(item) => item._id || item.id}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0F172A" />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyIconCircle}>
+                <Text style={{fontSize: 40}}>🌑</Text>
+              </View>
+              <Text style={styles.emptyTitle}>No trades found</Text>
+              <Text style={styles.emptySubtitle}>Adjust your search or start a new sauda</Text>
+              <TouchableOpacity style={styles.emptyBtn} onPress={() => onNavigate('CreateDeal')}>
+                <Text style={styles.emptyBtnText}>Create First Deal</Text>
+              </TouchableOpacity>
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -131,165 +202,285 @@ const DealsList = ({ onNavigate }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingVertical: 16,
     backgroundColor: '#FFFFFF',
   },
-  backButton: {
-    padding: 8,
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  backIcon: {
-    fontSize: 24,
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backArrow: {
+    fontSize: 20,
     color: '#0F172A',
+    fontWeight: '700',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '900',
     color: '#0F172A',
+    letterSpacing: -0.5,
   },
-  addButton: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#3170cdff',
-    borderRadius: 18,
+  premiumAdd: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 5,
   },
-  addIcon: {
-    fontSize: 22,
+  plusIcon: {
+    fontSize: 24,
     color: '#FFFFFF',
-    fontWeight: 'bold',
+    fontWeight: '300',
   },
-  searchContainer: {
-    padding: 20,
+  searchSection: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 20,
   },
-  searchInputWrapper: {
+  searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 50,
-    shadowColor: '#3170CD',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    height: 54,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  searchIcon: {
+  searchLens: {
     fontSize: 16,
-    marginRight: 10,
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
+    fontWeight: '500',
     color: '#0F172A',
   },
-  filterContainer: {
+  tabContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    marginBottom: 15,
-    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    marginBottom: 20,
   },
-  filterChip: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#E2E8F0',
+  tab: {
+    paddingVertical: 12,
+    marginRight: 24,
+    position: 'relative',
   },
-  activeFilterChip: {
-    backgroundColor: '#3170cdff',
-  },
-  filterChipText: {
+  activeTab: {},
+  tabText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#64748B',
+    fontWeight: '700',
+    color: '#94A3B8',
   },
-  activeFilterChipText: {
-    color: '#FFFFFF',
+  activeTabText: {
+    color: '#0F172A',
+  },
+  tabIndicator: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#0F172A',
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
   },
   listContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 40,
   },
   dealCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 15,
+    borderRadius: 20,
+    marginBottom: 16,
     flexDirection: 'row',
-    padding: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    padding: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowRadius: 12,
     elevation: 3,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  dealImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
+  statusAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 6,
   },
-  dealContent: {
+  cardImageContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 1,
+  },
+  iconEmoji: {
+    fontSize: 22,
+  },
+  cardContent: {
     flex: 1,
-    marginLeft: 12,
-    justifyContent: 'space-between',
+    marginLeft: 16,
   },
-  dealHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   productName: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#0F172A',
+    flex: 1,
+    marginRight: 8,
   },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
-  },
-  activeBadge: {
-    backgroundColor: '#DCFCE7',
-  },
-  expiredBadge: {
-    backgroundColor: '#FEE2E2',
+    borderRadius: 8,
   },
   statusText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#166534', // For active
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
-  dealDetail: {
-    fontSize: 13,
-    color: '#64748B',
-    marginVertical: 4,
+  dealMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingVertical: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingHorizontal: 10,
   },
-  partiesText: {
+  metricItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metricLabel: {
     fontSize: 12,
+    color: '#64748B',
     fontWeight: '500',
-    color: '#3170cdff',
   },
-  dealFooter: {
+  metricValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  metricDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 12,
+  },
+  cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 12,
   },
-  dateText: {
+  dealNumber: {
     fontSize: 11,
+    fontWeight: '700',
     color: '#94A3B8',
   },
-  viewDetailLink: {
-    fontSize: 12,
+  dateWrap: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  dateText: {
+    fontSize: 10,
+    color: '#64748B',
     fontWeight: '600',
-    color: '#3170cdff',
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingMessage: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    marginTop: 60,
+    padding: 20,
+  },
+  emptyIconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+    elevation: 2,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  emptyBtn: {
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 16,
+  },
+  emptyBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
   },
 });
 

@@ -38,7 +38,7 @@ const MyCompanies = ({ onNavigate }) => {
 
       {/* 🔷 Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => onNavigate('Profile')}>
+        <TouchableOpacity onPress={() => onNavigate('pop')}>
           <Text style={styles.back}>‹</Text>
         </TouchableOpacity>
 

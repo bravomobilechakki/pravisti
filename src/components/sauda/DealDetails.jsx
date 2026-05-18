@@ -8,25 +8,85 @@ import {
   ScrollView,
   StatusBar,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDealDetails, updateDealStatus, recreateExpiredDeal } from '../../services/api';
 
 const DealDetails = ({ onNavigate, routeData }) => {
+  const [isLoading, setIsLoading] = React.useState(!routeData?.deal);
+  const [deal, setDeal] = React.useState(routeData?.deal || null);
+  const [isUpdating, setIsUpdating] = React.useState(false);
 
-  const deal = routeData?.deal || {
-    id: '1',
-    product: 'Wheat',
-    qty: '100kg',
-    price: '₹2500',
-    dealDate: '26 Mar 2024',
-    validityDate: '30 Mar 2024',
-    party1: 'qqqqq Traders',
-    party2: 'oooo Traders',
-    broker: 'aaaaa Broker',
-    status: routeData?.status || 'Expired',
-    image: null,
+  const fetchDealDetails = async () => {
+    const id = routeData?.dealId || routeData?.deal?._id;
+    if (!id) {
+      setIsLoading(false);
+      return;
+    }
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await getDealDetails(id, token);
+      if (response && response.success) {
+        setDeal(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching deal details:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const isExpired = deal.status === 'Expired';
+  React.useEffect(() => {
+    fetchDealDetails();
+  }, []);
+
+  const handleUpdateStatus = async (newStatus) => {
+    setIsUpdating(true);
+    try {
+      const id = deal?._id || routeData?.dealId;
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await updateDealStatus(id, newStatus, token);
+      if (response && response.success) {
+        Alert.alert('Success', `Deal status updated to ${newStatus}`);
+        fetchDealDetails();
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to update status');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  if (!deal) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text>Deal not found</Text>
+        <TouchableOpacity onPress={() => onNavigate('DealsList')}>
+          <Text style={{ color: '#3B82F6', marginTop: 10 }}>Back to list</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const isExpired = deal.status === 'expired';
+  const isPending = deal.status === 'pending';
+  const isActive = deal.status === 'active';
+
+  const productName = deal.product?.name || deal.product || 'Unknown Product';
+  const qty = deal.product?.quantity || deal.qty || 'N/A';
+  const price = deal.product?.price || deal.price || 'N/A';
+  const dealDateDisplay = deal.dealDate ? new Date(deal.dealDate).toLocaleDateString() : 'N/A';
+  const validityDateDisplay = deal.validityDate ? new Date(deal.validityDate).toLocaleDateString() : 'N/A';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -46,13 +106,13 @@ const DealDetails = ({ onNavigate, routeData }) => {
         />
 
         <View style={styles.heroOverlay}>
-          <Text style={styles.heroTitle}>{deal.product}</Text>
-          <Text style={styles.heroSubtitle}>Deal #{deal.id}</Text>
+          <Text style={styles.heroTitle}>{productName}</Text>
+          <Text style={styles.heroSubtitle}>Deal #{deal.dealNumber || deal._id?.slice(-6)}</Text>
         </View>
 
         <TouchableOpacity
           style={styles.heroBackBtn}
-          onPress={() => onNavigate('DealsList')}
+          onPress={() => onNavigate('pop')}
         >
           <Text style={{ fontSize: 20 }}>‹</Text>
         </TouchableOpacity>
@@ -63,17 +123,17 @@ const DealDetails = ({ onNavigate, routeData }) => {
         {/* 📊 STATS */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{deal.price}</Text>
+            <Text style={styles.statValue}>₹{price}</Text>
             <Text style={styles.statLabel}>Total Value</Text>
           </View>
 
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{deal.qty}</Text>
+            <Text style={styles.statValue}>{qty}</Text>
             <Text style={styles.statLabel}>Quantity</Text>
           </View>
 
           <View style={styles.statCard}>
-            <Text style={styles.statValueSmall}>{deal.dealDate}</Text>
+            <Text style={styles.statValueSmall}>{dealDateDisplay}</Text>
             <Text style={styles.statLabel}>Date</Text>
           </View>
         </View>
@@ -84,19 +144,21 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
           <View style={styles.partyCard}>
             <Text style={styles.partyLabel}>Seller</Text>
-            <Text style={styles.partyName}>{deal.party1}</Text>
+            <Text style={styles.partyName}>{deal.party1?.companyId?.name || deal.party1?.name || 'My Company'}</Text>
           </View>
 
           <View style={styles.partyCard}>
             <Text style={styles.partyLabel}>Buyer</Text>
-            <Text style={styles.partyName}>{deal.party2}</Text>
+            <Text style={styles.partyName}>{deal.party2?.companyId?.name || deal.party2?.name || 'Loading...'}</Text>
           </View>
 
-          <View style={styles.brokerCard}>
-            <Text style={styles.brokerText}>
-              Broker: <Text style={{ fontWeight: '800' }}>{deal.broker}</Text>
-            </Text>
-          </View>
+          {deal.broker && (
+            <View style={styles.brokerCard}>
+              <Text style={styles.brokerText}>
+                Broker: <Text style={{ fontWeight: '800' }}>{deal.broker?.name || 'N/A'}</Text>
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* 📅 TIMELINE */}
@@ -116,13 +178,41 @@ const DealDetails = ({ onNavigate, routeData }) => {
           </View>
         </View>
 
-        {/* ⚡ ACTION BUTTON */}
+        {isPending && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#10B981' }]}
+              onPress={() => handleUpdateStatus('active')}
+              disabled={isUpdating}
+            >
+              <Text style={styles.actionBtnText}>Accept Deal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#EF4444' }]}
+              onPress={() => handleUpdateStatus('rejected')}
+              disabled={isUpdating}
+            >
+              <Text style={styles.actionBtnText}>Reject Deal</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {isActive && (
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: '#10B981' }]}
+            onPress={() => handleUpdateStatus('completed')}
+            disabled={isUpdating}
+          >
+            <Text style={styles.primaryText}>Mark as Completed</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={styles.primaryBtn}
           onPress={() =>
             isExpired
               ? onNavigate('CreateDeal', { prefill: deal })
-              : onNavigate('DealChat')
+              : onNavigate('DealChat', { dealId: deal._id })
           }
         >
           <Text style={styles.primaryText}>

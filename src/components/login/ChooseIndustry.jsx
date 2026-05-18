@@ -13,16 +13,16 @@ const ChooseIndustry = ({ onNavigate, routeData }) => {
   const [selectedIndustries, setSelectedIndustries] = useState([]);
 
   const industries = [
-    { id: '1', name: 'Agriculture & Agro', icon: '🌾' },
-    { id: '2', name: 'Textiles & Apparel', icon: '👕' },
-    { id: '3', name: 'Electronics & Tech', icon: '💻' },
-    { id: '4', name: 'Construction', icon: '🏗️' },
-    { id: '5', name: 'Manufacturing', icon: '🏭' },
-    { id: '6', name: 'FMCG', icon: '📦' },
-    { id: '7', name: 'Automotive', icon: '🚗' },
-    { id: '8', name: 'Chemicals', icon: '🧪' },
-    { id: '9', name: 'Metals & Mining', icon: '⛏️' },
-    { id: '10', name: 'Other', icon: '🔄' },
+    { id: '1', name: 'Agriculture & Agro', icon: '🌾', color: '#16a34a' },
+    { id: '2', name: 'Textiles & Apparel', icon: '👕', color: '#7c3aed' },
+    { id: '3', name: 'Electronics & Tech', icon: '💻', color: '#2563eb' },
+    { id: '4', name: 'Construction', icon: '🏗️', color: '#d97706' },
+    { id: '5', name: 'Manufacturing', icon: '🏭', color: '#475569' },
+    { id: '6', name: 'FMCG', icon: '📦', color: '#e11d48' },
+    { id: '7', name: 'Automotive', icon: '🚗', color: '#0d9488' },
+    { id: '8', name: 'Chemicals', icon: '🧪', color: '#9333ea' },
+    { id: '9', name: 'Metals & Mining', icon: '⛏️', color: '#854d0e' },
+    { id: '10', name: 'Other', icon: '🔄', color: '#0891b2' },
   ];
 
   const toggleIndustry = (industry) => {
@@ -35,8 +35,13 @@ const ChooseIndustry = ({ onNavigate, routeData }) => {
 
   const handleContinue = () => {
     if (selectedIndustries.length > 0) {
-      const industryNames = selectedIndustries.map(i => i.name).join(', ');
-      onNavigate('Dashboard', { ...routeData, industries: industryNames });
+      const primaryIndustry = selectedIndustries[0];
+      onNavigate('Dashboard', { 
+        ...routeData, 
+        industry: primaryIndustry.name,
+        industryColor: primaryIndustry.color,
+        allIndustries: selectedIndustries.map(i => i.name).join(', ')
+      });
     }
   };
 

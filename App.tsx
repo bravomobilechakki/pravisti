@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, BackHandler } from 'react-native';
+import { StyleSheet, View, BackHandler, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getUserProfile } from './src/services/api';
+
 import Login from './src/components/login/login';
+import Signup from './src/components/login/Signup';
 import Dashboard from './src/components/dashboard/dashboard';
 import AddCompany from './src/components/dashboard/addCompany';
 import CompanyDetails from './src/components/dashboard/CompanyDetails';
@@ -17,6 +21,7 @@ import Footer from './src/components/footer/footer';
 import ChooseIndustry from './src/components/login/ChooseIndustry';
 
 const LoginScreen = Login as any;
+const SignupScreen = Signup as any;
 const ChooseIndustryScreen = ChooseIndustry as any;
 const DashboardScreen = Dashboard as any;
 const AddCompanyScreen = AddCompany as any;
@@ -31,15 +36,43 @@ const MyCompaniesScreen = MyCompanies as any;
 const ContactPickerScreen = ContactPicker as any;
 
 function App() {
-  // Navigation stack to handle back button (history)
   const [navigationStack, setNavigationStack] = useState([
-    { screen: 'Login', data: {} },
+    { screen: 'Login', data: {} as any },
   ]);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  // Auto-login logic
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (token) {
+          const response = await getUserProfile(token);
+          if (response && response.success) {
+            // Restore user session to Dashboard automatically
+            setNavigationStack([{ screen: 'Dashboard', data: { user: response.data } }]);
+          } else {
+            // Token invalid or expired
+            await AsyncStorage.removeItem('userToken');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to restore session automatically', error);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+    initializeAuth();
+  }, []);
 
   const current = navigationStack[navigationStack.length - 1];
 
   const pushScreen = (screen: string, data = {}) => {
     setNavigationStack(prev => [...prev, { screen, data }]);
+  };
+
+  const replaceScreen = (screen: string, data = {}) => {
+    setNavigationStack([{ screen, data }]);
   };
 
   const popScreen = () => {
@@ -63,13 +96,71 @@ function App() {
     return () => backHandler.remove();
   }, [navigationStack]);
 
+  if (isInitializing) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#3170cdff" />
+      </View>
+    );
+  }
+
+  const refreshUserProfile = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (token) {
+        const response = await getUserProfile(token);
+        if (response && response.success) {
+          // Update the current screen's data with the new user profile
+          setNavigationStack(prev => {
+            const newStack = [...prev];
+            const lastIdx = newStack.length - 1;
+            newStack[lastIdx] = {
+              ...newStack[lastIdx],
+              data: { ...newStack[lastIdx].data, user: response.data }
+            };
+            return newStack;
+          });
+          return response.data;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to refresh profile', error);
+    }
+  };
+
   const renderScreen = () => {
     const { screen, data } = current;
-    const onNavigate = pushScreen; // Pass push as navigation function
+    const onNavigate = async (target: string, targetData = {}, options = { replace: false, refresh: false }) => {
+      if (target === 'pop') {
+        const popped = popScreen();
+        if (!popped) {
+          replaceScreen('Dashboard');
+        }
+        return;
+      }
+
+      let finalData = targetData;
+
+      // If refresh is requested, fetch latest profile before navigating
+      if (options.refresh) {
+        const freshUser = await refreshUserProfile();
+        if (freshUser) {
+          finalData = { ...targetData, user: freshUser };
+        }
+      }
+
+      if (options.replace || target === 'Dashboard' || target === 'Login') {
+        replaceScreen(target, finalData);
+      } else {
+        pushScreen(target, finalData);
+      }
+    };
 
     switch (screen) {
       case 'Login':
         return <LoginScreen onNavigate={onNavigate} routeData={data} />;
+      case 'Signup':
+        return <SignupScreen onNavigate={onNavigate} routeData={data} />;
       case 'ChooseIndustry':
         return <ChooseIndustryScreen onNavigate={onNavigate} routeData={data} />;
       case 'Dashboard':
@@ -101,7 +192,7 @@ function App() {
     }
   };
 
-  const showFooter = current.screen === 'Dashboard';
+  const showFooter = ['Dashboard', 'DealsList', 'ChatList', 'Profile'].includes(current.screen);
 
   return (
     <SafeAreaProvider>

@@ -165,7 +165,20 @@ const Profile = ({ onNavigate }) => {
         <TouchableOpacity
           style={styles.logoutButton}
           activeOpacity={0.8}
-          onPress={() => onNavigate('Login')}
+          onPress={async () => {
+            try {
+              const { logoutUser } = require('../../services/api');
+              const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+              const token = await AsyncStorage.getItem('userToken');
+              if (token) {
+                await logoutUser(token);
+                await AsyncStorage.removeItem('userToken');
+              }
+            } catch(e) {
+              console.log("Error logging out", e);
+            }
+            onNavigate('Login');
+          }}
         >
           <Text style={styles.logoutIcon}>🚪</Text>
           <Text style={styles.logoutText}>Logout</Text>

@@ -10,93 +10,97 @@ import {
   ImageBackground,
   useWindowDimensions,
   StatusBar,
+  RefreshControl,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
+import { getCompanies } from '../../services/api';
 
-import d1 from '../../images/d1.jpeg';
+// import d1 from '../../images/d1.jpeg'; // Removed for dynamic banner
 
-const Dashboard = ({ onNavigate }) => {
+const Dashboard = ({ onNavigate, routeData }) => {
   const { width } = useWindowDimensions();
-  const [hasCompany, setHasCompany] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [companies, setCompanies] = React.useState([]);
 
-  const registeredCompanies = [
-    {
-      id: 1,
-      name: 'Mahansh Traders Pvt Ltd',
-      gst: '27AABCU9603R1ZM',
-      contact: 'Rajesh Mahansh',
-      mobile: '+91 98765 43210',
-      email: 'rajesh@mahanshtraders.com',
-      address: 'Plot 42, MIDC Industrial Area, Nagpur, Maharashtra - 440016',
-      status: 'Active',
-      deals: 12,
-      icon: '🌾',
-      color: '#10B981',
-      bgColor: '#ECFDF5',
-    },
-    {
-      id: 2,
-      name: 'Sunrise Agro Exports',
-      gst: '24AADCS7856R1ZP',
-      contact: 'Vikram Patel',
-      mobile: '+91 87654 32109',
-      email: 'vikram@sunriseagro.in',
-      address: 'GIDC Estate, Phase-2, Ahmedabad, Gujarat - 380015',
-      status: 'Active',
-      deals: 8,
-      icon: '☀️',
-      color: '#F59E0B',
-      bgColor: '#FFFBEB',
-    },
-    {
-      id: 3,
-      name: 'Bharat Commodities LLP',
-      gst: '19AABCB4521K1ZX',
-      contact: 'Anil Sharma',
-      mobile: '+91 76543 21098',
-      email: 'anil@bharatcommodities.co.in',
-      address: 'Salt Lake, Sector-V, Kolkata, West Bengal - 700091',
-      status: 'Active',
-      deals: 5,
-      icon: '📦',
-      color: '#3B82F6',
-      bgColor: '#EFF6FF',
-    },
-  ];
+  const fetchDashboardData = async () => {
+    try {
+      const response = await getCompanies(1, 20);
+      if (response && response.success) {
+        setCompanies(response.data.companies || []);
+      }
+    } catch (error) {
+      console.error('Error fetching companies:', error);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-  const recentDeals = [
-    {
-      id: 1,
-      title: 'Basmati Rice (Grade A)',
-      broker: 'Mahansh Traders • 200 Tons',
-      price: '₹14.2L',
-      status: 'CONFIRMED',
-      statusColor: '#10B981',
-      bgColor: '#ECFDF5',
-      icon: '🚜',
-    },
-    {
-      id: 2,
-      title: 'Yellow Maize (Feed)',
-      broker: 'Sunrise Agro • 150 Tons',
-      price: '₹8.5L',
-      status: 'PENDING',
-      statusColor: '#F59E0B',
-      bgColor: '#FFFBEB',
-      icon: '🌽',
-    },
-    {
-      id: 3,
-      title: 'Chana Dal (Premium)',
-      broker: 'Bharat Commodities • 100 Tons',
-      price: '₹6.8L',
-      status: 'CONFIRMED',
-      statusColor: '#10B981',
-      bgColor: '#ECFDF5',
-      icon: '🫘',
-    },
-  ];
+  React.useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
-  const themeColor = '#3170cdff';
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    fetchDashboardData();
+  }, []);
+
+  const role = routeData?.role || 'Broker';
+  const industryColor = routeData?.industryColor;
+  const recentDeals = routeData?.user?.recentDeals || [];
+  const hasCompany = companies.length > 0 || isLoading;
+
+  // Dynamic Theme Selection
+  const getTheme = (userRole, customColor) => {
+    // If a custom industry color is provided, use it as the base
+    if (customColor) {
+      return {
+        primary: customColor,
+        secondary: customColor,
+        accent: `${customColor}15`, // Very light version
+        text: '#1e293b',
+        muted: customColor,
+        heroOverlay: `${customColor}80`, // Semi-transparent
+      };
+    }
+
+    if (userRole === 'Trader') {
+      return {
+        primary: '#059669', // Emerald/Green for Trader
+        secondary: '#10b981',
+        accent: '#ecfdf5',
+        text: '#064e3b',
+        muted: '#34d399',
+        heroOverlay: 'rgba(6, 78, 59, 0.4)',
+      };
+    }
+    // Default Broker Theme (Blue)
+    return {
+      primary: '#3170cdff',
+      secondary: '#0284c7',
+      accent: '#f0f9ff',
+      text: '#0c4a6e',
+      muted: '#7dd3fc',
+      heroOverlay: 'rgba(12, 74, 110, 0.4)',
+    };
+  };
+
+  const theme = getTheme(role, industryColor);
+  const industryName = routeData?.industry || 'General Business';
+
+  const getBannerImage = (name) => {
+    switch (name) {
+      case 'Agriculture & Agro': return require('../../images/agri/agri.jpeg');
+      case 'Textiles & Apparel': return require('../../images/textlies/All Bedding.jpeg');
+      case 'Electronics & Tech': return require('../../images/tech/elec.jpeg');
+      case 'Construction': return require('../../images/constructions/construction.jpeg');
+      default: return require('../../images/d1.jpeg');
+    }
+  };
+
+  const bannerImage = getBannerImage(industryName);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -105,11 +109,14 @@ const Dashboard = ({ onNavigate }) => {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          style={styles.backButtonCircle}
-          onPress={() => onNavigate('Login')}
+          style={styles.navButton}
+          onPress={() => onNavigate('Profile')}
+          activeOpacity={0.7}
         >
-          <Text style={styles.backButtonIcon}>‹</Text>
+          <Text style={{ fontSize: 18, color: theme.primary }}>🔔</Text>
+          <View style={styles.notificationDot} />
         </TouchableOpacity>
+
         <Image
           source={require('../../images/trader1.png')}
           style={[
@@ -118,17 +125,29 @@ const Dashboard = ({ onNavigate }) => {
           ]}
           resizeMode="contain"
         />
+
         <TouchableOpacity
-          style={styles.profileButton}
+          style={[styles.profileButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]}
           onPress={() => onNavigate('Profile')}
+          activeOpacity={0.75}
         >
-          <Text style={{ fontSize: 18, color: '#FFFFFF' }}>👤</Text>
+          <Text style={styles.profileText}>
+            {routeData?.user?.name ? routeData.user.name.charAt(0).toUpperCase() : 'U'}
+          </Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh} 
+            colors={[theme.primary]} 
+            tintColor={theme.primary}
+          />
+        }
       >
         {!hasCompany ? (
           <View style={styles.emptyStateContainer}>
@@ -142,7 +161,7 @@ const Dashboard = ({ onNavigate }) => {
                 before you can create Sauda deals.
               </Text>
               <TouchableOpacity
-                style={styles.emptyButton}
+                style={[styles.emptyButton, { backgroundColor: theme.primary }]}
                 onPress={() => onNavigate('AddCompany')}
                 activeOpacity={0.7}
               >
@@ -155,28 +174,44 @@ const Dashboard = ({ onNavigate }) => {
           </View>
         ) : (
           <>
-            {/* Hero Banner Section */}
-            <TouchableOpacity
-              style={styles.heroContainer}
-              activeOpacity={0.95}
-              onPress={() => onNavigate('DealsList')}
+            {/* Industry Portfolios Section */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.stylishTitleRow}>
+                <View style={[styles.sectionAccent, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.sectionTitleStylish, { color: theme.text }]}>Selected Portfolios</Text>
+              </View>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.industryBannersScroll}
+              contentContainerStyle={{ gap: 12 }}
             >
-              <ImageBackground
-                source={d1}
-                style={styles.heroImage}
-                imageStyle={{ borderRadius: 24 }}
-              >
-                <View style={styles.heroOverlay}>
-                  <View style={styles.heroBadge}>
-                    <Text style={styles.heroBadgeText}>TRENDING</Text>
-                  </View>
-                  <Text style={styles.heroTitle}>Start Your Business</Text>
-                  <Text style={styles.heroSubtitle}>
-                    Manage your business portfolio & sauda deals with Pravisti's intelligent interface.
-                  </Text>
-                </View>
-              </ImageBackground>
-            </TouchableOpacity>
+              {(routeData?.allIndustries ? routeData.allIndustries.split(', ') : [industryName]).map((name, idx) => {
+                const img = getBannerImage(name);
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.heroContainerSmall}
+                    activeOpacity={0.9}
+                  >
+                    <ImageBackground
+                      source={img}
+                      style={[styles.heroImage, { width: '100%', height: '100%' }]}
+                      imageStyle={{ borderRadius: 20 }}
+                      resizeMode="cover"
+                    >
+                      <View style={[styles.heroOverlay, { backgroundColor: 'rgba(0,0,0,0.3)' }]}>
+                        <View style={[styles.heroBadge, { backgroundColor: theme.primary }]}>
+                          <Text style={styles.heroBadgeText}>{name.toUpperCase()}</Text>
+                        </View>
+                      </View>
+                    </ImageBackground>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
             {/* Quick Actions */}
 
@@ -184,11 +219,11 @@ const Dashboard = ({ onNavigate }) => {
             {/* My Companies Section */}
             <View style={styles.sectionHeader}>
               <View style={styles.stylishTitleRow}>
-                <View style={styles.sectionAccent} />
-                <Text style={styles.sectionTitleStylish}>My Registered Companies</Text>
+                <View style={[styles.sectionAccent, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.sectionTitleStylish, { color: theme.text }]}>My Registered Companies</Text>
               </View>
               <TouchableOpacity
-                style={styles.premiumAddButton}
+                style={[styles.premiumAddButton, { backgroundColor: theme.primary, shadowColor: theme.primary }]}
                 onPress={() => onNavigate('AddCompany')}
                 activeOpacity={0.8}
               >
@@ -197,51 +232,62 @@ const Dashboard = ({ onNavigate }) => {
               </TouchableOpacity>
             </View>
 
-            {registeredCompanies.map((company, index) => (
-              <TouchableOpacity
-                key={company.id}
-                style={[
-                  styles.companyCard,
-                  index === registeredCompanies.length - 1 && {
-                    marginBottom: 0,
-                  },
-                ]}
-                onPress={() => onNavigate('CompanyDetails', { company })}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[
-                    styles.companyAvatar,
-                    { backgroundColor: company.bgColor },
-                  ]}
-                >
-                  <Text style={styles.companyAvatarText}>{company.icon}</Text>
-                </View>
-                <View style={styles.companyInfo}>
-                  <Text style={styles.companyName} numberOfLines={1}>
-                    {company.name}
-                  </Text>
-                  <Text style={styles.companyMeta}>
-                    {company.contact} · {company.deals} deals
-                  </Text>
-                </View>
-                <View style={styles.companyRight}>
-                  <View
+            {isLoading ? (
+              <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 20 }} />
+            ) : (
+              companies.map((company, index) => {
+                // Deterministic icon/color based on index or ID if not provided by backend
+                const displayIcon = company.icon || (company.type === 'trader' ? '💼' : '🏢');
+                const displayColor = company.color || (index % 2 === 0 ? '#3b82f6' : '#10b981');
+                const displayBg = company.bgColor || (index % 2 === 0 ? '#eff6ff' : '#ecfdf5');
+
+                return (
+                  <TouchableOpacity
+                    key={company._id}
                     style={[
-                      styles.statusDot,
-                      { backgroundColor: company.color },
+                      styles.companyCard,
+                      index === companies.length - 1 && {
+                        marginBottom: 0,
+                      },
                     ]}
-                  />
-                  <Text style={styles.companyArrow}>›</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+                    onPress={() => onNavigate('CompanyDetails', { company })}
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styles.companyAvatar,
+                        { backgroundColor: displayBg },
+                      ]}
+                    >
+                      <Text style={styles.companyAvatarText}>{displayIcon}</Text>
+                    </View>
+                    <View style={styles.companyInfo}>
+                      <Text style={styles.companyName} numberOfLines={1}>
+                        {company.name}
+                      </Text>
+                      <Text style={styles.companyMeta}>
+                        {company.phone || 'No contact'} · {company.industry || 'General'}
+                      </Text>
+                    </View>
+                    <View style={styles.companyRight}>
+                      <View
+                        style={[
+                          styles.statusDot,
+                          { backgroundColor: company.status === 'active' ? '#10b981' : '#f59e0b' },
+                        ]}
+                      />
+                      <Text style={styles.companyArrow}>›</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
 
             {/* Recent Sauda Activity Section */}
             <View style={styles.sectionHeader1}>
               <View style={styles.stylishTitleRow}>
-                <View style={styles.sectionAccent} />
-                <Text style={styles.sectionTitleStylish}>Recent Sauda Activity</Text>
+                <View style={[styles.sectionAccent, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.sectionTitleStylish, { color: theme.text }]}>Recent Sauda Activity</Text>
               </View>
 
             </View>
@@ -300,40 +346,62 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 14,
-    marginTop: 30,
-    backgroundColor: '#FAFBFC',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#E8ECF0',
+    paddingVertical: 12,
+    marginTop: Platform.OS === 'android' ? 35 : 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    shadowColor: '#3170CD',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  backButtonCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F5F6F8',
+  navButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E8ECF0',
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  backButtonIcon: {
-    fontSize: 24,
-    color: '#1A1D1F',
-    fontWeight: '300',
-    marginTop: -2,
-    marginLeft: -2,
+  notificationDot: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   navLogoImage: {
     width: 100,
     height: 40,
   },
   profileButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#e6e7e9ff',
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  profileText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -372,13 +440,13 @@ const styles = StyleSheet.create({
   sectionAccent: {
     width: 4,
     height: 21,
-    backgroundColor: '#0284C7',
+    backgroundColor: '#0284C7', // Fallback, but using inline
     borderRadius: 2,
   },
   sectionTitleStylish: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0C4A6E',
+    color: '#0C4A6E', // Fallback
     letterSpacing: 0.3,
   },
   addNewText: {
@@ -389,7 +457,7 @@ const styles = StyleSheet.create({
   premiumAddButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0284C7',
+    backgroundColor: '#0284C7', // Fallback, but using inline
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 20,
@@ -606,7 +674,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F0F9FF', // overridden by theme
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -628,7 +696,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyButton: {
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#0284C7', // overridden by theme
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 12,
@@ -646,7 +714,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  /* Hero Banner Styles */
+  /* Industry Banners Scroll */
+  industryBannersScroll: {
+    marginBottom: 26,
+    marginHorizontal: -20,
+    paddingLeft: 20,
+  },
+  heroContainerSmall: {
+    height: 180,
+    width: 320,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    marginRight: 12,
+  },
   heroContainer: {
     height: 180,
     width: '100%',
@@ -662,20 +745,19 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   heroOverlay: {
-    padding: 20,
-    backgroundColor: 'rgba(12, 74, 110, 0.4)', // Deep blue-tinted overlay
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 20,
     height: '100%',
     justifyContent: 'flex-end',
   },
   heroBadge: {
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#0284C7', // overridden by theme
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
     alignSelf: 'flex-start',
-    marginBottom: 10,
+    marginBottom: 0,
   },
   heroBadgeText: {
     color: '#FFFFFF',

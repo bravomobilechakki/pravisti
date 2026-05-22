@@ -32,7 +32,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [showSuccessModal]);
+  }, [showSuccessModal, onNavigate, routeData]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -123,7 +123,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
 
       const response = await createCompany(payload, token);
       if (response && response.success) {
-        onNavigate('Dashboard', routeData, { refresh: true });
+        setShowSuccessModal(true);
       } else {
         Alert.alert('Error', response.message || 'Failed to register company.');
       }
@@ -479,14 +479,14 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     height: 52,
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
     borderRadius: 12,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
     marginBottom: 16,
-    shadowColor: '#3170cdff',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -555,12 +555,12 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     height: 50,
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     width: '100%',
-    shadowColor: '#3170cdff',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,

@@ -6,24 +6,103 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 
-const Profile = ({ onNavigate }) => {
-  const user = {
-    name: 'Rahul Sharma',
-    role: 'Broker',
-    mobile: '+91 98765 43210',
-    email: 'rahul.sharma@email.com',
-    company: 'Mahansh Traders',
-    gstin: '27AABCU9603R1ZM',
-    address: '42, Trade Center, Andheri East, Mumbai - 400069',
+const Profile = ({ onNavigate, routeData }) => {
+  const [profileData, setProfileData] = React.useState(null);
+  const [isEditModalVisible, setIsEditModalVisible] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  // Edit fields state
+  const [editName, setEditName] = React.useState('');
+  const [editEmail, setEditEmail] = React.useState('');
+  const [editCompany, setEditCompany] = React.useState('');
+  const [editGstin, setEditGstin] = React.useState('');
+  const [editAddress, setEditAddress] = React.useState('');
+
+  React.useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const storedProfile = await AsyncStorage.getItem('user_completed_profile');
+        if (storedProfile) {
+          const parsed = JSON.parse(storedProfile);
+          setProfileData(parsed);
+          setEditName(parsed.name || '');
+          setEditEmail(parsed.email || '');
+          setEditCompany(parsed.company || '');
+          setEditGstin(parsed.gstin || '');
+          setEditAddress(parsed.address || '');
+          return;
+        }
+
+        const { getUserProfile } = require('../../services/api');
+        const response = await getUserProfile();
+        if (response && response.success) {
+          setProfileData(response.data);
+          setEditName(response.data.name || '');
+          setEditEmail(response.data.email || '');
+          setEditCompany(response.data.company || '');
+          setEditGstin(response.data.gstin || '');
+          setEditAddress(response.data.address || '');
+        }
+      } catch (error) {
+        console.warn('Failed to load profile:', error);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  const handleSaveProfile = async () => {
+    if (!editName.trim()) {
+      const { Alert } = require('react-native');
+      Alert.alert('Validation Error', 'Full Name is required');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const updatedProfile = {
+        ...profileData,
+        name: editName,
+        email: editEmail,
+        company: editCompany,
+        gstin: editGstin,
+        address: editAddress,
+      };
+
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.setItem('user_completed_profile', JSON.stringify(updatedProfile));
+      setProfileData(updatedProfile);
+
+      const { Alert } = require('react-native');
+      Alert.alert('Success', 'Profile details updated successfully!');
+      setIsEditModalVisible(false);
+    } catch (error) {
+      const { Alert } = require('react-native');
+      Alert.alert('Error', 'Failed to save profile data.');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const displayName = profileData?.name || routeData?.user?.name || 'Rahul Sharma';
+  const rawRole = profileData?.userType || (routeData?.user?.roles && routeData.user.roles[0]) || 'Broker';
+  const displayRole = rawRole.charAt(0).toUpperCase() + rawRole.slice(1);
+  const displayMobile = profileData?.mobileNumber || routeData?.user?.mobileNumber || '+91 98765 43210';
+  const displayEmail = profileData?.email || routeData?.user?.email || '';
+  const totalCompaniesCount = profileData?.totalCompanies !== undefined ? profileData.totalCompanies : 2;
 
   const menuItems = [
     {
       icon: '🏢',
       label: 'My Companies',
-      subtitle: 'Manage registered companies',
+      subtitle: `${totalCompaniesCount} registered companies`,
     },
     { icon: '🤝', label: 'My Deals', subtitle: 'View all sauda deals' },
     { icon: '👥', label: 'Contacts', subtitle: 'Saved parties & brokers' },
@@ -44,7 +123,11 @@ const Profile = ({ onNavigate }) => {
           <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity style={styles.editButton}>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => setIsEditModalVisible(true)}
+          activeOpacity={0.7}
+        >
           <Text style={styles.editIcon}>✏️</Text>
         </TouchableOpacity>
       </View>
@@ -53,79 +136,51 @@ const Profile = ({ onNavigate }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile Card */}
+        {/* Unified Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{user.name.charAt(0)}</Text>
+              <Text style={styles.avatarText}>{displayName.charAt(0)}</Text>
             </View>
             <View style={styles.roleBadge}>
-              <Text style={styles.roleBadgeText}>{user.role}</Text>
+              <Text style={styles.roleBadgeText}>{displayRole}</Text>
             </View>
           </View>
-          <Text style={styles.userName}>{user.name}</Text>
-          <Text style={styles.userCompany}>{user.company}</Text>
+          <Text style={styles.userName}>{displayName}</Text>
+          
+          <View style={styles.divider} />
 
-          {/* Stats Row */}
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>24</Text>
-              <Text style={styles.statLabel}>Deals</Text>
+          <View style={styles.infoList}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconContainer}>
+                <Text style={styles.infoIcon}>📱</Text>
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Mobile Number</Text>
+                <Text style={styles.infoValue}>{displayMobile}</Text>
+              </View>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>₹1.2Cr</Text>
-              <Text style={styles.statLabel}>Volume</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>4.8</Text>
-              <Text style={styles.statLabel}>Rating</Text>
-            </View>
-          </View>
-        </View>
 
-        {/* Contact Info */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Contact Information</Text>
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconContainer}>
+                <Text style={styles.infoIcon}>✉️</Text>
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Email Address</Text>
+                <Text style={[styles.infoValue, !displayEmail && styles.infoValuePlaceholder]}>
+                  {displayEmail || 'Add email address'}
+                </Text>
+              </View>
+            </View>
 
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconContainer}>
-              <Text style={styles.infoIcon}>📱</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Mobile</Text>
-              <Text style={styles.infoValue}>{user.mobile}</Text>
-            </View>
-          </View>
-
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconContainer}>
-              <Text style={styles.infoIcon}>✉️</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Email</Text>
-              <Text style={styles.infoValue}>{user.email}</Text>
-            </View>
-          </View>
-
-          <View style={styles.infoRow}>
-            <View style={styles.infoIconContainer}>
-              <Text style={styles.infoIcon}>🧾</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>GSTIN</Text>
-              <Text style={styles.infoValue}>{user.gstin}</Text>
-            </View>
-          </View>
-
-          <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-            <View style={styles.infoIconContainer}>
-              <Text style={styles.infoIcon}>📍</Text>
-            </View>
-            <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>Address</Text>
-              <Text style={styles.infoValue}>{user.address}</Text>
+            <View style={[styles.infoRow, { borderBottomWidth: 0, paddingBottom: 0 }]}>
+              <View style={styles.infoIconContainer}>
+                <Text style={styles.infoIcon}>🏢</Text>
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Linked Companies</Text>
+                <Text style={styles.infoValue}>{totalCompaniesCount} registered</Text>
+              </View>
             </View>
           </View>
         </View>
@@ -174,7 +229,7 @@ const Profile = ({ onNavigate }) => {
                 await logoutUser(token);
                 await AsyncStorage.removeItem('userToken');
               }
-            } catch(e) {
+            } catch (e) {
               console.log("Error logging out", e);
             }
             onNavigate('Login');
@@ -187,6 +242,112 @@ const Profile = ({ onNavigate }) => {
         {/* App Version */}
         <Text style={styles.versionText}>Pravisti v1.0.0</Text>
       </ScrollView>
+
+      {/* Complete Profile Modal */}
+      <Modal
+        visible={isEditModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.keyboardView}
+          >
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Complete Profile</Text>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setIsEditModalVisible(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.modalForm}
+              >
+                <View style={styles.fieldContainer}>
+                  <Text style={styles.inputLabel}>Full Name*</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editName}
+                    onChangeText={setEditName}
+                    placeholder="Enter full name"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+
+                <View style={styles.fieldContainer}>
+                  <Text style={styles.inputLabel}>Email Address</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editEmail}
+                    onChangeText={setEditEmail}
+                    placeholder="name@example.com"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.fieldContainer}>
+                  <Text style={styles.inputLabel}>Company Name</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editCompany}
+                    onChangeText={setEditCompany}
+                    placeholder="e.g. Mahansh Traders"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+
+                <View style={styles.fieldContainer}>
+                  <Text style={styles.inputLabel}>GSTIN</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editGstin}
+                    onChangeText={setEditGstin}
+                    placeholder="15-digit GSTIN"
+                    placeholderTextColor="#94A3B8"
+                    autoCapitalize="characters"
+                  />
+                </View>
+
+                <View style={styles.fieldContainer}>
+                  <Text style={styles.inputLabel}>Address</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    value={editAddress}
+                    onChangeText={setEditAddress}
+                    placeholder="Enter street, city, state and PIN"
+                    placeholderTextColor="#94A3B8"
+                    multiline={true}
+                    numberOfLines={3}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.saveButton, isLoading && { opacity: 0.7 }]}
+                  onPress={handleSaveProfile}
+                  disabled={isLoading}
+                  activeOpacity={0.8}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save Details</Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -194,7 +355,7 @@ const Profile = ({ onNavigate }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#F5F7FF',
   },
   header: {
     flexDirection: 'row',
@@ -240,7 +401,7 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#3170CD',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
@@ -254,7 +415,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -285,37 +446,14 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     marginBottom: 4,
   },
-  userCompany: {
-    fontSize: 14,
-    color: '#64748B',
-    marginBottom: 20,
-  },
-  statsRow: {
-    flexDirection: 'row',
+  divider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
     width: '100%',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 16,
+    marginVertical: 16,
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#3170cdff',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 4,
+  infoList: {
+    width: '100%',
   },
   sectionCard: {
     backgroundColor: '#FFFFFF',
@@ -347,7 +485,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#F5F7FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -456,11 +594,11 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
-    shadowColor: '#3170cdff',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
@@ -490,6 +628,116 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#3B82F6',
     fontWeight: 'bold',
+  },
+  completeProfileBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  completeProfileBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  infoValuePlaceholder: {
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  keyboardView: {
+    width: '100%',
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    maxHeight: '90%',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: 'bold',
+  },
+  modalForm: {
+    gap: 16,
+    paddingBottom: 40,
+  },
+  fieldContainer: {
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    fontSize: 14,
+    color: '#0F172A',
+    backgroundColor: '#F8FAFC',
+  },
+  textArea: {
+    height: 80,
+    paddingTop: 12,
+    textAlignVertical: 'top',
+  },
+  saveButton: {
+    height: 50,
+    backgroundColor: '#4F46E5',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 

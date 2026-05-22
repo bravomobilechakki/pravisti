@@ -166,7 +166,7 @@ const DealChat = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#F5F7FF',
   },
   keyboardView: {
     flex: 1,
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   myMessageBubble: {
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
     borderBottomRightRadius: 4,
   },
   otherMessageBubble: {
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 10,

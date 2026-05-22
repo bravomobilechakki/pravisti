@@ -22,7 +22,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const Signup = ({ onNavigate, routeData }) => {
   const { width, height } = useWindowDimensions();
   const [name, setName] = useState('');
-  const [number, setNumber] = useState(''); // dummy/custom field
   const [mobile, setMobile] = useState(routeData?.mobile || '');
   const [role, setRole] = useState('Broker'); // 'Broker' or 'Trader'
   const [isLoading, setIsLoading] = useState(false);
@@ -34,7 +33,7 @@ const Signup = ({ onNavigate, routeData }) => {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [timer, setTimer] = useState(600); // 10 minutes in seconds
 
-  const themeColor = '#3170cdff';
+  const themeColor = '#4F46E5';
 
   // Timer Effect
   useEffect(() => {
@@ -113,10 +112,36 @@ const Signup = ({ onNavigate, routeData }) => {
         setTimer(response.data?.expiresIn || 600);
         Alert.alert('Success', 'Signup initiated! OTP has been sent.');
       } else {
-        Alert.alert('Error', response.message || 'Failed to send OTP.');
+        const msg = response.message || '';
+        if (
+          msg.toLowerCase().includes('already registered') ||
+          msg.toLowerCase().includes('already exists') ||
+          msg.toLowerCase().includes('duplicate') ||
+          msg.toLowerCase().includes('registered') ||
+          msg.toLowerCase().includes('exists')
+        ) {
+          if (onNavigate) {
+            onNavigate('Login', { mobile, autoSendOtp: true });
+          }
+        } else {
+          Alert.alert('Error', response.message || 'Failed to send OTP.');
+        }
       }
     } catch (error) {
-      Alert.alert('API Error', error.message || 'An error occurred during signup.');
+      const errMsg = error.message || '';
+      if (
+        errMsg.toLowerCase().includes('already registered') ||
+        errMsg.toLowerCase().includes('already exists') ||
+        errMsg.toLowerCase().includes('duplicate') ||
+        errMsg.toLowerCase().includes('registered') ||
+        errMsg.toLowerCase().includes('exists')
+      ) {
+        if (onNavigate) {
+          onNavigate('Login', { mobile, autoSendOtp: true });
+        }
+      } else {
+        Alert.alert('API Error', error.message || 'An error occurred during signup.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -231,20 +256,6 @@ const Signup = ({ onNavigate, routeData }) => {
                   />
                 </View>
 
-                {/* Number */}
-                <Text style={styles.inputLabel}>Number</Text>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter number"
-                    placeholderTextColor="#CBD5E1"
-                    value={number}
-                    onChangeText={setNumber}
-                    keyboardType="numeric"
-                    editable={!otpSent}
-                  />
-                </View>
-
                 {/* Mobile Number */}
                 <Text style={styles.inputLabel}>Mobile Number</Text>
                 <View style={styles.inputWrapper}>
@@ -328,7 +339,7 @@ const Signup = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#F5F7FF',
   },
   topLogoContainer: {
     alignItems: 'center',
@@ -350,7 +361,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 24,
     paddingBottom: 16,
-    shadowColor: '#3170CD',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.1,
     shadowRadius: 15,
@@ -420,7 +431,7 @@ const styles = StyleSheet.create({
   },
   switchRoleLabel: {
     fontSize: 13,
-    color: '#3170cdff',
+    color: '#4F46E5',
     fontWeight: '600'
   },
   checkboxRow: {
@@ -437,14 +448,14 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderWidth: 2,
-    borderColor: '#3170cdff',
+    borderColor: '#4F46E5',
     borderRadius: 4,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
   },
   checkboxChecked: {
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
   },
   checkmark: {
     color: '#FFFFFF',

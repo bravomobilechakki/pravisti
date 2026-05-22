@@ -101,7 +101,7 @@ const ContactPicker = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#F5F7FF',
   },
   header: {
     flexDirection: 'row',
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 15,
     height: 50,
-    shadowColor: '#3170CD',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 10,
@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#3170cdff',
+    color: '#4F46E5',
   },
   contactDetails: {
     flex: 1,
@@ -228,10 +228,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#3170cdff',
+    borderColor: '#4F46E5',
   },
   addManualText: {
-    color: '#3170cdff',
+    color: '#4F46E5',
     fontWeight: '600',
   },
 });

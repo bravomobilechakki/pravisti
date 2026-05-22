@@ -194,9 +194,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   industryCardSelected: {
-    borderColor: '#3170cdff',
-    backgroundColor: '#F0F7FF',
-    shadowColor: '#3170cdff',
+    borderColor: '#4F46E5',
+    backgroundColor: '#F5F7FF',
+    shadowColor: '#4F46E5',
     shadowOpacity: 0.15,
   },
   iconContainer: {
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   industryNameSelected: {
-    color: '#3170cdff',
+    color: '#4F46E5',
     fontWeight: '700',
   },
   footer: {
@@ -237,12 +237,12 @@ const styles = StyleSheet.create({
     borderTopColor: '#E2E8F0',
   },
   continueButton: {
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
     height: 54,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#3170cdff',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,

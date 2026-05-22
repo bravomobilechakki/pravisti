@@ -78,7 +78,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
     }
     // Default Broker Theme (Blue)
     return {
-      primary: '#3170cdff',
+      primary: '#4F46E5',
       secondary: '#0284c7',
       accent: '#f0f9ff',
       text: '#0c4a6e',
@@ -141,10 +141,10 @@ const Dashboard = ({ onNavigate, routeData }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh} 
-            colors={[theme.primary]} 
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.primary]}
             tintColor={theme.primary}
           />
         }
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
-    shadowColor: '#3170CD',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.03,
     shadowRadius: 10,
@@ -536,7 +536,7 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   activeTabText: {
-    color: '#3170cdff',
+    color: '#4F46E5',
     fontWeight: '700',
   },
   activeIndicator: {
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
     bottom: -6,
     width: 24,
     height: 3,
-    backgroundColor: '#3170cdff',
+    backgroundColor: '#4F46E5',
     borderRadius: 1.5,
   },
 

@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SummaryApi from '../common';
 
 const handleResponse = async (response) => {
@@ -27,8 +27,17 @@ const postRequest = async (apiConfig, body, token = null) => {
     'Content-Type': 'application/json',
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  let activeToken = token;
+  if (!activeToken) {
+    try {
+      activeToken = await AsyncStorage.getItem('userToken');
+    } catch (e) {
+      console.warn('Failed to retrieve userToken:', e);
+    }
+  }
+
+  if (activeToken) {
+    headers.Authorization = `Bearer ${activeToken}`;
   }
 
   const response = await fetch(apiConfig.url, {
@@ -48,8 +57,17 @@ const getRequest = async (apiConfig, token = null) => {
     'Content-Type': 'application/json',
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  let activeToken = token;
+  if (!activeToken) {
+    try {
+      activeToken = await AsyncStorage.getItem('userToken');
+    } catch (e) {
+      console.warn('Failed to retrieve userToken:', e);
+    }
+  }
+
+  if (activeToken) {
+    headers.Authorization = `Bearer ${activeToken}`;
   }
 
   const response = await fetch(apiConfig.url, {
@@ -64,7 +82,7 @@ const getRequest = async (apiConfig, token = null) => {
 export const sendOtp = async (mobileNumber) => {
   try {
     console.log(`Sending OTP to: ${SummaryApi.sendOTP.url}`);
-    return await postRequest(SummaryApi.sendOTP, { 
+    return await postRequest(SummaryApi.sendOTP, {
       mobileNumber
     });
   } catch (error) {
@@ -101,9 +119,9 @@ export const loginUser = async (mobileNumber) => {
 
 export const verifyOtp = async (mobileNumber, otp) => {
   try {
-    return await postRequest(SummaryApi.verifyOTP, { 
-      mobileNumber, 
-      otp 
+    return await postRequest(SummaryApi.verifyOTP, {
+      mobileNumber,
+      otp
     });
   } catch (error) {
     console.error('Error verifying OTP:', error.message || error);
@@ -153,7 +171,7 @@ export const getCompanyDetails = async (id) => {
   try {
     return await getRequest(SummaryApi.getCompanyDetails(id));
   } catch (error) {
-    console.error('Error fetching company details:', error.message || error);
+    console.warn('Error fetching company details:', error.message || error);
     throw error;
   }
 };
@@ -247,6 +265,157 @@ export const getExpiredDeals = async (token, page = 1, limit = 10) => {
     return await getRequest(SummaryApi.getExpiredDeals(page, limit), token);
   } catch (error) {
     console.error('Error fetching expired deals:', error.message || error);
+    throw error;
+  }
+};
+
+// --- CATEGORY & SUBCATEGORY APIs ---
+
+export const createCategory = async (categoryData, token) => {
+  try {
+    return await postRequest(SummaryApi.createCategory, categoryData, token);
+  } catch (error) {
+    console.error('Error creating category:', error.message || error);
+    throw error;
+  }
+};
+
+export const getCategories = async (companyId, token, status) => {
+  try {
+    return await getRequest(SummaryApi.getCategories(companyId, status), token);
+  } catch (error) {
+    console.error('Error fetching categories:', error.message || error);
+    throw error;
+  }
+};
+
+export const getSingleCategory = async (id, companyId, token) => {
+  try {
+    return await getRequest(SummaryApi.getSingleCategory(id, companyId), token);
+  } catch (error) {
+    console.error('Error fetching single category:', error.message || error);
+    throw error;
+  }
+};
+
+export const updateCategory = async (id, companyId, categoryData, token) => {
+  try {
+    return await postRequest(SummaryApi.updateCategory(id, companyId), categoryData, token);
+  } catch (error) {
+    console.error('Error updating category:', error.message || error);
+    throw error;
+  }
+};
+
+export const deleteCategory = async (id, companyId, token) => {
+  try {
+    const config = SummaryApi.deleteCategory(id, companyId);
+    const headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+    const response = await fetch(config.url, {
+      method: config.method,
+      headers,
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error deleting category:', error.message || error);
+    throw error;
+  }
+};
+
+export const createSubCategory = async (subCategoryData, token) => {
+  try {
+    return await postRequest(SummaryApi.createSubCategory, subCategoryData, token);
+  } catch (error) {
+    console.error('Error creating subcategory:', error.message || error);
+    throw error;
+  }
+};
+
+export const getSubCategories = async (companyId, token, categoryId, status) => {
+  try {
+    return await getRequest(SummaryApi.getSubCategories(companyId, categoryId, status), token);
+  } catch (error) {
+    console.error('Error fetching subcategories:', error.message || error);
+    throw error;
+  }
+};
+
+export const updateSubCategory = async (id, companyId, subCategoryData, token) => {
+  try {
+    return await postRequest(SummaryApi.updateSubCategory(id, companyId), subCategoryData, token);
+  } catch (error) {
+    console.error('Error updating subcategory:', error.message || error);
+    throw error;
+  }
+};
+
+export const deleteSubCategory = async (id, companyId, token) => {
+  try {
+    const config = SummaryApi.deleteSubCategory(id, companyId);
+    const headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+    const response = await fetch(config.url, {
+      method: config.method,
+      headers,
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error deleting subcategory:', error.message || error);
+    throw error;
+  }
+};
+
+// --- PRODUCT APIs ---
+
+export const createProduct = async (productData, token) => {
+  try {
+    return await postRequest(SummaryApi.createProduct, productData, token);
+  } catch (error) {
+    console.error('Error creating product:', error.message || error);
+    throw error;
+  }
+};
+
+export const getProducts = async (companyId, token, categoryId, subCategoryId, status) => {
+  try {
+    return await getRequest(SummaryApi.getProducts(companyId, categoryId, subCategoryId, status), token);
+  } catch (error) {
+    console.error('Error fetching products:', error.message || error);
+    throw error;
+  }
+};
+
+export const updateProduct = async (id, companyId, productData, token) => {
+  try {
+    return await postRequest(SummaryApi.updateProduct(id, companyId), productData, token);
+  } catch (error) {
+    console.error('Error updating product:', error.message || error);
+    throw error;
+  }
+};
+
+export const deleteProduct = async (id, companyId, token) => {
+  try {
+    const config = SummaryApi.deleteProduct(id, companyId);
+    const headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+    const response = await fetch(config.url, {
+      method: config.method,
+      headers,
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error deleting product:', error.message || error);
     throw error;
   }
 };

@@ -20,10 +20,10 @@ import { loginUser, verifyOtp } from '../../services/api';
 // Fallback if AsyncStorage is still not installed properly:
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const Login = ({ onNavigate }) => {
+const Login = ({ onNavigate, routeData }) => {
   const { width, height } = useWindowDimensions();
   const [identity, setIdentity] = useState('Broker'); // Broker, Trader, Both
-  const [mobile, setMobile] = useState('');
+  const [mobile, setMobile] = useState(routeData?.mobile || '');
   const [otp, setOtp] = useState(['', '', '', '']);
   const otpRefs = useRef([]);
 
@@ -32,7 +32,35 @@ const Login = ({ onNavigate }) => {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [timer, setTimer] = useState(600); // 10 minutes in seconds
 
-  const themeColor = '#3170cdff';
+  const themeColor = '#4F46E5';
+
+  useEffect(() => {
+    if (routeData?.autoSendOtp && routeData?.mobile && routeData.mobile.length === 10) {
+      const autoTriggerSend = async () => {
+        setIsLoading(true);
+        try {
+          const response = await loginUser(routeData.mobile);
+          if (response && response.success) {
+            if (response.data && response.data.isNewUser) {
+              if (onNavigate) {
+                onNavigate('Signup', { mobile: routeData.mobile });
+              }
+              return;
+            }
+            setOtpSent(true);
+            setTimer(response.data?.expiresIn || 600);
+          } else {
+            Alert.alert('Error', response.message || 'Failed to send OTP.');
+          }
+        } catch (error) {
+          Alert.alert('API Error', error.message || 'An error occurred while sending OTP.');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      autoTriggerSend();
+    }
+  }, [routeData]);
 
   useEffect(() => {
     let interval;
@@ -276,7 +304,7 @@ const Login = ({ onNavigate }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#F5F7FF',
   },
   topLogoContainer: {
     alignItems: 'center',
@@ -298,7 +326,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 24,
     paddingBottom: 16,
-    shadowColor: '#3170CD',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.1,
     shadowRadius: 15,
@@ -423,7 +451,7 @@ const styles = StyleSheet.create({
   },
   switchRoleLabel: {
     fontSize: 13,
-    color: '#3170cdff',
+    color: '#4F46E5',
     fontWeight: '600'
   },
 });

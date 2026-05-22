@@ -19,6 +19,8 @@ import MyCompanies from './src/components/profile/MyCompanies';
 import ContactPicker from './src/components/sauda/ContactPicker';
 import Footer from './src/components/footer/footer';
 import ChooseIndustry from './src/components/login/ChooseIndustry';
+import CategoryPage from './src/components/dashboard/CategoryPage';
+import AddProductPage from './src/components/dashboard/AddProductPage';
 
 const LoginScreen = Login as any;
 const SignupScreen = Signup as any;
@@ -34,6 +36,8 @@ const ChatListScreen = ChatList as any;
 const ProfileScreen = Profile as any;
 const MyCompaniesScreen = MyCompanies as any;
 const ContactPickerScreen = ContactPicker as any;
+const CategoryPageScreen = CategoryPage as any;
+const AddProductPageScreen = AddProductPage as any;
 
 function App() {
   const [navigationStack, setNavigationStack] = useState([
@@ -75,13 +79,13 @@ function App() {
     setNavigationStack([{ screen, data }]);
   };
 
-  const popScreen = () => {
+  const popScreen = React.useCallback(() => {
     if (navigationStack.length > 1) {
       setNavigationStack(prev => prev.slice(0, -1));
       return true; // handled
     }
     return false; // let system exit app if on first screen
-  };
+  }, [navigationStack]);
 
   useEffect(() => {
     const backAction = () => {
@@ -94,12 +98,12 @@ function App() {
     );
 
     return () => backHandler.remove();
-  }, [navigationStack]);
+  }, [popScreen]);
 
   if (isInitializing) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#3170cdff" />
+        <ActivityIndicator size="large" color="#4F46E5" />
       </View>
     );
   }
@@ -129,7 +133,7 @@ function App() {
   };
 
   const renderScreen = () => {
-    const { screen, data } = current;
+    const { screen, data } = current || { screen: 'Login', data: {} as any };
     const onNavigate = async (target: string, targetData = {}, options = { replace: false, refresh: false }) => {
       if (target === 'pop') {
         const popped = popScreen();
@@ -187,18 +191,22 @@ function App() {
         return <MyCompaniesScreen onNavigate={onNavigate} routeData={data} />;
       case 'ContactPicker':
         return <ContactPickerScreen onNavigate={onNavigate} routeData={data} />;
+      case 'CategoryPage':
+        return <CategoryPageScreen onNavigate={onNavigate} routeData={data} />;
+      case 'AddProductPage':
+        return <AddProductPageScreen onNavigate={onNavigate} routeData={data} />;
       default:
         return <LoginScreen onNavigate={onNavigate} routeData={data} />;
     }
   };
 
-  const showFooter = ['Dashboard', 'DealsList', 'ChatList', 'Profile'].includes(current.screen);
+  const showFooter = current ? ['Dashboard', 'DealsList', 'ChatList', 'Profile'].includes(current.screen) : false;
 
   return (
     <SafeAreaProvider>
       <View style={styles.container}>
         {renderScreen()}
-        {showFooter && (
+        {showFooter && current && (
           <Footer onNavigate={pushScreen} activeScreen={current.screen} />
         )}
       </View>

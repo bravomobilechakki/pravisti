@@ -28,9 +28,8 @@ const SummaryApi = {
     method: "post",
   },
 
-  /* ================= USER PROFILE ================= */
   getUserProfile: {
-    url: `${backendDomain}/api/auth/me`,
+    url: `${backendDomain}/api/users/profile`,
     method: "get",
   },
 
@@ -44,7 +43,7 @@ const SummaryApi = {
     url: `${backendDomain}/api/companies?page=${page}&limit=${limit}`,
     method: "get",
   }),
-  
+
   getCompanyDetails: (id) => ({
     url: `${backendDomain}/api/companies/${id}`,
     method: "get",
@@ -100,6 +99,109 @@ const SummaryApi = {
     url: `${backendDomain}/api/deals/expired?page=${page}&limit=${limit}`,
     method: "get",
   }),
+
+  /* ================= CATEGORIES ================= */
+  createCategory: {
+    url: `${backendDomain}/api/categories`,
+    method: "post",
+  },
+
+  getCategories: (companyId, status) => {
+    let query = `?companyId=${companyId}`;
+    if (status) query += `&status=${status}`;
+    return {
+      url: `${backendDomain}/api/categories${query}`,
+      method: "get",
+    };
+  },
+
+  getSingleCategory: (id, companyId) => ({
+    url: `${backendDomain}/api/categories/${id}?companyId=${companyId}`,
+    method: "get",
+  }),
+
+  updateCategory: (id, companyId) => ({
+    url: `${backendDomain}/api/categories/${id}?companyId=${companyId}`,
+    method: "put",
+  }),
+
+  deleteCategory: (id, companyId) => ({
+    url: `${backendDomain}/api/categories/${id}?companyId=${companyId}`,
+    method: "delete",
+  }),
+
+  /* ================= SUBCATEGORIES ================= */
+  createSubCategory: {
+    url: `${backendDomain}/api/subcategories`,
+    method: "post",
+  },
+
+  getSubCategories: (companyId, categoryId, status) => {
+    let query = `?companyId=${companyId}`;
+    if (categoryId) query += `&categoryId=${categoryId}`;
+    if (status) query += `&status=${status}`;
+    return {
+      url: `${backendDomain}/api/subcategories${query}`,
+      method: "get",
+    };
+  },
+
+  updateSubCategory: (id, companyId) => {
+    let url = `${backendDomain}/api/subcategories/${id}`;
+    if (companyId) {
+      url += `?companyId=${companyId}`;
+    }
+    return {
+      url,
+      method: "put",
+    };
+  },
+
+  deleteSubCategory: (id, companyId) => {
+    let url = `${backendDomain}/api/subcategories/${id}`;
+    if (companyId) {
+      url += `?companyId=${companyId}`;
+    }
+    return {
+      url,
+      method: "delete",
+    };
+  },
+
+  /* ================= PRODUCTS ================= */
+  createProduct: {
+    url: `${backendDomain}/api/products`,
+    method: "post",
+  },
+
+  getProducts: (companyId, categoryId, subCategoryId, status) => {
+    let query = `?companyId=${companyId}`;
+    if (categoryId) query += `&categoryId=${categoryId}`;
+    if (subCategoryId) query += `&subCategoryId=${subCategoryId}`;
+    if (status) query += `&status=${status}`;
+    return {
+      url: `${backendDomain}/api/products${query}`,
+      method: "get",
+    };
+  },
+
+  updateProduct: (id, companyId) => {
+    let url = `${backendDomain}/api/products/${id}`;
+    if (companyId) url += `?companyId=${companyId}`;
+    return {
+      url,
+      method: "put",
+    };
+  },
+
+  deleteProduct: (id, companyId) => {
+    let url = `${backendDomain}/api/products/${id}`;
+    if (companyId) url += `?companyId=${companyId}`;
+    return {
+      url,
+      method: "delete",
+    };
+  },
 };
 
 export default SummaryApi;

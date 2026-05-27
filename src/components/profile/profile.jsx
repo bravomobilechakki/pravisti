@@ -25,6 +25,8 @@ const Profile = ({ onNavigate, routeData }) => {
   const [editGstin, setEditGstin] = React.useState('');
   const [editAddress, setEditAddress] = React.useState('');
 
+  const [companiesCount, setCompaniesCount] = React.useState(0);
+
   React.useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -56,6 +58,21 @@ const Profile = ({ onNavigate, routeData }) => {
       }
     };
     fetchProfile();
+  }, []);
+
+  React.useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        const { getCompanies } = require('../../services/api');
+        const response = await getCompanies(1, 100);
+        if (response && response.success && response.data?.companies) {
+          setCompaniesCount(response.data.companies.length);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch companies count:', error);
+      }
+    };
+    fetchCompanies();
   }, []);
 
   const handleSaveProfile = async () => {
@@ -96,7 +113,7 @@ const Profile = ({ onNavigate, routeData }) => {
   const displayRole = rawRole.charAt(0).toUpperCase() + rawRole.slice(1);
   const displayMobile = profileData?.mobileNumber || routeData?.user?.mobileNumber || '+91 98765 43210';
   const displayEmail = profileData?.email || routeData?.user?.email || '';
-  const totalCompaniesCount = profileData?.totalCompanies !== undefined ? profileData.totalCompanies : 2;
+  const totalCompaniesCount = companiesCount;
 
   const menuItems = [
     {

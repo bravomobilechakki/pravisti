@@ -266,7 +266,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
                         {company.name}
                       </Text>
                       <Text style={styles.companyMeta}>
-                        {company.phone || 'No contact'} · {company.industry || 'General'}
+                        {company.phone || 'No contact'} · {typeof company.industry === 'object' && company.industry !== null ? (company.industry.name || 'General') : (company.industry || 'General')}
                       </Text>
                     </View>
                     <View style={styles.companyRight}>

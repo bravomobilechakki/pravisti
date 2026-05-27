@@ -30,7 +30,7 @@ const Login = ({ onNavigate, routeData }) => {
   const [otpSent, setOtpSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
-  const [timer, setTimer] = useState(600); // 10 minutes in seconds
+  const [timer, setTimer] = useState(60); // 60 seconds
 
   const themeColor = '#4F46E5';
 
@@ -48,12 +48,38 @@ const Login = ({ onNavigate, routeData }) => {
               return;
             }
             setOtpSent(true);
-            setTimer(response.data?.expiresIn || 600);
+            setTimer(60);
           } else {
-            Alert.alert('Error', response.message || 'Failed to send OTP.');
+            const msg = response.message || '';
+            if (
+              msg.toLowerCase().includes('not found') ||
+              msg.toLowerCase().includes('not registered') ||
+              msg.toLowerCase().includes('not exist') ||
+              msg.toLowerCase().includes('new user') ||
+              msg.toLowerCase().includes('signup')
+            ) {
+              if (onNavigate) {
+                onNavigate('Signup', { mobile: routeData.mobile });
+              }
+            } else {
+              Alert.alert('Error', response.message || 'Failed to send OTP.');
+            }
           }
         } catch (error) {
-          Alert.alert('API Error', error.message || 'An error occurred while sending OTP.');
+          const errMsg = error.message || '';
+          if (
+            errMsg.toLowerCase().includes('not found') ||
+            errMsg.toLowerCase().includes('not registered') ||
+            errMsg.toLowerCase().includes('not exist') ||
+            errMsg.toLowerCase().includes('new user') ||
+            errMsg.toLowerCase().includes('signup')
+          ) {
+            if (onNavigate) {
+              onNavigate('Signup', { mobile: routeData.mobile });
+            }
+          } else {
+            Alert.alert('API Error', error.message || 'An error occurred while sending OTP.');
+          }
         } finally {
           setIsLoading(false);
         }
@@ -136,12 +162,38 @@ const Login = ({ onNavigate, routeData }) => {
           return;
         }
         setOtpSent(true);
-        setTimer(response.data?.expiresIn || 600);
+        setTimer(60);
       } else {
-        Alert.alert('Error', response.message || 'Failed to send OTP.');
+        const msg = response.message || '';
+        if (
+          msg.toLowerCase().includes('not found') ||
+          msg.toLowerCase().includes('not registered') ||
+          msg.toLowerCase().includes('not exist') ||
+          msg.toLowerCase().includes('new user') ||
+          msg.toLowerCase().includes('signup')
+        ) {
+          if (onNavigate) {
+            onNavigate('Signup', { mobile });
+          }
+        } else {
+          Alert.alert('Error', response.message || 'Failed to send OTP.');
+        }
       }
     } catch (error) {
-      Alert.alert('API Error', error.message || 'An error occurred while sending OTP.');
+      const errMsg = error.message || '';
+      if (
+        errMsg.toLowerCase().includes('not found') ||
+        errMsg.toLowerCase().includes('not registered') ||
+        errMsg.toLowerCase().includes('not exist') ||
+        errMsg.toLowerCase().includes('new user') ||
+        errMsg.toLowerCase().includes('signup')
+      ) {
+        if (onNavigate) {
+          onNavigate('Signup', { mobile });
+        }
+      } else {
+        Alert.alert('API Error', error.message || 'An error occurred while sending OTP.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -222,9 +274,9 @@ const Login = ({ onNavigate, routeData }) => {
 
 
 
-                {/* Mobile input */}
+                 {/* Mobile input */}
                 <Text style={styles.inputLabel}>Mobile Number</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, otpSent && { backgroundColor: '#F1F5F9' }]}>
                   <Text style={styles.prefixText}>+91</Text>
                   <TextInput
                     style={styles.input}
@@ -236,6 +288,17 @@ const Login = ({ onNavigate, routeData }) => {
                     maxLength={10}
                     editable={!otpSent}
                   />
+                  {otpSent && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setOtpSent(false);
+                        setOtp(['', '', '', '']);
+                      }}
+                      style={styles.editNumberBtn}
+                    >
+                      <Text style={styles.editNumberText}>✏️</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 {/* OTP */}
@@ -243,9 +306,17 @@ const Login = ({ onNavigate, routeData }) => {
                   <>
                     <View style={styles.otpHeaderRow}>
                       <Text style={styles.inputLabel}>Verification Code</Text>
-                      <TouchableOpacity onPress={() => handleSendOtp()} disabled={timer > 0}>
-                        <Text style={[styles.resendText, { color: timer > 0 ? '#999' : themeColor }]}>Resend in {formatTimer()}</Text>
-                      </TouchableOpacity>
+                      {timer > 0 ? (
+                        <Text style={[styles.resendText, { color: '#64748B' }]}>
+                          Resend OTP in {timer}s
+                        </Text>
+                      ) : (
+                        <TouchableOpacity onPress={handleSendOtp}>
+                          <Text style={[styles.resendText, { color: themeColor, fontWeight: '700' }]}>
+                            Resend OTP
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
 
                     <View style={styles.otpContainer}>
@@ -453,6 +524,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#4F46E5',
     fontWeight: '600'
+  },
+  editNumberBtn: {
+    padding: 6,
+  },
+  editNumberText: {
+    fontSize: 14,
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -35,15 +35,34 @@ const SafeImage = ({ uri, style, fallbackUri }) => {
   );
 };
 
+// Premium dynamic themes for category differentiation
+const CATEGORY_THEMES = [
+  { primary: '#4F46E5', accentBg: '#EEF2FF', badgeText: '#4F46E5' }, // Indigo Orchid
+  { primary: '#059669', accentBg: '#ECFDF5', badgeText: '#059669' }, // Forest Emerald
+  { primary: '#D97706', accentBg: '#FFFBEB', badgeText: '#B45309' }, // Amber Honey
+  { primary: '#0284C7', accentBg: '#F0F9FF', badgeText: '#0369A1' }, // Deep Sea Blue
+  { primary: '#EA580C', accentBg: '#FFF7ED', badgeText: '#C2410C' }, // Crimson Sunset
+  { primary: '#DB2777', accentBg: '#FDF2F8', badgeText: '#BE185D' }, // Rose Garden
+  { primary: '#7C3AED', accentBg: '#F5F3FF', badgeText: '#6D28D9' }, // Velvet Purple
+];
+
+const getCategoryTheme = (name = '') => {
+  const sum = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return CATEGORY_THEMES[sum % CATEGORY_THEMES.length];
+};
+
 const CategoryManager = ({ onNavigate, routeData }) => {
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategoryId, setExpandedCategoryId] = useState(null);
 
   // Modals visibility
   const [isCategoryModalVisible, setIsCategoryModalVisible] = useState(false);
   const [isSubCategoryModalVisible, setIsSubCategoryModalVisible] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [editingCategory, setEditingCategory] = useState(null); // null means creating
   const [editingSubCategory, setEditingSubCategory] = useState(null); // null means creating
 
@@ -113,7 +132,7 @@ const CategoryManager = ({ onNavigate, routeData }) => {
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -144,11 +163,11 @@ const CategoryManager = ({ onNavigate, routeData }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [routeData?.company?._id, routeData?.company?.id]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const handleCreateOrUpdateCategory = async () => {
     if (!categoryForm.name) {
@@ -174,7 +193,12 @@ const CategoryManager = ({ onNavigate, routeData }) => {
       }
 
       if (response && response.success) {
-        Alert.alert('Success', editingCategory ? 'Category updated successfully!' : 'Category created successfully!');
+        setSuccessMessage(editingCategory ? 'Category updated successfully!' : 'Category created successfully!');
+        setShowSuccessModal(true);
+        setTimeout(() => {
+          setShowSuccessModal(false);
+        }, 2500);
+
         setIsCategoryModalVisible(false);
         setCategoryForm({ name: '', description: '', image: '' });
         setEditingCategory(null);
@@ -234,8 +258,10 @@ const CategoryManager = ({ onNavigate, routeData }) => {
       let response;
       const companyId = routeData?.company?._id || routeData?.company?.id;
 
-      const payload = { ...subcategoryForm };
-      if (companyId) payload.companyId = companyId;
+      const payload = {
+        ...subcategoryForm,
+        categoryId: subcategoryForm.categoryId?._id || subcategoryForm.categoryId?.id || subcategoryForm.categoryId
+      };
       if (!payload.image) delete payload.image;
       if (!payload.description) delete payload.description;
 
@@ -246,7 +272,10 @@ const CategoryManager = ({ onNavigate, routeData }) => {
       }
 
       if (response && response.success) {
-        Alert.alert('Success', editingSubCategory ? 'SubCategory updated successfully!' : 'SubCategory created successfully!');
+        setSuccessMessage(editingSubCategory ? 'SubCategory updated successfully!' : 'SubCategory created successfully!');
+        setShowSuccessModal(true);
+        setTimeout(() => setShowSuccessModal(false), 2500);
+
         setIsSubCategoryModalVisible(false);
         setSubcategoryForm({ categoryId: '', name: '', description: '', image: '' });
         setEditingSubCategory(null);
@@ -278,7 +307,9 @@ const CategoryManager = ({ onNavigate, routeData }) => {
               const companyId = routeData?.company?._id || routeData?.company?.id;
               const response = await deleteSubCategory(subId, companyId, token);
               if (response && response.success) {
-                Alert.alert('Success', 'SubCategory deleted successfully!');
+                setSuccessMessage('SubCategory deleted successfully!');
+                setShowSuccessModal(true);
+                setTimeout(() => setShowSuccessModal(false), 2500);
                 fetchData();
               } else {
                 Alert.alert('Error', response.message || 'Unable to delete subcategory.');
@@ -303,7 +334,14 @@ const CategoryManager = ({ onNavigate, routeData }) => {
   };
 
   const getSubcategoriesForCategory = (catId) => {
+    const seen = new Set();
     return subcategories.filter(sub => {
+      const subId = sub._id || sub.id;
+      if (!subId || seen.has(String(subId))) {
+        return false;
+      }
+      seen.add(String(subId));
+
       const subCatId = sub.categoryId?._id || sub.categoryId?.id || sub.categoryId;
       return String(subCatId) === String(catId);
     });
@@ -333,13 +371,17 @@ const CategoryManager = ({ onNavigate, routeData }) => {
   const openEditSubcategory = (sub) => {
     setEditingSubCategory(sub);
     setSubcategoryForm({
-      categoryId: sub.categoryId,
+      categoryId: sub.categoryId?._id || sub.categoryId?.id || sub.categoryId || '',
       name: sub.name,
       description: sub.description || '',
       image: sub.image || '',
     });
     setIsSubCategoryModalVisible(true);
   };
+
+  const filteredCategories = categories.filter(cat =>
+    cat.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <View style={styles.container}>
@@ -361,6 +403,25 @@ const CategoryManager = ({ onNavigate, routeData }) => {
         </TouchableOpacity>
       </View>
 
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchWrapper}>
+          <Text style={styles.searchIconSymbol}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search categories..."
+            placeholderTextColor="#94A3B8"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery ? (
+            <TouchableOpacity style={styles.clearSearchBtn} onPress={() => setSearchQuery('')}>
+              <Text style={styles.clearSearchIcon}>✕</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+
       {isLoading && categories.length === 0 ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="small" color={themeColor} />
@@ -368,25 +429,33 @@ const CategoryManager = ({ onNavigate, routeData }) => {
         </View>
       ) : (
         <View style={styles.listContainer}>
-          {categories.length === 0 ? (
+          {filteredCategories.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>🏷️</Text>
-              <Text style={styles.emptyTitle}>No Categories Registered</Text>
-              <Text style={styles.emptySubtitle}>Tap the '+ Category' button above to initialize the first category.</Text>
+              <Text style={styles.emptyTitle}>
+                {searchQuery ? 'No Results Found' : 'No Categories Registered'}
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                {searchQuery ? 'Try adjusting your search keywords.' : "Tap the '+ Category' button above to initialize the first category."}
+              </Text>
             </View>
           ) : (
-            categories.map((cat) => {
+            filteredCategories.map((cat) => {
               const catId = cat._id || cat.id;
               const isExpanded = expandedCategoryId === catId;
               const catSubs = getSubcategoriesForCategory(catId);
+              const isActive = (cat.status || 'active').toLowerCase() === 'active';
+              const catTheme = getCategoryTheme(cat.name);
 
               return (
                 <View key={catId} style={styles.card}>
+                  {/* ── CATEGORY HEADER ── */}
                   <TouchableOpacity
                     style={styles.cardHeader}
                     activeOpacity={0.85}
                     onPress={() => toggleExpand(catId)}
                   >
+                    <View style={[styles.categoryAccentBar, { backgroundColor: catTheme.primary }]} />
                     <SafeImage
                       uri={cat.image}
                       fallbackUri="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d"
@@ -395,87 +464,116 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                     <View style={styles.categoryMeta}>
                       <View style={styles.titleRow}>
                         <Text style={styles.categoryName} numberOfLines={1}>{cat.name}</Text>
-                        <View style={styles.statusBadge}>
-                          <Text style={styles.statusBadgeText}>{cat.status || 'Active'}</Text>
+                        <View style={[styles.statusBadge, { backgroundColor: isActive ? '#DCFCE7' : '#FEE2E2' }]}>
+                          <Text style={[styles.statusBadgeText, { color: isActive ? '#16A34A' : '#EF4444' }]}>
+                            {isActive ? '● active' : '● inactive'}
+                          </Text>
                         </View>
                       </View>
                       <Text style={styles.categoryDesc} numberOfLines={2}>
                         {cat.description || 'No description provided.'}
                       </Text>
-                      <Text style={styles.subCount}>🏷️ {catSubs.length} Subcategories</Text>
+                      <View style={styles.subCountRow}>
+                        <View style={[styles.subCountBadgeHighlight, { backgroundColor: catTheme.primary }]}>
+                          <Text style={styles.subCountBadgeHighlightText}>
+                            📂 {catSubs.length} {catSubs.length === 1 ? 'Subcategory' : 'Subcategories'}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
-                    <Text style={styles.accordionArrow}>{isExpanded ? '▼' : '▶'}</Text>
+                    <Text style={[styles.accordionArrow, isExpanded && { color: catTheme.primary }]}>
+                      {isExpanded ? '▼' : '▶'}
+                    </Text>
                   </TouchableOpacity>
 
+                  {/* ── EXPANDED AREA ── */}
                   {isExpanded && (
-                    <View style={styles.cardExpandedArea}>
-                      {/* Actions row */}
-                      <View style={styles.actionsRow}>
-                        <TouchableOpacity
-                          style={[styles.actionBtn, { backgroundColor: '#F1F5F9' }]}
+                    <View style={[styles.cardExpandedArea, { borderTopColor: catTheme.primary + '20' }]}>
+                      {/* Category actions with dynamic styling */}
+                      <View style={styles.catActionsRow}>
+                        <TouchableOpacity 
+                          style={[styles.catActionBtn, { backgroundColor: catTheme.accentBg, borderColor: catTheme.primary + '20' }]} 
                           onPress={() => openEditCategory(cat)}
                         >
-                          <Text style={[styles.actionBtnText, { color: '#475569' }]}>✏️ Edit</Text>
+                          <Text style={styles.catActionIcon}>✏️</Text>
+                          <Text style={[styles.catActionLabel, { color: catTheme.primary }]}>Edit</Text>
                         </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.actionBtn, { backgroundColor: '#FEE2E2' }]}
+                        <TouchableOpacity 
+                          style={[styles.catActionBtn, { backgroundColor: '#FFF5F5', borderColor: '#FECACA' }]} 
                           onPress={() => handleDeleteCategory(cat)}
                         >
-                          <Text style={[styles.actionBtnText, { color: '#EF4444' }]}>🗑️ Delete</Text>
+                          <Text style={styles.catActionIcon}>🗑️</Text>
+                          <Text style={[styles.catActionLabel, { color: '#EF4444' }]}>Delete</Text>
                         </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.actionBtn, { backgroundColor: '#EFF6FF' }]}
+                        <TouchableOpacity 
+                          style={[styles.catActionBtn, { backgroundColor: catTheme.primary, borderColor: catTheme.primary }]} 
                           onPress={() => openAddSubcategory(catId)}
                         >
-                          <Text style={[styles.actionBtnText, { color: themeColor }]}>➕ Subcategory</Text>
+                          <Text style={[styles.catActionIcon, { color: '#FFFFFF' }]}>➕</Text>
+                          <Text style={[styles.catActionLabel, { color: '#FFFFFF' }]}>Add Sub</Text>
                         </TouchableOpacity>
                       </View>
 
-                      {/* Subcategories list */}
-                      <Text style={styles.sectionHeaderTitle}>Subcategories</Text>
+                      {/* Subcategories section header */}
+                      <View style={styles.subSectionHeader}>
+                        <View style={[styles.subSectionAccent, { backgroundColor: catTheme.primary }]} />
+                        <Text style={styles.sectionHeaderTitle}>Subcategories</Text>
+                        <Text style={[styles.subSectionCount, { backgroundColor: catTheme.primary }]}>{catSubs.length}</Text>
+                      </View>
+
                       {catSubs.length === 0 ? (
-                        <Text style={styles.noSubsText}>No subcategories registered yet.</Text>
+                        <View style={styles.noSubsBox}>
+                          <Text style={styles.noSubsEmoji}>📂</Text>
+                          <Text style={styles.noSubsText}>No subcategories yet</Text>
+                          <Text style={styles.noSubsHint}>Tap "Add Sub" above to create one</Text>
+                        </View>
                       ) : (
-                        catSubs.map((sub) => {
-                          const subId = sub._id || sub.id;
-                          const subImage = sub.image || sub.subCategoryImage || null;
-                          const subName = sub.name || sub.subCategoryName || '—';
-                          const subDesc = sub.description || sub.subCategoryDescription || '';
-                          
-                          return (
-                            <View key={subId} style={styles.subItemCard}>
-                              <View style={styles.subItemHeader}>
-                                <SafeImage
-                                  uri={subImage}
-                                  fallbackUri="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d"
-                                  style={styles.subItemImage}
-                                />
-                                <View style={styles.subItemInfo}>
-                                  <Text style={styles.subItemName}>{subName}</Text>
-                                  {!!subDesc && (
-                                    <Text style={styles.subItemDesc} numberOfLines={2}>{subDesc}</Text>
-                                  )}
+                        <View style={[styles.subListContainer, { borderLeftColor: catTheme.primary + '30' }]}>
+                          {catSubs.map((sub) => {
+                            const subId = sub._id || sub.id;
+                            const subImage = sub.image || sub.subCategoryImage || null;
+                            const subName = sub.name || sub.subCategoryName || '—';
+                            const subDesc = sub.description || sub.subCategoryDescription || '';
+
+                            return (
+                              <View key={subId} style={[styles.subItemCard, { borderColor: catTheme.primary + '18' }]}>
+                                {/* Parent-linked left accent for subcategory */}
+                                <View style={[styles.subAccentBar, { backgroundColor: catTheme.primary }]} />
+                                <View style={styles.subItemBody}>
+                                  <SafeImage
+                                    uri={subImage}
+                                    fallbackUri="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d"
+                                    style={styles.subItemImage}
+                                  />
+                                  <View style={styles.subItemInfo}>
+                                    <Text style={[styles.subItemLabel, { color: catTheme.primary }]}>SUBCATEGORY</Text>
+                                    <Text style={styles.subItemName}>
+                                      <Text style={{ color: catTheme.primary, fontWeight: '900' }}>↳ </Text>
+                                      {subName}
+                                    </Text>
+                                    {!!subDesc && (
+                                      <Text style={styles.subItemDesc} numberOfLines={2}>{subDesc}</Text>
+                                    )}
+                                  </View>
+                                </View>
+                                <View style={[styles.subItemActions, { borderTopColor: catTheme.primary + '15', backgroundColor: catTheme.accentBg + '40' }]}>
+                                  <TouchableOpacity
+                                    style={[styles.subActionBtn, { borderRightColor: catTheme.primary + '15' }]}
+                                    onPress={() => openEditSubcategory(sub)}
+                                  >
+                                    <Text style={[styles.subActionBtnText, { color: '#475569' }]}>✏️ Edit</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    style={[styles.subActionBtn, { borderRightWidth: 0 }]}
+                                    onPress={() => handleDeleteSubcategory(sub)}
+                                  >
+                                    <Text style={[styles.subActionBtnText, { color: '#EF4444' }]}>🗑️ Delete</Text>
+                                  </TouchableOpacity>
                                 </View>
                               </View>
-                              <View style={styles.subItemActions}>
-                                <TouchableOpacity
-                                  style={[styles.subActionBtn, { backgroundColor: '#F1F5F9' }]}
-                                  onPress={() => openEditSubcategory(sub)}
-                                >
-                                  <Text style={[styles.subActionBtnText, { color: '#475569' }]}>✏️ Edit</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  style={[styles.subActionBtn, { backgroundColor: '#FEE2E2' }]}
-                                  onPress={() => handleDeleteSubcategory(sub)}
-                                >
-                                  <Text style={[styles.subActionBtnText, { color: '#EF4444' }]}>🗑️ Delete</Text>
-                                </TouchableOpacity>
-                              </View>
-                            </View>
-                          );
-                        })
+                            );
+                          })}
+                        </View>
                       )}
                     </View>
                   )}
@@ -629,6 +727,19 @@ const CategoryManager = ({ onNavigate, routeData }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Attractive Auto-Closing Success Popup with Checkmark Icon */}
+      <Modal visible={showSuccessModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 28, padding: 32, alignItems: 'center', width: '100%', shadowColor: '#10B981', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.2, shadowRadius: 32, elevation: 12, borderWidth: 1, borderColor: '#ECFDF5' }}>
+            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 3, borderColor: '#A7F3D0', shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 4 }}>
+              <Text style={{ fontSize: 34, color: '#10B981', fontWeight: '900' }}>✓</Text>
+            </View>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: '#0F172A', marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 }}>Success!</Text>
+            <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', fontWeight: '600', lineHeight: 20 }}>{successMessage}</Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -671,6 +782,39 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12,
   },
+  searchContainer: {
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  searchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    height: 42,
+  },
+  searchIconSymbol: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: 14,
+    color: '#1E293B',
+    paddingVertical: 0,
+  },
+  clearSearchBtn: {
+    padding: 6,
+  },
+  clearSearchIcon: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: 'bold',
+  },
   listContainer: {
     marginTop: 4,
   },
@@ -710,27 +854,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
   },
+  // ── CATEGORY CARD ──────────────────────────────
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     marginBottom: 14,
+    shadowColor: '#94A3B8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 5,
     overflow: 'hidden',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    paddingVertical: 14,
+    paddingRight: 14,
+    paddingLeft: 0,
+    backgroundColor: '#FFFFFF',
+  },
+  categoryAccentBar: {
+    width: 4,
+    height: 56,
+    borderRadius: 2,
+    marginRight: 12,
   },
   categoryImage: {
     width: 54,
     height: 54,
-    borderRadius: 10,
+    borderRadius: 12,
     marginRight: 12,
     backgroundColor: '#F1F5F9',
   },
@@ -740,127 +893,247 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
+    marginBottom: 2,
   },
   categoryName: {
     color: '#0F172A',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
-    maxWidth: '75%',
+    flexShrink: 1,
   },
   statusBadge: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 20,
   },
   statusBadgeText: {
-    color: '#16A34A',
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   categoryDesc: {
     color: '#64748B',
-    fontSize: 10,
-    marginTop: 2,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 15,
+    marginBottom: 4,
   },
-  subCount: {
-    color: '#475569',
-    fontSize: 9,
-    fontWeight: '700',
+  subCountRow: {
+    flexDirection: 'row',
+  },
+  subCountBadge: {
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '600',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  subCountBadgeHighlight: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
     marginTop: 4,
+  },
+  subCountBadgeHighlightText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
   accordionArrow: {
     color: '#94A3B8',
-    fontSize: 10,
-    paddingLeft: 6,
+    fontSize: 11,
+    paddingLeft: 8,
+    fontWeight: '700',
   },
+  // ── EXPANDED SECTION ───────────────────────────
   cardExpandedArea: {
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    backgroundColor: '#FAFCFF',
+    borderTopColor: '#EEF2FF',
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    paddingTop: 4,
+    backgroundColor: '#F8F9FF',
+  },
+  catActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 10,
+  },
+  catActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 4,
+  },
+  catActionIcon: {
+    fontSize: 13,
+  },
+  catActionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   actionsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     marginVertical: 10,
     gap: 6,
   },
   actionBtn: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  // ── SUBCATEGORIES SECTION ──────────────────────
+  subSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  subSectionAccent: {
+    width: 3,
+    height: 16,
+    borderRadius: 2,
   },
   sectionHeaderTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: '#1E293B',
-    marginBottom: 8,
+    flex: 1,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
-  noSubsText: {
-    fontSize: 10,
-    color: '#94A3B8',
-    fontStyle: 'italic',
-  },
-  subItemCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 10,
+  subSectionCount: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
     overflow: 'hidden',
   },
-  subItemHeader: {
+  noSubsBox: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 4,
+  },
+  noSubsEmoji: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  noSubsText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  noSubsHint: {
+    fontSize: 11,
+    color: '#CBD5E1',
+  },
+  subListContainer: {
+    paddingLeft: 12,
+    borderLeftWidth: 1.5,
+    borderLeftColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    marginLeft: 14,
+    gap: 10,
+    marginVertical: 4,
+  },
+  // ── SUBCATEGORY CARD ───────────────────────────
+  subItemCard: {
+    backgroundColor: '#FAFAFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E8E4FF',
+    overflow: 'hidden',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  subAccentBar: {
+    width: 3,
+    backgroundColor: '#7C3AED',
+    alignSelf: 'stretch',
+    minHeight: 60,
+  },
+  subItemBody: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
   },
   subItemImage: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    marginRight: 12,
-    backgroundColor: '#F1F5F9',
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    marginRight: 10,
+    backgroundColor: '#EDE9FE',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
   },
   subItemInfo: {
     flex: 1,
   },
+  subItemLabel: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: '#7C3AED',
+    letterSpacing: 1,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
   subItemName: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 2,
+    color: '#1E1B4B',
+    marginBottom: 1,
   },
   subItemDesc: {
-    fontSize: 11,
-    color: '#64748B',
-    lineHeight: 16,
+    fontSize: 10,
+    color: '#6D6D9B',
+    lineHeight: 14,
   },
   subItemActions: {
     flexDirection: 'row',
-    padding: 8,
-    gap: 8,
-    backgroundColor: '#F8FAFC',
+    width: '100%',
+    borderTopWidth: 1,
+    borderTopColor: '#EDE9FE',
+    backgroundColor: '#F5F3FF',
   },
   subActionBtn: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderRadius: 6,
-    gap: 4,
+    borderRightWidth: 1,
+    borderRightColor: '#EDE9FE',
+    borderWidth: 0,
   },
   subActionBtnText: {
     fontSize: 11,

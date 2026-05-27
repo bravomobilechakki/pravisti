@@ -31,9 +31,24 @@ const Signup = ({ onNavigate, routeData }) => {
   const [otp, setOtp] = useState(['', '', '', '']);
   const otpRefs = useRef([]);
   const [focusedIndex, setFocusedIndex] = useState(-1);
-  const [timer, setTimer] = useState(600); // 10 minutes in seconds
+  const [timer, setTimer] = useState(60); // 60 seconds
 
   const themeColor = '#4F46E5';
+
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    const checkTokenAndRedirect = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (token && onNavigate) {
+          onNavigate('Login');
+        }
+      } catch (err) {
+        console.warn('Check token error', err);
+      }
+    };
+    checkTokenAndRedirect();
+  }, [onNavigate]);
 
   // Timer Effect
   useEffect(() => {
@@ -109,7 +124,7 @@ const Signup = ({ onNavigate, routeData }) => {
       const response = await signUpUser(name, role, mobile);
       if (response && response.success) {
         setOtpSent(true);
-        setTimer(response.data?.expiresIn || 600);
+        setTimer(60);
         Alert.alert('Success', 'Signup initiated! OTP has been sent.');
       } else {
         const msg = response.message || '';
@@ -118,7 +133,8 @@ const Signup = ({ onNavigate, routeData }) => {
           msg.toLowerCase().includes('already exists') ||
           msg.toLowerCase().includes('duplicate') ||
           msg.toLowerCase().includes('registered') ||
-          msg.toLowerCase().includes('exists')
+          msg.toLowerCase().includes('exists') ||
+          msg.toLowerCase().includes('already')
         ) {
           if (onNavigate) {
             onNavigate('Login', { mobile, autoSendOtp: true });
@@ -134,7 +150,8 @@ const Signup = ({ onNavigate, routeData }) => {
         errMsg.toLowerCase().includes('already exists') ||
         errMsg.toLowerCase().includes('duplicate') ||
         errMsg.toLowerCase().includes('registered') ||
-        errMsg.toLowerCase().includes('exists')
+        errMsg.toLowerCase().includes('exists') ||
+        errMsg.toLowerCase().includes('already')
       ) {
         if (onNavigate) {
           onNavigate('Login', { mobile, autoSendOtp: true });
@@ -256,9 +273,9 @@ const Signup = ({ onNavigate, routeData }) => {
                   />
                 </View>
 
-                {/* Mobile Number */}
+                 {/* Mobile Number */}
                 <Text style={styles.inputLabel}>Mobile Number</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, otpSent && { backgroundColor: '#F1F5F9' }]}>
                   <Text style={styles.prefixText}>+91</Text>
                   <TextInput
                     style={styles.input}
@@ -270,6 +287,17 @@ const Signup = ({ onNavigate, routeData }) => {
                     maxLength={10}
                     editable={!otpSent}
                   />
+                  {otpSent && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setOtpSent(false);
+                        setOtp(['', '', '', '']);
+                      }}
+                      style={styles.editNumberBtn}
+                    >
+                      <Text style={styles.editNumberText}>✏️</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 {/* OTP Section */}
@@ -277,11 +305,17 @@ const Signup = ({ onNavigate, routeData }) => {
                   <>
                     <View style={styles.otpHeaderRow}>
                       <Text style={styles.inputLabel}>Verification Code</Text>
-                      <TouchableOpacity onPress={handleSignup} disabled={timer > 0}>
-                        <Text style={[styles.resendText, { color: timer > 0 ? '#999' : themeColor }]}>
-                          Resend in {formatTimer()}
+                      {timer > 0 ? (
+                        <Text style={[styles.resendText, { color: '#64748B' }]}>
+                          Resend OTP in {timer}s
                         </Text>
-                      </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity onPress={handleSignup}>
+                          <Text style={[styles.resendText, { color: themeColor, fontWeight: '700' }]}>
+                            Resend OTP
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
 
                     <View style={styles.otpContainer}>
@@ -433,6 +467,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#4F46E5',
     fontWeight: '600'
+  },
+  editNumberBtn: {
+    padding: 6,
+  },
+  editNumberText: {
+    fontSize: 14,
   },
   checkboxRow: {
     flexDirection: 'row',

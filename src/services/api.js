@@ -147,6 +147,17 @@ export const logoutUser = async (token) => {
   }
 };
 
+// --- INDUSTRY APIs ---
+
+export const getIndustries = async () => {
+  try {
+    return await getRequest(SummaryApi.getIndustries);
+  } catch (error) {
+    console.error('Error fetching industries:', error.message || error);
+    throw error;
+  }
+};
+
 // --- COMPANY APIs ---
 
 export const createCompany = async (companyData, token) => {
@@ -247,6 +258,24 @@ export const updateDealStatus = async (id, status, token) => {
     return await postRequest(SummaryApi.updateDealStatus(id), { status }, token);
   } catch (error) {
     console.error('Error updating deal status:', error.message || error);
+    throw error;
+  }
+};
+
+export const acceptDeal = async (id, token) => {
+  try {
+    return await postRequest(SummaryApi.acceptDeal(id), {}, token);
+  } catch (error) {
+    console.error('Error accepting deal:', error.message || error);
+    throw error;
+  }
+};
+
+export const rejectDeal = async (id, reason, token) => {
+  try {
+    return await postRequest(SummaryApi.rejectDeal(id), { reason }, token);
+  } catch (error) {
+    console.error('Error rejecting deal:', error.message || error);
     throw error;
   }
 };
@@ -416,6 +445,64 @@ export const deleteProduct = async (id, companyId, token) => {
     return await handleResponse(response);
   } catch (error) {
     console.error('Error deleting product:', error.message || error);
+    throw error;
+  }
+};
+
+// --- UNIT APIs ---
+
+export const getUnits = async (status, token) => {
+  try {
+    return await getRequest(SummaryApi.getUnits(status), token);
+  } catch (error) {
+    console.error('Error fetching units:', error.message || error);
+    throw error;
+  }
+};
+
+export const getUnitDetails = async (id, token) => {
+  try {
+    return await getRequest(SummaryApi.getUnitDetails(id), token);
+  } catch (error) {
+    console.error('Error fetching unit details:', error.message || error);
+    throw error;
+  }
+};
+
+// --- CONTACT & INVITATION APIs ---
+
+export const filterContacts = async (contacts, token) => {
+  try {
+    return await postRequest(SummaryApi.filterContacts, { contacts }, token);
+  } catch (error) {
+    console.error('Error filtering contacts:', error.message || error);
+    throw error;
+  }
+};
+
+export const getCompaniesByNumber = async (mobileNumber, token) => {
+  try {
+    return await getRequest(SummaryApi.getCompaniesByNumber(mobileNumber), token);
+  } catch (error) {
+    console.error('Error fetching companies by number:', error.message || error);
+    throw error;
+  }
+};
+
+export const inviteDeal = async (inviteData, token) => {
+  try {
+    return await postRequest(SummaryApi.inviteDeal, inviteData, token);
+  } catch (error) {
+    console.error('Error inviting deal:', error.message || error);
+    throw error;
+  }
+};
+
+export const getPendingInvitations = async (token) => {
+  try {
+    return await getRequest(SummaryApi.getPendingInvitations, token);
+  } catch (error) {
+    console.error('Error fetching pending invitations:', error.message || error);
     throw error;
   }
 };

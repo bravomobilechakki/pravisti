@@ -20,13 +20,26 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = React.useState(true);
   const [company, setCompany] = React.useState(routeData?.company || null);
   const [isEditModalVisible, setIsEditModalVisible] = React.useState(false);
+
+  // Track both the readable name and the raw backend ObjectId for industry
   const [editData, setEditData] = React.useState({
     name: '',
     email: '',
     phone: '',
+    type: '',
+    registrationNumber: '',
+    industry: '',
+    industryId: '',
+    street: '',
+    city: '',
+    state: '',
+    postalCode: '',
     website: '',
+    country: 'India',
     description: '',
   });
+
+  const [editErrors, setEditErrors] = React.useState({ name: '', phone: '', registrationNumber: '' });
 
   const themeColor = '#4F46E5';
 
@@ -40,10 +53,23 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       const response = await getCompanyDetails(id);
       if (response && response.success) {
         setCompany(response.data);
+
+        const isIndustryObj = typeof response.data.industry === 'object' && response.data.industry !== null;
+
         setEditData({
           name: response.data.name,
-          email: response.data.email,
-          phone: response.data.phone,
+          email: response.data.email || '',
+          phone: response.data.phone || '',
+          type: response.data.type || '',
+          registrationNumber: response.data.registrationNumber || response.data.gstin || '',
+          industry: isIndustryObj ? (response.data.industry.name || '') : (response.data.industry || ''),
+          // Safely preserve the MongoDB ObjectId to pass back during update
+          industryId: isIndustryObj ? (response.data.industry._id || response.data.industry.id || '') : '',
+          street: response.data.address?.street || '',
+          city: response.data.address?.city || '',
+          state: response.data.address?.state || '',
+          postalCode: response.data.address?.postalCode || '',
+          country: response.data.address?.country || 'India',
           website: response.data.website || '',
           description: response.data.description || '',
         });
@@ -65,14 +91,34 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   }, [fetchDetails]);
 
   const handleUpdate = async () => {
-    if (!editData.name || !editData.phone) {
-      Alert.alert('Error', 'Company Name and Phone are required.');
+    if (!editData.name || !editData.phone || !editData.registrationNumber) {
+      Alert.alert('Error', 'Company Name, Phone, and Registration / GSTIN are required.');
       return;
     }
     const id = company?._id || company?.id;
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const response = await updateCompany(id, editData, token);
+
+      const payload = {
+        name: editData.name,
+        email: editData.email,
+        phone: editData.phone,
+        type: editData.type,
+        registrationNumber: editData.registrationNumber,
+        // Send back the raw ObjectId. Fall back to string if it was never an object.
+        industry: editData.industryId || editData.industry,
+        address: {
+          street: editData.street,
+          city: editData.city,
+          state: editData.state,
+          postalCode: editData.postalCode,
+          country: editData.country,
+        },
+        website: editData.website,
+        description: editData.description,
+      };
+
+      const response = await updateCompany(id, payload, token);
       if (response && response.success) {
         Alert.alert('Success', 'Company profile updated successfully!');
         setIsEditModalVisible(false);
@@ -112,7 +158,6 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
   const deals = React.useMemo(() => company?.recentDeals || [], [company]);
 
-  // Extract unique products dynamically from recent deals or fall back to high-end mock categories
   const products = React.useMemo(() => {
     const productMap = new Map();
     deals.forEach(deal => {
@@ -127,7 +172,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         } else {
           productMap.set(pName, {
             name: pName,
-            category: deal.category || company?.industry || 'Commodities',
+            category: deal.category || (typeof company?.industry === 'object' && company?.industry !== null ? company.industry.name : company?.industry) || 'Commodities',
             price: priceVal,
             volume: qty,
             dealCount: 1,
@@ -179,7 +224,10 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         <Text style={styles.headerTitle}>Company Ledger</Text>
         <TouchableOpacity
           style={styles.editButton}
-          onPress={() => setIsEditModalVisible(true)}
+          onPress={() => {
+            setEditErrors({ name: '', phone: '', registrationNumber: '' });
+            setIsEditModalVisible(true);
+          }}
           activeOpacity={0.7}
         >
           <Text style={styles.editIcon}>✎</Text>
@@ -190,7 +238,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Dynamic Premium Hero Card (Company Name Card on Top) */}
+        {/* Dynamic Premium Hero Card */}
         <View style={styles.softHeroContainer}>
           <View style={styles.softHeroHeader}>
             <View style={styles.softAvatar}>
@@ -212,9 +260,9 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                     { color: company.isVerified ? '#047857' : '#B45309' }
                   ]}>{company.status || 'Pending'}</Text>
                 </View>
-                {company.gstin && (
+                {(company.registrationNumber || company.gstin) && (
                   <View style={styles.gstinBadge}>
-                    <Text style={styles.gstinBadgeText}>GST: {company.gstin}</Text>
+                    <Text style={styles.gstinBadgeText}>GST/Reg: {company.registrationNumber || company.gstin}</Text>
                   </View>
                 )}
               </View>
@@ -242,33 +290,42 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           </View>
         </View>
 
-        {/* Elegant Grid/Flex Tab Buttons (My Sauda, Categories, Products) */}
+        {/* Elegant Grid/Flex Tab Buttons */}
         <View style={styles.tabButtonsContainer}>
           <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'my_sauda' && styles.activeTabButton]}
-            onPress={() => setActiveTab('my_sauda')}
+            style={[styles.tabButton, styles.tabButtonSauda]}
+            onPress={() => onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name })}
             activeOpacity={0.85}
           >
-            <Text style={styles.tabButtonEmoji}>🤝</Text>
-            <Text style={[styles.tabButtonText, activeTab === 'my_sauda' && styles.activeTabButtonText]}>My Sauda</Text>
+            <Text style={styles.navigationArrow}>↗</Text>
+            <View style={styles.tabButtonIconCircleIndigo}>
+              <Text style={styles.tabButtonEmoji}>🤝</Text>
+            </View>
+            <Text style={styles.tabButtonTextIndigo}>My Sauda</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.tabButton}
+            style={[styles.tabButton, styles.tabButtonCategories]}
             onPress={() => onNavigate('CategoryPage', { company })}
             activeOpacity={0.85}
           >
-            <Text style={styles.tabButtonEmoji}>🏷️</Text>
-            <Text style={styles.tabButtonText}>Categories</Text>
+            <Text style={styles.navigationArrow}>↗</Text>
+            <View style={styles.tabButtonIconCircleViolet}>
+              <Text style={styles.tabButtonEmoji}>🏷️</Text>
+            </View>
+            <Text style={styles.tabButtonTextViolet}>Categories</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.tabButton}
+            style={[styles.tabButton, styles.tabButtonProducts]}
             onPress={() => onNavigate('AddProductPage', { company })}
             activeOpacity={0.85}
           >
-            <Text style={styles.tabButtonEmoji}>📦</Text>
-            <Text style={styles.tabButtonText}>Products</Text>
+            <Text style={styles.navigationArrow}>↗</Text>
+            <View style={styles.tabButtonIconCircleEmerald}>
+              <Text style={styles.tabButtonEmoji}>📦</Text>
+            </View>
+            <Text style={styles.tabButtonTextEmerald}>Products</Text>
           </TouchableOpacity>
         </View>
 
@@ -276,7 +333,6 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         <View style={styles.tabPanelContainer}>
           {activeTab === 'my_sauda' ? (
             <View style={styles.tabContentContainer}>
-              {/* Header with quick creation action */}
               <View style={styles.tabSectionHeader}>
                 <Text style={styles.tabSectionTitle}>Transaction Ledgers</Text>
                 <TouchableOpacity
@@ -303,9 +359,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                       <View
                         style={[
                           styles.dealTypeBadge,
-                          {
-                            backgroundColor: deal.type === 'Buy' ? '#E6F4EA' : '#FCE8E6',
-                          },
+                          { backgroundColor: deal.type === 'Buy' ? '#E6F4EA' : '#FCE8E6' },
                         ]}
                       >
                         <Text
@@ -383,11 +437,51 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           )}
         </View>
 
-        {/* Permanent Company Details & Info Card (Always Visible below Selected Tab Panel) */}
+        {/* Permanent Company Details & Info Card */}
         <View style={[styles.tabContentContainer, { marginTop: 24 }]}>
           <Text style={[styles.sectionTitle, { marginBottom: 14 }]}>🏢 Company Details & Ledger Info</Text>
 
           <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconBox}>
+                <Text style={styles.infoIcon}>📄</Text>
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Registration / GSTIN</Text>
+                <Text style={styles.infoValue}>{company.registrationNumber || company.gstin || 'N/A'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconBox}>
+                <Text style={styles.infoIcon}>🏢</Text>
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Company Type</Text>
+                <Text style={[styles.infoValue, { textTransform: 'capitalize' }]}>{company.type || 'N/A'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconBox}>
+                <Text style={styles.infoIcon}>🏷️</Text>
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Industry Sector</Text>
+                <Text style={styles.infoValue}>
+                  {typeof company.industry === 'object' && company.industry !== null
+                    ? (company.industry.name || 'N/A')
+                    : (company.industry || 'N/A')}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
                 <Text style={styles.infoIcon}>📞</Text>
@@ -420,46 +514,55 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 <Text style={styles.infoLabel}>Address</Text>
                 <Text style={styles.infoValue}>
                   {company.address
-                    ? `${company.address.street || ''}, ${company.address.city || ''}, ${company.address.state || ''}, ${company.address.country || 'India'}`
+                    ? `${company.address.street || ''}, ${company.address.city || ''}, ${company.address.state || ''}${company.address.postalCode ? ' - ' + company.address.postalCode : ''}, ${company.address.country || 'India'}`
                     : 'N/A'}
                 </Text>
               </View>
             </View>
 
-            <View style={styles.divider} />
+            {company.website && company.website !== 'https://www.pravisti.example.com' && company.website !== 'N/A' && company.website.trim() !== '' && (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.infoRow}>
+                  <View style={styles.infoIconBox}>
+                    <Text style={styles.infoIcon}>🌐</Text>
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Website</Text>
+                    <Text style={[styles.infoValue, { color: themeColor, textDecorationLine: 'underline' }]}>
+                      {company.website}
+                    </Text>
+                  </View>
+                </View>
+              </>
+            )}
 
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconBox}>
-                <Text style={styles.infoIcon}>🌐</Text>
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Website</Text>
-                <Text style={[styles.infoValue, { color: themeColor, textDecorationLine: 'underline' }]}>
-                  {company.website || 'N/A'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconBox}>
-                <Text style={styles.infoIcon}>📝</Text>
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Business Description</Text>
-                <Text style={[styles.infoValue, { fontSize: 13, lineHeight: 18, fontWeight: '500' }]}>
-                  {company.description || 'N/A'}
-                </Text>
-              </View>
-            </View>
+            {company.description && company.description !== 'N/A' && company.description.trim() !== '' && (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.infoRow}>
+                  <View style={styles.infoIconBox}>
+                    <Text style={styles.infoIcon}>📝</Text>
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Business Description</Text>
+                    <Text style={[styles.infoValue, { fontSize: 13, lineHeight: 18, fontWeight: '500' }]}>
+                      {company.description}
+                    </Text>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
 
           {/* Profile Modification Actions */}
           <TouchableOpacity
             style={[styles.secondaryAction, { borderColor: themeColor }]}
             activeOpacity={0.8}
-            onPress={() => setIsEditModalVisible(true)}
+            onPress={() => {
+              setEditErrors({ name: '', phone: '', registrationNumber: '' });
+              setIsEditModalVisible(true);
+            }}
           >
             <Text style={[styles.secondaryActionIcon, { color: themeColor }]}>📝</Text>
             <Text style={[styles.secondaryActionText, { color: themeColor }]}>Update Company Profile</Text>
@@ -485,7 +588,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
 
-      {/* Modern Profile Edit Modal */}
+      {/* Profile Edit Modal */}
       <Modal
         visible={isEditModalVisible}
         transparent
@@ -498,12 +601,45 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
               <Text style={styles.modalLabel}>Company Name*</Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, editErrors.name && styles.inputErrorBorder]}
                 value={editData.name}
-                onChangeText={(text) => setEditData({ ...editData, name: text })}
+                onChangeText={(text) => {
+                  setEditData({ ...editData, name: text });
+                  if (editErrors.name) setEditErrors({ ...editErrors, name: '' });
+                }}
                 placeholder="Enter company name"
                 placeholderTextColor="#94A3B8"
               />
+              {editErrors.name ? <Text style={styles.modalErrorText}>{editErrors.name}</Text> : null}
+
+              <Text style={styles.modalLabel}>Registration / GSTIN*</Text>
+              <TextInput
+                style={[styles.modalInput, editErrors.registrationNumber && styles.inputErrorBorder]}
+                value={editData.registrationNumber}
+                onChangeText={(text) => {
+                  setEditData({ ...editData, registrationNumber: text });
+                  if (editErrors.registrationNumber) setEditErrors({ ...editErrors, registrationNumber: '' });
+                }}
+                placeholder="REG123456 / GSTIN"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="characters"
+              />
+              {editErrors.registrationNumber ? <Text style={styles.modalErrorText}>{editErrors.registrationNumber}</Text> : null}
+
+              <Text style={styles.modalLabel}>Phone Number*</Text>
+              <TextInput
+                style={[styles.modalInput, editErrors.phone && styles.inputErrorBorder]}
+                value={editData.phone}
+                onChangeText={(text) => {
+                  setEditData({ ...editData, phone: text });
+                  if (editErrors.phone) setEditErrors({ ...editErrors, phone: '' });
+                }}
+                placeholder="10-digit number"
+                placeholderTextColor="#94A3B8"
+                keyboardType="phone-pad"
+                maxLength={10}
+              />
+              {editErrors.phone ? <Text style={styles.modalErrorText}>{editErrors.phone}</Text> : null}
 
               <Text style={styles.modalLabel}>Email Address</Text>
               <TextInput
@@ -516,15 +652,71 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 autoCapitalize="none"
               />
 
-              <Text style={styles.modalLabel}>Phone Number*</Text>
+              <Text style={styles.modalLabel}>Company Type</Text>
               <TextInput
                 style={styles.modalInput}
-                value={editData.phone}
-                onChangeText={(text) => setEditData({ ...editData, phone: text })}
-                placeholder="10-digit number"
+                value={editData.type}
+                onChangeText={(text) => setEditData({ ...editData, type: text })}
+                placeholder="trader, manufacturer, etc."
                 placeholderTextColor="#94A3B8"
-                keyboardType="phone-pad"
-                maxLength={10}
+              />
+
+              {/* Read-only display for Industry Sector to avoid payload mismatches. 
+                 If you wish to change this field locally, implement a dropdown picker populated with Industry ObjectIds.
+              */}
+              <Text style={styles.modalLabel}>Industry Sector (Managed via Admin Console)</Text>
+              <TextInput
+                style={[styles.modalInput, { backgroundColor: '#E2E8F0', color: '#64748B' }]}
+                value={editData.industry}
+                editable={false}
+                placeholder="Industry sector"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={styles.modalLabel}>Street / Area</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editData.street}
+                onChangeText={(text) => setEditData({ ...editData, street: text })}
+                placeholder="123 Main St"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={styles.modalLabel}>City</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editData.city}
+                onChangeText={(text) => setEditData({ ...editData, city: text })}
+                placeholder="City"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={styles.modalLabel}>State</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editData.state}
+                onChangeText={(text) => setEditData({ ...editData, state: text })}
+                placeholder="State"
+                placeholderTextColor="#94A3B8"
+              />
+
+              <Text style={styles.modalLabel}>Postal / ZIP Code</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editData.postalCode}
+                onChangeText={(text) => setEditData({ ...editData, postalCode: text })}
+                placeholder="Postal Code"
+                placeholderTextColor="#94A3B8"
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.modalLabel}>Country</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editData.country}
+                onChangeText={(text) => setEditData({ ...editData, country: text })}
+                placeholder="India"
+                placeholderTextColor="#94A3B8"
               />
 
               <Text style={styles.modalLabel}>Website URL</Text>
@@ -575,7 +767,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC', // Slate background for beautiful high contrast
+    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
@@ -615,7 +807,7 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
   softHeroContainer: {
-    backgroundColor: '#1E1B4B', // Premium Midnight Indigo
+    backgroundColor: '#1E1B4B',
     borderRadius: 24,
     padding: 20,
     marginBottom: 20,
@@ -658,7 +850,7 @@ const styles = StyleSheet.create({
   softHeroName: {
     fontSize: 19,
     fontWeight: '800',
-    color: '#FFFFFF', // Premium White Text
+    color: '#FFFFFF',
     marginBottom: 6,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
@@ -752,79 +944,92 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 20,
+    paddingHorizontal: 2,
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 12,
-    marginHorizontal: 4,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginHorizontal: 3,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    position: 'relative',
+    overflow: 'hidden',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.02,
+    shadowOpacity: 0.04,
     shadowRadius: 8,
     elevation: 2,
   },
-  activeTabButton: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
-    shadowColor: '#4F46E5',
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
+  tabButtonSauda: {
+    backgroundColor: '#F5F7FF',
+    borderColor: '#C7D2FE',
+  },
+  tabButtonCategories: {
+    backgroundColor: '#FAF5FF',
+    borderColor: '#E9D5FF',
+  },
+  tabButtonProducts: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#A7F3D0',
+  },
+  navigationArrow: {
+    position: 'absolute',
+    top: 4,
+    right: 6,
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#94A3B8',
+  },
+  tabButtonIconCircleIndigo: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E0E7FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  tabButtonIconCircleViolet: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F3E8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  tabButtonIconCircleEmerald: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#D1FAE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   tabButtonEmoji: {
-    fontSize: 20,
-    marginBottom: 4,
+    fontSize: 14,
   },
-  tabButtonText: {
-    fontSize: 12,
+  tabButtonTextIndigo: {
+    fontSize: 10,
     fontWeight: '800',
-    color: '#475569',
+    color: '#4338CA',
   },
-  activeTabButtonText: {
-    color: '#FFFFFF',
+  tabButtonTextViolet: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#6D28D9',
+  },
+  tabButtonTextEmerald: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#047857',
   },
   tabPanelContainer: {
     flex: 1,
-  },
-  fullConsoleBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  bannerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  bannerEmoji: {
-    fontSize: 24,
-  },
-  bannerTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1E40AF',
-  },
-  bannerSubtitle: {
-    fontSize: 11,
-    color: '#3B82F6',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  bannerArrow: {
-    fontSize: 18,
-    color: '#1E40AF',
-    fontWeight: 'bold',
   },
   tabContentContainer: {
     flex: 1,
@@ -1191,6 +1396,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#EF4444',
     fontWeight: '600',
+  },
+  modalErrorText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  inputErrorBorder: {
+    borderColor: '#EF4444',
   },
   retryButton: {
     marginTop: 12,

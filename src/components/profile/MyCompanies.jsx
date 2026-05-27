@@ -7,30 +7,35 @@ import {
   SafeAreaView,
   ScrollView,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
+import { getCompanies } from '../../services/api';
 
 const MyCompanies = ({ onNavigate }) => {
+  const [companies, setCompanies] = React.useState([]);
+  const [isLoading, setIsLoading] = React.useState(true);
 
-  const companies = [
-    {
-      id: 1,
-      name: 'Mahansh Traders Pvt Ltd',
-      gst: '27AABCU9603R1ZM',
-      contact: 'Rajesh Mahansh',
-      deals: 12,
-      icon: '🌾',
-      color: '#22C55E',
-    },
-    {
-      id: 2,
-      name: 'Sunrise Agro Exports',
-      gst: '24AADCS7856R1ZP',
-      contact: 'Vikram Patel',
-      deals: 8,
-      icon: '☀️',
-      color: '#F59E0B',
-    },
-  ];
+  const fetchUserCompanies = React.useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await getCompanies(1, 100);
+      if (response && response.success) {
+        setCompanies(response.data.companies || []);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch user companies:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchUserCompanies();
+  }, [fetchUserCompanies]);
+
+  // Compute stats dynamically
+  const activeCount = companies.filter(c => c.status === 'active' || c.isVerified).length;
+  const totalDeals = companies.reduce((sum, c) => sum + (c.recentDeals?.length || c.deals || 0), 0);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -44,7 +49,7 @@ const MyCompanies = ({ onNavigate }) => {
 
         <View>
           <Text style={styles.title}>My Companies</Text>
-          <Text style={styles.subtitle}>{companies.length} Businesses</Text>
+          <Text style={styles.subtitle}>{companies.length} {companies.length === 1 ? 'Business' : 'Businesses'}</Text>
         </View>
 
         <TouchableOpacity onPress={() => onNavigate('AddCompany')}>
@@ -52,62 +57,95 @@ const MyCompanies = ({ onNavigate }) => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-
-        {/* 📊 Stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{companies.length}</Text>
-            <Text style={styles.statText}>Total</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: '#22C55E' }]}>3</Text>
-            <Text style={styles.statText}>Active</Text>
-          </View>
-
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: '#3B82F6' }]}>25</Text>
-            <Text style={styles.statText}>Deals</Text>
-          </View>
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3B82F6" />
         </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.content}>
 
-        {/* 🏢 Company Cards */}
-        {companies.map(item => (
-          <TouchableOpacity
-            key={item.id}
-            style={styles.card}
-            activeOpacity={0.85}
-            onPress={() => onNavigate('CompanyDetails', { item })}
-          >
-            <View style={[styles.iconBox, { backgroundColor: item.color + '15' }]}>
-              <Text style={styles.icon}>{item.icon}</Text>
+          {/* 📊 Stats */}
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statNumber}>{companies.length}</Text>
+              <Text style={styles.statText}>Total</Text>
             </View>
 
-            <View style={{ flex: 1 }}>
-              <Text style={styles.company}>{item.name}</Text>
-              <Text style={styles.gst}>GST: {item.gst}</Text>
-
-              <View style={styles.row}>
-                <Text style={styles.meta}>👤 {item.contact}</Text>
-                <Text style={styles.dot}>•</Text>
-                <Text style={styles.meta}>🤝 {item.deals}</Text>
-              </View>
+            <View style={styles.statCard}>
+              <Text style={[styles.statNumber, { color: '#22C55E' }]}>{activeCount}</Text>
+              <Text style={styles.statText}>Active</Text>
             </View>
 
-            <Text style={styles.arrow}>›</Text>
-          </TouchableOpacity>
-        ))}
+            <View style={styles.statCard}>
+              <Text style={[styles.statNumber, { color: '#3B82F6' }]}>{totalDeals}</Text>
+              <Text style={styles.statText}>Deals</Text>
+            </View>
+          </View>
 
-        {/* ➕ CTA */}
-        <TouchableOpacity
-          style={styles.cta}
-          onPress={() => onNavigate('AddCompany')}
-        >
-          <Text style={styles.ctaText}>+ Add New Company</Text>
-        </TouchableOpacity>
+          {companies.length === 0 ? (
+            /* 📭 Empty State */
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateIcon}>🏢</Text>
+              <Text style={styles.emptyStateTitle}>No Registered Companies</Text>
+              <Text style={styles.emptyStateSubtext}>
+                You haven't registered any companies under your profile yet. Add your first business now!
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyStateButton}
+                onPress={() => onNavigate('AddCompany')}
+              >
+                <Text style={styles.emptyStateButtonText}>Register Company</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* 🏢 Company Cards */
+            companies.map(item => {
+              const displayIcon = item.icon || (item.type === 'trader' ? '💼' : '🏢');
+              const displayColor = item.color || '#3B82F6';
+              const gstNumber = item.registrationNumber || item.gstin || 'Not Registered';
+              const contactInfo = item.phone || item.email || 'No contact';
+              const dealsCount = item.recentDeals?.length || item.deals || 0;
 
-      </ScrollView>
+              return (
+                <TouchableOpacity
+                  key={item._id || item.id}
+                  style={styles.card}
+                  activeOpacity={0.85}
+                  onPress={() => onNavigate('CompanyDetails', { company: item })}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: displayColor + '15' }]}>
+                    <Text style={styles.icon}>{displayIcon}</Text>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.company} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.gst} numberOfLines={1}>GST: {gstNumber}</Text>
+
+                    <View style={styles.row}>
+                      <Text style={styles.meta} numberOfLines={1}>👤 {contactInfo}</Text>
+                      <Text style={styles.dot}>•</Text>
+                      <Text style={styles.meta}>🤝 {dealsCount}</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.arrow}>›</Text>
+                </TouchableOpacity>
+              );
+            })
+          )}
+
+          {/* ➕ CTA (Only if they already have companies) */}
+          {companies.length > 0 && (
+            <TouchableOpacity
+              style={styles.cta}
+              onPress={() => onNavigate('AddCompany')}
+            >
+              <Text style={styles.ctaText}>+ Add New Company</Text>
+            </TouchableOpacity>
+          )}
+
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 };
@@ -118,6 +156,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
+  },
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   header: {
@@ -256,11 +300,59 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 4,
+    marginBottom: 30,
   },
 
   ctaText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
+  },
+
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    marginTop: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+
+  emptyStateIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+
+  emptyStateSubtext: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+
+  emptyStateButton: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+
+  emptyStateButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });

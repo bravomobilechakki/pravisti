@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
@@ -14,11 +15,14 @@ import {
   Modal
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createCompany } from '../../services/api';
+import { createCompany, getIndustries } from '../../services/api';
 
 const AddCompany = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [industries, setIndustries] = useState([]);
+  const [industriesLoading, setIndustriesLoading] = useState(false);
+  const [showIndustryModal, setShowIndustryModal] = useState(false);
 
   // Auto navigate to Dashboard after 2.5 seconds on successful company creation
   useEffect(() => {
@@ -34,13 +38,33 @@ const AddCompany = ({ onNavigate, routeData }) => {
     };
   }, [showSuccessModal, onNavigate, routeData]);
 
+  // Fetch industries from API
+  const fetchIndustries = useCallback(async () => {
+    try {
+      setIndustriesLoading(true);
+      const res = await getIndustries();
+      if (res && res.success && Array.isArray(res.data)) {
+        setIndustries(res.data);
+      }
+    } catch (err) {
+      console.warn('Could not load industries:', err);
+    } finally {
+      setIndustriesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchIndustries();
+  }, [fetchIndustries]);
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     type: routeData?.role?.toLowerCase() || 'trader',
     registrationNumber: '',
-    industry: routeData?.industry || '',
+    industryId: '',    // stored _id sent to API
+    industryName: '',  // displayed label in dropdown
     street: '',
     city: '',
     state: '',
@@ -103,7 +127,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
         phone: formData.phone,
         type: formData.type,
         registrationNumber: formData.registrationNumber,
-        industry: formData.industry,
+        industry: formData.industryId,   // send _id to API
         address: {
           street: formData.street,
           city: formData.city,
@@ -111,8 +135,8 @@ const AddCompany = ({ onNavigate, routeData }) => {
           postalCode: formData.postalCode || '302001',
           country: formData.country
         },
-        website: formData.website || 'https://www.pravisti.example.com',
-        description: formData.description || 'Leading trader in premium textiles and fabrics.',
+        website: formData.website || '',
+        description: formData.description || '',
         documents: [
           {
             name: 'GST Certificate',
@@ -224,11 +248,24 @@ const AddCompany = ({ onNavigate, routeData }) => {
 
             <View style={styles.fieldContainer}>
               <Text style={styles.inputLabel}>Industry</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: '#F3F4F6' }]}
-                value={formData.industry}
-                editable={false}
-              />
+              <TouchableOpacity
+                style={styles.dropdownSelector}
+                onPress={() => setShowIndustryModal(true)}
+                activeOpacity={0.75}
+              >
+                <Text
+                  style={[
+                    styles.dropdownSelectorText,
+                    !formData.industryName && styles.dropdownPlaceholder,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {formData.industryName || 'Select Industry'}
+                </Text>
+                <Text style={styles.dropdownChevron}>
+                  {industriesLoading ? '⏳' : '▾'}
+                </Text>
+              </TouchableOpacity>
             </View>
 
             <Text style={[styles.inputLabel, { marginTop: 10 }]}>Address Details</Text>
@@ -334,6 +371,90 @@ const AddCompany = ({ onNavigate, routeData }) => {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Industry Picker Modal */}
+      <Modal
+        visible={showIndustryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowIndustryModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.industryOverlay}
+          activeOpacity={1}
+          onPress={() => setShowIndustryModal(false)}
+        >
+          <View style={styles.industrySheet}>
+            <View style={styles.industrySheetHeader}>
+              <View style={styles.industrySheetDrag} />
+              <Text style={styles.industrySheetTitle}>Select Industry</Text>
+              <TouchableOpacity onPress={() => setShowIndustryModal(false)}>
+                <Text style={styles.industrySheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {industriesLoading ? (
+              <View style={styles.industryLoader}>
+                <ActivityIndicator size="large" color="#4F46E5" />
+                <Text style={styles.industryLoaderText}>Loading industries...</Text>
+              </View>
+            ) : industries.length === 0 ? (
+              <View style={styles.industryLoader}>
+                <Text style={styles.industryEmptyText}>No industries available</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={industries}
+                keyExtractor={(item) => item._id}
+                contentContainerStyle={styles.industryList}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item }) => {
+                  const isSelected = formData.industryId === item._id;
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.industryItem,
+                        isSelected && styles.industryItemSelected,
+                      ]}
+                      onPress={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          industryId: item._id,
+                          industryName: item.name,
+                        }));
+                        setShowIndustryModal(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.industryItemInner}>
+                        <Text
+                          style={[
+                            styles.industryItemName,
+                            isSelected && styles.industryItemNameSelected,
+                          ]}
+                        >
+                          {item.name}
+                        </Text>
+                        {item.description ? (
+                          <Text
+                            style={styles.industryItemDesc}
+                            numberOfLines={1}
+                          >
+                            {item.description}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {isSelected && (
+                        <Text style={styles.industryCheckmark}>✓</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Success Modal Popup */}
       <Modal
@@ -580,6 +701,144 @@ const styles = StyleSheet.create({
   },
   inputErrorBorder: {
     borderColor: '#EF4444',
+  },
+
+  // INDUSTRY DROPDOWN
+  dropdownSelector: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#F9FAFB',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dropdownSelectorText: {
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '500',
+    flex: 1,
+  },
+  dropdownPlaceholder: {
+    color: '#9CA3AF',
+    fontWeight: '400',
+  },
+  dropdownChevron: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginLeft: 8,
+  },
+
+  // INDUSTRY PICKER MODAL
+  industryOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  industrySheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '70%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  industrySheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  industrySheetDrag: {
+    position: 'absolute',
+    top: 8,
+    left: '50%',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E2E8F0',
+  },
+  industrySheetTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    flex: 1,
+    textAlign: 'center',
+  },
+  industrySheetClose: {
+    fontSize: 16,
+    color: '#94A3B8',
+    fontWeight: '600',
+    paddingLeft: 8,
+  },
+  industryList: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  industryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginVertical: 3,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  industryItemSelected: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#4F46E5',
+    borderWidth: 1.5,
+  },
+  industryItemInner: {
+    flex: 1,
+  },
+  industryItemName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  industryItemNameSelected: {
+    color: '#4F46E5',
+    fontWeight: '700',
+  },
+  industryItemDesc: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  industryCheckmark: {
+    fontSize: 16,
+    color: '#4F46E5',
+    fontWeight: '800',
+    marginLeft: 10,
+  },
+  industryLoader: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    gap: 12,
+  },
+  industryLoaderText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  industryEmptyText: {
+    fontSize: 14,
+    color: '#94A3B8',
+    fontWeight: '500',
   },
 });
 

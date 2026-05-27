@@ -22,31 +22,49 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  getUnits,
 } from '../../services/api';
 
-const UNIT_MAPPING = {
+let DYNAMIC_UNIT_MAPPING = {
   'bale': '6a0c118913e627687603da11',
   'ton': '6a0c118913e627687603da12',
   'quintal': '6a0c118913e627687603da13',
-  'kg': '6a0c118913e627687603da14',
+  'kg': '6a0eac4cd59663585920f09c',
+  'kilogram': '6a0eac4cd59663585920f09c',
   'litre': '6a0c118913e627687603da15',
   'meter': '6a0c118913e627687603da16',
+  'candy': '6a0c118913e627687603da17',
+  'piece': '6a0c118913e627687603da18',
 };
 
 const getUnitId = (unitName) => {
   const norm = String(unitName || 'bale').toLowerCase().trim();
-  return UNIT_MAPPING[norm] || '6a0c118913e627687603da17';
+  return DYNAMIC_UNIT_MAPPING[norm] || '6a0c118913e627687603da11';
 };
 
 const getUnitName = (unitId) => {
-  const entry = Object.entries(UNIT_MAPPING).find(([_, id]) => id === unitId);
+  if (!unitId) return 'Bale';
+  if (typeof unitId === 'object') {
+    return unitId.shortName || unitId.name || 'Bale';
+  }
+  const entry = Object.entries(DYNAMIC_UNIT_MAPPING).find(([_, id]) => id === unitId);
   return entry ? entry[0].charAt(0).toUpperCase() + entry[0].slice(1) : 'Bale';
+};
+
+const getProductUnitText = (prod) => {
+  if (!prod) return 'Bale';
+  if (prod.unit) return prod.unit;
+  if (prod.unitId && typeof prod.unitId === 'object') {
+    return prod.unitId.shortName || prod.unitId.name || 'Bale';
+  }
+  return getUnitName(prod.unitId);
 };
 
 const AddProductPage = ({ onNavigate, routeData }) => {
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [units, setUnits] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -54,6 +72,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   const [isProductModalVisible, setIsProductModalVisible] = useState(false);
   const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
   const [isSubcategoryPickerVisible, setIsSubcategoryPickerVisible] = useState(false);
+  const [isUnitPickerVisible, setIsUnitPickerVisible] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -68,8 +87,12 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     subcategoryId: '',
     subcategoryName: '',
     unit: '',
+    unitId: '',
     image: '',
     description: '',
+    hsnCode: '',
+    gstCode: '',
+    status: 'active',
   });
 
   const themeColor = '#4F46E5';
@@ -96,13 +119,34 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       // Load Subcategories
       let fetchedSubcategories = [];
       try {
-        const subRes = await getSubCategories(token);
+        const companyId = routeData?.company?._id || routeData?.company?.id;
+        const subRes = await getSubCategories(companyId, token);
         if (subRes && subRes.success) {
           fetchedSubcategories = subRes.data || [];
           setSubcategories(fetchedSubcategories);
         }
       } catch (subErr) {
         console.warn('Failed to fetch subcategories:', subErr);
+      }
+
+      // Load Units
+      try {
+        const unitRes = await getUnits('active', token);
+        if (unitRes && unitRes.success && unitRes.data) {
+          const fetchedUnits = unitRes.data || [];
+          setUnits(fetchedUnits);
+          // Populate dynamic unit mapping
+          fetchedUnits.forEach(u => {
+            if (u.shortName) {
+              DYNAMIC_UNIT_MAPPING[u.shortName.toLowerCase()] = u._id;
+            }
+            if (u.name) {
+              DYNAMIC_UNIT_MAPPING[u.name.toLowerCase()] = u._id;
+            }
+          });
+        }
+      } catch (unitErr) {
+        console.warn('Failed to fetch units:', unitErr);
       }
 
       // Load Products
@@ -112,7 +156,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         if (prodRes && prodRes.success) {
           const mapped = (prodRes.data || []).map(p => ({
             ...p,
-            unit: p.unit || getUnitName(p.unitId),
+            unit: getProductUnitText(p),
             price: p.price || 0,
           }));
           setProducts(mapped);
@@ -128,16 +172,21 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       Alert.alert('Error', 'Unable to fetch categories or products.');
     } finally {
       setIsLoading(false);
-      // Auto-open modal if navigated from subcategory '➕ Product'
-      if (routeData?.prefillProduct && !isProductModalVisible) {
-        setProductForm(prev => ({
-          ...prev,
-          ...routeData.prefillProduct
-        }));
-        setIsProductModalVisible(true);
-      }
     }
-  }, [routeData?.prefillProduct, isProductModalVisible]);
+  }, [routeData?.company?._id, routeData?.company?.id]);
+
+  // Auto-open modal if navigated from subcategory '➕ Product'
+  useEffect(() => {
+    if (routeData?.prefillProduct) {
+      setProductForm(prev => ({
+        ...prev,
+        unit: prev.unit || 'Bale',
+        status: prev.status || 'active',
+        ...routeData.prefillProduct
+      }));
+      setIsProductModalVisible(true);
+    }
+  }, [routeData?.prefillProduct]);
 
   useEffect(() => {
     fetchData();
@@ -193,7 +242,8 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   // Get Products for a Specific Category
   const getProductsForCategory = (catId) => {
     return products.filter(prod => {
-      const belongs = String(prod.categoryId || '') === String(catId);
+      const prodCatId = prod.categoryId?._id || prod.categoryId?.id || prod.categoryId;
+      const belongs = String(prodCatId || '') === String(catId);
       const matchesSearch = String(prod.name || '').toLowerCase().includes(searchQuery.toLowerCase());
       return belongs && matchesSearch;
     });
@@ -202,15 +252,21 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   // Open creation modal
   const openAddProduct = () => {
     setEditingProduct(null);
+    const defaultUnit = units[0] ? (units[0].shortName || units[0].name) : 'Bale';
+    const defaultUnitId = units[0] ? units[0]._id : getUnitId('Bale');
     setProductForm({
       name: '',
       categoryId: categories[0]?._id || '',
       categoryName: categories[0]?.name || '',
       subcategoryId: '',
       subcategoryName: '',
-      unit: 'Bale',
+      unit: defaultUnit,
+      unitId: defaultUnitId,
       image: '',
       description: '',
+      hsnCode: '',
+      gstCode: '',
+      status: 'active',
     });
     setIsProductModalVisible(true);
   };
@@ -218,18 +274,27 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   // Open edit modal
   const openEditProduct = (prod) => {
     setEditingProduct(prod);
-    const cat = categories.find(c => String(c._id) === String(prod.categoryId));
-    const sub = subcategories.find(s => String(s._id) === String(prod.subcategoryId));
+    const prodCatId = prod.categoryId?._id || prod.categoryId?.id || prod.categoryId;
+    const prodSubCatId = prod.subCategoryId?._id || prod.subCategoryId?.id || prod.subCategoryId || prod.subcategoryId?._id || prod.subcategoryId?.id || prod.subcategoryId;
+    const cat = categories.find(c => String(c._id) === String(prodCatId));
+    const sub = subcategories.find(s => String(s._id) === String(prodSubCatId));
+
+    const unitName = prod.unit || getProductUnitText(prod);
+    const unitId = prod.unitId?._id || prod.unitId?.id || prod.unitId || getUnitId(unitName);
 
     setProductForm({
       name: prod.name,
-      categoryId: prod.categoryId || '',
+      categoryId: prodCatId || '',
       categoryName: cat ? cat.name : '',
-      subcategoryId: prod.subcategoryId || '',
+      subcategoryId: prodSubCatId || '',
       subcategoryName: sub ? sub.name : '',
-      unit: prod.unit || 'Bale',
+      unit: unitName,
+      unitId: unitId,
       image: prod.image || '',
       description: prod.description || '',
+      hsnCode: prod.hsnCode || '',
+      gstCode: prod.gstCode || '',
+      status: prod.status || 'active',
     });
     setIsProductModalVisible(true);
   };
@@ -249,13 +314,19 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       const payload = {
         name: productForm.name,
         categoryId: productForm.categoryId,
-        unitId: getUnitId(productForm.unit),
-        companyId: companyId,
+        unitId: productForm.unitId || getUnitId(productForm.unit),
       };
+
+      if (!editingProduct) {
+        payload.companyId = companyId;
+      }
 
       if (productForm.subcategoryId) payload.subCategoryId = productForm.subcategoryId;
       if (productForm.image) payload.image = productForm.image;
       if (productForm.description) payload.description = productForm.description;
+      if (productForm.hsnCode) payload.hsnCode = productForm.hsnCode;
+      if (productForm.gstCode) payload.gstCode = productForm.gstCode;
+      if (editingProduct) payload.status = productForm.status;
 
       let response;
       if (editingProduct) {
@@ -266,10 +337,16 @@ const AddProductPage = ({ onNavigate, routeData }) => {
 
       if (response && response.success) {
         setSuccessMessage(editingProduct ? 'Product updated successfully!' : 'Product created successfully!');
-        setShowSuccessModal(true);
-        setTimeout(() => setShowSuccessModal(false), 2500);
-
+        
+        // Close the form modal first to avoid native modal collision
         setIsProductModalVisible(false);
+        
+        // Show success modal after slide-down transition completes
+        setTimeout(() => {
+          setShowSuccessModal(true);
+          setTimeout(() => setShowSuccessModal(false), 2200);
+        }, 450);
+
         fetchData();
       } else {
         Alert.alert('Error', response?.message || 'Unable to complete operation.');
@@ -331,9 +408,18 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   };
 
   // Get matching subcategories based on chosen category
-  const filteredSubcategories = subcategories.filter(sub =>
-    String(sub.categoryId) === String(productForm.categoryId)
-  );
+  const filteredSubcategories = (() => {
+    const seen = new Set();
+    return subcategories.filter(sub => {
+      const subId = sub._id || sub.id;
+      if (!subId || seen.has(String(subId))) {
+        return false;
+      }
+      seen.add(String(subId));
+      const subCatId = sub.categoryId?._id || sub.categoryId?.id || sub.categoryId;
+      return String(subCatId) === String(productForm.categoryId);
+    });
+  })();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -347,13 +433,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
           <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Trading Inventory</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={openAddProduct}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.addButtonText}>+ Product</Text>
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
       </View>
 
       {/* SEARCH BAR */}
@@ -377,19 +457,6 @@ const AddProductPage = ({ onNavigate, routeData }) => {
           data={products.filter(p => String(p.name || '').toLowerCase().includes(searchQuery.toLowerCase()))}
           keyExtractor={(item, index) => item._id || item.id || String(index)}
           contentContainerStyle={styles.scrollContent}
-          ListHeaderComponent={
-            <TouchableOpacity
-              style={styles.frontAddButton}
-              activeOpacity={0.85}
-              onPress={openAddProduct}
-            >
-              <Text style={styles.frontAddButtonIcon}>➕</Text>
-              <View>
-                <Text style={styles.frontAddButtonTitle}>Add New Product</Text>
-                <Text style={styles.frontAddButtonSubtitle}>Create a new product to start trading</Text>
-              </View>
-            </TouchableOpacity>
-          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>📦</Text>
@@ -400,20 +467,34 @@ const AddProductPage = ({ onNavigate, routeData }) => {
             </View>
           }
           renderItem={({ item: prod }) => {
-            const cat = categories.find(c => String(c._id) === String(prod.categoryId));
-            const sub = subcategories.find(s => String(s._id) === String(prod.subcategoryId));
+            const prodCatId = prod.categoryId?._id || prod.categoryId?.id || prod.categoryId;
+            const prodSubCatId = prod.subCategoryId?._id || prod.subCategoryId?.id || prod.subCategoryId || prod.subcategoryId?._id || prod.subcategoryId?.id || prod.subcategoryId;
+            const cat = categories.find(c => String(c._id) === String(prodCatId));
+            const sub = subcategories.find(s => String(s._id) === String(prodSubCatId));
             const categoryName = cat ? cat.name : 'Uncategorized';
             const subName = sub ? sub.name : '';
 
             return (
               <View style={styles.productCard}>
+                {/* Compact Floating Trading Unit Badge */}
+                <View style={styles.unitBadgeCompact}>
+                  <Text style={styles.unitBadgeTextCompact}>{prod.unit || 'Bale'}</Text>
+                </View>
+
                 {/* Product Image & Main Info */}
                 <View style={styles.productCardHeader}>
-                  <Image
-                    source={{ uri: prod.image || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d' }}
-                    style={styles.productImageLarge}
-                    resizeMode="cover"
-                  />
+                  <View style={styles.imageContainer}>
+                    <Image
+                      source={{ uri: prod.image || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d' }}
+                      style={styles.productImageLarge}
+                      resizeMode="cover"
+                    />
+                    <View style={[
+                      styles.imageStatusIndicator,
+                      { backgroundColor: prod.status === 'active' ? '#10B981' : '#64748B' }
+                    ]} />
+                  </View>
+
                   <View style={styles.productMainDetails}>
                     <Text style={styles.productTitle} numberOfLines={1}>{prod.name}</Text>
 
@@ -422,13 +503,30 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                         <Text style={styles.categoryBadgeText}>🏷️ {categoryName}</Text>
                       </View>
                       {subName ? (
-                        <View style={[styles.categoryBadge, { backgroundColor: '#F3E8FF' }]}>
-                          <Text style={[styles.categoryBadgeText, { color: '#7E22CE' }]}>↳ {subName}</Text>
+                        <View style={styles.subcategoryBadge}>
+                          <Text style={styles.subcategoryBadgeText}>↳ {subName}</Text>
                         </View>
                       ) : null}
                     </View>
 
-                    <Text style={styles.productPrice}>Trading Unit: {prod.unit || 'Bale'}</Text>
+                    {/* Metadata Badges: HSN & GST */}
+                    <View style={[styles.badgeRow, { marginTop: 2 }]}>
+                      {prod.hsnCode ? (
+                        <View style={styles.hsnBadge}>
+                          <Text style={styles.hsnText}>
+                            HSN: {prod.hsnCode}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {prod.gstCode ? (
+                        <View style={styles.gstBadge}>
+                          <Text style={styles.gstText}>
+                            GST: {prod.gstCode}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
                 </View>
 
@@ -439,24 +537,27 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                 {/* Action Buttons */}
                 <View style={styles.productCardActions}>
                   <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: '#F8FAFC', flex: 1, marginRight: 8 }]}
+                    style={styles.actionBtnEdit}
                     onPress={() => openEditProduct(prod)}
+                    activeOpacity={0.7}
                   >
-                    <Text style={{ fontSize: 13, color: '#475569', fontWeight: '700' }}>✏️ Edit</Text>
+                    <Text style={styles.actionTextEdit}>✏️ Edit</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: '#FEE2E2', flex: 1, marginRight: 8 }]}
+                    style={styles.actionBtnDelete}
                     onPress={() => handleDeleteProduct(prod)}
+                    activeOpacity={0.7}
                   >
-                    <Text style={{ fontSize: 13, color: '#EF4444', fontWeight: '700' }}>🗑️ Delete</Text>
+                    <Text style={styles.actionTextDelete}>🗑️ Delete</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: themeColor, flex: 1.2 }]}
+                    style={styles.actionBtnSauda}
                     onPress={() => handleInitiateSauda(prod)}
+                    activeOpacity={0.8}
                   >
-                    <Text style={{ fontSize: 13, color: '#FFFFFF', fontWeight: '800' }}>🤝 Sauda</Text>
+                    <Text style={styles.actionTextSauda}>🤝 Start Sauda</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -510,28 +611,72 @@ const AddProductPage = ({ onNavigate, routeData }) => {
               </TouchableOpacity>
 
               <Text style={styles.modalLabel}>Trading Unit*</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                {['Bale', 'Candy', 'Ton', 'Quintal'].map(u => (
-                  <TouchableOpacity
-                    key={u}
-                    style={{
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                      borderRadius: 8,
-                      borderWidth: 1,
-                      borderColor: productForm.unit === u ? themeColor : '#CBD5E1',
-                      backgroundColor: productForm.unit === u ? '#EEF2FF' : '#F8FAFC',
-                    }}
-                    onPress={() => setProductForm({ ...productForm, unit: u })}
-                  >
-                    <Text style={{
-                      color: productForm.unit === u ? themeColor : '#64748B',
-                      fontWeight: productForm.unit === u ? '700' : '500'
-                    }}>
-                      {u}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <TouchableOpacity
+                style={styles.modalSelector}
+                onPress={() => setIsUnitPickerVisible(true)}
+              >
+                <Text style={styles.modalSelectorText}>
+                  {productForm.unit || 'Select Trading Unit'}
+                </Text>
+                <Text style={styles.dropdownIcon}>▼</Text>
+              </TouchableOpacity>
+
+              <View style={styles.twoColumnRow}>
+                <View style={styles.flexHalf}>
+                  <Text style={styles.modalLabel}>HSN Code</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={productForm.hsnCode}
+                    onChangeText={(text) => setProductForm({ ...productForm, hsnCode: text })}
+                    placeholder="e.g. 73181510"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={[styles.flexHalf, { marginLeft: 12 }]}>
+                  <Text style={styles.modalLabel}>GST Code</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={productForm.gstCode}
+                    onChangeText={(text) => setProductForm({ ...productForm, gstCode: text })}
+                    placeholder="e.g. GST_12"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.modalLabel}>Product Status</Text>
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                {[
+                  { key: 'active', label: '✅ Active', activeBg: '#ECFDF5', activeText: '#10B981' },
+                  { key: 'inactive', label: '❌ Inactive', activeBg: '#FEF2F2', activeText: '#EF4444' }
+                ].map(s => {
+                  const isSelected = productForm.status === s.key;
+                  return (
+                    <TouchableOpacity
+                      key={s.key}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        borderRadius: 10,
+                        borderWidth: 1.5,
+                        borderColor: isSelected ? s.activeText : '#E2E8F0',
+                        backgroundColor: isSelected ? s.activeBg : '#F8FAFC',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      onPress={() => setProductForm({ ...productForm, status: s.key })}
+                    >
+                      <Text style={{
+                        color: isSelected ? s.activeText : '#64748B',
+                        fontWeight: '700',
+                        fontSize: 13,
+                      }}>
+                        {s.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               <Text style={styles.modalLabel}>Product Image Source</Text>
@@ -612,7 +757,10 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                     setIsCategoryPickerVisible(false);
 
                     // Smart feature: Auto-open Subcategory picker if subcategories exist for this category!
-                    const hasSubs = subcategories.some(sub => String(sub.categoryId) === String(item._id || item.id));
+                    const hasSubs = subcategories.some(sub => {
+                      const subCatId = sub.categoryId?._id || sub.categoryId?.id || sub.categoryId;
+                      return String(subCatId) === String(item._id || item.id);
+                    });
                     if (hasSubs) {
                       setTimeout(() => setIsSubcategoryPickerVisible(true), 350);
                     }
@@ -674,18 +822,77 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         </View>
       </Modal>
 
-      {/* Modern Auto-Closing Success Popup */}
-      <Modal visible={showSuccessModal} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 24, padding: 32, alignItems: 'center', width: '100%', shadowColor: '#10B981', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.15, shadowRadius: 24, elevation: 10 }}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
-              <Text style={{ fontSize: 32 }}>✨</Text>
-            </View>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: '#0F172A', marginBottom: 8, textAlign: 'center' }}>Success!</Text>
-            <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', fontWeight: '500' }}>{successMessage}</Text>
+      {/* UNIT PICKER MODAL */}
+      <Modal
+        visible={isUnitPickerVisible}
+        transparent
+        animationType="fade"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Trading Unit</Text>
+            <FlatList
+              data={units.length > 0 ? units : [
+                { _id: '6a0c118913e627687603da11', name: 'Bale', shortName: 'Bale' },
+                { _id: '6a0c118913e627687603da17', name: 'Candy', shortName: 'Candy' },
+                { _id: '6a0c118913e627687603da12', name: 'Ton', shortName: 'Ton' },
+                { _id: '6a0c118913e627687603da13', name: 'Quintal', shortName: 'Quintal' },
+                { _id: '6a0eac4cd59663585920f09c', name: 'Kilogram', shortName: 'Kg' },
+                { _id: '6a0c118913e627687603da15', name: 'Litre', shortName: 'Litre' },
+                { _id: '6a0c118913e627687603da16', name: 'Meter', shortName: 'Meter' },
+                { _id: '6a0c118913e627687603da18', name: 'Piece', shortName: 'Piece' },
+              ]}
+              keyExtractor={(item) => item._id || item.name}
+              style={{ maxHeight: 250 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.pickerItem}
+                  onPress={() => {
+                    setProductForm(prev => ({
+                      ...prev,
+                      unit: item.shortName || item.name,
+                      unitId: item._id,
+                    }));
+                    setIsUnitPickerVisible(false);
+                  }}
+                >
+                  <Text style={styles.pickerItemText}>
+                    {item.name}{item.shortName && item.shortName !== item.name ? ` (${item.shortName})` : ''}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity
+              style={[styles.modalButton, { alignSelf: 'flex-end', marginTop: 12 }]}
+              onPress={() => setIsUnitPickerVisible(false)}
+            >
+              <Text style={{ color: themeColor, fontWeight: '700' }}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* Attractive Auto-Closing Success Popup with Checkmark Icon */}
+      <Modal visible={showSuccessModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 28, padding: 32, alignItems: 'center', width: '100%', shadowColor: '#10B981', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.2, shadowRadius: 32, elevation: 12, borderWidth: 1, borderColor: '#ECFDF5' }}>
+            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 3, borderColor: '#A7F3D0', shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 4 }}>
+              <Text style={{ fontSize: 34, color: '#10B981', fontWeight: '900' }}>✓</Text>
+            </View>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: '#0F172A', marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 }}>Success!</Text>
+            <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', fontWeight: '600', lineHeight: 20 }}>{successMessage}</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* FLOATING ACTION PLUS BUTTON (FAB) */}
+      <TouchableOpacity
+        style={[styles.stickyFab, { backgroundColor: themeColor }]}
+        onPress={openAddProduct}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.stickyFabIcon}>+</Text>
+      </TouchableOpacity>
 
     </SafeAreaView>
   );
@@ -704,27 +911,34 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#F1F5F9',
   },
   backButton: {
-    padding: 8,
-    marginLeft: -8,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backIcon: {
-    fontSize: 24,
-    color: '#1E293B',
-    fontWeight: 'bold',
+    fontSize: 20,
+    color: '#0F172A',
+    fontWeight: '700',
   },
   headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '900',
     color: '#0F172A',
+    letterSpacing: -0.5,
   },
   addButton: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
   },
   addButtonText: {
     color: '#4F46E5',
@@ -733,21 +947,26 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingTop: 8,
+    paddingBottom: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
   searchInput: {
-    height: 40,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    height: 46,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    paddingHorizontal: 16,
     fontSize: 14,
     color: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    fontWeight: '500',
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 100, // Safe padding for FAB
   },
   loaderContainer: {
     flex: 1,
@@ -787,18 +1006,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   frontAddButton: {
-    backgroundColor: '#EEF2FF',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: '#F5F7FF',
+    borderRadius: 20,
+    padding: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
+    marginBottom: 24,
+    borderWidth: 2,
+    borderColor: '#4F46E533',
     borderStyle: 'dashed',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   frontAddButtonIcon: {
-    fontSize: 24,
+    fontSize: 26,
     marginRight: 16,
   },
   frontAddButtonTitle: {
@@ -810,70 +1034,195 @@ const styles = StyleSheet.create({
   frontAddButtonSubtitle: {
     fontSize: 12,
     color: '#6366F1',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   productCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 4,
     borderWidth: 1,
     borderColor: '#F1F5F9',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  unitBadgeCompact: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    backgroundColor: '#F0FDF4',
+    borderColor: '#DCFCE7',
+    borderWidth: 1.2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    zIndex: 10,
+  },
+  unitBadgeTextCompact: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#15803D',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   productCardHeader: {
     flexDirection: 'row',
     marginBottom: 12,
   },
+  imageContainer: {
+    position: 'relative',
+    marginRight: 14,
+  },
   productImageLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    marginRight: 16,
+    width: 82,
+    height: 82,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  imageStatusIndicator: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   productMainDetails: {
     flex: 1,
     justifyContent: 'center',
+    paddingRight: 64, // Leave space for unit badge
   },
   productTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '900',
     color: '#0F172A',
+    letterSpacing: -0.3,
     marginBottom: 6,
   },
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 4,
   },
   categoryBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
   },
   categoryBadgeText: {
-    fontSize: 11,
-    color: '#475569',
+    fontSize: 10,
+    color: '#4F46E5',
+    fontWeight: '800',
+  },
+  subcategoryBadge: {
+    backgroundColor: '#F5F3FF',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#EDE9FE',
+  },
+  subcategoryBadgeText: {
+    fontSize: 10,
+    color: '#7C3AED',
+    fontWeight: '800',
+  },
+  statusBadgeActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  statusTextActive: {
+    color: '#059669',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  statusBadgeInactive: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  statusTextInactive: {
+    color: '#DC2626',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  hsnBadge: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#E0F2FE',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  hsnText: {
+    color: '#0369A1',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  gstBadge: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FFEDD5',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  gstText: {
+    color: '#C2410C',
+    fontSize: 10,
     fontWeight: '700',
   },
   productPrice: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
     color: '#10B981',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginTop: 2,
   },
   productDescriptionText: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 20,
-    marginBottom: 16,
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 18,
+    marginBottom: 14,
+    backgroundColor: '#F8FAFC',
+    paddingLeft: 12,
+    paddingRight: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderLeftWidth: 3.5,
+    borderLeftColor: '#4F46E5',
   },
   productCardActions: {
     flexDirection: 'row',
@@ -882,12 +1231,56 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
+    gap: 8,
   },
-  actionBtn: {
-    paddingVertical: 10,
-    borderRadius: 8,
+  actionBtnEdit: {
+    backgroundColor: '#FFFFFF',
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+  },
+  actionBtnDelete: {
+    backgroundColor: '#FFF5F5',
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.2,
+    borderColor: '#FEE2E2',
+  },
+  actionBtnSauda: {
+    backgroundColor: '#4F46E5',
+    flex: 1.3,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  actionTextEdit: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '800',
+  },
+  actionTextDelete: {
+    fontSize: 11,
+    color: '#DC2626',
+    fontWeight: '800',
+  },
+  actionTextSauda: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
   modalOverlay: {
     flex: 1,
@@ -906,23 +1299,23 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '900',
     marginBottom: 16,
     color: '#1E293B',
   },
   modalLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#475569',
-    marginBottom: 4,
-    marginTop: 10,
+    marginBottom: 6,
+    marginTop: 12,
   },
   modalInput: {
     height: 44,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
     fontSize: 14,
     color: '#1E293B',
@@ -932,7 +1325,7 @@ const styles = StyleSheet.create({
     height: 44,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1010,7 +1403,7 @@ const styles = StyleSheet.create({
   modalButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   pickerItem: {
     paddingVertical: 12,
@@ -1025,7 +1418,7 @@ const styles = StyleSheet.create({
   stickyFab: {
     position: 'absolute',
     right: 20,
-    bottom: 70,
+    bottom: 60,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -1043,6 +1436,15 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     marginTop: -2,
   },
+  twoColumnRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  flexHalf: {
+    flex: 1,
+  },
 });
 
 export default AddProductPage;
+

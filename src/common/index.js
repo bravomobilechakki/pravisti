@@ -33,6 +33,12 @@ const SummaryApi = {
     method: "get",
   },
 
+  /* ================= INDUSTRIES ================= */
+  getIndustries: {
+    url: `${backendDomain}/api/industries`,
+    method: "get",
+  },
+
   /* ================= COMPANY ================= */
   createCompany: {
     url: `${backendDomain}/api/companies`,
@@ -88,6 +94,16 @@ const SummaryApi = {
   updateDealStatus: (id) => ({
     url: `${backendDomain}/api/deals/${id}/status`,
     method: "put",
+  }),
+
+  acceptDeal: (id) => ({
+    url: `${backendDomain}/api/deals/${id}/accept`,
+    method: "post",
+  }),
+
+  rejectDeal: (id) => ({
+    url: `${backendDomain}/api/deals/${id}/reject`,
+    method: "post",
   }),
 
   recreateExpiredDeal: (id) => ({
@@ -201,6 +217,42 @@ const SummaryApi = {
       url,
       method: "delete",
     };
+  },
+
+  /* ================= UNITS ================= */
+  getUnits: (status) => {
+    let query = "";
+    if (status) query += `?status=${status}`;
+    return {
+      url: `${backendDomain}/api/units${query}`,
+      method: "get",
+    };
+  },
+
+  getUnitDetails: (id) => ({
+    url: `${backendDomain}/api/units/${id}`,
+    method: "get",
+  }),
+
+  /* ================= CONTACTS ================= */
+  filterContacts: {
+    url: `${backendDomain}/api/contacts/filter`,
+    method: "post",
+  },
+
+  getCompaniesByNumber: (mobileNumber) => ({
+    url: `${backendDomain}/api/contacts/companies-by-number?mobileNumber=${encodeURIComponent(mobileNumber)}`,
+    method: "get",
+  }),
+
+  inviteDeal: {
+    url: `${backendDomain}/api/contacts/invite-deal`,
+    method: "post",
+  },
+
+  getPendingInvitations: {
+    url: `${backendDomain}/api/contacts/invitations/pending`,
+    method: "get",
   },
 };
 

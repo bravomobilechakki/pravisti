@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,71 +6,98 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getConversations, getUserProfile } from '../../services/api';
+import { ArrowLeft, MessageSquare, Handshake } from 'lucide-react-native';
 
 const ChatList = ({ onNavigate }) => {
-  const activeDeals = [
-    {
-      id: 1,
-      title: 'Basmati Rice (Grade A)',
-      party: 'Mahansh Traders',
-      icon: '🌾',
-      lastMessage: 'Can you confirm the delivery date?',
-      time: '2:30 PM',
-      unread: 3,
-      status: 'CONFIRMED',
-      statusColor: '#10B981',
-      bgColor: '#ECFDF5',
-    },
-    {
-      id: 2,
-      title: 'Yellow Maize (Feed)',
-      party: 'Sunrise Agro Exports',
-      icon: '🌽',
-      lastMessage: 'Rate is finalized at ₹2,150/quintal',
-      time: '1:15 PM',
-      unread: 0,
-      status: 'PENDING',
-      statusColor: '#F59E0B',
-      bgColor: '#FFFBEB',
-    },
-    {
-      id: 3,
-      title: 'Chana Dal (Premium)',
-      party: 'Bharat Commodities',
-      icon: '🫘',
-      lastMessage: 'Quality check report attached',
-      time: '11:45 AM',
-      unread: 1,
-      status: 'CONFIRMED',
-      statusColor: '#10B981',
-      bgColor: '#ECFDF5',
-    },
-    {
-      id: 4,
-      title: 'Wheat (Sharbati)',
-      party: 'Goyal Grains',
-      icon: '🚜',
-      lastMessage: 'Payment received. Thanks!',
-      time: 'Yesterday',
-      unread: 0,
-      status: 'COMPLETED',
-      statusColor: '#6366F1',
-      bgColor: '#EEF2FF',
-    },
-    {
-      id: 5,
-      title: 'Soybean (Organic)',
-      party: 'Patel Oil Mills',
-      icon: '🫛',
-      lastMessage: 'Need 50 more tons, can you arrange?',
-      time: 'Yesterday',
-      unread: 2,
-      status: 'PENDING',
-      statusColor: '#F59E0B',
-      bgColor: '#FFFBEB',
-    },
-  ];
+  const [conversations, setConversations] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  const fetchConversations = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        setIsLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      // 1. Get current user profile
+      const userRes = await getUserProfile(token);
+      let myUserId = '';
+      if (userRes && userRes.success && userRes.data) {
+        myUserId = userRes.data._id || userRes.data.id;
+        setCurrentUserId(myUserId);
+      }
+
+      // 2. Fetch conversations
+      const response = await getConversations(token, 1, 50);
+      if (response && response.success && response.data?.data) {
+        setConversations(response.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConversations();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchConversations();
+  };
+
+  const getCounterpartyName = (participants) => {
+    if (!participants || participants.length === 0) return 'Counterparty';
+    // Find the participant whose userId is NOT the current logged-in user
+    const otherPart = participants.find(
+      (p) => String(p.userId?._id || p.userId?.id || p.userId) !== String(currentUserId)
+    );
+    return otherPart?.userId?.name || otherPart?.userId?.mobileNumber || 'Counterparty';
+  };
+
+  const getStatusConfig = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'active':
+        return { label: 'ACTIVE', color: '#10B981', bg: '#ECFDF5' };
+      case 'completed':
+        return { label: 'COMPLETED', color: '#6366F1', bg: '#EEF2FF' };
+      case 'pending':
+        return { label: 'PENDING', color: '#F59E0B', bg: '#FFFBEB' };
+      default:
+        return { label: status?.toUpperCase() || 'CHAT', color: '#64748B', bg: '#F1F5F9' };
+    }
+  };
+
+  const formatMessageTime = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+  };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#4F46E5" />
+        <Text style={{ marginTop: 12, color: '#64748B', fontWeight: '600' }}>Loading trade chats...</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -79,8 +106,9 @@ const ChatList = ({ onNavigate }) => {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => onNavigate('Dashboard')}
+          activeOpacity={0.7}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <ArrowLeft size={22} color="#111827" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Deal Chats</Text>
         <View style={{ width: 40 }} />
@@ -90,70 +118,86 @@ const ChatList = ({ onNavigate }) => {
       <View style={styles.filterRow}>
         <TouchableOpacity style={[styles.filterTab, styles.filterTabActive]}>
           <Text style={[styles.filterText, styles.filterTextActive]}>
-            All (5)
+            All ({conversations.length})
           </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.filterTab}>
-          <Text style={styles.filterText}>Unread (3)</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.filterTab}>
-          <Text style={styles.filterText}>Active (4)</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4F46E5" />
+        }
       >
-        {activeDeals.map(deal => (
-          <TouchableOpacity
-            key={deal.id}
-            style={styles.chatCard}
-            onPress={() => onNavigate('DealChat', { deal })}
-            activeOpacity={0.7}
-          >
-            <View style={styles.chatIconContainer}>
-              <Text style={styles.chatIcon}>{deal.icon}</Text>
+        {conversations.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={{ marginBottom: 16 }}>
+              <MessageSquare size={48} color="#94A3B8" />
             </View>
+            <Text style={styles.emptyTitle}>No Active Chats</Text>
+            <Text style={styles.emptySubtitle}>
+              Conversations will appear once you have approved trade agreements between counterparties.
+            </Text>
+          </View>
+        ) : (
+          conversations.map((conv) => {
+            const counterparty = getCounterpartyName(conv.participants);
+            const statusCfg = getStatusConfig(conv.status);
+            const lastMsgText = conv.lastMessage?.content || 'No messages yet';
+            const lastMsgTime = formatMessageTime(conv.lastMessage?.sentAt || conv.updatedAt);
+            const dealNo = conv.dealId?.dealNumber || 'DL-TEMP';
+            const subject = conv.subject || `Chat for Deal #${dealNo}`;
 
-            <View style={styles.chatInfo}>
-              <View style={styles.chatTopRow}>
-                <Text style={styles.chatTitle} numberOfLines={1}>
-                  {deal.title}
-                </Text>
-                <Text style={styles.chatTime}>{deal.time}</Text>
-              </View>
-              <Text style={styles.chatParty}>{deal.party}</Text>
-              <Text
-                style={[
-                  styles.chatLastMsg,
-                  deal.unread > 0 && styles.chatLastMsgUnread,
-                ]}
-                numberOfLines={1}
+            return (
+              <TouchableOpacity
+                key={conv._id || conv.id}
+                style={styles.chatCard}
+                onPress={() => onNavigate('DealChat', { dealId: conv.dealId?._id || conv.dealId })}
+                activeOpacity={0.7}
               >
-                {deal.lastMessage}
-              </Text>
-            </View>
-
-            <View style={styles.chatRight}>
-              {deal.unread > 0 && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadText}>{deal.unread}</Text>
+                <View style={styles.chatIconContainer}>
+                  <Handshake size={24} color="#4F46E5" />
                 </View>
-              )}
-              <View
-                style={[
-                  styles.statusDot,
-                  { backgroundColor: deal.statusColor },
-                ]}
-              />
-            </View>
-          </TouchableOpacity>
-        ))}
+
+                <View style={styles.chatInfo}>
+                  <View style={styles.chatTopRow}>
+                    <Text style={styles.chatTitle} numberOfLines={1}>
+                      {subject}
+                    </Text>
+                    <Text style={styles.chatTime}>{lastMsgTime}</Text>
+                  </View>
+                  <Text style={styles.chatParty}>{counterparty} • Deal: #{dealNo}</Text>
+                  <Text style={styles.chatLastMsg} numberOfLines={1}>
+                    {lastMsgText}
+                  </Text>
+                </View>
+
+                <View style={styles.chatRight}>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: statusCfg.bg },
+                    ]}
+                  >
+                    <Text style={[styles.statusBadgeText, { color: statusCfg.color }]}>
+                      {statusCfg.label}
+                    </Text>
+                  </View>
+                  {conv.unreadCount > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadBadgeText}>{conv.unreadCount}</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
 
         <View style={styles.bottomHint}>
           <Text style={styles.hintText}>
-            Select a deal to start chatting with the party
+            Select a deal chat thread to start negotiating with the party
           </Text>
         </View>
       </ScrollView>
@@ -255,54 +299,40 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   chatTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#111827',
     flex: 1,
     marginRight: 8,
   },
   chatTime: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#9CA3AF',
     fontWeight: '500',
   },
   chatParty: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#4F46E5',
     fontWeight: '600',
     marginBottom: 4,
   },
   chatLastMsg: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#94A3B8',
     fontWeight: '400',
   },
-  chatLastMsgUnread: {
-    color: '#475569',
-    fontWeight: '600',
-  },
   chatRight: {
-    alignItems: 'center',
+    alignItems: 'flex-end',
     marginLeft: 8,
-    gap: 8,
   },
-  unreadBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#4F46E5',
-    justifyContent: 'center',
-    alignItems: 'center',
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  unreadText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  statusBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
   bottomHint: {
     alignItems: 'center',
@@ -314,67 +344,42 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontWeight: '500',
   },
-  tabBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingBottom: 25,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    justifyContent: 'space-around',
-    alignItems: 'flex-end',
-    height: 85,
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 64,
+    paddingHorizontal: 24,
   },
-  centerTabItem: {
-    top: -25,
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  unreadBadge: {
+    backgroundColor: '#25D366', // WhatsApp green
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 4,
   },
-  centerButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#4F46E5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-  },
-  centerButtonIcon: {
+  unreadBadgeText: {
     color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '300',
-    marginTop: -2,
-  },
-  tabItem: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  tabIcon: {
-    fontSize: 20,
-    color: '#9CA3AF',
-  },
-  tabIconActive: {
-    fontSize: 20,
-  },
-  tabLabel: {
     fontSize: 10,
-    color: '#9CA3AF',
-    fontWeight: '600',
-  },
-  tabLabelActive: {
-    fontSize: 10,
-    color: '#3B82F6',
-    fontWeight: 'bold',
+    fontWeight: '800',
   },
 });
 

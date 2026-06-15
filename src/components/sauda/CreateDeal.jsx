@@ -17,6 +17,20 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  ArrowLeft,
+  FileText,
+  User,
+  Briefcase,
+  Building2,
+  Handshake,
+  Box,
+  Calendar,
+  Clock,
+  ChevronRight,
+  Plus,
+  Send,
+} from 'lucide-react-native';
+import {
   createDeal,
   getUserProfile,
   inviteDeal,
@@ -25,28 +39,22 @@ import {
   createCategory,
   createProduct,
   getCompanies,
+  getCompanyDetails,
 } from '../../services/api';
 import { Linking } from 'react-native';
 
 const CreateDeal = ({ onNavigate, routeData }) => {
+  const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [focusedField, setFocusedField] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
 
   // Defensive Prefill Mappings
-  const prefillProd = routeData?.prefill?.products?.[0] || routeData?.prefill?.product || {};
-  const prefillProductName = prefillProd.productId?.name || prefillProd.name || (typeof prefillProd === 'string' ? prefillProd : '') || routeData?.prefill?.product || routeData?.prefill?.productName || '';
-  const prefillQty = prefillProd.quantity || routeData?.prefill?.qty || '';
-  const prefillPrice = prefillProd.price || routeData?.prefill?.price || '';
-
   const prefillBuyer = routeData?.prefill?.buyerCompany || routeData?.prefill?.buyerCompanyId || routeData?.prefill?.party2 || {};
   const prefillBuyerName = prefillBuyer.companyName || prefillBuyer.name || (typeof prefillBuyer === 'string' ? '' : '') || routeData?.prefill?.party2?.name || routeData?.prefill?.buyerCompany?.name || '';
 
-  // Form fields
-  const [productName, setProductName] = useState(String(prefillProductName || ''));
-  const [quantity, setQuantity] = useState(String(prefillQty || ''));
-  const [price, setPrice] = useState(String(prefillPrice || ''));
+  // Form fields & Dates
   const [description, setDescription] = useState(routeData?.prefill?.description || routeData?.prefill?.notes || '');
   const [dealDate, setDealDate] = useState(new Date().toISOString().split('T')[0]);
   const [validityDate, setValidityDate] = useState(
@@ -81,27 +89,139 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         : null
   );
 
+  // Broker-specific Prefill Mappings
+  const prefillSeller = routeData?.prefill?.sellerCompany || routeData?.prefill?.sellerCompanyId || {};
+  const prefillSellerName = prefillSeller.companyName || prefillSeller.name || '';
+
+  const [sellerCompany, setSellerCompany] = useState(String(prefillSellerName || ''));
+  const [sellerCompanyData, setSellerCompanyData] = useState(
+    (routeData?.prefill?.sellerCompany || routeData?.prefill?.sellerCompanyId)
+      ? {
+        ...prefillSeller,
+        isRegistered: true,
+        company: prefillSellerName,
+        companyId: prefillSeller._id || prefillSeller.id || prefillSeller.companyId || (typeof prefillSeller === 'string' ? prefillSeller : undefined)
+      }
+      : null
+  );
+
   // Dynamic Identity Sync
   const [activeUserCompany, setActiveUserCompany] = useState(initialCompany);
   const [activeUserId, setActiveUserId] = useState(routeData?.user?._id || routeData?.user?.id);
 
-  // New Fields Mappings
   const [role, setRole] = useState(routeData?.prefill?.role || 'seller');
-  const [discount, setDiscount] = useState(String(routeData?.prefill?.products?.[0]?.discount || routeData?.prefill?.discount || ''));
-  const [paymentTerms, setPaymentTerms] = useState(routeData?.prefill?.products?.[0]?.paymentTerms || '');
   const [brokerCompanyId, setBrokerCompanyId] = useState(routeData?.prefill?.brokerCompanyId || '');
+  const [brokerCompany, setBrokerCompany] = useState('');
+  const [brokerCompanyData, setBrokerCompanyData] = useState(null);
+
+  // Multi-product state
+  const prefillProducts = routeData?.prefill?.products || [];
+
+  const getInitialProductsList = () => {
+    if (prefillProducts.length > 0) {
+      return prefillProducts.map((p, idx) => ({
+        id: Date.now() + idx + Math.random(),
+        productName: p.productId?.name || p.name || (typeof p === 'string' ? p : '') || '',
+        quantity: String(p.quantity || ''),
+        price: String(p.price || ''),
+        gst: String(p.gst || ''),
+        discount: String(p.discount || ''),
+        paymentTerms: p.paymentTerms || '',
+        showProductDropdown: false,
+      }));
+    }
+
+    // Check if there is single product prefill
+    const prefillProd = routeData?.prefill?.products?.[0] || routeData?.prefill?.product || {};
+    const prefillProductName = prefillProd.productId?.name || prefillProd.name || (typeof prefillProd === 'string' ? prefillProd : '') || routeData?.prefill?.product || routeData?.prefill?.productName || '';
+    const prefillQty = prefillProd.quantity || routeData?.prefill?.qty || '';
+    const prefillPrice = prefillProd.price || routeData?.prefill?.price || '';
+
+    if (prefillProductName || prefillQty || prefillPrice) {
+      return [{
+        id: Date.now() + Math.random(),
+        productName: String(prefillProductName || ''),
+        quantity: String(prefillQty || ''),
+        price: String(prefillPrice || ''),
+        gst: String(prefillProd.gst || routeData?.prefill?.gst || ''),
+        discount: String(prefillProd.discount || routeData?.prefill?.discount || ''),
+        paymentTerms: prefillProd.paymentTerms || routeData?.prefill?.paymentTerms || '',
+        showProductDropdown: false,
+      }];
+    }
+
+    // Default empty item
+    return [{
+      id: Date.now(),
+      productName: '',
+      quantity: '',
+      price: '',
+      gst: '',
+      discount: '',
+      paymentTerms: '',
+      showProductDropdown: false,
+    }];
+  };
+
+  const [productsList, setProductsList] = useState(getInitialProductsList());
+  const [activeTabId, setActiveTabId] = useState(productsList[0]?.id || Date.now());
+
+  const addProductItem = () => {
+    const newId = Date.now() + Math.random();
+    setProductsList(prev => [
+      ...prev,
+      {
+        id: newId,
+        productName: '',
+        quantity: '',
+        price: '',
+        gst: '',
+        discount: '',
+        paymentTerms: '',
+        showProductDropdown: false,
+      }
+    ]);
+    setActiveTabId(newId);
+  };
+
+  const removeProductItem = (id) => {
+    if (productsList.length > 1) {
+      setProductsList(prev => {
+        const remaining = prev.filter(item => item.id !== id);
+        if (activeTabId === id) {
+          setActiveTabId(remaining[0]?.id);
+        }
+        return remaining;
+      });
+    }
+  };
+
+  const updateProductField = (id, field, value) => {
+    setProductsList(prev => prev.map(item => {
+      if (item.id === id) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+  };
 
   React.useEffect(() => {
     if (activeUserCompany && !routeData?.prefill?.role) {
-      setRole(activeUserCompany.companyType === 'broker' ? 'broker' : activeUserCompany.companyType === 'buyer' ? 'buyer' : 'seller');
+      const coType = String(activeUserCompany.companyType || activeUserCompany.type || '').toLowerCase();
+      setRole(coType === 'broker' ? 'broker' : coType === 'buyer' ? 'buyer' : 'seller');
     }
-  }, [activeUserCompany]);
+  }, [activeUserCompany, routeData]);
 
   React.useEffect(() => {
-    const hasPrefill = routeData?.selectedContact || routeData?.prefillParty2 || routeData?.prefill?.buyerCompany || routeData?.prefill?.buyerCompanyId || routeData?.prefill?.party2;
+    const hasPrefill = routeData?.selectedContact || routeData?.prefillParty2 || routeData?.prefill?.buyerCompany || routeData?.prefill?.buyerCompanyId || routeData?.prefill?.party2 || routeData?.prefill?.brokerCompanyId;
     if (!hasPrefill) {
       setParty2('');
       setParty2Data(null);
+      setSellerCompany('');
+      setSellerCompanyData(null);
+      setBrokerCompany('');
+      setBrokerCompanyData(null);
+      setBrokerCompanyId('');
     }
   }, [role, activeUserCompany, routeData]);
 
@@ -111,10 +231,14 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   React.useEffect(() => {
     const fetchCompanyInventory = async () => {
-      if (!activeUserCompany) return;
+      const targetCompany = role === 'seller' ? activeUserCompany : role === 'buyer' ? party2Data : sellerCompanyData;
+      if (!targetCompany) {
+        setCompanyProducts([]);
+        return;
+      }
       try {
         const token = await AsyncStorage.getItem('userToken');
-        const companyId = activeUserCompany?._id || activeUserCompany?.id;
+        const companyId = targetCompany?._id || targetCompany?.id || targetCompany?.companyId;
         if (!companyId) return;
         const response = await getProducts(companyId, token);
         if (response && response.success && response.data) {
@@ -125,31 +249,61 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       }
     };
     fetchCompanyInventory();
-  }, [activeUserCompany]);
+  }, [activeUserCompany, party2Data, sellerCompanyData, role]);
 
   React.useEffect(() => {
     const refreshIdentity = async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
-        if (routeData?.originCompany || routeData?.company) {
-          const targetCo = routeData.originCompany || routeData.company;
-          setActiveUserCompany(targetCo);
-          setParty1(targetCo.name);
+        const userProfileRes = await getUserProfile(token);
+        let userCompanies = [];
+        if (userProfileRes && userProfileRes.success && userProfileRes.data) {
+          setActiveUserId(userProfileRes.data._id || userProfileRes.data.id);
+          userCompanies = userProfileRes.data.companies || [];
         }
-        const response = await getUserProfile(token);
-        if (response && response.success) {
-          setActiveUserId(response.data._id || response.data.id);
+
+        const routeCompanyId =
+          routeData?.companyId ||
+          routeData?.company?._id ||
+          routeData?.company?.id ||
+          routeData?.originCompany?._id ||
+          routeData?.originCompany?.id;
+
+        let targetCo = null;
+
+        if (routeCompanyId) {
+          targetCo = userCompanies.find(c => String(c._id || c.id) === String(routeCompanyId));
         }
-        if (!routeData?.originCompany && !routeData?.company) {
+
+        if (!targetCo && (routeData?.originCompany || routeData?.company)) {
+          targetCo = routeData.originCompany || routeData.company;
+        }
+
+        if (!targetCo && routeCompanyId) {
+          try {
+            const compRes = await getCompanyDetails(routeCompanyId);
+            if (compRes && compRes.success) {
+              targetCo = compRes.data;
+            }
+          } catch (err) {
+            console.warn('Failed to fetch company details:', err);
+          }
+        }
+
+        if (!targetCo) {
           const companiesRes = await getCompanies(1, 10);
           if (companiesRes && companiesRes.success && companiesRes.data?.companies?.length > 0) {
-            const primaryCompany = companiesRes.data.companies[0];
-            setActiveUserCompany(primaryCompany);
-            setParty1(primaryCompany.name);
-          } else if (response && response.success && response.data.companies?.length > 0) {
-            setActiveUserCompany(response.data.companies[0]);
-            setParty1(response.data.companies[0].name);
+            targetCo = companiesRes.data.companies[0];
           }
+        }
+
+        if (!targetCo && userCompanies.length > 0) {
+          targetCo = userCompanies[0];
+        }
+
+        if (targetCo) {
+          setActiveUserCompany(targetCo);
+          setParty1(targetCo.name);
         }
       } catch (e) {
         console.warn("Identity refresh failed", e);
@@ -166,6 +320,18 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       if (routeData.pickingFor === 'party2') {
         setParty2(contact.isRegistered ? (contact.company || contact.name) : contact.name);
         setParty2Data(contact);
+      } else if (routeData.pickingFor === 'sellerCompany') {
+        setSellerCompany(contact.isRegistered ? (contact.company || contact.name) : contact.name);
+        setSellerCompanyData(contact);
+      } else if (routeData.pickingFor === 'brokerCompany') {
+        setBrokerCompany(contact.isRegistered ? (contact.company || contact.name) : contact.name);
+        setBrokerCompanyData(contact);
+        const cid = contact.companyId || contact._id || contact.id;
+        if (cid) {
+          setBrokerCompanyId(String(cid));
+        } else {
+          setBrokerCompanyId('');
+        }
       }
     }
   }, [routeData]);
@@ -184,12 +350,12 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     setIsDatePickerVisible(false);
   };
 
-  const resolveProductId = async (companyId, token) => {
+  const resolveProductId = async (name, companyId, token) => {
     try {
       const productsRes = await getProducts(companyId, token);
       if (productsRes && productsRes.success && productsRes.data && productsRes.data.length > 0) {
         const matched = productsRes.data.find(
-          p => String(p.name || '').toLowerCase().trim() === String(productName).toLowerCase().trim()
+          p => String(p.name || '').toLowerCase().trim() === String(name).toLowerCase().trim()
         );
         if (matched) return matched._id || matched.id;
       }
@@ -205,11 +371,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       }
       if (!categoryId) throw new Error('Could not resolve or create category');
       const productPayload = {
-        name: productName,
+        name,
         categoryId,
         unitId: '6a0c118913e627687603da11',
         companyId,
-        description: description || 'Dynamically created product for deal invitation',
+        description: 'Dynamically created product for deal invitation',
       };
       const newProductRes = await createProduct(productPayload, token);
       if (newProductRes && newProductRes.success && newProductRes.data) {
@@ -218,60 +384,138 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       throw new Error('Failed to create new product');
     } catch (error) {
       console.warn('Dynamic product resolution failed:', error);
-      throw new Error(`Unable to resolve Product ID for "${productName}". Please add the product to your inventory first.`);
+      throw new Error(`Unable to resolve Product ID for "${name}". Please add the product to your inventory first.`);
     }
   };
 
   const handleCreateDeal = async () => {
+    const activeProducts = productsList.filter(prod =>
+      (prod.productName && String(prod.productName).trim()) ||
+      (prod.quantity && String(prod.quantity).trim()) ||
+      (prod.price && String(prod.price).trim())
+    );
+
+    if (activeProducts.length === 0) {
+      Alert.alert('Validation Error', 'Please complete at least one product ledger in your Sauda.');
+      return;
+    }
+
     const errors = {};
-    if (!productName.trim()) errors.productName = 'Please select or enter a product name';
-    if (!quantity.trim()) errors.quantity = 'Please enter quantity';
-    if (!price.trim()) errors.price = 'Please enter price per unit';
-    if (!party2) errors.party2 = 'Please select a buyer / seller company';
+    activeProducts.forEach((prod) => {
+      const prodErrors = {};
+      if (!prod.productName || !String(prod.productName).trim()) prodErrors.productName = 'Product name is required';
+      if (!prod.quantity || !String(prod.quantity).trim()) prodErrors.quantity = 'Quantity is required';
+      if (!prod.price || !String(prod.price).trim()) prodErrors.price = 'Price is required';
+
+      if (Object.keys(prodErrors).length > 0) {
+        errors[`product_${prod.id}`] = prodErrors;
+      }
+    });
+
+    if (role === 'broker') {
+      if (!party2) errors.party2 = 'Please select a buyer company';
+      if (!sellerCompany) errors.sellerCompany = 'Please select a seller company';
+    } else {
+      if (!party2) errors.party2 = `Please select a ${role === 'buyer' ? 'seller' : 'buyer'} company`;
+    }
+
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
+      Alert.alert('Validation Error', 'Please complete all required fields for your products ledger.');
       return;
     }
     setFieldErrors({});
     setIsSubmitting(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const numericQuantity = Math.floor(Number(quantity));
-      const numericPrice = Math.floor(Number(price));
-      const numericDiscount = Math.floor(Number(discount || 0));
-      const netTotalAmount = Number((numericQuantity * numericPrice) - numericDiscount);
 
       const originCompanyId = activeUserCompany?._id || activeUserCompany?.id || '6a0d784381e9215467e6d3e2';
       const userId = activeUserId || '6a0d77b581e9215467e6d3c8';
 
       if (!userId || !originCompanyId) {
-        Alert.alert('Identity Error', 'Missing Seller identity to establish agreement.');
+        Alert.alert('Identity Error', 'Missing your company identity to establish agreement.');
         setIsSubmitting(false);
         return;
       }
 
-      const finalBrokerCompanyId = role === 'broker'
-        ? (brokerCompanyId || originCompanyId)
-        : (brokerCompanyId || undefined);
+      const getValidCompanyId = (data, fallback) => {
+        if (data && (data.companyId || data._id || data.id)) {
+          const cid = String(data.companyId || data._id || data.id);
+          if (cid.length === 24) return cid;
+        }
+        if (fallback && fallback.length === 24) return fallback;
+        return undefined;
+      };
 
-      if (party2Data?.isRegistered === false || !party2Data?.companyId) {
-        const resolvedProductId = await resolveProductId(originCompanyId, token);
+      const resolvedSellerId = role === 'seller'
+        ? originCompanyId
+        : role === 'buyer'
+          ? getValidCompanyId(party2Data, party2)
+          : getValidCompanyId(sellerCompanyData, sellerCompany);
+
+      const resolvedBuyerId = role === 'seller'
+        ? getValidCompanyId(party2Data, party2)
+        : role === 'buyer'
+          ? originCompanyId
+          : getValidCompanyId(party2Data, party2);
+
+      const isInviteMode = party2Data?.isRegistered === false || (role === 'broker' && sellerCompanyData?.isRegistered === false);
+
+      const sellerIdForProduct = resolvedSellerId || originCompanyId;
+
+      let totalAmountValue = 0;
+      let totalDiscountValue = 0;
+
+      // Resolve and map all products in the active products list (preserving decimals)
+      const resolvedProducts = await Promise.all(activeProducts.map(async (prod) => {
+        const numericQuantity = Number(prod.quantity);
+        const numericPrice = Number(prod.price);
+        const numericDiscount = Number(prod.discount || 0);
+        const numericGst = Number(prod.gst || 0);
+
+        const subtotal = numericQuantity * numericPrice;
+        const discountedSubtotal = subtotal - numericDiscount;
+        const gstAmount = discountedSubtotal * (numericGst / 100);
+        const netTotalAmount = discountedSubtotal + gstAmount;
+
+        totalAmountValue += netTotalAmount;
+        totalDiscountValue += numericDiscount;
+
+        const resolvedProductId = await resolveProductId(prod.productName, sellerIdForProduct, token);
+
+        return {
+          productId: resolvedProductId,
+          quantity: numericQuantity,
+          price: numericPrice,
+          paymentTerms: prod.paymentTerms || undefined,
+          discount: prod.discount ? numericDiscount : undefined,
+          gst: prod.gst ? numericGst : undefined,
+        };
+      }));
+
+      if (isInviteMode) {
+        let inviteContact = party2Data;
+        if (party2Data?.isRegistered === false) {
+          inviteContact = party2Data;
+        } else if (role === 'broker' && sellerCompanyData?.isRegistered === false) {
+          inviteContact = sellerCompanyData;
+        }
+
+        const receiverMobileNumber = inviteContact?.mobile || inviteContact?.phone || inviteContact?.mobileNumber || party2;
+        const receiverName = inviteContact?.name || party2;
+
         const invitePayload = {
-          receiverMobileNumber: party2Data.mobile || party2Data.phone || party2,
-          receiverName: party2Data.name || party2,
+          receiverMobileNumber,
+          receiverName,
           dealDraft: {
             role,
-            brokerCompanyId: finalBrokerCompanyId,
-            products: [{
-              productId: resolvedProductId,
-              quantity: Number(numericQuantity),
-              price: Number(numericPrice),
-              paymentTerms,
-              discount: Number(numericDiscount),
-              totalAmount: Number(netTotalAmount),
-            }],
-            totalAmount: Number(netTotalAmount),
-            discount: Number(numericDiscount),
+            sellerCompanyId: resolvedSellerId,
+            buyerCompanyId: resolvedBuyerId,
+            myCompanyId: role === 'broker' ? String(originCompanyId) : undefined,
+            brokerCompanyId: (role !== 'broker' && brokerCompanyId) ? brokerCompanyId : undefined,
+            products: resolvedProducts,
+            totalAmount: Number(totalAmountValue),
+            discount: Number(totalDiscountValue),
             expiryDate: new Date(validityDate).toISOString(),
             notes: description || 'Bulk trading Sauda ledger invitation.',
           },
@@ -292,30 +536,20 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           Alert.alert('Invite Error', response?.message || 'Failed to create deal invitation.');
         }
       } else {
-        const p2Id = party2Data?.id || party2Data?._id || party2Data?.companyId || party2;
-        if (!p2Id) {
-          Alert.alert('Identity Error', 'Missing Buyer ID to establish agreement.');
+        if (!resolvedSellerId || !resolvedBuyerId) {
+          Alert.alert('Identity Error', 'Missing Buyer or Seller ID to establish agreement.');
           setIsSubmitting(false);
           return;
         }
-        const sellerCompanyId = role === 'buyer' ? p2Id : originCompanyId;
-        const resolvedProductId = await resolveProductId(sellerCompanyId, token);
         const payload = {
           role,
-          targetCompanyId: String(p2Id),
-          brokerCompanyId: finalBrokerCompanyId,
-          products: [{
-            productId: resolvedProductId,
-            quantity: Number(numericQuantity),
-            price: Number(numericPrice),
-            paymentTerms,
-            discount: Number(numericDiscount),
-            totalAmount: Number(netTotalAmount),
-          }],
-          totalAmount: Number(netTotalAmount),
-          discount: Number(numericDiscount),
+          sellerCompanyId: resolvedSellerId,
+          buyerCompanyId: resolvedBuyerId,
+          myCompanyId: role === 'broker' ? String(originCompanyId) : undefined,
+          brokerCompanyId: (role !== 'broker' && brokerCompanyId) ? brokerCompanyId : undefined,
+          products: resolvedProducts,
           expiryDate: new Date(validityDate).toISOString(),
-          notes: description || 'High quality commodity trade.',
+          notes: description || undefined,
         };
         const response = await createDeal(payload, token);
         if (response && response.success) {
@@ -340,11 +574,43 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
   };
 
-  const numQ = Number(quantity) || 0;
-  const numP = Number(price) || 0;
-  const numD = Number(discount) || 0;
-  const totalValue = numQ && numP ? ((numQ * numP) - numD).toLocaleString('en-IN') : null;
-  const isInviteMode = party2Data?.isRegistered === false;
+  const getTotals = () => {
+    let totalQty = 0;
+    let subtotal = 0;
+    let totalDiscount = 0;
+    let totalGstAmount = 0;
+    let finalTotal = 0;
+
+    productsList.forEach(prod => {
+      const q = Number(prod.quantity) || 0;
+      const p = Number(prod.price) || 0;
+      const d = Number(prod.discount) || 0;
+      const g = Number(prod.gst) || 0;
+
+      const prodSubtotal = q * p;
+      const prodDiscounted = prodSubtotal - d;
+      const prodGstAmount = prodDiscounted * (g / 100);
+
+      totalQty += q;
+      subtotal += prodSubtotal;
+      totalDiscount += d;
+      totalGstAmount += prodGstAmount;
+      finalTotal += (prodDiscounted + prodGstAmount);
+    });
+
+    return {
+      qty: totalQty,
+      subtotal,
+      discount: totalDiscount,
+      gstAmount: totalGstAmount,
+      total: finalTotal,
+      isValid: productsList.some(prod => Number(prod.quantity) > 0 && Number(prod.price) > 0)
+    };
+  };
+
+  const totals = getTotals();
+  const showTicketStub = totals.isValid;
+  const isInviteMode = party2Data?.isRegistered === false || (role === 'broker' && sellerCompanyData?.isRegistered === false);
 
   const getRoleTheme = () => {
     if (role === 'buyer') return { color: '#0284C7', bg: '#F0F9FF', border: '#BAE6FD', glow: '#0284C7' };
@@ -361,475 +627,899 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         {/* Premium Light Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('pop')} activeOpacity={0.7}>
-            <Text style={styles.backIcon}>←</Text>
+            <ArrowLeft size={20} color="#0F172A" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>New Sauda Deal</Text>
             <Text style={styles.headerSubtitle}>Create a digital trade ledger</Text>
           </View>
           <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>📋</Text>
+            <FileText size={16} color="#0F172A" />
+          </View>
+        </View>
+
+        {/* Elegant Wizard Progress Indicator */}
+        <View style={styles.wizardProgressContainer}>
+          <View style={styles.wizardStepCol}>
+            <View style={[
+              styles.wizardStepCircle,
+              currentStep >= 1 && [styles.wizardStepCircleActive, { backgroundColor: rTheme.bg, borderColor: rTheme.color }]
+            ]}>
+              <Text style={[
+                styles.wizardStepCircleText,
+                currentStep >= 1 && [styles.wizardStepCircleTextActive, { color: rTheme.color }]
+              ]}>1</Text>
+            </View>
+            <Text style={[
+              styles.wizardStepLabel,
+              currentStep === 1 && { color: rTheme.color, fontWeight: '800' }
+            ]}>Partners</Text>
+          </View>
+
+          <View style={[styles.wizardStepLine, currentStep >= 2 && { backgroundColor: rTheme.color }]} />
+
+          <View style={styles.wizardStepCol}>
+            <View style={[
+              styles.wizardStepCircle,
+              currentStep >= 2 && [styles.wizardStepCircleActive, { backgroundColor: rTheme.bg, borderColor: rTheme.color }]
+            ]}>
+              <Text style={[
+                styles.wizardStepCircleText,
+                currentStep >= 2 && [styles.wizardStepCircleTextActive, { color: rTheme.color }]
+              ]}>2</Text>
+            </View>
+            <Text style={[
+              styles.wizardStepLabel,
+              currentStep === 2 && { color: rTheme.color, fontWeight: '800' }
+            ]}>Ledger</Text>
+          </View>
+
+          <View style={[styles.wizardStepLine, currentStep >= 3 && { backgroundColor: rTheme.color }]} />
+
+          <View style={styles.wizardStepCol}>
+            <View style={[
+              styles.wizardStepCircle,
+              currentStep >= 3 && [styles.wizardStepCircleActive, { backgroundColor: rTheme.bg, borderColor: rTheme.color }]
+            ]}>
+              <Text style={[
+                styles.wizardStepCircleText,
+                currentStep >= 3 && [styles.wizardStepCircleTextActive, { color: rTheme.color }]
+              ]}>3</Text>
+            </View>
+            <Text style={[
+              styles.wizardStepLabel,
+              currentStep === 3 && { color: rTheme.color, fontWeight: '800' }
+            ]}>Terms</Text>
           </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-          {/* ═══════════ CARD 1: IDENTITY ═══════════ */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <View style={[styles.sectionDot, { backgroundColor: '#0284C7' }]} />
-              <Text style={styles.sectionTitle}>Identity & Trade Role</Text>
-              <View style={styles.sectionBadgeContainer}>
-                <Text style={[styles.sectionBadge, { color: '#0284C7', backgroundColor: '#E0F2FE' }]}>STEP 1</Text>
-              </View>
-            </View>
-
-            <View style={styles.cardBody}>
-              {/* Role Selector */}
-              <Text style={styles.fieldLabel}>Your Trade Role</Text>
-              <View style={styles.roleContainer}>
-                {['seller', 'buyer', 'broker'].map((r) => {
-                  const isActive = role === r;
-                  const config = {
-                    seller: { emoji: '🌾' },
-                    buyer: { emoji: '🛍️' },
-                    broker: { emoji: '💼' },
-                  }[r];
-                  return (
-                    <TouchableOpacity
-                      key={r}
-                      style={[
-                        styles.roleTab,
-                        isActive && styles.roleTabActive
-                      ]}
-                      onPress={() => setRole(r)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={{ fontSize: 13 }}>{config.emoji}</Text>
-                      <Text style={[
-                        styles.roleTabText,
-                        { color: isActive ? '#FFFFFF' : '#64748B' },
-                        isActive && styles.roleTabTextActive
-                      ]}>
-                        {r.charAt(0).toUpperCase() + r.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Origin Company Card */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.fieldLabel}>
-                  {role === 'buyer' ? 'My Buyer Company' : role === 'broker' ? 'My Broker Firm' : 'My Seller Company'}
-                </Text>
-                <View style={[styles.profileCard, { borderColor: rTheme.border, backgroundColor: '#FFFFFF', shadowColor: rTheme.glow }]}>
-                  <View style={[styles.profileAvatar, { backgroundColor: rTheme.color, shadowColor: rTheme.glow }]}>
-                    <Text style={styles.profileAvatarText}>{party1.charAt(0).toUpperCase()}</Text>
-                  </View>
-                  <View style={styles.profileCardInfo}>
-                    <Text style={[styles.profileCardName, { color: '#0F172A' }]}>{party1}</Text>
-                    <Text style={[styles.profileCardRole, { color: rTheme.color }]}>
-                      {role === 'buyer' ? '⚡ BUYER PROFILE' : role === 'broker' ? '⚡ BROKER PROFILE' : '⚡ SELLER PROFILE'}
-                    </Text>
-                  </View>
-                  <View style={[styles.profileCardBadge, { backgroundColor: rTheme.bg, borderColor: rTheme.border, borderWidth: 1 }]}>
-                    <Text style={[styles.profileCardBadgeText, { color: rTheme.color }]}>✓ Verified</Text>
-                  </View>
+          {/* ═══════════ CARD 1: IDENTITY (STEP 1) ═══════════ */}
+          {currentStep === 1 && (
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <View style={[styles.sectionDot, { backgroundColor: '#0284C7' }]} />
+                <Text style={styles.sectionTitle}>Identity & Trade Role</Text>
+                <View style={styles.sectionBadgeContainer}>
+                  <Text style={[styles.sectionBadge, { color: '#0284C7', backgroundColor: '#E0F2FE' }]}>STEP 1</Text>
                 </View>
               </View>
 
-              {/* Visual Flow Connector */}
-              <View style={styles.flowConnectorContainer}>
-                <View style={styles.flowConnectorLine} />
-                <View style={[styles.flowConnectorBadge, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}>
-                  <Text style={styles.flowConnectorEmoji}>🤝</Text>
+              <View style={styles.cardBody}>
+                {/* Role Selector */}
+                <Text style={styles.fieldLabel}>Your Trade Role</Text>
+                <View style={styles.roleContainer}>
+                  {['seller', 'buyer'].map((r) => {
+                    const isActive = role === r;
+                    const config = {
+                      seller: { icon: <Building2 size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
+                      buyer: { icon: <User size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
+                    }[r];
+                    return (
+                      <TouchableOpacity
+                        key={r}
+                        style={[
+                          styles.roleTab,
+                          isActive && styles.roleTabActive
+                        ]}
+                        onPress={() => setRole(r)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          {config.icon}
+                          <Text style={[
+                            styles.roleTabText,
+                            { color: isActive ? '#FFFFFF' : '#64748B' },
+                            isActive && styles.roleTabTextActive
+                          ]}>
+                            {r.charAt(0).toUpperCase() + r.slice(1)}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-                <View style={styles.flowConnectorLine} />
-              </View>
 
-              {/* Counterparty Selector */}
-              <View style={[styles.inputGroup, { marginBottom: 0 }]}>
-                <Text style={styles.fieldLabel}>
-                  Counterparty {role === 'buyer' ? 'Seller' : 'Buyer'}*
-                </Text>
-
-                {party2 && party2Data ? (
-                  /* Profile Card when selected */
-                  <TouchableOpacity
-                    style={[
-                      styles.profileCard,
-                      {
-                        borderColor: isInviteMode ? '#F59E0B' : '#E2E8F0',
-                        backgroundColor: '#FFFFFF',
-                        shadowColor: isInviteMode ? '#F59E0B' : '#0284C7',
-                      }
-                    ]}
-                    onPress={() => {
-                      setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                      onNavigate('ContactPicker', { pickingFor: 'party2' });
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[styles.profileAvatar, { backgroundColor: isInviteMode ? '#F59E0B' : '#0284C7', shadowColor: isInviteMode ? '#F59E0B' : '#0284C7' }]}>
-                      <Text style={styles.profileAvatarText}>
-                        {(party2Data.company || party2).charAt(0).toUpperCase()}
-                      </Text>
+                {/* Origin Company Card */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.fieldLabel}>
+                    {role === 'buyer' ? 'My Buyer Company' : role === 'broker' ? 'My Broker Firm' : 'My Seller Company'}
+                  </Text>
+                  <View style={[styles.profileCard, { borderColor: rTheme.border, backgroundColor: '#FFFFFF', shadowColor: rTheme.glow }]}>
+                    <View style={[styles.profileAvatar, { backgroundColor: rTheme.color, shadowColor: rTheme.glow }]}>
+                      <Text style={styles.profileAvatarText}>{party1.charAt(0).toUpperCase()}</Text>
                     </View>
                     <View style={styles.profileCardInfo}>
-                      <Text style={styles.profileCardName}>{party2Data.company || party2}</Text>
-                      <Text style={[
-                        styles.profileCardRole,
-                        { color: isInviteMode ? '#D97706' : '#0284C7' }
-                      ]}>
-                        {isInviteMode ? '⚠️ NOT YET REGISTERED' : '✨ ON PRAVISTI'}
+                      <Text style={[styles.profileCardName, { color: '#0F172A' }]}>{party1}</Text>
+                      <Text style={[styles.profileCardRole, { color: rTheme.color }]}>
+                        {role === 'buyer' ? 'BUYER PROFILE' : role === 'broker' ? 'BROKER PROFILE' : 'SELLER PROFILE'}
                       </Text>
                     </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View style={[
-                        styles.profileCardBadge,
-                        {
-                          backgroundColor: isInviteMode ? '#FEF3C7' : '#E0F2FE',
-                          borderColor: isInviteMode ? '#FCD34D' : '#BAE6FD',
-                          borderWidth: 1,
-                        }
-                      ]}>
-                        <Text style={[
-                          styles.profileCardBadgeText,
-                          { color: isInviteMode ? '#D97706' : '#0284C7' }
-                        ]}>
-                          {isInviteMode ? 'Invite' : 'Active'}
-                        </Text>
-                      </View>
-                      <Text style={styles.changeText}>Edit ›</Text>
+                    <View style={[styles.profileCardBadge, { backgroundColor: rTheme.bg, borderColor: rTheme.border, borderWidth: 1 }]}>
+                      <Text style={[styles.profileCardBadgeText, { color: rTheme.color }]}>✓ Verified</Text>
                     </View>
-                  </TouchableOpacity>
-                ) : (
-                  /* Empty Selector */
-                  <TouchableOpacity
-                    style={[
-                      styles.counterpartySelector,
-                      fieldErrors.party2 && styles.inputError
-                    ]}
-                    onPress={() => {
-                      setFocusedField('party2');
-                      setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                      onNavigate('ContactPicker', { pickingFor: 'party2' });
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.counterpartySelectorInner}>
-                      <View style={styles.selectorAvatarPlaceholder}>
-                        <Text style={styles.selectorAvatarPlaceholderEmoji}>👤</Text>
-                      </View>
-                      <View>
-                        <Text style={styles.counterpartySelectorLabel}>Select Counterparty Company</Text>
-                        <Text style={styles.counterpartySelectorHint}>Pick from your contact directory</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.dropdownIcon}>›</Text>
-                  </TouchableOpacity>
-                )}
-                {fieldErrors.party2 && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.party2}</Text>}
-              </View>
-            </View>
-          </View>
+                  </View>
+                </View>
 
-          {/* ═══════════ CARD 2: PRODUCT LEDGER ═══════════ */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <View style={[styles.sectionDot, { backgroundColor: '#0284C7' }]} />
-              <Text style={styles.sectionTitle}>Product Ledger & Value</Text>
-              <View style={styles.sectionBadgeContainer}>
-                <Text style={[styles.sectionBadge, { color: '#0284C7', backgroundColor: '#E0F2FE' }]}>STEP 2</Text>
-              </View>
-            </View>
+                {/* Visual Flow Connector */}
+                <View style={styles.flowConnectorContainer}>
+                  <View style={styles.flowConnectorLine} />
+                  <View style={[styles.flowConnectorBadge, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}>
+                    <Handshake size={14} color="#94A3B8" />
+                  </View>
+                  <View style={styles.flowConnectorLine} />
+                </View>
 
-            <View style={styles.cardBody}>
-              {/* Product Name */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.fieldLabel}>Product / Commodity Name*</Text>
+                {/* Seller Company Selector (Only for Broker) */}
+                {role === 'broker' && (
+                  <View style={[styles.inputGroup, { marginBottom: 12 }]}>
+                    <Text style={styles.fieldLabel}>Seller Company*</Text>
 
-                {companyProducts.length > 0 && (
-                  <View style={{ marginBottom: 10 }}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
-                      {companyProducts.map((p) => {
-                        const isSel = String(productName).toLowerCase().trim() === String(p.name || '').toLowerCase().trim();
-                        return (
-                          <TouchableOpacity
-                            key={p._id || p.id}
-                            style={[styles.productChip, isSel && styles.productChipActive]}
-                            onPress={() => { setProductName(p.name); setShowProductDropdown(false); }}
-                            activeOpacity={0.7}
-                          >
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              {p.image ? (
-                                <Image source={{ uri: p.image }} style={styles.miniProductImage} />
-                              ) : (
-                                <Text style={styles.miniProductEmoji}>🌾</Text>
-                              )}
-                              <Text style={[styles.productChipText, isSel && styles.productChipTextActive]}>
-                                {p.name}
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
+                    {sellerCompany && sellerCompanyData ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.profileCard,
+                          {
+                            borderColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#E2E8F0',
+                            backgroundColor: '#FFFFFF',
+                            shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#0284C7',
+                          }
+                        ]}
+                        onPress={() => {
+                          setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
+                          onNavigate('ContactPicker', { pickingFor: 'sellerCompany' });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={[styles.profileAvatar, { backgroundColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#0284C7', shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#0284C7' }]}>
+                          <Text style={styles.profileAvatarText}>
+                            {(sellerCompanyData.company || sellerCompany).charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.profileCardInfo}>
+                          <Text style={styles.profileCardName}>
+                            {sellerCompanyData.company ? `${sellerCompanyData.company} (${sellerCompanyData.name || sellerCompany})` : (sellerCompanyData.name || sellerCompany)}
+                          </Text>
+                          <Text style={[
+                            styles.profileCardRole,
+                            { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#0284C7' }
+                          ]}>
+                            {sellerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <View style={[
+                            styles.profileCardBadge,
+                            {
+                              backgroundColor: sellerCompanyData.isRegistered === false ? '#FEF3C7' : '#E0F2FE',
+                              borderColor: sellerCompanyData.isRegistered === false ? '#FCD34D' : '#BAE6FD',
+                              borderWidth: 1,
+                            }
+                          ]}>
+                            <Text style={[
+                              styles.profileCardBadgeText,
+                              { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#0284C7' }
+                            ]}>
+                              {sellerCompanyData.isRegistered === false ? 'Invite' : 'Active'}
+                            </Text>
+                          </View>
+                          <Text style={styles.changeText}>Edit ›</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[
+                          styles.counterpartySelector,
+                          fieldErrors.sellerCompany && styles.inputError
+                        ]}
+                        onPress={() => {
+                          setFocusedField('sellerCompany');
+                          setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
+                          onNavigate('ContactPicker', { pickingFor: 'sellerCompany' });
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.counterpartySelectorInner}>
+                          <View style={styles.selectorAvatarPlaceholder}>
+                            <Building2 size={16} color="#94A3B8" />
+                          </View>
+                          <View>
+                            <Text style={styles.counterpartySelectorLabel}>Select Seller Company</Text>
+                            <Text style={styles.counterpartySelectorHint}>Pick from your contact directory</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.dropdownIcon}>›</Text>
+                      </TouchableOpacity>
+                    )}
+                    {fieldErrors.sellerCompany && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.sellerCompany}</Text>}
                   </View>
                 )}
 
-                <View style={styles.productInputWrapper}>
-                  <TextInput
-                    style={[
-                      styles.textInput,
-                      focusedField === 'productName' && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
-                      fieldErrors.productName && styles.inputError,
-                      { flex: 1 }
-                    ]}
-                    placeholder="e.g. Organic Wheat, Basmati Rice..."
-                    placeholderTextColor="#94A3B8"
-                    value={productName}
-                    onChangeText={(text) => {
-                      setProductName(text);
-                      setShowProductDropdown(true);
-                      if (text.trim()) setFieldErrors(prev => ({ ...prev, productName: undefined }));
-                    }}
-                    onFocus={() => { setFocusedField('productName'); setShowProductDropdown(true); }}
-                    onBlur={() => { setTimeout(() => setShowProductDropdown(false), 250); setFocusedField(''); }}
-                  />
-                  <TouchableOpacity style={styles.dropdownToggleBtn} onPress={() => setShowProductDropdown(!showProductDropdown)} activeOpacity={0.7}>
-                    <Text style={styles.dropdownToggleText}>▾</Text>
-                  </TouchableOpacity>
-                </View>
-                {fieldErrors.productName && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.productName}</Text>}
+                {/* Visual Flow Connector (between Seller and Buyer in Broker mode) */}
+                {role === 'broker' && (
+                  <View style={styles.flowConnectorContainer}>
+                    <View style={styles.flowConnectorLine} />
+                    <View style={[styles.flowConnectorBadge, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}>
+                      <Box size={14} color="#94A3B8" />
+                    </View>
+                    <View style={styles.flowConnectorLine} />
+                  </View>
+                )}
 
-                {showProductDropdown && (() => {
-                  const inputVal = productName.trim().toLowerCase();
-                  const filtered = companyProducts.filter(p => {
-                    if (!inputVal) return true;
-                    if (companyProducts.some(cp => cp.name.toLowerCase() === inputVal)) return true;
-                    return String(p.name || '').toLowerCase().includes(inputVal);
-                  });
-                  if (filtered.length === 0) return null;
-                  return (
-                    <View style={styles.autocompleteDropdown}>
-                      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always" style={{ maxHeight: 150 }}>
-                        {filtered.map((prod) => (
+                {/* Buyer / Counterparty Selector */}
+                <View style={[styles.inputGroup, { marginBottom: 0 }]}>
+                  <Text style={styles.fieldLabel}>
+                    {role === 'broker' ? 'Buyer Company*' : role === 'buyer' ? 'Counterparty Seller*' : 'Counterparty Buyer*'}
+                  </Text>
+
+                  {party2 && party2Data ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.profileCard,
+                        {
+                          borderColor: party2Data.isRegistered === false ? '#F59E0B' : '#E2E8F0',
+                          backgroundColor: '#FFFFFF',
+                          shadowColor: party2Data.isRegistered === false ? '#F59E0B' : '#0284C7',
+                        }
+                      ]}
+                      onPress={() => {
+                        setFieldErrors(prev => ({ ...prev, party2: undefined }));
+                        onNavigate('ContactPicker', { pickingFor: 'party2' });
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.profileAvatar, { backgroundColor: party2Data.isRegistered === false ? '#F59E0B' : '#0284C7', shadowColor: party2Data.isRegistered === false ? '#F59E0B' : '#0284C7' }]}>
+                        <Text style={styles.profileAvatarText}>
+                          {(party2Data.company || party2).charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={styles.profileCardInfo}>
+                        <Text style={styles.profileCardName}>
+                          {party2Data.company ? `${party2Data.company} (${party2Data.name || party2})` : (party2Data.name || party2)}
+                        </Text>
+                        <Text style={[
+                          styles.profileCardRole,
+                          { color: party2Data.isRegistered === false ? '#D97706' : '#0284C7' }
+                        ]}>
+                          {party2Data.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={[
+                          styles.profileCardBadge,
+                          {
+                            backgroundColor: party2Data.isRegistered === false ? '#FEF3C7' : '#E0F2FE',
+                            borderColor: party2Data.isRegistered === false ? '#FCD34D' : '#BAE6FD',
+                            borderWidth: 1,
+                          }
+                        ]}>
+                          <Text style={[
+                            styles.profileCardBadgeText,
+                            { color: party2Data.isRegistered === false ? '#D97706' : '#0284C7' }
+                          ]}>
+                            {party2Data.isRegistered === false ? 'Invite' : 'Active'}
+                          </Text>
+                        </View>
+                        <Text style={styles.changeText}>Edit ›</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[
+                        styles.counterpartySelector,
+                        fieldErrors.party2 && styles.inputError
+                      ]}
+                      onPress={() => {
+                        setFocusedField('party2');
+                        setFieldErrors(prev => ({ ...prev, party2: undefined }));
+                        onNavigate('ContactPicker', { pickingFor: 'party2' });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.counterpartySelectorInner}>
+                        <View style={styles.selectorAvatarPlaceholder}>
+                          <User size={16} color="#94A3B8" />
+                        </View>
+                        <View>
+                          <Text style={styles.counterpartySelectorLabel}>
+                            {role === 'broker' ? 'Select Buyer Company' : `Select Counterparty ${role === 'buyer' ? 'Seller' : 'Buyer'}`}
+                          </Text>
+                          <Text style={styles.counterpartySelectorHint}>Pick from your contact directory</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.dropdownIcon}>›</Text>
+                    </TouchableOpacity>
+                  )}
+                  {fieldErrors.party2 && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.party2}</Text>}
+                </View>
+
+                {/* Broker Company Selector (Optional - only if role is not broker) */}
+                {role !== 'broker' && (
+                  <View style={[styles.inputGroup, { marginTop: 16, marginBottom: 0 }]}>
+                    <Text style={styles.fieldLabel}>Broker Company (Optional)</Text>
+
+                    {brokerCompany && brokerCompanyData ? (
+                      <View
+                        style={[
+                          styles.profileCard,
+                          {
+                            borderColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#E2E8F0',
+                            backgroundColor: '#FFFFFF',
+                            shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED',
+                          }
+                        ]}
+                      >
+                        <TouchableOpacity
+                          style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                          onPress={() => {
+                            onNavigate('ContactPicker', { pickingFor: 'brokerCompany' });
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.profileAvatar, { backgroundColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED', shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED' }]}>
+                            <Text style={styles.profileAvatarText}>
+                              {(brokerCompanyData.company || brokerCompany).charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={styles.profileCardInfo}>
+                            <Text style={styles.profileCardName}>
+                              {brokerCompanyData.company ? `${brokerCompanyData.company} (${brokerCompanyData.name || brokerCompany})` : (brokerCompanyData.name || brokerCompany)}
+                            </Text>
+                            <Text style={[
+                              styles.profileCardRole,
+                              { color: brokerCompanyData.isRegistered === false ? '#D97706' : '#7C3AED' }
+                            ]}>
+                              {brokerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <TouchableOpacity
-                            key={prod._id || prod.id}
-                            style={styles.dropdownItem}
-                            onPress={() => { setProductName(prod.name); setShowProductDropdown(false); }}
+                            style={[
+                              styles.profileCardBadge,
+                              {
+                                backgroundColor: '#FEF2F2',
+                                borderColor: '#FCA5A5',
+                                borderWidth: 1,
+                              }
+                            ]}
+                            onPress={() => {
+                              setBrokerCompany('');
+                              setBrokerCompanyData(null);
+                              setBrokerCompanyId('');
+                            }}
+                            activeOpacity={0.7}
                           >
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                              {prod.image ? (
-                                <Image source={{ uri: prod.image }} style={styles.dropdownProductImage} />
-                              ) : (
-                                <Text style={styles.dropdownProductEmoji}>🌾</Text>
-                              )}
-                              <Text style={styles.dropdownItemText}>{prod.name}</Text>
-                            </View>
+                            <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
                           </TouchableOpacity>
-                        ))}
-                      </ScrollView>
+                          <Text style={styles.changeText}>Edit ›</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.counterpartySelector}
+                        onPress={() => {
+                          setFocusedField('brokerCompany');
+                          onNavigate('ContactPicker', { pickingFor: 'brokerCompany' });
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.counterpartySelectorInner}>
+                          <View style={styles.selectorAvatarPlaceholder}>
+                            <Briefcase size={16} color="#94A3B8" />
+                          </View>
+                          <View>
+                            <Text style={styles.counterpartySelectorLabel}>Select Broker Company</Text>
+                            <Text style={styles.counterpartySelectorHint}>Pick from your contact directory</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.dropdownIcon}>›</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Step 1 Navigation Button */}
+          {currentStep === 1 && (
+            <View style={styles.wizardNavRow}>
+              <TouchableOpacity
+                style={[styles.wizardNextBtn, { backgroundColor: rTheme.color }]}
+                onPress={() => {
+                  const errors = {};
+                  if (role === 'broker') {
+                    if (!party2) errors.party2 = 'Please select a buyer company';
+                    if (!sellerCompany) errors.sellerCompany = 'Please select a seller company';
+                  } else {
+                    if (!party2) errors.party2 = `Please select a ${role === 'buyer' ? 'seller' : 'buyer'} company`;
+                  }
+                  if (Object.keys(errors).length > 0) {
+                    setFieldErrors(errors);
+                    Alert.alert('Validation Error', 'Please select trade counterparties first.');
+                    return;
+                  }
+                  setFieldErrors({});
+                  setCurrentStep(2);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.wizardNextBtnText}>Continue to Products Ledger ›</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ═══════════ CARD 2: PRODUCT LEDGER (STEP 2) ═══════════ */}
+          {currentStep === 2 && (
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <View style={[styles.sectionDot, { backgroundColor: '#0284C7' }]} />
+                <Text style={styles.sectionTitle}>Product Ledger & Value</Text>
+                <View style={styles.sectionBadgeContainer}>
+                  <Text style={[styles.sectionBadge, { color: '#0284C7', backgroundColor: '#E0F2FE' }]}>STEP 2</Text>
+                </View>
+              </View>
+
+              <View style={styles.cardBody}>
+                {/* Horizontal Tabs Row */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.tabsScrollContent}
+                >
+                  {productsList.map((prod, idx) => {
+                    const isActive = prod.id === activeTabId;
+                    const label = prod.productName.trim() || `Product #${idx + 1}`;
+                    return (
+                      <TouchableOpacity
+                        key={prod.id}
+                        style={[
+                          styles.tabItem,
+                          isActive && [styles.tabItemActive, { backgroundColor: rTheme.bg, borderColor: rTheme.border }]
+                        ]}
+                        onPress={() => setActiveTabId(prod.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[
+                          styles.tabItemText,
+                          isActive && [styles.tabItemTextActive, { color: rTheme.color }]
+                        ]}>
+                          {label}
+                        </Text>
+                        {productsList.length > 1 && (
+                          <TouchableOpacity
+                            style={styles.tabDeleteBtn}
+                            onPress={() => removeProductItem(prod.id)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.tabDeleteText}>✕</Text>
+                          </TouchableOpacity>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <TouchableOpacity
+                    style={[styles.addTabBtn, { borderColor: rTheme.border }]}
+                    onPress={addProductItem}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.addTabBtnText, { color: rTheme.color }]}>+ Add</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+
+                {/* Single Active Product Form Card */}
+                {(() => {
+                  const prod = productsList.find(p => p.id === activeTabId) || productsList[0];
+                  if (!prod) return null;
+                  const prodErrors = fieldErrors[`product_${prod.id}`] || {};
+
+                  return (
+                    <View key={prod.id} style={styles.productItemCard}>
+                      {/* Product Name Input */}
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.fieldLabel}>Product / Commodity Name*</Text>
+
+                        {companyProducts.length > 0 && (
+                          <View style={{ marginBottom: 10 }}>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
+                              {companyProducts.map((p) => {
+                                const isSel = String(prod.productName).toLowerCase().trim() === String(p.name || '').toLowerCase().trim();
+                                return (
+                                  <TouchableOpacity
+                                    key={p._id || p.id}
+                                    style={[styles.productChip, isSel && styles.productChipActive]}
+                                    onPress={() => {
+                                      updateProductField(prod.id, 'productName', p.name);
+                                      updateProductField(prod.id, 'showProductDropdown', false);
+                                    }}
+                                    activeOpacity={0.7}
+                                  >
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                      {p.image ? (
+                                        <Image source={{ uri: p.image }} style={styles.miniProductImage} />
+                                      ) : (
+                                        <Box size={12} color="#94A3B8" />
+                                      )}
+                                      <Text style={[styles.productChipText, isSel && styles.productChipTextActive]}>
+                                        {p.name}
+                                      </Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </ScrollView>
+                          </View>
+                        )}
+
+                        <View style={styles.productInputWrapper}>
+                          <TextInput
+                            style={[
+                              styles.textInput,
+                              focusedField === `productName_${prod.id}` && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
+                              prodErrors.productName && styles.inputError,
+                              { flex: 1 }
+                            ]}
+                            placeholder="Type product name (e.g. Cotton Bales)"
+                            placeholderTextColor="#94A3B8"
+                            value={prod.productName}
+                            onChangeText={(v) => handleProductNameChange(prod.id, v)}
+                            onFocus={() => {
+                              setFocusedField(`productName_${prod.id}`);
+                              updateProductField(prod.id, 'showProductDropdown', true);
+                            }}
+                            onBlur={() => {
+                              // Delay collapse slightly to allow clicking item list
+                              setTimeout(() => {
+                                updateProductField(prod.id, 'showProductDropdown', false);
+                                setFocusedField('');
+                              }, 200);
+                            }}
+                          />
+                        </View>
+                        {prodErrors.productName && <Text style={styles.fieldErrorText}>⚠ {prodErrors.productName}</Text>}
+
+                        {prod.showProductDropdown && prod.productName.trim().length > 0 && (() => {
+                          const filtered = productsData.filter(p => p.name.toLowerCase().includes(prod.productName.toLowerCase()));
+                          if (filtered.length === 0) return null;
+                          return (
+                            <View style={styles.autocompleteDropdown}>
+                              <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always" style={{ maxHeight: 150 }}>
+                                {filtered.map((p) => (
+                                  <TouchableOpacity
+                                    key={p._id || p.id}
+                                    style={styles.dropdownItem}
+                                    onPress={() => {
+                                      updateProductField(prod.id, 'productName', p.name);
+                                      updateProductField(prod.id, 'showProductDropdown', false);
+                                    }}
+                                  >
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                      {p.image ? (
+                                        <Image source={{ uri: p.image }} style={styles.dropdownProductImage} />
+                                      ) : (
+                                        <Box size={14} color="#94A3B8" />
+                                      )}
+                                      <Text style={styles.dropdownItemText}>{p.name}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ))}
+                              </ScrollView>
+                            </View>
+                          );
+                        })()}
+                      </View>
+
+                      {/* Qty & Price row */}
+                      <View style={styles.row}>
+                        <View style={[styles.inputGroup, { flex: 1 }]}>
+                          <Text style={styles.fieldLabel}>Quantity*</Text>
+                          <TextInput
+                            style={[
+                              styles.textInput,
+                              focusedField === `quantity_${prod.id}` && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
+                              prodErrors.quantity && styles.inputError
+                            ]}
+                            placeholder="0"
+                            placeholderTextColor="#94A3B8"
+                            value={prod.quantity}
+                            onChangeText={(v) => {
+                              updateProductField(prod.id, 'quantity', v);
+                              if (v.trim() && prodErrors.quantity) {
+                                setFieldErrors(prev => {
+                                  const copy = { ...prev };
+                                  delete copy[`product_${prod.id}`]?.quantity;
+                                  return copy;
+                                });
+                              }
+                            }}
+                            keyboardType="numeric"
+                            onFocus={() => setFocusedField(`quantity_${prod.id}`)}
+                            onBlur={() => setFocusedField('')}
+                          />
+                          {prodErrors.quantity && <Text style={styles.fieldErrorText}>⚠ {prodErrors.quantity}</Text>}
+                        </View>
+
+                        <View style={[styles.inputGroup, { flex: 1 }]}>
+                          <Text style={styles.fieldLabel}>Price / Unit*</Text>
+                          <TextInput
+                            style={[
+                              styles.textInput,
+                              focusedField === `price_${prod.id}` && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
+                              prodErrors.price && styles.inputError
+                            ]}
+                            placeholder="₹ 0.00"
+                            placeholderTextColor="#94A3B8"
+                            value={prod.price}
+                            onChangeText={(v) => {
+                              updateProductField(prod.id, 'price', v);
+                              if (v.trim() && prodErrors.price) {
+                                setFieldErrors(prev => {
+                                  const copy = { ...prev };
+                                  delete copy[`product_${prod.id}`]?.price;
+                                  return copy;
+                                });
+                              }
+                            }}
+                            keyboardType="numeric"
+                            onFocus={() => setFocusedField(`price_${prod.id}`)}
+                            onBlur={() => setFocusedField('')}
+                          />
+                          {prodErrors.price && <Text style={styles.fieldErrorText}>⚠ {prodErrors.price}</Text>}
+                        </View>
+                      </View>
+
+                      {/* Discount & GST row */}
+                      <View style={styles.row}>
+                        <View style={[styles.inputGroup, { flex: 1 }]}>
+                          <Text style={styles.fieldLabel}>Discount (₹)</Text>
+                          <TextInput
+                            style={[styles.textInput, focusedField === `discount_${prod.id}` && styles.inputFocused]}
+                            placeholder="0"
+                            placeholderTextColor="#94A3B8"
+                            value={prod.discount}
+                            onChangeText={(v) => updateProductField(prod.id, 'discount', v)}
+                            keyboardType="numeric"
+                            onFocus={() => setFocusedField(`discount_${prod.id}`)}
+                            onBlur={() => setFocusedField('')}
+                          />
+                        </View>
+
+                        <View style={[styles.inputGroup, { flex: 1 }]}>
+                          <Text style={styles.fieldLabel}>GST (%)</Text>
+                          <TextInput
+                            style={[styles.textInput, focusedField === `gst_${prod.id}` && styles.inputFocused]}
+                            placeholder="e.g. 18"
+                            placeholderTextColor="#94A3B8"
+                            value={prod.gst}
+                            onChangeText={(v) => updateProductField(prod.id, 'gst', v)}
+                            keyboardType="numeric"
+                            onFocus={() => setFocusedField(`gst_${prod.id}`)}
+                            onBlur={() => setFocusedField('')}
+                          />
+                        </View>
+                      </View>
+
+                      {/* Payment Terms row */}
+                      <View style={[styles.inputGroup, { marginBottom: 0 }]}>
+                        <Text style={styles.fieldLabel}>Payment Terms</Text>
+                        <TextInput
+                          style={[styles.textInput, focusedField === `paymentTerms_${prod.id}` && styles.inputFocused]}
+                          placeholder="e.g. 100% Advance"
+                          placeholderTextColor="#94A3B8"
+                          value={prod.paymentTerms}
+                          onChangeText={(v) => updateProductField(prod.id, 'paymentTerms', v)}
+                          onFocus={() => setFocusedField(`paymentTerms_${prod.id}`)}
+                          onBlur={() => setFocusedField('')}
+                        />
+                      </View>
                     </View>
                   );
                 })()}
+
+                {role !== 'broker' && (
+                  <View style={[styles.inputGroup, { marginTop: 14, marginBottom: 0 }]}>
+                    <Text style={styles.fieldLabel}>Broker Company ID (Optional)</Text>
+                    <TextInput
+                      style={[styles.textInput, focusedField === 'brokerCompanyId' && styles.inputFocused]}
+                      placeholder="Provide Broker ID to register commissions"
+                      placeholderTextColor="#94A3B8"
+                      value={brokerCompanyId}
+                      onChangeText={setBrokerCompanyId}
+                      onFocus={() => setFocusedField('brokerCompanyId')}
+                      onBlur={() => setFocusedField('')}
+                    />
+                  </View>
+                )}
+
+                {/* Ticket Stub Total Value (Elegant Contrast element) */}
+                {showTicketStub && (
+                  <View style={styles.ticketStub}>
+                    <View style={styles.ticketLeft}>
+                      <Text style={styles.ticketLabel}>ESTIMATED CONTRACT VALUE</Text>
+                      <Text style={styles.ticketValue}>₹ {totals.total.toLocaleString('en-IN')}</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                        {totals.discount > 0 && (
+                          <Text style={styles.ticketDiscount}>After ₹{totals.discount.toLocaleString('en-IN')} disc.</Text>
+                        )}
+                        {totals.gstAmount > 0 && (
+                          <Text style={styles.ticketDiscount}>Incl. GST (+₹{totals.gstAmount.toLocaleString('en-IN')})</Text>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.ticketDivider}>
+                      <View style={styles.ticketPunchTop} />
+                      <View style={styles.ticketDashedLine} />
+                      <View style={styles.ticketPunchBottom} />
+                    </View>
+                    <View style={styles.ticketRight}>
+                      <Text style={styles.ticketRightTop}>TOTAL QTY</Text>
+                      <Text style={styles.ticketRightValue}>{totals.qty.toLocaleString('en-IN')}</Text>
+                      <Text style={styles.ticketRightTop}>{productsList.length} item(s)</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Step 2 Navigation Row */}
+          {currentStep === 2 && (
+            <View style={styles.wizardNavRow}>
+              <TouchableOpacity
+                style={styles.wizardBackBtn}
+                onPress={() => setCurrentStep(1)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.wizardBackBtnText}>‹ Back</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.wizardNextBtn, { backgroundColor: rTheme.color, flex: 2 }]}
+                onPress={() => {
+                  const activeProd = productsList.find(p => p.id === activeTabId) || productsList[0];
+                  const errors = {};
+                  if (!activeProd || !activeProd.productName.trim()) {
+                    errors[`product_${activeProd?.id}`] = { productName: 'Product name is required' };
+                  } else {
+                    if (!activeProd.quantity.trim()) errors[`product_${activeProd.id}`] = { ...errors[`product_${activeProd.id}`], quantity: 'Quantity is required' };
+                    if (!activeProd.price.trim()) errors[`product_${activeProd.id}`] = { ...errors[`product_${activeProd.id}`], price: 'Price is required' };
+                  }
+                  if (Object.keys(errors).length > 0) {
+                    setFieldErrors(errors);
+                    Alert.alert('Validation Error', 'Please complete the product ledger fields first.');
+                    return;
+                  }
+                  setFieldErrors({});
+                  setCurrentStep(3);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.wizardNextBtnText}>Continue to Terms ›</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ═══════════ CARD 3: TERMS (STEP 3) ═══════════ */}
+          {currentStep === 3 && (
+            <View style={styles.sectionCard}>
+              <View style={styles.sectionHeader}>
+                <View style={[styles.sectionDot, { backgroundColor: '#0284C7' }]} />
+                <Text style={styles.sectionTitle}>Agreement Terms & Dates</Text>
+                <View style={styles.sectionBadgeContainer}>
+                  <Text style={[styles.sectionBadge, { color: '#0284C7', backgroundColor: '#E0F2FE' }]}>STEP 3</Text>
+                </View>
               </View>
 
+              <View style={styles.cardBody}>
+                {/* Date Selectors */}
+                <View style={styles.row}>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.fieldLabel}>Agreement Date</Text>
+                    <TouchableOpacity
+                      style={[styles.dateSelector, focusedField === 'dealDate' && styles.inputFocused]}
+                      onPress={() => { setFocusedField('dealDate'); openDatePicker('deal'); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.dateSelectorText}>{formatDateLabel(dealDate)}</Text>
+                    </TouchableOpacity>
+                  </View>
 
-              {/* Qty & Price row */}
-              <View style={styles.row}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.fieldLabel}>Quantity*</Text>
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.fieldLabel}>Validity Expiry</Text>
+                    <TouchableOpacity
+                      style={[styles.dateSelector, focusedField === 'validityDate' && styles.inputFocused]}
+                      onPress={() => { setFocusedField('validityDate'); openDatePicker('validity'); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.dateSelectorText}>{formatDateLabel(validityDate)}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Description */}
+                <View style={[styles.inputGroup, { marginBottom: 0 }]}>
+                  <Text style={styles.fieldLabel}>Custom Trade Terms</Text>
                   <TextInput
                     style={[
                       styles.textInput,
-                      focusedField === 'quantity' && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
-                      fieldErrors.quantity && styles.inputError
+                      styles.multilineInput,
+                      focusedField === 'description' && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }]
                     ]}
-                    placeholder="0"
+                    placeholder="Specify delivery locations, commission terms, quality specs..."
                     placeholderTextColor="#94A3B8"
-                    value={quantity}
-                    onChangeText={(v) => { setQuantity(v); if (v.trim()) setFieldErrors(prev => ({ ...prev, quantity: undefined })); }}
-                    keyboardType="numeric"
-                    onFocus={() => setFocusedField('quantity')}
-                    onBlur={() => setFocusedField('')}
-                  />
-                  {fieldErrors.quantity && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.quantity}</Text>}
-                </View>
-
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.fieldLabel}>Price / Unit*</Text>
-                  <TextInput
-                    style={[
-                      styles.textInput,
-                      focusedField === 'price' && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
-                      fieldErrors.price && styles.inputError
-                    ]}
-                    placeholder="₹ 0.00"
-                    placeholderTextColor="#94A3B8"
-                    value={price}
-                    onChangeText={(v) => { setPrice(v); if (v.trim()) setFieldErrors(prev => ({ ...prev, price: undefined })); }}
-                    keyboardType="numeric"
-                    onFocus={() => setFocusedField('price')}
-                    onBlur={() => setFocusedField('')}
-                  />
-                  {fieldErrors.price && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.price}</Text>}
-                </View>
-              </View>
-
-              {/* Discount & Payment Terms */}
-              <View style={styles.row}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.fieldLabel}>Discount (₹)</Text>
-                  <TextInput
-                    style={[styles.textInput, focusedField === 'discount' && styles.inputFocused]}
-                    placeholder="0"
-                    placeholderTextColor="#94A3B8"
-                    value={discount}
-                    onChangeText={setDiscount}
-                    keyboardType="numeric"
-                    onFocus={() => setFocusedField('discount')}
-                    onBlur={() => setFocusedField('')}
-                  />
-                </View>
-
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.fieldLabel}>Payment Terms</Text>
-                  <TextInput
-                    style={[styles.textInput, focusedField === 'paymentTerms' && styles.inputFocused]}
-                    placeholder="e.g. 14 days"
-                    placeholderTextColor="#94A3B8"
-                    value={paymentTerms}
-                    onChangeText={setPaymentTerms}
-                    onFocus={() => setFocusedField('paymentTerms')}
+                    value={description}
+                    onChangeText={setDescription}
+                    multiline
+                    numberOfLines={3}
+                    onFocus={() => setFocusedField('description')}
                     onBlur={() => setFocusedField('')}
                   />
                 </View>
               </View>
+            </View>
+          )}
 
+          {/* Step 3 Navigation Row */}
+          {currentStep === 3 && (
+            <View style={styles.wizardNavRow}>
+              <TouchableOpacity
+                style={styles.wizardBackBtn}
+                onPress={() => setCurrentStep(2)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.wizardBackBtnText}>‹ Back</Text>
+              </TouchableOpacity>
 
-              {role === 'broker' && (
-                <View style={[styles.inputGroup, { marginTop: 4, marginBottom: 0 }]}>
-                  <Text style={styles.fieldLabel}>Broker Company ID (Optional)</Text>
-                  <TextInput
-                    style={[styles.textInput, focusedField === 'brokerCompanyId' && styles.inputFocused]}
-                    placeholder="Leave blank to auto-use your company"
-                    placeholderTextColor="#94A3B8"
-                    value={brokerCompanyId}
-                    onChangeText={setBrokerCompanyId}
-                    onFocus={() => setFocusedField('brokerCompanyId')}
-                    onBlur={() => setFocusedField('')}
-                  />
-                </View>
-              )}
-
-              {/* Ticket Stub Total Value (Elegant Contrast element) */}
-              {totalValue && (
-                <View style={styles.ticketStub}>
-                  <View style={styles.ticketLeft}>
-                    <Text style={styles.ticketLabel}>ESTIMATED CONTRACT VALUE</Text>
-                    <Text style={styles.ticketValue}>₹ {totalValue}</Text>
-                    {numD > 0 && (
-                      <Text style={styles.ticketDiscount}>After ₹{numD.toLocaleString('en-IN')} discount</Text>
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  isSubmitting && styles.submitButtonDisabled,
+                  isInviteMode && styles.inviteButton,
+                  { flex: 2, marginTop: 0 }
+                ]}
+                activeOpacity={0.85}
+                onPress={handleCreateDeal}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <View style={styles.submitButtonContent}>
+                    {isInviteMode ? (
+                      <Send size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    ) : (
+                      <Handshake size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
                     )}
+                    <Text style={styles.submitButtonText}>
+                      {isInviteMode ? 'Send WhatsApp Invite' : 'Confirm Trade Agreement'}
+                    </Text>
                   </View>
-                  <View style={styles.ticketDivider}>
-                    <View style={styles.ticketPunchTop} />
-                    <View style={styles.ticketDashedLine} />
-                    <View style={styles.ticketPunchBottom} />
-                  </View>
-                  <View style={styles.ticketRight}>
-                    <Text style={styles.ticketRightTop}>QTY</Text>
-                    <Text style={styles.ticketRightValue}>{numQ.toLocaleString('en-IN')}</Text>
-                    <Text style={styles.ticketRightTop}>@₹{numP}</Text>
-                  </View>
-                </View>
-              )}
+                )}
+              </TouchableOpacity>
             </View>
-          </View>
-
-          {/* ═══════════ CARD 3: TERMS ═══════════ */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <View style={[styles.sectionDot, { backgroundColor: '#0284C7' }]} />
-              <Text style={styles.sectionTitle}>Agreement Terms & Dates</Text>
-              <View style={styles.sectionBadgeContainer}>
-                <Text style={[styles.sectionBadge, { color: '#0284C7', backgroundColor: '#E0F2FE' }]}>STEP 3</Text>
-              </View>
-            </View>
-
-            <View style={styles.cardBody}>
-              {/* Date Selectors */}
-              <View style={styles.row}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.fieldLabel}>📅 Agreement Date</Text>
-                  <TouchableOpacity
-                    style={[styles.dateSelector, focusedField === 'dealDate' && styles.inputFocused]}
-                    onPress={() => { setFocusedField('dealDate'); openDatePicker('deal'); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.dateSelectorText}>{formatDateLabel(dealDate)}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.fieldLabel}>⏳ Validity Expiry</Text>
-                  <TouchableOpacity
-                    style={[styles.dateSelector, focusedField === 'validityDate' && styles.inputFocused]}
-                    onPress={() => { setFocusedField('validityDate'); openDatePicker('validity'); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.dateSelectorText}>{formatDateLabel(validityDate)}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Description */}
-              <View style={[styles.inputGroup, { marginBottom: 0 }]}>
-                <Text style={styles.fieldLabel}>📝 Custom Trade Terms</Text>
-                <TextInput
-                  style={[
-                    styles.textInput,
-                    styles.multilineInput,
-                    focusedField === 'description' && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }]
-                  ]}
-                  placeholder="Specify delivery locations, commission terms, quality specs..."
-                  placeholderTextColor="#94A3B8"
-                  value={description}
-                  onChangeText={setDescription}
-                  multiline
-                  numberOfLines={3}
-                  onFocus={() => setFocusedField('description')}
-                  onBlur={() => setFocusedField('')}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Submit CTA */}
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              isSubmitting && styles.submitButtonDisabled,
-              isInviteMode && styles.inviteButton
-            ]}
-            activeOpacity={0.85}
-            onPress={handleCreateDeal}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <View style={styles.submitButtonContent}>
-                <Text style={styles.submitButtonIcon}>{isInviteMode ? '📲' : '🤝'}</Text>
-                <Text style={styles.submitButtonText}>
-                  {isInviteMode ? 'Create & Send WhatsApp Invite' : 'Confirm Trade Agreement'}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          )}
 
         </ScrollView>
 
@@ -840,9 +1530,16 @@ const CreateDeal = ({ onNavigate, routeData }) => {
               <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setIsDatePickerVisible(false)} />
               <View style={styles.pickerContent}>
                 <View style={styles.dragIndicator} />
-                <Text style={styles.pickerHeader}>
-                  {pickingForDate === 'deal' ? '📅 Agreement Date' : '⏳ Validity Expiry'}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 16 }}>
+                  {pickingForDate === 'deal' ? (
+                    <Calendar size={18} color="#0F172A" />
+                  ) : (
+                    <Clock size={18} color="#0F172A" />
+                  )}
+                  <Text style={[styles.pickerHeader, { marginBottom: 0 }]}>
+                    {pickingForDate === 'deal' ? 'Agreement Date' : 'Validity Expiry'}
+                  </Text>
+                </View>
                 <View style={styles.calendarGrid}>
                   <View style={styles.pickerControls}>
                     <TouchableOpacity style={styles.navButton} onPress={() => { const d = new Date(tempDate); d.setMonth(tempDate.getMonth() - 1); setTempDate(d); }} activeOpacity={0.7}>
@@ -892,7 +1589,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   <Text style={styles.successCheckIcon}>✓</Text>
                 </View>
               </View>
-              <Text style={styles.successTitle}>Sauda Established! 🎉</Text>
+              <Text style={styles.successTitle}>Sauda Established!</Text>
               <Text style={styles.successSubtext}>
                 Your deal has been successfully recorded in the digital ledger.
               </Text>
@@ -1322,6 +2019,161 @@ const styles = StyleSheet.create({
   confirmAction: { flex: 2, height: 50, borderRadius: 14, backgroundColor: '#0284C7', alignItems: 'center', justifyContent: 'center' },
   cancelText: { color: '#64748B', fontWeight: '800', fontSize: 13 },
   confirmText: { color: '#FFFFFF', fontWeight: '850', fontSize: 13 },
+
+  productItemCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 10,
+  },
+  tabsScrollContent: {
+    paddingBottom: 8,
+    gap: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  tabItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  tabItemActive: {
+    borderWidth: 1.5,
+  },
+  tabItemText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  tabItemTextActive: {
+    fontWeight: '800',
+  },
+  tabDeleteBtn: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 2,
+  },
+  tabDeleteText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
+    marginTop: -1,
+  },
+  addTabBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addTabBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  // WIZARD WORKFLOW
+  wizardProgressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  wizardStepCol: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  wizardStepCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wizardStepCircleActive: {
+    borderWidth: 2,
+  },
+  wizardStepCircleText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  wizardStepCircleTextActive: {
+    fontWeight: '900',
+  },
+  wizardStepLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    letterSpacing: 0.2,
+  },
+  wizardStepLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#E2E8F0',
+    marginTop: -16,
+    marginHorizontal: -8,
+  },
+  wizardNavRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 14,
+    paddingBottom: 24,
+  },
+  wizardNextBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  wizardNextBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  wizardBackBtn: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wizardBackBtnText: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '800',
+  },
 
   // SUCCESS MODAL
   successOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.65)', justifyContent: 'center', alignItems: 'center', padding: 24 },

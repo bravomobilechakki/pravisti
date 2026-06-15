@@ -14,6 +14,14 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import {
+  Bell,
+  Building2,
+  Briefcase,
+  Handshake,
+  Plus,
+  ChevronRight,
+} from 'lucide-react-native';
 import { getCompanies } from '../../services/api';
 
 // import d1 from '../../images/d1.jpeg'; // Removed for dynamic banner
@@ -87,6 +95,50 @@ const Dashboard = ({ onNavigate, routeData }) => {
     };
   };
 
+  const getUserRoleInCompany = (company) => {
+    const currentUser = routeData?.user;
+    if (!currentUser || !company) return 'Member';
+
+    const currentUserId = currentUser.id || currentUser._id || currentUser.userId;
+    const currentUserMobile = currentUser.mobileNumber || currentUser.mobile;
+
+    // Check owner
+    const ownerId = typeof company.owner === 'object' && company.owner !== null
+      ? (company.owner._id || company.owner.id || company.owner.userId)
+      : company.owner;
+      
+    const ownerMobile = typeof company.owner === 'object' && company.owner !== null
+      ? company.owner.mobileNumber
+      : null;
+
+    if (
+      (currentUserId && ownerId && String(currentUserId) === String(ownerId)) ||
+      (currentUserMobile && ownerMobile && String(currentUserMobile).replace(/\D/g, '') === String(ownerMobile).replace(/\D/g, '')) ||
+      (currentUserMobile && company.phone && String(currentUserMobile).replace(/\D/g, '') === String(company.phone).replace(/\D/g, ''))
+    ) {
+      return 'Owner';
+    }
+
+    // Check employees
+    if (Array.isArray(company.employees)) {
+      const isEmployee = company.employees.some(emp => {
+        const empId = typeof emp === 'object' && emp !== null
+          ? (emp._id || emp.id || emp.userId)
+          : emp;
+        const empMobile = typeof emp === 'object' && emp !== null
+          ? emp.mobileNumber
+          : null;
+        return (
+          (currentUserId && empId && String(currentUserId) === String(empId)) ||
+          (currentUserMobile && empMobile && String(currentUserMobile).replace(/\D/g, '') === String(empMobile).replace(/\D/g, ''))
+        );
+      });
+      if (isEmployee) return 'Employee';
+    }
+
+    return 'Member';
+  };
+
   const theme = getTheme(role, industryColor);
   const industryName = routeData?.industry || 'General Business';
 
@@ -113,7 +165,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
           onPress={() => onNavigate('Profile')}
           activeOpacity={0.7}
         >
-          <Text style={{ fontSize: 18, color: theme.primary }}>🔔</Text>
+          <Bell size={18} color={theme.primary} />
           <View style={styles.notificationDot} />
         </TouchableOpacity>
 
@@ -153,7 +205,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
           <View style={styles.emptyStateContainer}>
             <View style={styles.emptyCard}>
               <View style={styles.emptyIconCircle}>
-                <Text style={styles.emptyIcon}>🏢</Text>
+                <Building2 size={28} color={theme.primary} />
               </View>
               <Text style={styles.emptyTitle}>Company Required</Text>
               <Text style={styles.emptySubtitle}>
@@ -227,7 +279,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
                 onPress={() => onNavigate('AddCompany')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.premiumAddButtonIcon}>＋</Text>
+                <Plus size={14} color="#FFFFFF" />
                 <Text style={styles.premiumAddButtonText}>Add New</Text>
               </TouchableOpacity>
             </View>
@@ -236,8 +288,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
               <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 20 }} />
             ) : (
               companies.map((company, index) => {
-                // Deterministic icon/color based on index or ID if not provided by backend
-                const displayIcon = company.icon || (company.type === 'trader' ? '💼' : '🏢');
+                // Deterministic color based on index or ID if not provided by backend
                 const displayColor = company.color || (index % 2 === 0 ? '#3b82f6' : '#10b981');
                 const displayBg = company.bgColor || (index % 2 === 0 ? '#eff6ff' : '#ecfdf5');
 
@@ -250,7 +301,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
                         marginBottom: 0,
                       },
                     ]}
-                    onPress={() => onNavigate('CompanyDetails', { company })}
+                    onPress={() => onNavigate('CompanyDetails', { company, user: routeData?.user })}
                     activeOpacity={0.7}
                   >
                     <View
@@ -259,12 +310,32 @@ const Dashboard = ({ onNavigate, routeData }) => {
                         { backgroundColor: displayBg },
                       ]}
                     >
-                      <Text style={styles.companyAvatarText}>{displayIcon}</Text>
+                      {company.type === 'trader' ? (
+                        <Briefcase size={20} color={displayColor} />
+                      ) : (
+                        <Building2 size={20} color={displayColor} />
+                      )}
                     </View>
                     <View style={styles.companyInfo}>
-                      <Text style={styles.companyName} numberOfLines={1}>
-                        {company.name}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Text style={styles.companyName} numberOfLines={1}>
+                          {company.name}
+                        </Text>
+                        <View style={[
+                          styles.roleBadgeCompact,
+                          {
+                            backgroundColor: getUserRoleInCompany(company) === 'Owner' ? '#EEF2FF' : '#F1F5F9',
+                            borderColor: getUserRoleInCompany(company) === 'Owner' ? '#C7D2FE' : '#E2E8F0',
+                          }
+                        ]}>
+                          <Text style={[
+                            styles.roleBadgeCompactText,
+                            { color: getUserRoleInCompany(company) === 'Owner' ? '#4F46E5' : '#475569' }
+                          ]}>
+                            {getUserRoleInCompany(company)}
+                          </Text>
+                        </View>
+                      </View>
                       <Text style={styles.companyMeta}>
                         {company.phone || 'No contact'} · {typeof company.industry === 'object' && company.industry !== null ? (company.industry.name || 'General') : (company.industry || 'General')}
                       </Text>
@@ -276,7 +347,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
                           { backgroundColor: company.status === 'active' ? '#10b981' : '#f59e0b' },
                         ]}
                       />
-                      <Text style={styles.companyArrow}>›</Text>
+                      <ChevronRight size={18} color="#C5CAD0" />
                     </View>
                   </TouchableOpacity>
                 );
@@ -303,7 +374,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
                 activeOpacity={0.7}
               >
                 <View style={styles.dealLeft}>
-                  <Text style={styles.dealIcon}>{deal.icon}</Text>
+                  <Handshake size={18} color={theme.primary} />
                 </View>
                 <View style={styles.dealInfo}>
                   <Text style={styles.dealTitle}>{deal.title}</Text>
@@ -779,6 +850,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     lineHeight: 18,
+  },
+  roleBadgeCompact: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    marginLeft: 6,
+  },
+  roleBadgeCompactText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
 });
 

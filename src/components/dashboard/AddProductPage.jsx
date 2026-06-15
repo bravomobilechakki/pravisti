@@ -16,6 +16,19 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {
+  ArrowLeft,
+  Plus,
+  Tag,
+  ChevronDown,
+  Edit3,
+  Trash2,
+  Handshake,
+  Camera,
+  Check,
+  X,
+  Search,
+} from 'lucide-react-native';
+import {
   getCategories,
   getSubCategories,
   getProducts,
@@ -199,11 +212,11 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       'Choose how you would like to select your product image:',
       [
         {
-          text: '📸 Take Photo (Camera)',
+          text: 'Take Photo (Camera)',
           onPress: () => launchImagePicker('camera'),
         },
         {
-          text: '🖼️ Choose from Gallery',
+          text: 'Choose from Gallery',
           onPress: () => launchImagePicker('gallery'),
         },
         {
@@ -337,10 +350,10 @@ const AddProductPage = ({ onNavigate, routeData }) => {
 
       if (response && response.success) {
         setSuccessMessage(editingProduct ? 'Product updated successfully!' : 'Product created successfully!');
-        
+
         // Close the form modal first to avoid native modal collision
         setIsProductModalVisible(false);
-        
+
         // Show success modal after slide-down transition completes
         setTimeout(() => {
           setShowSuccessModal(true);
@@ -430,7 +443,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <ArrowLeft size={20} color="#0F172A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Trading Inventory</Text>
         <View style={{ width: 40 }} />
@@ -440,7 +453,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
-          placeholder="🔍 Search products by name..."
+          placeholder="Search products by name..."
           placeholderTextColor="#94A3B8"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -459,7 +472,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
           contentContainerStyle={styles.scrollContent}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>📦</Text>
+              <Tag size={48} color="#94A3B8" style={{ marginBottom: 12 }} />
               <Text style={styles.emptyTitle}>No Products Found</Text>
               <Text style={styles.emptySubtitle}>
                 You haven't added any products yet, or none match your search.
@@ -499,8 +512,9 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                     <Text style={styles.productTitle} numberOfLines={1}>{prod.name}</Text>
 
                     <View style={styles.badgeRow}>
-                      <View style={styles.categoryBadge}>
-                        <Text style={styles.categoryBadgeText}>🏷️ {categoryName}</Text>
+                      <View style={[styles.categoryBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                        <Tag size={10} color="#4F46E5" />
+                        <Text style={styles.categoryBadgeText}>{categoryName}</Text>
                       </View>
                       {subName ? (
                         <View style={styles.subcategoryBadge}>
@@ -537,27 +551,30 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                 {/* Action Buttons */}
                 <View style={styles.productCardActions}>
                   <TouchableOpacity
-                    style={styles.actionBtnEdit}
+                    style={[styles.actionBtnEdit, { flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' }]}
                     onPress={() => openEditProduct(prod)}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.actionTextEdit}>✏️ Edit</Text>
+                    <Edit3 size={11} color="#475569" />
+                    <Text style={styles.actionTextEdit}>Edit</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.actionBtnDelete}
+                    style={[styles.actionBtnDelete, { flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' }]}
                     onPress={() => handleDeleteProduct(prod)}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.actionTextDelete}>🗑️ Delete</Text>
+                    <Trash2 size={11} color="#DC2626" />
+                    <Text style={styles.actionTextDelete}>Delete</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.actionBtnSauda}
+                    style={[styles.actionBtnSauda, { flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }]}
                     onPress={() => handleInitiateSauda(prod)}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.actionTextSauda}>🤝 Start Sauda</Text>
+                    <Handshake size={13} color="#FFFFFF" />
+                    <Text style={styles.actionTextSauda}>Start Sauda</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -596,7 +613,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                 <Text style={styles.modalSelectorText}>
                   {productForm.categoryName || 'Select a Category'}
                 </Text>
-                <Text style={styles.dropdownIcon}>▼</Text>
+                <ChevronDown size={14} color="#94A3B8" />
               </TouchableOpacity>
 
               <Text style={styles.modalLabel}>Subcategory (Optional)</Text>
@@ -607,7 +624,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                 <Text style={styles.modalSelectorText}>
                   {productForm.subcategoryName || 'Select a Subcategory'}
                 </Text>
-                <Text style={styles.dropdownIcon}>▼</Text>
+                <ChevronDown size={14} color="#94A3B8" />
               </TouchableOpacity>
 
               <Text style={styles.modalLabel}>Trading Unit*</Text>
@@ -618,7 +635,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                 <Text style={styles.modalSelectorText}>
                   {productForm.unit || 'Select Trading Unit'}
                 </Text>
-                <Text style={styles.dropdownIcon}>▼</Text>
+                <ChevronDown size={14} color="#94A3B8" />
               </TouchableOpacity>
 
               <View style={styles.twoColumnRow}>
@@ -648,10 +665,11 @@ const AddProductPage = ({ onNavigate, routeData }) => {
               <Text style={styles.modalLabel}>Product Status</Text>
               <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
                 {[
-                  { key: 'active', label: '✅ Active', activeBg: '#ECFDF5', activeText: '#10B981' },
-                  { key: 'inactive', label: '❌ Inactive', activeBg: '#FEF2F2', activeText: '#EF4444' }
+                  { key: 'active', label: 'Active', activeBg: '#ECFDF5', activeText: '#10B981', icon: Check },
+                  { key: 'inactive', label: 'Inactive', activeBg: '#FEF2F2', activeText: '#EF4444', icon: X }
                 ].map(s => {
                   const isSelected = productForm.status === s.key;
+                  const IconComponent = s.icon;
                   return (
                     <TouchableOpacity
                       key={s.key}
@@ -664,9 +682,12 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                         backgroundColor: isSelected ? s.activeBg : '#F8FAFC',
                         alignItems: 'center',
                         justifyContent: 'center',
+                        flexDirection: 'row',
+                        gap: 6
                       }}
                       onPress={() => setProductForm({ ...productForm, status: s.key })}
                     >
+                      {isSelected && <IconComponent size={14} color={s.activeText} />}
                       <Text style={{
                         color: isSelected ? s.activeText : '#64748B',
                         fontWeight: '700',
@@ -694,7 +715,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                   </View>
                 ) : (
                   <View style={styles.imagePlaceholderContainer}>
-                    <Text style={styles.imagePlaceholderIcon}>📸</Text>
+                    <Camera size={22} color="#64748B" style={{ marginBottom: 4 }} />
                     <Text style={styles.imagePlaceholderText}>Tap to Capture or Upload Image</Text>
                   </View>
                 )}
@@ -877,7 +898,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 28, padding: 32, alignItems: 'center', width: '100%', shadowColor: '#10B981', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.2, shadowRadius: 32, elevation: 12, borderWidth: 1, borderColor: '#ECFDF5' }}>
             <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 3, borderColor: '#A7F3D0', shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 4 }}>
-              <Text style={{ fontSize: 34, color: '#10B981', fontWeight: '900' }}>✓</Text>
+              <Check size={36} color="#10B981" strokeWidth={3.5} />
             </View>
             <Text style={{ fontSize: 22, fontWeight: '900', color: '#0F172A', marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 }}>Success!</Text>
             <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', fontWeight: '600', lineHeight: 20 }}>{successMessage}</Text>
@@ -891,7 +912,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         onPress={openAddProduct}
         activeOpacity={0.85}
       >
-        <Text style={styles.stickyFabIcon}>+</Text>
+        <Plus size={24} color="#FFFFFF" strokeWidth={3} />
       </TouchableOpacity>
 
     </SafeAreaView>

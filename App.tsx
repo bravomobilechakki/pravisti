@@ -21,6 +21,7 @@ import Footer from './src/components/footer/footer';
 import ChooseIndustry from './src/components/login/ChooseIndustry';
 import CategoryPage from './src/components/dashboard/CategoryPage';
 import AddProductPage from './src/components/dashboard/AddProductPage';
+import TransactionHistory from './src/components/sauda/TransactionHistory';
 
 const LoginScreen = Login as any;
 const SignupScreen = Signup as any;
@@ -38,6 +39,7 @@ const MyCompaniesScreen = MyCompanies as any;
 const ContactPickerScreen = ContactPicker as any;
 const CategoryPageScreen = CategoryPage as any;
 const AddProductPageScreen = AddProductPage as any;
+const TransactionHistoryScreen = TransactionHistory as any;
 
 function App() {
   const [navigationStack, setNavigationStack] = useState([
@@ -62,6 +64,11 @@ function App() {
         }
       } catch (error) {
         console.error('Failed to restore session automatically', error);
+        try {
+          await AsyncStorage.removeItem('userToken');
+        } catch (clearError) {
+          console.warn('Failed to clear invalid userToken', clearError);
+        }
       } finally {
         setIsInitializing(false);
       }
@@ -195,6 +202,8 @@ function App() {
         return <CategoryPageScreen onNavigate={onNavigate} routeData={data} />;
       case 'AddProductPage':
         return <AddProductPageScreen onNavigate={onNavigate} routeData={data} />;
+      case 'TransactionHistory':
+        return <TransactionHistoryScreen onNavigate={onNavigate} routeData={data} />;
       default:
         return <LoginScreen onNavigate={onNavigate} routeData={data} />;
     }

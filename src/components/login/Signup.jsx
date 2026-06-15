@@ -17,6 +17,7 @@ import {
   Keyboard
 } from 'react-native';
 import { signUpUser, verifyOtp } from '../../services/api';
+import { Edit3 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const Signup = ({ onNavigate, routeData }) => {
@@ -35,20 +36,7 @@ const Signup = ({ onNavigate, routeData }) => {
 
   const themeColor = '#4F46E5';
 
-  // Auto-redirect if already logged in
-  useEffect(() => {
-    const checkTokenAndRedirect = async () => {
-      try {
-        const token = await AsyncStorage.getItem('userToken');
-        if (token && onNavigate) {
-          onNavigate('Login');
-        }
-      } catch (err) {
-        console.warn('Check token error', err);
-      }
-    };
-    checkTokenAndRedirect();
-  }, [onNavigate]);
+
 
   // Timer Effect
   useEffect(() => {
@@ -293,9 +281,9 @@ const Signup = ({ onNavigate, routeData }) => {
                         setOtpSent(false);
                         setOtp(['', '', '', '']);
                       }}
-                      style={styles.editNumberBtn}
+                      style={[styles.editNumberBtn, { justifyContent: 'center', alignItems: 'center' }]}
                     >
-                      <Text style={styles.editNumberText}>✏️</Text>
+                      <Edit3 size={14} color="#64748B" />
                     </TouchableOpacity>
                   )}
                 </View>

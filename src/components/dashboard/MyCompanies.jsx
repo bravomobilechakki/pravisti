@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import { Sprout, Sun, Plus, ArrowRight } from 'lucide-react-native';
 
 const MyCompanies = ({ onNavigate }) => {
 
@@ -18,7 +19,7 @@ const MyCompanies = ({ onNavigate }) => {
       contact: 'Rajesh Mahansh',
       status: 'Active',
       deals: 12,
-      icon: '🌾',
+      iconType: 'grain',
       color: '#10B981',
       bgColor: '#ECFDF5',
     },
@@ -29,7 +30,7 @@ const MyCompanies = ({ onNavigate }) => {
       contact: 'Vikram Patel',
       status: 'Active',
       deals: 8,
-      icon: '☀️',
+      iconType: 'sun',
       color: '#F59E0B',
       bgColor: '#FFFBEB',
     },
@@ -45,7 +46,7 @@ const MyCompanies = ({ onNavigate }) => {
           style={styles.addBtnTop}
           onPress={() => onNavigate('AddCompany')}
         >
-          <Text style={{ color: '#fff', fontSize: 20 }}>+</Text>
+          <Plus size={18} color="#FFFFFF" strokeWidth={3} />
         </TouchableOpacity>
       </View>
 
@@ -57,7 +58,11 @@ const MyCompanies = ({ onNavigate }) => {
             {/* 🔷 TOP */}
             <View style={styles.topRow}>
               <View style={[styles.iconCircle, { backgroundColor: company.bgColor }]}>
-                <Text style={{ fontSize: 22 }}>{company.icon}</Text>
+                {company.iconType === 'grain' ? (
+                  <Sprout size={22} color={company.color} />
+                ) : (
+                  <Sun size={22} color={company.color} />
+                )}
               </View>
 
               <View style={{ flex: 1 }}>
@@ -96,12 +101,19 @@ const MyCompanies = ({ onNavigate }) => {
               <Text style={styles.saudaTitle}>Recent Sauda</Text>
 
               <View style={styles.saudaItem}>
-                <Text style={styles.saudaProduct}>🌾 Wheat</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Sprout size={14} color="#10B981" />
+                  <Text style={styles.saudaProduct}>Wheat</Text>
+                </View>
                 <Text style={styles.saudaMeta}>100kg • ₹2500</Text>
               </View>
 
-              <TouchableOpacity onPress={() => onNavigate('DealsList', { company })}>
-                <Text style={styles.viewAll}>View All →</Text>
+              <TouchableOpacity 
+                onPress={() => onNavigate('DealsList', { company })}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}
+              >
+                <Text style={styles.viewAll}>View All</Text>
+                <ArrowRight size={12} color="#3B82F6" />
               </TouchableOpacity>
             </View>
 

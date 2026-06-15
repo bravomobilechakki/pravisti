@@ -235,9 +235,9 @@ export const createDeal = async (dealData, token) => {
   }
 };
 
-export const getDeals = async (token, page = 1, limit = 10) => {
+export const getDeals = async (token, page = 1, limit = 10, companyId = null) => {
   try {
-    return await getRequest(SummaryApi.getDeals(page, limit), token);
+    return await getRequest(SummaryApi.getDeals(page, limit, companyId), token);
   } catch (error) {
     console.error('Error fetching deals:', error.message || error);
     throw error;
@@ -253,27 +253,63 @@ export const getDealDetails = async (id, token) => {
   }
 };
 
-export const updateDealStatus = async (id, status, token) => {
+export const updateDealStatus = async (id, payload, token) => {
   try {
-    return await postRequest(SummaryApi.updateDealStatus(id), { status }, token);
+    const body = typeof payload === 'string' ? { status: payload } : payload;
+    return await postRequest(SummaryApi.updateDealStatus(id), body, token);
   } catch (error) {
     console.error('Error updating deal status:', error.message || error);
     throw error;
   }
 };
 
-export const acceptDeal = async (id, token) => {
+export const acceptDeal = async (id, role, token) => {
   try {
-    return await postRequest(SummaryApi.acceptDeal(id), {}, token);
+    let activeRole = role;
+    let activeToken = token;
+    if (!token && role && (role.startsWith('ey') || role.length > 30)) {
+      activeToken = role;
+      activeRole = undefined;
+    }
+
+    if (activeRole) {
+      return await updateDealStatus(id, { approvalType: activeRole, approvalStatus: 'approved' }, activeToken);
+    }
+    return await postRequest(SummaryApi.acceptDeal(id), {}, activeToken);
   } catch (error) {
     console.error('Error accepting deal:', error.message || error);
     throw error;
   }
 };
 
-export const rejectDeal = async (id, reason, token) => {
+export const rejectDeal = async (id, roleOrReason, reasonOrToken = null, token = null) => {
   try {
-    return await postRequest(SummaryApi.rejectDeal(id), { reason }, token);
+    let activeRole = null;
+    let activeReason = null;
+    let activeToken = null;
+
+    if (token) {
+      activeRole = roleOrReason;
+      activeReason = reasonOrToken;
+      activeToken = token;
+    } else if (reasonOrToken && (reasonOrToken.startsWith('ey') || reasonOrToken.length > 30)) {
+      const lowercaseVal = String(roleOrReason).toLowerCase();
+      if (lowercaseVal === 'buyer' || lowercaseVal === 'seller' || lowercaseVal === 'broker') {
+        activeRole = lowercaseVal;
+        activeReason = 'Rejected';
+      } else {
+        activeReason = roleOrReason;
+      }
+      activeToken = reasonOrToken;
+    } else {
+      activeReason = roleOrReason;
+      activeToken = reasonOrToken;
+    }
+
+    if (activeRole) {
+      return await updateDealStatus(id, { approvalType: activeRole, approvalStatus: 'rejected', reason: activeReason }, activeToken);
+    }
+    return await postRequest(SummaryApi.rejectDeal(id), { status: 'rejected', reason: activeReason }, activeToken);
   } catch (error) {
     console.error('Error rejecting deal:', error.message || error);
     throw error;
@@ -289,9 +325,9 @@ export const recreateExpiredDeal = async (id, dealData, token) => {
   }
 };
 
-export const getExpiredDeals = async (token, page = 1, limit = 10) => {
+export const getExpiredDeals = async (token, page = 1, limit = 10, companyId = null) => {
   try {
-    return await getRequest(SummaryApi.getExpiredDeals(page, limit), token);
+    return await getRequest(SummaryApi.getExpiredDeals(page, limit, companyId), token);
   } catch (error) {
     console.error('Error fetching expired deals:', error.message || error);
     throw error;
@@ -503,6 +539,120 @@ export const getPendingInvitations = async (token) => {
     return await getRequest(SummaryApi.getPendingInvitations, token);
   } catch (error) {
     console.error('Error fetching pending invitations:', error.message || error);
+    throw error;
+  }
+};
+
+// --- CHAT APIs ---
+
+export const getConversations = async (token, page = 1, limit = 10) => {
+  try {
+    return await getRequest(SummaryApi.getConversations(page, limit), token);
+  } catch (error) {
+    console.error('Error fetching conversations:', error.message || error);
+    throw error;
+  }
+};
+
+export const getConversationMessages = async (conversationId, token, page = 1, limit = 50) => {
+  try {
+    return await getRequest(SummaryApi.getConversationMessages(conversationId, page, limit), token);
+  } catch (error) {
+    console.error('Error fetching conversation messages:', error.message || error);
+    throw error;
+  }
+};
+
+export const markConversationAsRead = async (conversationId, token) => {
+  try {
+    return await postRequest(SummaryApi.markConversationAsRead(conversationId), {}, token);
+  } catch (error) {
+    console.error('Error marking conversation as read:', error.message || error);
+    throw error;
+  }
+};
+
+export const createConversation = async (conversationData, token) => {
+  try {
+    return await postRequest(SummaryApi.createConversation, conversationData, token);
+  } catch (error) {
+    console.error('Error creating conversation:', error.message || error);
+    throw error;
+  }
+};
+
+export const sendMessage = async (conversationId, messageData, token) => {
+  try {
+    return await postRequest(SummaryApi.sendMessage(conversationId), messageData, token);
+  } catch (error) {
+    console.error('Error sending message:', error.message || error);
+    throw error;
+  }
+};
+
+// --- PAYMENT APIs ---
+
+export const recordPayment = async (paymentData, token) => {
+  try {
+    return await postRequest(SummaryApi.recordPayment, paymentData, token);
+  } catch (error) {
+    console.error('Error recording payment:', error.message || error);
+    throw error;
+  }
+};
+
+export const getPayments = async (params, token) => {
+  try {
+    return await getRequest(SummaryApi.getPayments(params), token);
+  } catch (error) {
+    console.error('Error fetching payments:', error.message || error);
+    throw error;
+  }
+};
+
+export const getPaymentDashboard = async (companyId, dealId, token) => {
+  try {
+    return await getRequest(SummaryApi.getPaymentDashboard(companyId, dealId), token);
+  } catch (error) {
+    console.error('Error fetching payment dashboard:', error.message || error);
+    throw error;
+  }
+};
+
+export const updatePaymentStatus = async (paymentId, status, token) => {
+  try {
+    return await postRequest(SummaryApi.updatePaymentStatus(paymentId), { status }, token);
+  } catch (error) {
+    console.error('Error updating payment status:', error.message || error);
+    throw error;
+  }
+};
+
+// --- DELIVERY APIs ---
+
+export const createDelivery = async (deliveryData, token) => {
+  try {
+    return await postRequest(SummaryApi.createDelivery, deliveryData, token);
+  } catch (error) {
+    console.error('Error creating delivery:', error.message || error);
+    throw error;
+  }
+};
+
+export const getDeliveries = async (params, token) => {
+  try {
+    return await getRequest(SummaryApi.getDeliveries(params), token);
+  } catch (error) {
+    console.error('Error fetching deliveries:', error.message || error);
+    throw error;
+  }
+};
+
+export const updateDeliveryStatus = async (deliveryId, status, token) => {
+  try {
+    return await postRequest(SummaryApi.updateDeliveryStatus(deliveryId), { status }, token);
+  } catch (error) {
+    console.error('Error updating delivery status:', error.message || error);
     throw error;
   }
 };

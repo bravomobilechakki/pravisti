@@ -13,6 +13,20 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {
+  Search,
+  X,
+  Tag,
+  FolderOpen,
+  Folder,
+  Edit3,
+  Trash2,
+  Plus,
+  Camera,
+  Check,
+  ChevronRight,
+  ChevronDown
+} from 'lucide-react-native';
+import {
   createCategory,
   getCategories,
   updateCategory,
@@ -88,11 +102,11 @@ const CategoryManager = ({ onNavigate, routeData }) => {
       'Choose how you would like to select your category image:',
       [
         {
-          text: '📸 Take Photo (Camera)',
+          text: 'Take Photo (Camera)',
           onPress: () => launchImagePicker('camera', target),
         },
         {
-          text: '🖼️ Choose from Gallery',
+          text: 'Choose from Gallery',
           onPress: () => launchImagePicker('gallery', target),
         },
         {
@@ -399,14 +413,17 @@ const CategoryManager = ({ onNavigate, routeData }) => {
             setIsCategoryModalVisible(true);
           }}
         >
-          <Text style={styles.addButtonText}>+ Category</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Plus size={12} color="#FFFFFF" strokeWidth={3} />
+            <Text style={styles.addButtonText}>Category</Text>
+          </View>
         </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchWrapper}>
-          <Text style={styles.searchIconSymbol}>🔍</Text>
+          <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search categories..."
@@ -416,7 +433,7 @@ const CategoryManager = ({ onNavigate, routeData }) => {
           />
           {searchQuery ? (
             <TouchableOpacity style={styles.clearSearchBtn} onPress={() => setSearchQuery('')}>
-              <Text style={styles.clearSearchIcon}>✕</Text>
+              <X size={14} color="#94A3B8" />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -431,7 +448,7 @@ const CategoryManager = ({ onNavigate, routeData }) => {
         <View style={styles.listContainer}>
           {filteredCategories.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>🏷️</Text>
+              <Tag size={44} color="#94A3B8" style={{ marginBottom: 12 }} />
               <Text style={styles.emptyTitle}>
                 {searchQuery ? 'No Results Found' : 'No Categories Registered'}
               </Text>
@@ -474,16 +491,19 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                         {cat.description || 'No description provided.'}
                       </Text>
                       <View style={styles.subCountRow}>
-                        <View style={[styles.subCountBadgeHighlight, { backgroundColor: catTheme.primary }]}>
+                        <View style={[styles.subCountBadgeHighlight, { backgroundColor: catTheme.primary, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+                          <FolderOpen size={12} color="#FFFFFF" />
                           <Text style={styles.subCountBadgeHighlightText}>
-                            📂 {catSubs.length} {catSubs.length === 1 ? 'Subcategory' : 'Subcategories'}
+                            {catSubs.length} {catSubs.length === 1 ? 'Subcategory' : 'Subcategories'}
                           </Text>
                         </View>
                       </View>
                     </View>
-                    <Text style={[styles.accordionArrow, isExpanded && { color: catTheme.primary }]}>
-                      {isExpanded ? '▼' : '▶'}
-                    </Text>
+                    {isExpanded ? (
+                      <ChevronDown size={16} color={catTheme.primary} style={{ marginLeft: 8 }} />
+                    ) : (
+                      <ChevronRight size={16} color="#94A3B8" style={{ marginLeft: 8 }} />
+                    )}
                   </TouchableOpacity>
 
                   {/* ── EXPANDED AREA ── */}
@@ -495,21 +515,21 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                           style={[styles.catActionBtn, { backgroundColor: catTheme.accentBg, borderColor: catTheme.primary + '20' }]} 
                           onPress={() => openEditCategory(cat)}
                         >
-                          <Text style={styles.catActionIcon}>✏️</Text>
+                          <Edit3 size={14} color={catTheme.primary} />
                           <Text style={[styles.catActionLabel, { color: catTheme.primary }]}>Edit</Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
                           style={[styles.catActionBtn, { backgroundColor: '#FFF5F5', borderColor: '#FECACA' }]} 
                           onPress={() => handleDeleteCategory(cat)}
                         >
-                          <Text style={styles.catActionIcon}>🗑️</Text>
+                          <Trash2 size={14} color="#EF4444" />
                           <Text style={[styles.catActionLabel, { color: '#EF4444' }]}>Delete</Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
                           style={[styles.catActionBtn, { backgroundColor: catTheme.primary, borderColor: catTheme.primary }]} 
                           onPress={() => openAddSubcategory(catId)}
                         >
-                          <Text style={[styles.catActionIcon, { color: '#FFFFFF' }]}>➕</Text>
+                          <Plus size={14} color="#FFFFFF" />
                           <Text style={[styles.catActionLabel, { color: '#FFFFFF' }]}>Add Sub</Text>
                         </TouchableOpacity>
                       </View>
@@ -523,7 +543,7 @@ const CategoryManager = ({ onNavigate, routeData }) => {
 
                       {catSubs.length === 0 ? (
                         <View style={styles.noSubsBox}>
-                          <Text style={styles.noSubsEmoji}>📂</Text>
+                          <FolderOpen size={28} color="#94A3B8" style={{ marginBottom: 4 }} />
                           <Text style={styles.noSubsText}>No subcategories yet</Text>
                           <Text style={styles.noSubsHint}>Tap "Add Sub" above to create one</Text>
                         </View>
@@ -558,16 +578,18 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                                 </View>
                                 <View style={[styles.subItemActions, { borderTopColor: catTheme.primary + '15', backgroundColor: catTheme.accentBg + '40' }]}>
                                   <TouchableOpacity
-                                    style={[styles.subActionBtn, { borderRightColor: catTheme.primary + '15' }]}
+                                    style={[styles.subActionBtn, { borderRightColor: catTheme.primary + '15', flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' }]}
                                     onPress={() => openEditSubcategory(sub)}
                                   >
-                                    <Text style={[styles.subActionBtnText, { color: '#475569' }]}>✏️ Edit</Text>
+                                    <Edit3 size={11} color="#475569" />
+                                    <Text style={[styles.subActionBtnText, { color: '#475569' }]}>Edit</Text>
                                   </TouchableOpacity>
                                   <TouchableOpacity
-                                    style={[styles.subActionBtn, { borderRightWidth: 0 }]}
+                                    style={[styles.subActionBtn, { borderRightWidth: 0, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' }]}
                                     onPress={() => handleDeleteSubcategory(sub)}
                                   >
-                                    <Text style={[styles.subActionBtnText, { color: '#EF4444' }]}>🗑️ Delete</Text>
+                                    <Trash2 size={11} color="#EF4444" />
+                                    <Text style={[styles.subActionBtnText, { color: '#EF4444' }]}>Delete</Text>
                                   </TouchableOpacity>
                                 </View>
                               </View>
@@ -621,7 +643,7 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                   </View>
                 ) : (
                   <View style={styles.imagePlaceholderContainer}>
-                    <Text style={styles.imagePlaceholderIcon}>📸</Text>
+                    <Camera size={22} color="#64748B" style={{ marginBottom: 4 }} />
                     <Text style={styles.imagePlaceholderText}>Tap to Capture or Upload Image</Text>
                   </View>
                 )}
@@ -693,7 +715,7 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                   </View>
                 ) : (
                   <View style={styles.imagePlaceholderContainer}>
-                    <Text style={styles.imagePlaceholderIcon}>📸</Text>
+                    <Camera size={22} color="#64748B" style={{ marginBottom: 4 }} />
                     <Text style={styles.imagePlaceholderText}>Tap to Capture or Upload Image</Text>
                   </View>
                 )}
@@ -733,7 +755,7 @@ const CategoryManager = ({ onNavigate, routeData }) => {
         <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 28, padding: 32, alignItems: 'center', width: '100%', shadowColor: '#10B981', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.2, shadowRadius: 32, elevation: 12, borderWidth: 1, borderColor: '#ECFDF5' }}>
             <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 3, borderColor: '#A7F3D0', shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 4 }}>
-              <Text style={{ fontSize: 34, color: '#10B981', fontWeight: '900' }}>✓</Text>
+              <Check size={36} color="#10B981" strokeWidth={3.5} />
             </View>
             <Text style={{ fontSize: 22, fontWeight: '900', color: '#0F172A', marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 }}>Success!</Text>
             <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', fontWeight: '600', lineHeight: 20 }}>{successMessage}</Text>

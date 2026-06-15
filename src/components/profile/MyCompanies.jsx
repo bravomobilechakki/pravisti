@@ -10,10 +10,82 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { getCompanies } from '../../services/api';
+import {
+  ArrowLeft,
+  Plus,
+  Building2,
+  Briefcase,
+  User,
+  Handshake,
+  ChevronRight,
+} from 'lucide-react-native';
 
 const MyCompanies = ({ onNavigate }) => {
   const [companies, setCompanies] = React.useState([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [currentUser, setCurrentUser] = React.useState(null);
+
+  React.useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const token = await AsyncStorage.getItem('userToken');
+        if (token) {
+          const { getUserProfile } = require('../../services/api');
+          const response = await getUserProfile(token);
+          if (response && response.success) {
+            setCurrentUser(response.data);
+          }
+        }
+      } catch (ue) {
+        console.warn('Failed to fetch user profile in MyCompanies:', ue);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  const getUserRoleInCompany = (company) => {
+    if (!currentUser || !company) return 'Member';
+
+    const currentUserId = currentUser.id || currentUser._id || currentUser.userId;
+    const currentUserMobile = currentUser.mobileNumber || currentUser.mobile;
+
+    // Check owner
+    const ownerId = typeof company.owner === 'object' && company.owner !== null
+      ? (company.owner._id || company.owner.id || company.owner.userId)
+      : company.owner;
+      
+    const ownerMobile = typeof company.owner === 'object' && company.owner !== null
+      ? company.owner.mobileNumber
+      : null;
+
+    if (
+      (currentUserId && ownerId && String(currentUserId) === String(ownerId)) ||
+      (currentUserMobile && ownerMobile && String(currentUserMobile).replace(/\D/g, '') === String(ownerMobile).replace(/\D/g, '')) ||
+      (currentUserMobile && company.phone && String(currentUserMobile).replace(/\D/g, '') === String(company.phone).replace(/\D/g, ''))
+    ) {
+      return 'Owner';
+    }
+
+    // Check employees
+    if (Array.isArray(company.employees)) {
+      const isEmployee = company.employees.some(emp => {
+        const empId = typeof emp === 'object' && emp !== null
+          ? (emp._id || emp.id || emp.userId)
+          : emp;
+        const empMobile = typeof emp === 'object' && emp !== null
+          ? emp.mobileNumber
+          : null;
+        return (
+          (currentUserId && empId && String(currentUserId) === String(empId)) ||
+          (currentUserMobile && empMobile && String(currentUserMobile).replace(/\D/g, '') === String(empMobile).replace(/\D/g, ''))
+        );
+      });
+      if (isEmployee) return 'Employee';
+    }
+
+    return 'Member';
+  };
 
   const fetchUserCompanies = React.useCallback(async () => {
     try {
@@ -41,19 +113,19 @@ const MyCompanies = ({ onNavigate }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* 🔷 Header */}
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => onNavigate('pop')}>
-          <Text style={styles.back}>‹</Text>
+        <TouchableOpacity onPress={() => onNavigate('pop')} activeOpacity={0.7}>
+          <ArrowLeft size={22} color="#0F172A" />
         </TouchableOpacity>
 
-        <View>
+        <View style={{ alignItems: 'center' }}>
           <Text style={styles.title}>My Companies</Text>
           <Text style={styles.subtitle}>{companies.length} {companies.length === 1 ? 'Business' : 'Businesses'}</Text>
         </View>
 
-        <TouchableOpacity onPress={() => onNavigate('AddCompany')}>
-          <Text style={styles.add}>＋</Text>
+        <TouchableOpacity onPress={() => onNavigate('AddCompany')} activeOpacity={0.7}>
+          <Plus size={22} color="#3B82F6" />
         </TouchableOpacity>
       </View>
 
@@ -62,9 +134,9 @@ const MyCompanies = ({ onNavigate }) => {
           <ActivityIndicator size="large" color="#3B82F6" />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
-          {/* 📊 Stats */}
+          {/* Stats */}
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <Text style={styles.statNumber}>{companies.length}</Text>
@@ -83,9 +155,11 @@ const MyCompanies = ({ onNavigate }) => {
           </View>
 
           {companies.length === 0 ? (
-            /* 📭 Empty State */
+            /* Empty State */
             <View style={styles.emptyStateContainer}>
-              <Text style={styles.emptyStateIcon}>🏢</Text>
+              <View style={{ marginBottom: 16 }}>
+                <Building2 size={48} color="#94A3B8" />
+              </View>
               <Text style={styles.emptyStateTitle}>No Registered Companies</Text>
               <Text style={styles.emptyStateSubtext}>
                 You haven't registered any companies under your profile yet. Add your first business now!
@@ -93,14 +167,14 @@ const MyCompanies = ({ onNavigate }) => {
               <TouchableOpacity
                 style={styles.emptyStateButton}
                 onPress={() => onNavigate('AddCompany')}
+                activeOpacity={0.8}
               >
                 <Text style={styles.emptyStateButtonText}>Register Company</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            /* 🏢 Company Cards */
+            /* Company Cards */
             companies.map(item => {
-              const displayIcon = item.icon || (item.type === 'trader' ? '💼' : '🏢');
               const displayColor = item.color || '#3B82F6';
               const gstNumber = item.registrationNumber || item.gstin || 'Not Registered';
               const contactInfo = item.phone || item.email || 'No contact';
@@ -111,36 +185,66 @@ const MyCompanies = ({ onNavigate }) => {
                   key={item._id || item.id}
                   style={styles.card}
                   activeOpacity={0.85}
-                  onPress={() => onNavigate('CompanyDetails', { company: item })}
+                  onPress={() => onNavigate('CompanyDetails', { company: item, user: currentUser })}
                 >
                   <View style={[styles.iconBox, { backgroundColor: displayColor + '15' }]}>
-                    <Text style={styles.icon}>{displayIcon}</Text>
+                    {item.type === 'trader' ? (
+                      <Briefcase size={22} color={displayColor} />
+                    ) : (
+                      <Building2 size={22} color={displayColor} />
+                    )}
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.company} numberOfLines={1}>{item.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Text style={styles.company} numberOfLines={1}>{item.name}</Text>
+                      <View style={[
+                        styles.roleBadgeCompact,
+                        {
+                          backgroundColor: getUserRoleInCompany(item) === 'Owner' ? '#EEF2FF' : '#F1F5F9',
+                          borderColor: getUserRoleInCompany(item) === 'Owner' ? '#C7D2FE' : '#E2E8F0',
+                        }
+                      ]}>
+                        <Text style={[
+                          styles.roleBadgeCompactText,
+                          { color: getUserRoleInCompany(item) === 'Owner' ? '#4F46E5' : '#475569' }
+                        ]}>
+                          {getUserRoleInCompany(item)}
+                        </Text>
+                      </View>
+                    </View>
                     <Text style={styles.gst} numberOfLines={1}>GST: {gstNumber}</Text>
 
                     <View style={styles.row}>
-                      <Text style={styles.meta} numberOfLines={1}>👤 {contactInfo}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <User size={11} color="#475569" />
+                        <Text style={styles.meta} numberOfLines={1}>{contactInfo}</Text>
+                      </View>
                       <Text style={styles.dot}>•</Text>
-                      <Text style={styles.meta}>🤝 {dealsCount}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Handshake size={11} color="#475569" />
+                        <Text style={styles.meta}>{dealsCount}</Text>
+                      </View>
                     </View>
                   </View>
 
-                  <Text style={styles.arrow}>›</Text>
+                  <ChevronRight size={20} color="#94A3B8" />
                 </TouchableOpacity>
               );
             })
           )}
 
-          {/* ➕ CTA (Only if they already have companies) */}
+          {/* CTA (Only if they already have companies) */}
           {companies.length > 0 && (
             <TouchableOpacity
               style={styles.cta}
               onPress={() => onNavigate('AddCompany')}
+              activeOpacity={0.8}
             >
-              <Text style={styles.ctaText}>+ Add New Company</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Plus size={16} color="#FFFFFF" />
+                <Text style={styles.ctaText}>Add New Company</Text>
+              </View>
             </TouchableOpacity>
           )}
 
@@ -354,5 +458,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  roleBadgeCompact: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    marginLeft: 6,
+  },
+  roleBadgeCompactText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
 });

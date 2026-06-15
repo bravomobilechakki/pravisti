@@ -17,6 +17,16 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { filterContacts, getCompaniesByNumber } from '../../services/api';
 import Contacts from 'react-native-contacts';
+import {
+  ArrowLeft,
+  Phone,
+  Building2,
+  AlertTriangle,
+  Users,
+  Search,
+  Mail,
+  ChevronRight,
+} from 'lucide-react-native';
 
 interface CompanyInfo {
   companyId: string;
@@ -412,20 +422,29 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
               </View>
             )}
           </View>
-          <Text style={styles.contactMobile}>📱 {item.mobile}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+            <Phone size={12} color="#64748B" />
+            <Text style={styles.contactMobile}>{item.mobile}</Text>
+          </View>
 
           {isActiveMember && item.companies && (
             <View style={styles.companiesList}>
               {item.companies.map((co) => (
-                <Text key={co.companyId} style={styles.companySubName}>
-                  🏢 {co.companyName} ({co.companyType})
-                </Text>
+                <View key={co.companyId} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                  <Building2 size={11} color="#64748B" />
+                  <Text style={styles.companySubName}>
+                    {co.companyName} ({co.companyType})
+                  </Text>
+                </View>
               ))}
             </View>
           )}
 
           {isSetupPending && (
-            <Text style={styles.warningMessage}>⚠️ Company Registration Pending</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
+              <AlertTriangle size={12} color="#D97706" />
+              <Text style={styles.warningMessage}>Company Registration Pending</Text>
+            </View>
           )}
         </View>
 
@@ -474,7 +493,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('CreateDeal')}>
-          <Text style={styles.backIcon}>←</Text>
+          <ArrowLeft size={18} color="#1E293B" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Select Contact</Text>
         <View style={{ width: 40 }} />
@@ -485,7 +504,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
         <View style={styles.permissionContainer}>
           <View style={styles.permissionCard}>
             <View style={styles.permissionIconCircle}>
-              <Text style={styles.permissionIconEmoji}>👥</Text>
+              <Users size={32} color="#4F46E5" />
             </View>
             <Text style={styles.permissionTitle}>Sync Your Business Contacts</Text>
             <Text style={styles.permissionSubtitle}>
@@ -514,7 +533,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           {/* Search */}
           <View style={styles.searchContainer}>
             <View style={styles.searchInputWrapper}>
-              <Text style={styles.searchIcon}>🔍</Text>
+              <Search size={16} color="#94A3B8" style={{ marginRight: 6 }} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search name or mobile number..."
@@ -532,32 +551,35 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           {/* Category Tabs Selector Bar */}
           <View style={styles.tabsContainer}>
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'active' && styles.tabButtonActive]}
+              style={[styles.tabButton, activeTab === 'active' && styles.tabButtonActive, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }]}
               onPress={() => setActiveTab('active')}
               activeOpacity={0.7}
             >
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' }} />
               <Text style={[styles.tabButtonText, activeTab === 'active' && styles.tabButtonTextActive]}>
-                🟢 Active ({activeMembers.length})
+                Active ({activeMembers.length})
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'pending' && styles.tabButtonActive]}
+              style={[styles.tabButton, activeTab === 'pending' && styles.tabButtonActive, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }]}
               onPress={() => setActiveTab('pending')}
               activeOpacity={0.7}
             >
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#F59E0B' }} />
               <Text style={[styles.tabButtonText, activeTab === 'pending' && styles.tabButtonTextActive]}>
-                🟡 Pending ({pendingMembers.length})
+                Pending ({pendingMembers.length})
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'invite' && styles.tabButtonActive]}
+              style={[styles.tabButton, activeTab === 'invite' && styles.tabButtonActive, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }]}
               onPress={() => setActiveTab('invite')}
               activeOpacity={0.7}
             >
+              <Mail size={12} color={activeTab === 'invite' ? '#4F46E5' : '#64748B'} />
               <Text style={[styles.tabButtonText, activeTab === 'invite' && styles.tabButtonTextActive]}>
-                ✉️ Invite ({inviteContacts.length})
+                Invite ({inviteContacts.length})
               </Text>
             </TouchableOpacity>
           </View>
@@ -625,13 +647,13 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                     activeOpacity={0.7}
                   >
                     <View style={styles.companyIconBg}>
-                      <Text style={styles.companyIconEmoji}>🏢</Text>
+                      <Building2 size={18} color="#4F46E5" />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.companyNameText}>{co.companyName}</Text>
                       <Text style={styles.companyTypeText}>{co.companyType.toUpperCase()}</Text>
                     </View>
-                    <Text style={styles.selectCompanyArrow}>→</Text>
+                    <ChevronRight size={18} color="#94A3B8" />
                   </TouchableOpacity>
                 ))}
               </View>

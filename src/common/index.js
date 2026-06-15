@@ -81,10 +81,16 @@ const SummaryApi = {
     method: "post",
   },
 
-  getDeals: (page = 1, limit = 10) => ({
-    url: `${backendDomain}/api/deals?page=${page}&limit=${limit}`,
-    method: "get",
-  }),
+  getDeals: (page = 1, limit = 10, companyId = null) => {
+    let url = `${backendDomain}/api/deals?page=${page}&limit=${limit}`;
+    if (companyId) {
+      url += `&companyId=${encodeURIComponent(companyId)}`;
+    }
+    return {
+      url,
+      method: "get",
+    };
+  },
 
   getDealDetails: (id) => ({
     url: `${backendDomain}/api/deals/${id}`,
@@ -93,7 +99,7 @@ const SummaryApi = {
 
   updateDealStatus: (id) => ({
     url: `${backendDomain}/api/deals/${id}/status`,
-    method: "put",
+    method: "patch",
   }),
 
   acceptDeal: (id) => ({
@@ -111,10 +117,16 @@ const SummaryApi = {
     method: "post",
   }),
 
-  getExpiredDeals: (page = 1, limit = 10) => ({
-    url: `${backendDomain}/api/deals/expired?page=${page}&limit=${limit}`,
-    method: "get",
-  }),
+  getExpiredDeals: (page = 1, limit = 10, companyId = null) => {
+    let url = `${backendDomain}/api/deals/expired?page=${page}&limit=${limit}`;
+    if (companyId) {
+      url += `&companyId=${encodeURIComponent(companyId)}`;
+    }
+    return {
+      url,
+      method: "get",
+    };
+  },
 
   /* ================= CATEGORIES ================= */
   createCategory: {
@@ -254,6 +266,111 @@ const SummaryApi = {
     url: `${backendDomain}/api/contacts/invitations/pending`,
     method: "get",
   },
+
+  /* ================= CHAT APIs ================= */
+  getConversations: (page = 1, limit = 10) => ({
+    url: `${backendDomain}/api/chat/conversations?page=${page}&limit=${limit}`,
+    method: "get",
+  }),
+
+  getConversationMessages: (conversationId, page = 1, limit = 50) => ({
+    url: `${backendDomain}/api/chat/conversations/${conversationId}/messages?page=${page}&limit=${limit}`,
+    method: "get",
+  }),
+
+  markConversationAsRead: (conversationId) => ({
+    url: `${backendDomain}/api/chat/conversations/${conversationId}/read`,
+    method: "put",
+  }),
+
+  createConversation: {
+    url: `${backendDomain}/api/chat/conversations`,
+    method: "post",
+  },
+
+  sendMessage: (conversationId) => ({
+    url: `${backendDomain}/api/chat/conversations/${conversationId}/messages`,
+    method: "post",
+  }),
+
+  /* ================= PAYMENT APIs ================= */
+  recordPayment: {
+    url: `${backendDomain}/api/payment`,
+    method: "post",
+  },
+
+  getPayments: (params = {}) => {
+    let query = "";
+    const queryParams = [];
+    if (params.companyId) queryParams.push(`companyId=${encodeURIComponent(params.companyId)}`);
+    if (params.dealId) queryParams.push(`dealId=${encodeURIComponent(params.dealId)}`);
+    if (params.type) queryParams.push(`type=${encodeURIComponent(params.type)}`);
+    if (params.role) queryParams.push(`role=${encodeURIComponent(params.role)}`);
+    if (params.status) queryParams.push(`status=${encodeURIComponent(params.status)}`);
+    if (params.search) queryParams.push(`search=${encodeURIComponent(params.search)}`);
+    if (params.sortBy) queryParams.push(`sortBy=${encodeURIComponent(params.sortBy)}`);
+    if (params.page) queryParams.push(`page=${params.page}`);
+    if (params.limit) queryParams.push(`limit=${params.limit}`);
+
+    if (queryParams.length > 0) {
+      query = `?${queryParams.join("&")}`;
+    }
+    return {
+      url: `${backendDomain}/api/payment${query}`,
+      method: "get",
+    };
+  },
+
+  getPaymentDashboard: (companyId = "", dealId = "") => {
+    let query = "";
+    const queryParams = [];
+    if (companyId) queryParams.push(`companyId=${encodeURIComponent(companyId)}`);
+    if (dealId) queryParams.push(`dealId=${encodeURIComponent(dealId)}`);
+
+    if (queryParams.length > 0) {
+      query = `?${queryParams.join("&")}`;
+    }
+    return {
+      url: `${backendDomain}/api/payment/dashboard${query}`,
+      method: "get",
+    };
+  },
+
+  updatePaymentStatus: (id) => ({
+    url: `${backendDomain}/api/payment/${id}/status`,
+    method: "patch",
+  }),
+
+  /* ================= DELIVERY APIs ================= */
+  createDelivery: {
+    url: `${backendDomain}/api/delivery`,
+    method: "post",
+  },
+
+  getDeliveries: (params = {}) => {
+    let query = "";
+    const queryParams = [];
+    if (params.dealId) queryParams.push(`dealId=${encodeURIComponent(params.dealId)}`);
+    if (params.type) queryParams.push(`type=${encodeURIComponent(params.type)}`);
+    if (params.status) queryParams.push(`status=${encodeURIComponent(params.status)}`);
+    if (params.search) queryParams.push(`search=${encodeURIComponent(params.search)}`);
+    if (params.companyId) queryParams.push(`companyId=${encodeURIComponent(params.companyId)}`);
+    if (params.page) queryParams.push(`page=${params.page}`);
+    if (params.limit) queryParams.push(`limit=${params.limit}`);
+
+    if (queryParams.length > 0) {
+      query = `?${queryParams.join("&")}`;
+    }
+    return {
+      url: `${backendDomain}/api/delivery${query}`,
+      method: "get",
+    };
+  },
+
+  updateDeliveryStatus: (id) => ({
+    url: `${backendDomain}/api/delivery/${id}/status`,
+    method: "patch",
+  }),
 };
 
 export default SummaryApi;

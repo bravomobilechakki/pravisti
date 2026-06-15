@@ -15,6 +15,13 @@ import {
   Modal
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  ArrowLeft,
+  ChevronDown,
+  Building2,
+  X,
+  Check
+} from 'lucide-react-native';
 import { createCompany, getIndustries } from '../../services/api';
 
 const AddCompany = ({ onNavigate, routeData }) => {
@@ -149,10 +156,22 @@ const AddCompany = ({ onNavigate, routeData }) => {
       if (response && response.success) {
         setShowSuccessModal(true);
       } else {
-        Alert.alert('Error', response.message || 'Failed to register company.');
+        const errMsg = response.message || 'Failed to register company.';
+        const lowerMsg = errMsg.toLowerCase();
+        if (lowerMsg.includes('already exists') || lowerMsg.includes('duplicate') || lowerMsg.includes('registration') || lowerMsg.includes('gst')) {
+          setErrors(prev => ({ ...prev, registrationNumber: errMsg }));
+        } else {
+          Alert.alert('Error', errMsg);
+        }
       }
     } catch (error) {
-      Alert.alert('API Error', error.message || 'An error occurred while registering company.');
+      const errMsg = error.message || 'An error occurred while registering company.';
+      const lowerMsg = errMsg.toLowerCase();
+      if (lowerMsg.includes('already exists') || lowerMsg.includes('duplicate') || lowerMsg.includes('registration') || lowerMsg.includes('gst')) {
+        setErrors(prev => ({ ...prev, registrationNumber: errMsg }));
+      } else {
+        Alert.alert('API Error', errMsg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -171,7 +190,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
               style={styles.backButton}
               onPress={() => onNavigate('pop')}
             >
-              <Text style={styles.backIcon}>←</Text>
+              <ArrowLeft size={24} color="#111827" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Add Company</Text>
             <View style={{ width: 24 }} />
@@ -262,9 +281,11 @@ const AddCompany = ({ onNavigate, routeData }) => {
                 >
                   {formData.industryName || 'Select Industry'}
                 </Text>
-                <Text style={styles.dropdownChevron}>
-                  {industriesLoading ? '⏳' : '▾'}
-                </Text>
+                {industriesLoading ? (
+                  <ActivityIndicator size="small" color="#6B7280" />
+                ) : (
+                  <ChevronDown size={18} color="#6B7280" />
+                )}
               </TouchableOpacity>
             </View>
 
@@ -365,7 +386,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
             ) : (
               <>
                 <Text style={styles.submitButtonText}>Register Company</Text>
-                <Text style={styles.submitButtonArrow}>🏢</Text>
+                <Building2 size={18} color="#FFFFFF" />
               </>
             )}
           </TouchableOpacity>
@@ -388,8 +409,8 @@ const AddCompany = ({ onNavigate, routeData }) => {
             <View style={styles.industrySheetHeader}>
               <View style={styles.industrySheetDrag} />
               <Text style={styles.industrySheetTitle}>Select Industry</Text>
-              <TouchableOpacity onPress={() => setShowIndustryModal(false)}>
-                <Text style={styles.industrySheetClose}>✕</Text>
+              <TouchableOpacity onPress={() => setShowIndustryModal(false)} style={{ padding: 4 }}>
+                <X size={18} color="#94A3B8" />
               </TouchableOpacity>
             </View>
 
@@ -445,7 +466,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
                         ) : null}
                       </View>
                       {isSelected && (
-                        <Text style={styles.industryCheckmark}>✓</Text>
+                        <Check size={16} color="#4F46E5" strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                   );
@@ -465,7 +486,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.successIconContainer}>
-              <Text style={styles.successIcon}>✓</Text>
+              <Check size={36} color="#10B981" strokeWidth={3.5} />
             </View>
             <Text style={styles.modalTitle}>Company Added!</Text>
             <Text style={styles.modalSubtitle}>

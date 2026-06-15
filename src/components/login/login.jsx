@@ -17,6 +17,7 @@ import {
   Keyboard
 } from 'react-native';
 import { loginUser, verifyOtp } from '../../services/api';
+import { Edit3 } from 'lucide-react-native';
 // Fallback if AsyncStorage is still not installed properly:
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -294,9 +295,9 @@ const Login = ({ onNavigate, routeData }) => {
                         setOtpSent(false);
                         setOtp(['', '', '', '']);
                       }}
-                      style={styles.editNumberBtn}
+                      style={[styles.editNumberBtn, { justifyContent: 'center', alignItems: 'center' }]}
                     >
-                      <Text style={styles.editNumberText}>✏️</Text>
+                      <Edit3 size={14} color="#64748B" />
                     </TouchableOpacity>
                   )}
                 </View>

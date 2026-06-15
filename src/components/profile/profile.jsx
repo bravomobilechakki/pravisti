@@ -12,6 +12,22 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import {
+  ArrowLeft,
+  Edit3,
+  Phone,
+  Mail,
+  Building2,
+  Handshake,
+  Users,
+  TrendingUp,
+  Bell,
+  Lock,
+  HelpCircle,
+  ChevronRight,
+  LogOut,
+  X,
+} from 'lucide-react-native';
 
 const Profile = ({ onNavigate, routeData }) => {
   const [profileData, setProfileData] = React.useState(null);
@@ -117,16 +133,17 @@ const Profile = ({ onNavigate, routeData }) => {
 
   const menuItems = [
     {
-      icon: '🏢',
+      Icon: Building2,
       label: 'My Companies',
       subtitle: `${totalCompaniesCount} registered companies`,
+      color: '#3B82F6',
     },
-    { icon: '🤝', label: 'My Deals', subtitle: 'View all sauda deals' },
-    { icon: '👥', label: 'Contacts', subtitle: 'Saved parties & brokers' },
-    { icon: '📊', label: 'Reports', subtitle: 'Commission & analytics' },
-    { icon: '🔔', label: 'Notifications', subtitle: 'Manage alerts' },
-    { icon: '🔒', label: 'Privacy & Security', subtitle: 'Account settings' },
-    { icon: '❓', label: 'Help & Support', subtitle: 'FAQs & contact us' },
+    { Icon: Handshake, label: 'My Deals', subtitle: 'View all sauda deals', color: '#10B981' },
+    { Icon: Users, label: 'Contacts', subtitle: 'Saved parties & brokers', color: '#8B5CF6' },
+    { Icon: TrendingUp, label: 'Reports', subtitle: 'Commission & analytics', color: '#EC4899' },
+    { Icon: Bell, label: 'Notifications', subtitle: 'Manage alerts', color: '#F59E0B' },
+    { Icon: Lock, label: 'Privacy & Security', subtitle: 'Account settings', color: '#06B6D4' },
+    { Icon: HelpCircle, label: 'Help & Support', subtitle: 'FAQs & contact us', color: '#64748B' },
   ];
 
   return (
@@ -136,8 +153,9 @@ const Profile = ({ onNavigate, routeData }) => {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => onNavigate('Dashboard')}
+          activeOpacity={0.7}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <ArrowLeft size={20} color="#0F172A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
         <TouchableOpacity
@@ -145,7 +163,7 @@ const Profile = ({ onNavigate, routeData }) => {
           onPress={() => setIsEditModalVisible(true)}
           activeOpacity={0.7}
         >
-          <Text style={styles.editIcon}>✏️</Text>
+          <Edit3 size={16} color="#0F172A" />
         </TouchableOpacity>
       </View>
 
@@ -170,7 +188,7 @@ const Profile = ({ onNavigate, routeData }) => {
           <View style={styles.infoList}>
             <View style={styles.infoRow}>
               <View style={styles.infoIconContainer}>
-                <Text style={styles.infoIcon}>📱</Text>
+                <Phone size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Mobile Number</Text>
@@ -180,7 +198,7 @@ const Profile = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconContainer}>
-                <Text style={styles.infoIcon}>✉️</Text>
+                <Mail size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Email Address</Text>
@@ -192,7 +210,7 @@ const Profile = ({ onNavigate, routeData }) => {
 
             <View style={[styles.infoRow, { borderBottomWidth: 0, paddingBottom: 0 }]}>
               <View style={styles.infoIconContainer}>
-                <Text style={styles.infoIcon}>🏢</Text>
+                <Building2 size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Linked Companies</Text>
@@ -205,32 +223,35 @@ const Profile = ({ onNavigate, routeData }) => {
         {/* Menu Items */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Account</Text>
-          {menuItems.map((item, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.menuItem,
-                index === menuItems.length - 1 && { borderBottomWidth: 0 },
-              ]}
-              onPress={() => {
-                if (item.label === 'My Companies') {
-                  onNavigate('MyCompanies');
-                } else if (item.label === 'My Deals') {
-                  onNavigate('DealsList');
-                }
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>{item.icon}</Text>
-              </View>
-              <View style={styles.menuContent}>
-                <Text style={styles.menuLabel}>{item.label}</Text>
-                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-              </View>
-              <Text style={styles.menuArrow}>›</Text>
-            </TouchableOpacity>
-          ))}
+          {menuItems.map((item, index) => {
+            const Icon = item.Icon;
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.menuItem,
+                  index === menuItems.length - 1 && { borderBottomWidth: 0 },
+                ]}
+                onPress={() => {
+                  if (item.label === 'My Companies') {
+                    onNavigate('MyCompanies');
+                  } else if (item.label === 'My Deals') {
+                    onNavigate('DealsList');
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.menuIconContainer, { backgroundColor: item.color + '15' }]}>
+                  <Icon size={18} color={item.color} />
+                </View>
+                <View style={styles.menuContent}>
+                  <Text style={styles.menuLabel}>{item.label}</Text>
+                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
+                </View>
+                <ChevronRight size={18} color="#CBD5E1" />
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Logout */}
@@ -252,7 +273,7 @@ const Profile = ({ onNavigate, routeData }) => {
             onNavigate('Login');
           }}
         >
-          <Text style={styles.logoutIcon}>🚪</Text>
+          <LogOut size={18} color="#EF4444" />
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
 
@@ -280,7 +301,7 @@ const Profile = ({ onNavigate, routeData }) => {
                   onPress={() => setIsEditModalVisible(false)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.closeButtonText}>✕</Text>
+                  <X size={18} color="#64748B" />
                 </TouchableOpacity>
               </View>
 

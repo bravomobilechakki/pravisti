@@ -8,21 +8,34 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
+import {
+  Sprout,
+  Shirt,
+  Laptop,
+  HardHat,
+  Factory,
+  Package,
+  Car,
+  FlaskConical,
+  Hammer,
+  HelpCircle,
+  ArrowLeft,
+} from 'lucide-react-native';
 
 const ChooseIndustry = ({ onNavigate, routeData }) => {
   const [selectedIndustries, setSelectedIndustries] = useState([]);
 
   const industries = [
-    { id: '1', name: 'Agriculture & Agro', icon: '🌾', color: '#16a34a' },
-    { id: '2', name: 'Textiles & Apparel', icon: '👕', color: '#7c3aed' },
-    { id: '3', name: 'Electronics & Tech', icon: '💻', color: '#2563eb' },
-    { id: '4', name: 'Construction', icon: '🏗️', color: '#d97706' },
-    { id: '5', name: 'Manufacturing', icon: '🏭', color: '#475569' },
-    { id: '6', name: 'FMCG', icon: '📦', color: '#e11d48' },
-    { id: '7', name: 'Automotive', icon: '🚗', color: '#0d9488' },
-    { id: '8', name: 'Chemicals', icon: '🧪', color: '#9333ea' },
-    { id: '9', name: 'Metals & Mining', icon: '⛏️', color: '#854d0e' },
-    { id: '10', name: 'Other', icon: '🔄', color: '#0891b2' },
+    { id: '1', name: 'Agriculture & Agro', Icon: Sprout, color: '#16a34a' },
+    { id: '2', name: 'Textiles & Apparel', Icon: Shirt, color: '#7c3aed' },
+    { id: '3', name: 'Electronics & Tech', Icon: Laptop, color: '#2563eb' },
+    { id: '4', name: 'Construction', Icon: HardHat, color: '#d97706' },
+    { id: '5', name: 'Manufacturing', Icon: Factory, color: '#475569' },
+    { id: '6', name: 'FMCG', Icon: Package, color: '#e11d48' },
+    { id: '7', name: 'Automotive', Icon: Car, color: '#0d9488' },
+    { id: '8', name: 'Chemicals', Icon: FlaskConical, color: '#9333ea' },
+    { id: '9', name: 'Metals & Mining', Icon: Hammer, color: '#854d0e' },
+    { id: '10', name: 'Other', Icon: HelpCircle, color: '#0891b2' },
   ];
 
   const toggleIndustry = (industry) => {
@@ -52,7 +65,7 @@ const ChooseIndustry = ({ onNavigate, routeData }) => {
           style={styles.backButtonCircle}
           onPress={() => onNavigate('Login')}
         >
-          <Text style={styles.backButtonIcon}>‹</Text>
+          <ArrowLeft size={18} color="#1A1D1F" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Select Industry</Text>
         <View style={{ width: 36 }} />
@@ -69,6 +82,7 @@ const ChooseIndustry = ({ onNavigate, routeData }) => {
         <View style={styles.gridContainer}>
           {industries.map((item) => {
             const isSelected = selectedIndustries.some(i => i.id === item.id);
+            const Icon = item.Icon;
             return (
               <TouchableOpacity
                 key={item.id}
@@ -83,7 +97,7 @@ const ChooseIndustry = ({ onNavigate, routeData }) => {
                   styles.iconContainer,
                   isSelected && styles.iconContainerSelected
                 ]}>
-                  <Text style={styles.icon}>{item.icon}</Text>
+                  <Icon size={24} color={isSelected ? '#4F46E5' : item.color} />
                 </View>
                 <Text style={[
                   styles.industryName,

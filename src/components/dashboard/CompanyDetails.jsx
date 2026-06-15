@@ -11,15 +11,54 @@ import {
   Modal,
   TextInput,
   Platform,
+  KeyboardAvoidingView,
+  Dimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getCompanyDetails, updateCompany, deleteCompany } from '../../services/api';
+import {
+  ArrowLeft,
+  Edit3,
+  Building2,
+  Briefcase,
+  User,
+  Handshake,
+  Tag,
+  Box,
+  FileText,
+  Phone,
+  Mail,
+  MapPin,
+  Globe,
+  Trash2,
+  Plus,
+  ArrowUpRight,
+  ChevronRight,
+} from 'lucide-react-native';
+import { getCompanyDetails, updateCompany, deleteCompany, getDeals, getExpiredDeals, getUserProfile } from '../../services/api';
+
+const formatVolume = (value) => {
+  const num = Number(value);
+  if (isNaN(num) || num <= 0) return '₹0';
+  if (num >= 10000000) {
+    return `₹${(num / 10000000).toFixed(2)} Cr`;
+  }
+  if (num >= 100000) {
+    return `₹${(num / 100000).toFixed(2)} L`;
+  }
+  if (num >= 1000) {
+    return `₹${(num / 1000).toFixed(1)}k`;
+  }
+  return `₹${num.toLocaleString('en-IN')}`;
+};
 
 const CompanyDetails = ({ onNavigate, routeData }) => {
   const [activeTab, setActiveTab] = React.useState('my_sauda');
   const [isLoading, setIsLoading] = React.useState(true);
   const [company, setCompany] = React.useState(routeData?.company || null);
+  const [fetchedDeals, setFetchedDeals] = React.useState([]);
+  const [isDealsLoading, setIsDealsLoading] = React.useState(true);
   const [isEditModalVisible, setIsEditModalVisible] = React.useState(false);
+  const [currentUser, setCurrentUser] = React.useState(routeData?.user || null);
 
   // Track both the readable name and the raw backend ObjectId for industry
   const [editData, setEditData] = React.useState({
@@ -42,6 +81,68 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const [editErrors, setEditErrors] = React.useState({ name: '', phone: '', registrationNumber: '' });
 
   const themeColor = '#4F46E5';
+
+  const getUserRoleInCompany = () => {
+    if (!currentUser || !company) return 'Member';
+
+    const currentUserId = currentUser.id || currentUser._id || currentUser.userId;
+    const currentUserMobile = currentUser.mobileNumber || currentUser.mobile;
+
+    // Check owner
+    const ownerId = typeof company.owner === 'object' && company.owner !== null
+      ? (company.owner._id || company.owner.id || company.owner.userId)
+      : company.owner;
+      
+    const ownerMobile = typeof company.owner === 'object' && company.owner !== null
+      ? company.owner.mobileNumber
+      : null;
+
+    if (
+      (currentUserId && ownerId && String(currentUserId) === String(ownerId)) ||
+      (currentUserMobile && ownerMobile && String(currentUserMobile).replace(/\D/g, '') === String(ownerMobile).replace(/\D/g, '')) ||
+      (currentUserMobile && company.phone && String(currentUserMobile).replace(/\D/g, '') === String(company.phone).replace(/\D/g, ''))
+    ) {
+      return 'Owner';
+    }
+
+    // Check employees
+    if (Array.isArray(company.employees)) {
+      const isEmployee = company.employees.some(emp => {
+        const empId = typeof emp === 'object' && emp !== null
+          ? (emp._id || emp.id || emp.userId)
+          : emp;
+        const empMobile = typeof emp === 'object' && emp !== null
+          ? emp.mobileNumber
+          : null;
+        return (
+          (currentUserId && empId && String(currentUserId) === String(empId)) ||
+          (currentUserMobile && empMobile && String(currentUserMobile).replace(/\D/g, '') === String(empMobile).replace(/\D/g, ''))
+        );
+      });
+      if (isEmployee) return 'Employee';
+    }
+
+    return 'Member';
+  };
+
+  React.useEffect(() => {
+    const fetchUser = async () => {
+      if (!currentUser) {
+        try {
+          const token = await AsyncStorage.getItem('userToken');
+          if (token) {
+            const userRes = await getUserProfile(token);
+            if (userRes && userRes.success) {
+              setCurrentUser(userRes.data);
+            }
+          }
+        } catch (ue) {
+          console.warn('Failed to fetch user profile in CompanyDetails:', ue);
+        }
+      }
+    };
+    fetchUser();
+  }, []);
 
   const fetchDetails = React.useCallback(async () => {
     const id = routeData?.company?._id || routeData?.company?.id;
@@ -86,9 +187,59 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     }
   }, [routeData, onNavigate]);
 
+  const fetchDealsList = React.useCallback(async () => {
+    const id = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
+    if (!id) return;
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) return;
+
+      const [activeRes, expiredRes] = await Promise.allSettled([
+        getDeals(token, 1, 10, id),
+        getExpiredDeals(token, 1, 10, id)
+      ]);
+
+      let allDeals = [];
+      if (activeRes.status === 'fulfilled' && activeRes.value?.success) {
+        allDeals = [...allDeals, ...(activeRes.value.value?.data?.deals || activeRes.value.value?.data || activeRes.value.data?.deals || [])];
+      }
+      if (expiredRes.status === 'fulfilled' && expiredRes.value?.success) {
+        allDeals = [...allDeals, ...(expiredRes.value.value?.data?.deals || expiredRes.value.value?.data || expiredRes.value.data?.deals || [])];
+      }
+
+      // Filter by company ID
+      const filtered = allDeals.filter(deal => {
+        const sellerCid = deal.sellerCompanyId?._id || deal.sellerCompanyId?.id || deal.sellerCompanyId;
+        const buyerCid = deal.buyerCompanyId?._id || deal.buyerCompanyId?.id || deal.buyerCompanyId;
+        const brokerCid = deal.brokerCompanyId?._id || deal.brokerCompanyId?.id || deal.brokerCompanyId;
+        const p1Cid = deal.party1?.companyId?._id || deal.party1?.companyId || deal.party1?.company?._id || deal.party1?.company?.id;
+        const p2Cid = deal.party2?.companyId?._id || deal.party2?.companyId || deal.party2?.company?._id || deal.party2?.company?.id;
+        return (
+          String(sellerCid) === String(id) ||
+          String(buyerCid) === String(id) ||
+          String(brokerCid) === String(id) ||
+          String(p1Cid) === String(id) ||
+          String(p2Cid) === String(id)
+        );
+      });
+
+      setFetchedDeals(filtered);
+    } catch (e) {
+      console.warn('Failed to fetch deals for company details:', e);
+    } finally {
+      setIsDealsLoading(false);
+    }
+  }, [company, routeData]);
+
   React.useEffect(() => {
     fetchDetails();
   }, [fetchDetails]);
+
+  React.useEffect(() => {
+    if (company) {
+      fetchDealsList();
+    }
+  }, [company, fetchDealsList]);
 
   const handleUpdate = async () => {
     if (!editData.name || !editData.phone || !editData.registrationNumber) {
@@ -123,9 +274,23 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         Alert.alert('Success', 'Company profile updated successfully!');
         setIsEditModalVisible(false);
         fetchDetails();
+      } else {
+        const errMsg = response.message || 'Failed to update company';
+        const lowerMsg = errMsg.toLowerCase();
+        if (lowerMsg.includes('already exists') || lowerMsg.includes('duplicate') || lowerMsg.includes('registration') || lowerMsg.includes('gst')) {
+          setEditErrors(prev => ({ ...prev, registrationNumber: errMsg }));
+        } else {
+          Alert.alert('Error', errMsg);
+        }
       }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to update company');
+      const errMsg = error.message || 'Failed to update company';
+      const lowerMsg = errMsg.toLowerCase();
+      if (lowerMsg.includes('already exists') || lowerMsg.includes('duplicate') || lowerMsg.includes('registration') || lowerMsg.includes('gst')) {
+        setEditErrors(prev => ({ ...prev, registrationNumber: errMsg }));
+      } else {
+        Alert.alert('Error', errMsg);
+      }
     }
   };
 
@@ -156,7 +321,10 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     );
   };
 
-  const deals = React.useMemo(() => company?.recentDeals || [], [company]);
+  const deals = React.useMemo(() => {
+    if (fetchedDeals.length > 0) return fetchedDeals;
+    return company?.recentDeals || [];
+  }, [fetchedDeals, company]);
 
   const products = React.useMemo(() => {
     const productMap = new Map();
@@ -219,7 +387,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <ArrowLeft size={20} color="#1E293B" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Company Ledger</Text>
         <TouchableOpacity
@@ -230,7 +398,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           }}
           activeOpacity={0.7}
         >
-          <Text style={styles.editIcon}>✎</Text>
+          <Edit3 size={18} color="#1E293B" />
         </TouchableOpacity>
       </View>
 
@@ -242,7 +410,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         <View style={styles.softHeroContainer}>
           <View style={styles.softHeroHeader}>
             <View style={styles.softAvatar}>
-              <Text style={styles.softAvatarText}>{company.type === 'trader' ? '💼' : '🏢'}</Text>
+              {company.type === 'trader' ? (
+                <Briefcase size={26} color="#4F46E5" />
+              ) : (
+                <Building2 size={26} color="#4F46E5" />
+              )}
             </View>
             <View style={styles.softHeroInfo}>
               <Text style={styles.softHeroName} numberOfLines={2}>{company.name}</Text>
@@ -265,6 +437,25 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                     <Text style={styles.gstinBadgeText}>GST/Reg: {company.registrationNumber || company.gstin}</Text>
                   </View>
                 )}
+                {/* User Role Badge */}
+                <View style={[
+                  styles.userRoleBadge,
+                  {
+                    backgroundColor: getUserRoleInCompany() === 'Owner' ? '#EEF2FF' : '#F1F5F9',
+                    borderColor: getUserRoleInCompany() === 'Owner' ? '#C7D2FE' : '#E2E8F0',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                  }
+                ]}>
+                  <User size={10} color={getUserRoleInCompany() === 'Owner' ? '#4F46E5' : '#475569'} />
+                  <Text style={[
+                    styles.userRoleText,
+                    { color: getUserRoleInCompany() === 'Owner' ? '#4F46E5' : '#475569' }
+                  ]}>
+                    {getUserRoleInCompany()}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -277,15 +468,21 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             </View>
             <View style={styles.heroStatDivider} />
             <View style={styles.heroStatItem}>
-              <Text style={[styles.heroStatValue, { color: '#10B981' }]}>
-                ₹{deals.reduce((acc, deal) => acc + Number(deal.product?.price || deal.price || 0), 0).toLocaleString('en-IN')}
+              <Text style={[styles.heroStatValue, { color: '#10B981' }]} adjustsFontSizeToFit numberOfLines={1}>
+                {formatVolume(deals.reduce((acc, deal) => {
+                  const firstProd = deal.products?.[0] || deal.product || {};
+                  const qty = Number(firstProd.quantity || deal.quantity || deal.qty || 0);
+                  const price = Number(firstProd.price || deal.price || 0);
+                  const total = deal.totalAmount || firstProd.totalAmount || (qty * price);
+                  return acc + Number(total);
+                }, 0))}
               </Text>
               <Text style={styles.heroStatLabel}>Volume</Text>
             </View>
             <View style={styles.heroStatDivider} />
             <View style={styles.heroStatItem}>
               <Text style={[styles.heroStatValue, { color: '#2563EB' }]}>{company.type === 'trader' ? 'Trader' : 'Broker'}</Text>
-              <Text style={styles.heroStatLabel}>Role</Text>
+              <Text style={styles.heroStatLabel}>Company Type</Text>
             </View>
           </View>
         </View>
@@ -297,9 +494,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             onPress={() => onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name })}
             activeOpacity={0.85}
           >
-            <Text style={styles.navigationArrow}>↗</Text>
+            <View style={styles.navigationArrow}>
+              <ArrowUpRight size={14} color="#4338CA" />
+            </View>
             <View style={styles.tabButtonIconCircleIndigo}>
-              <Text style={styles.tabButtonEmoji}>🤝</Text>
+              <Handshake size={18} color="#4338CA" />
             </View>
             <Text style={styles.tabButtonTextIndigo}>My Sauda</Text>
           </TouchableOpacity>
@@ -309,9 +508,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             onPress={() => onNavigate('CategoryPage', { company })}
             activeOpacity={0.85}
           >
-            <Text style={styles.navigationArrow}>↗</Text>
+            <View style={styles.navigationArrow}>
+              <ArrowUpRight size={14} color="#6D28D9" />
+            </View>
             <View style={styles.tabButtonIconCircleViolet}>
-              <Text style={styles.tabButtonEmoji}>🏷️</Text>
+              <Tag size={16} color="#6D28D9" />
             </View>
             <Text style={styles.tabButtonTextViolet}>Categories</Text>
           </TouchableOpacity>
@@ -321,9 +522,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             onPress={() => onNavigate('AddProductPage', { company })}
             activeOpacity={0.85}
           >
-            <Text style={styles.navigationArrow}>↗</Text>
+            <View style={styles.navigationArrow}>
+              <ArrowUpRight size={14} color="#047857" />
+            </View>
             <View style={styles.tabButtonIconCircleEmerald}>
-              <Text style={styles.tabButtonEmoji}>📦</Text>
+              <Box size={18} color="#047857" />
             </View>
             <Text style={styles.tabButtonTextEmerald}>Products</Text>
           </TouchableOpacity>
@@ -344,42 +547,102 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 </TouchableOpacity>
               </View>
 
-              {deals.length > 0 ? (
-                deals.map((deal, idx) => (
-                  <TouchableOpacity
-                    key={deal._id || deal.id || idx}
-                    style={styles.dealCard}
-                    onPress={() => onNavigate('DealDetails', { deal })}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.dealHeader}>
-                      <Text style={styles.dealTitle} numberOfLines={1}>
-                        {deal.product?.name || deal.product || deal.title || 'Commodity Trade'}
-                      </Text>
-                      <View
-                        style={[
-                          styles.dealTypeBadge,
-                          { backgroundColor: deal.type === 'Buy' ? '#E6F4EA' : '#FCE8E6' },
-                        ]}
+              {isDealsLoading ? (
+                <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={themeColor} />
+                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 8 }}>Loading Saudas...</Text>
+                </View>
+              ) : deals.length > 0 ? (
+                <>
+                  {deals.slice(0, 1).map((deal, idx) => {
+                    const firstProd = deal.products?.[0] || deal.product || {};
+                    const pName = firstProd.productId?.name || firstProd.name || (typeof firstProd === 'string' ? firstProd : '') || deal.dealNumber || 'Sauda Agreement';
+                    const qty = firstProd.quantity || deal.quantity || deal.qty || '0';
+                    const price = firstProd.price || deal.price || '0';
+                    const totalAmt = deal.totalAmount || firstProd.totalAmount || (qty !== 'N/A' && price !== 'N/A' ? Number(qty) * Number(price) : null);
+
+                    const sellerName = deal.sellerCompany?.name || deal.sellerCompanyId?.companyName || deal.sellerCompanyId?.name || deal.party1?.company?.name || deal.party1?.companyId?.name || deal.party1?.name || 'Seller';
+                    const buyerName = deal.buyerCompany?.name || deal.buyerCompanyId?.companyName || deal.buyerCompanyId?.name || deal.party2?.company?.name || deal.party2?.companyId?.name || deal.party2?.name || 'Buyer';
+
+                    const isPending = deal.status === 'pending';
+                    const isCompleted = deal.status === 'completed';
+                    const isRejected = deal.status === 'rejected' || deal.status === 'cancelled';
+
+                    let statusBg = '#E6F4EA';
+                    let statusTextCol = '#137333';
+                    if (isPending) {
+                      statusBg = '#FFFBEB';
+                      statusTextCol = '#B45309';
+                    } else if (isCompleted) {
+                      statusBg = '#EFF6FF';
+                      statusTextCol = '#1D4ED8';
+                    } else if (isRejected) {
+                      statusBg = '#FEF2F2';
+                      statusTextCol = '#EF4444';
+                    }
+
+                    return (
+                      <TouchableOpacity
+                        key={deal._id || deal.id || idx}
+                        style={styles.dealCard}
+                        onPress={() => onNavigate('DealDetails', { dealId: deal._id || deal.id, deal })}
+                        activeOpacity={0.7}
                       >
-                        <Text
-                          style={[
-                            styles.dealTypeText,
-                            { color: deal.type === 'Buy' ? '#137333' : '#C5221F' },
-                          ]}
-                        >
-                          {deal.type || 'TRADE'}
+                        <View style={styles.dealHeader}>
+                          <Text style={styles.dealTitle} numberOfLines={1}>
+                            {pName}
+                          </Text>
+                          <View
+                            style={[
+                              styles.dealTypeBadge,
+                              { backgroundColor: statusBg },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.dealTypeText,
+                                { color: statusTextCol },
+                              ]}
+                            >
+                              {(deal.status || 'active').toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Display participant company names */}
+                        <View style={styles.companyNamesRow}>
+                          <Text style={styles.companyNameText} numberOfLines={1}>
+                            {`Seller: ${sellerName} → Buyer: ${buyerName}`}
+                          </Text>
+                        </View>
+
+                        <View style={styles.dealFooter}>
+                          <Text style={styles.dealMeta}>
+                            {qty} {deal.unit || 'Units'} • {deal.createdAt ? new Date(deal.createdAt).toLocaleDateString('en-IN') : 'N/A'}
+                          </Text>
+                          <Text style={[styles.dealPrice, { color: themeColor }]}>
+                            ₹{totalAmt ? Number(totalAmt).toLocaleString('en-IN') : Number(price).toLocaleString('en-IN')}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {deals.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.viewMoreButton}
+                      onPress={() => onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name })}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        <Text style={styles.viewMoreButtonText}>
+                          {deals.length > 1 ? `View More Sauda (${deals.length - 1} more)` : 'View More Sauda'}
                         </Text>
+                        <ChevronRight size={14} color="#4338CA" />
                       </View>
-                    </View>
-                    <View style={styles.dealFooter}>
-                      <Text style={styles.dealMeta}>
-                        {deal.product?.quantity || deal.quantity || '0'} {deal.unit || 'Units'} • {deal.createdAt ? new Date(deal.createdAt).toLocaleDateString() : 'N/A'}
-                      </Text>
-                      <Text style={[styles.dealPrice, { color: themeColor }]}>₹{deal.product?.price || deal.price || '0'}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
+                    </TouchableOpacity>
+                  )}
+                </>
               ) : (
                 <View style={styles.emptyStateContainer}>
                   <TouchableOpacity
@@ -389,7 +652,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                   >
                     <View style={styles.emptyTabLeft}>
                       <View style={styles.emptyTabIconBox}>
-                        <Text style={styles.emptyTabIconText}>🤝</Text>
+                        <Handshake size={20} color="#4F46E5" />
                       </View>
                       <View style={styles.emptyTabContent}>
                         <Text style={styles.emptyTabTitle}>Initiate First Sauda</Text>
@@ -413,7 +676,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 {products.map((product, idx) => (
                   <View key={idx} style={styles.productCard}>
                     <View style={styles.productAvatarCircle}>
-                      <Text style={styles.productEmoji}>📦</Text>
+                      <Box size={22} color="#3B82F6" />
                     </View>
                     <View style={styles.productInfo}>
                       <Text style={styles.productCardName}>{product.name}</Text>
@@ -439,12 +702,12 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
         {/* Permanent Company Details & Info Card */}
         <View style={[styles.tabContentContainer, { marginTop: 24 }]}>
-          <Text style={[styles.sectionTitle, { marginBottom: 14 }]}>🏢 Company Details & Ledger Info</Text>
+          <Text style={[styles.sectionTitle, { marginBottom: 14 }]}>Company Details & Ledger Info</Text>
 
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Text style={styles.infoIcon}>📄</Text>
+                <FileText size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Registration / GSTIN</Text>
@@ -456,7 +719,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Text style={styles.infoIcon}>🏢</Text>
+                <Building2 size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Company Type</Text>
@@ -468,7 +731,19 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Text style={styles.infoIcon}>🏷️</Text>
+                <User size={18} color="#4F46E5" />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Your Role in Company</Text>
+                <Text style={styles.infoValue}>{getUserRoleInCompany()}</Text>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconBox}>
+                <Tag size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Industry Sector</Text>
@@ -484,7 +759,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Text style={styles.infoIcon}>📞</Text>
+                <Phone size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Phone Number</Text>
@@ -496,7 +771,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Text style={styles.infoIcon}>✉️</Text>
+                <Mail size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Email Address</Text>
@@ -508,7 +783,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Text style={styles.infoIcon}>📍</Text>
+                <MapPin size={18} color="#4F46E5" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Address</Text>
@@ -525,7 +800,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 <View style={styles.divider} />
                 <View style={styles.infoRow}>
                   <View style={styles.infoIconBox}>
-                    <Text style={styles.infoIcon}>🌐</Text>
+                    <Globe size={18} color="#4F46E5" />
                   </View>
                   <View style={styles.infoContent}>
                     <Text style={styles.infoLabel}>Website</Text>
@@ -542,7 +817,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 <View style={styles.divider} />
                 <View style={styles.infoRow}>
                   <View style={styles.infoIconBox}>
-                    <Text style={styles.infoIcon}>📝</Text>
+                    <FileText size={18} color="#4F46E5" />
                   </View>
                   <View style={styles.infoContent}>
                     <Text style={styles.infoLabel}>Business Description</Text>
@@ -564,7 +839,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               setIsEditModalVisible(true);
             }}
           >
-            <Text style={[styles.secondaryActionIcon, { color: themeColor }]}>📝</Text>
+            <Edit3 size={16} color={themeColor} />
             <Text style={[styles.secondaryActionText, { color: themeColor }]}>Update Company Profile</Text>
           </TouchableOpacity>
 
@@ -573,7 +848,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             activeOpacity={0.8}
             onPress={handleDelete}
           >
-            <Text style={styles.secondaryActionIcon}>🗑️</Text>
+            <Trash2 size={16} color="#DC2626" />
             <Text style={[styles.secondaryActionText, { color: '#DC2626' }]}>Delete Company</Text>
           </TouchableOpacity>
         </View>
@@ -585,7 +860,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         onPress={() => onNavigate('CreateDeal', { originCompany: company })}
         activeOpacity={0.9}
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Plus size={28} color="#FFFFFF" />
       </TouchableOpacity>
 
       {/* Profile Edit Modal */}
@@ -593,12 +868,21 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         visible={isEditModalVisible}
         transparent
         animationType="slide"
+        onRequestClose={() => setIsEditModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
+            <View style={styles.modalDragIndicator} />
             <Text style={styles.modalTitle}>Update Company Details</Text>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
+            <ScrollView 
+              showsVerticalScrollIndicator={false} 
+              style={styles.modalFormScroll}
+              keyboardShouldPersistTaps="handled"
+            >
               <Text style={styles.modalLabel}>Company Name*</Text>
               <TextInput
                 style={[styles.modalInput, editErrors.name && styles.inputErrorBorder]}
@@ -758,7 +1042,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -848,15 +1132,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   softHeroName: {
-    fontSize: 19,
+    fontSize: 20,
     fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 6,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   metaBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
   },
   softStatusBadge: {
@@ -1075,6 +1359,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+
+  addDealButton: {
+    width: 115,
+    height: 28,
+    backgroundColor: '#673AB7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+
+  addDealButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+
+
   dealTitle: {
     fontSize: 15,
     fontWeight: '700',
@@ -1344,19 +1646,28 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'center',
-    padding: 24,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+    maxHeight: Dimensions.get('window').height * 0.85,
+  },
+  modalDragIndicator: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E2E8F0',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalFormScroll: {
+    marginBottom: 8,
   },
   modalTitle: {
     fontSize: 18,
@@ -1416,6 +1727,51 @@ const styles = StyleSheet.create({
   retryButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  companyNamesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  companyNameText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  viewMoreButton: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#C7D2FE',
+    borderWidth: 1,
+    borderRadius: 14,
+    height: 48,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  viewMoreButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  userRoleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+    marginLeft: 6,
+  },
+  userRoleText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
 });
 

@@ -1,19 +1,23 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LayoutDashboard, Handshake, Plus, MessageSquare, User } from 'lucide-react-native';
 
 const Footer = ({ onNavigate, activeScreen = 'Dashboard' }) => {
+  const insets = useSafeAreaInsets();
   const tabs = [
-    { screen: 'Dashboard', icon: '📊', label: 'Home' },
-    { screen: 'DealsList', icon: '💎', label: 'Saudas' },
-    { screen: 'AddCompany', icon: '+', label: '', isCenter: true },
-    { screen: 'ChatList', icon: '💬', label: 'Chat' },
-    { screen: 'Profile', icon: '👤', label: 'Profile' },
+    { screen: 'Dashboard', Icon: LayoutDashboard, label: 'Home' },
+    { screen: 'DealsList', Icon: Handshake, label: 'Saudas' },
+    { screen: 'AddCompany', Icon: Plus, label: '', isCenter: true },
+    { screen: 'ChatList', Icon: MessageSquare, label: 'Chat' },
+    { screen: 'Profile', Icon: User, label: 'Profile' },
   ];
 
   return (
-    <View style={styles.tabBar}>
+    <View style={[styles.tabBar, { paddingBottom: 20 + insets.bottom, height: 80 + insets.bottom }]}>
       {tabs.map((tab, index) => {
         if (tab.isCenter) {
+          const Icon = tab.Icon;
           return (
             <TouchableOpacity
               key={index}
@@ -22,20 +26,22 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard' }) => {
               activeOpacity={0.9}
             >
               <View style={styles.centerButton}>
-                <Text style={styles.centerButtonIcon}>{tab.icon}</Text>
+                <Icon size={24} color="#FFFFFF" />
               </View>
             </TouchableOpacity>
           );
         }
 
         const isActive = activeScreen === tab.screen;
+        const Icon = tab.Icon;
         return (
           <TouchableOpacity
             key={index}
             style={styles.tabItem}
             onPress={() => onNavigate(tab.screen)}
+            activeOpacity={0.7}
           >
-            <Text style={styles.tabIcon}>{tab.icon}</Text>
+            <Icon size={20} color={isActive ? '#3B82F6' : '#9CA3AF'} />
             <Text style={isActive ? styles.tabLabelActive : styles.tabLabel}>
               {tab.label}
             </Text>
@@ -54,13 +60,11 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingBottom: 25,
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
     justifyContent: 'space-around',
     alignItems: 'flex-end',
-    height: 85,
   },
   centerTabItem: {
     top: -25,

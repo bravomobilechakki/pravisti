@@ -92,7 +92,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     const ownerId = typeof company.owner === 'object' && company.owner !== null
       ? (company.owner._id || company.owner.id || company.owner.userId)
       : company.owner;
-      
+
     const ownerMobile = typeof company.owner === 'object' && company.owner !== null
       ? company.owner.mobileNumber
       : null;
@@ -878,8 +878,8 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             <View style={styles.modalDragIndicator} />
             <Text style={styles.modalTitle}>Update Company Details</Text>
 
-            <ScrollView 
-              showsVerticalScrollIndicator={false} 
+            <ScrollView
+              showsVerticalScrollIndicator={false}
               style={styles.modalFormScroll}
               keyboardShouldPersistTaps="handled"
             >

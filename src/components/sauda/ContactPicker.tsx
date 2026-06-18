@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Platform,
   PermissionsAndroid,
-  Alert,
   Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -113,6 +112,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     };
 
     checkPermissionState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync Address Book
@@ -301,6 +301,12 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       onNavigate('CreateDeal', {
         selectedContact: selected,
         pickingFor: routeData?.pickingFor,
+        companyId: routeData?.companyId,
+        companyName: routeData?.companyName,
+        role: routeData?.role,
+        originCompany: routeData?.originCompany,
+        company: routeData?.company,
+        prefill: routeData?.prefill,
       });
     }
   };
@@ -316,6 +322,12 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     onNavigate('CreateDeal', {
       selectedContact: finalContact,
       pickingFor: routeData?.pickingFor,
+      companyId: routeData?.companyId,
+      companyName: routeData?.companyName,
+      role: routeData?.role,
+      originCompany: routeData?.originCompany,
+      company: routeData?.company,
+      prefill: routeData?.prefill,
     });
   };
 
@@ -330,6 +342,12 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     onNavigate('CreateDeal', {
       selectedContact: manualContact,
       pickingFor: routeData?.pickingFor,
+      companyId: routeData?.companyId,
+      companyName: routeData?.companyName,
+      role: routeData?.role,
+      originCompany: routeData?.originCompany,
+      company: routeData?.company,
+      prefill: routeData?.prefill,
     });
   };
 
@@ -492,7 +510,14 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('CreateDeal')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('CreateDeal', {
+          companyId: routeData?.companyId,
+          companyName: routeData?.companyName,
+          role: routeData?.role,
+          originCompany: routeData?.originCompany,
+          company: routeData?.company,
+          prefill: routeData?.prefill,
+        })}>
           <ArrowLeft size={18} color="#1E293B" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Select Contact</Text>

@@ -79,6 +79,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   const [products, setProducts] = useState([]);
   const [units, setUnits] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modal Visibility
@@ -314,12 +315,13 @@ const AddProductPage = ({ onNavigate, routeData }) => {
 
   // Create or Update Product
   const handleSaveProduct = async () => {
+    if (isSaving) return;
     if (!productForm.name || !productForm.categoryId) {
       Alert.alert('Validation Error', 'Product Name and Category are required.');
       return;
     }
 
-    setIsLoading(true);
+    setIsSaving(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
       const companyId = routeData?.company?._id || routeData?.company?.id;
@@ -367,7 +369,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     } catch (error) {
       Alert.alert('Error', error.message || 'Something went wrong.');
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
@@ -740,10 +742,13 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                 <Text style={{ color: '#475569', fontWeight: '700' }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: themeColor }]}
+                style={[styles.modalButton, { backgroundColor: isSaving ? '#94A3B8' : themeColor }]}
                 onPress={handleSaveProduct}
+                disabled={isSaving}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Save</Text>
+                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>
+                  {isSaving ? 'Saving...' : 'Save'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

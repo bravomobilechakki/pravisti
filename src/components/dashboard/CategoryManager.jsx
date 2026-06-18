@@ -511,22 +511,22 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                     <View style={[styles.cardExpandedArea, { borderTopColor: catTheme.primary + '20' }]}>
                       {/* Category actions with dynamic styling */}
                       <View style={styles.catActionsRow}>
-                        <TouchableOpacity 
-                          style={[styles.catActionBtn, { backgroundColor: catTheme.accentBg, borderColor: catTheme.primary + '20' }]} 
+                        <TouchableOpacity
+                          style={[styles.catActionBtn, { backgroundColor: catTheme.accentBg, borderColor: catTheme.primary + '20' }]}
                           onPress={() => openEditCategory(cat)}
                         >
                           <Edit3 size={14} color={catTheme.primary} />
                           <Text style={[styles.catActionLabel, { color: catTheme.primary }]}>Edit</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[styles.catActionBtn, { backgroundColor: '#FFF5F5', borderColor: '#FECACA' }]} 
+                        <TouchableOpacity
+                          style={[styles.catActionBtn, { backgroundColor: '#FFF5F5', borderColor: '#FECACA' }]}
                           onPress={() => handleDeleteCategory(cat)}
                         >
                           <Trash2 size={14} color="#EF4444" />
                           <Text style={[styles.catActionLabel, { color: '#EF4444' }]}>Delete</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[styles.catActionBtn, { backgroundColor: catTheme.primary, borderColor: catTheme.primary }]} 
+                        <TouchableOpacity
+                          style={[styles.catActionBtn, { backgroundColor: catTheme.primary, borderColor: catTheme.primary }]}
                           onPress={() => openAddSubcategory(catId)}
                         >
                           <Plus size={14} color="#FFFFFF" />

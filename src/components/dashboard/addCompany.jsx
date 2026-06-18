@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import {
 import { createCompany, getIndustries } from '../../services/api';
 
 const AddCompany = ({ onNavigate, routeData }) => {
+  const scrollViewRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [industries, setIndustries] = useState([]);
@@ -64,10 +65,29 @@ const AddCompany = ({ onNavigate, routeData }) => {
     fetchIndustries();
   }, [fetchIndustries]);
 
+  const [userMobile, setUserMobile] = useState('');
+
+  useEffect(() => {
+    const fetchUserPhone = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (token) {
+          const { getUserProfile } = require('../../services/api');
+          const response = await getUserProfile(token);
+          if (response && response.success && response.data?.mobileNumber) {
+            setUserMobile(response.data.mobileNumber);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load user mobile number in AddCompany:', err);
+      }
+    };
+    fetchUserPhone();
+  }, []);
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    phone: '',
     type: routeData?.role?.toLowerCase() || 'trader',
     registrationNumber: '',
     industryId: '',    // stored _id sent to API
@@ -82,8 +102,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
   });
   const [errors, setErrors] = useState({
     name: '',
-    registrationNumber: '',
-    phone: ''
+    registrationNumber: ''
   });
 
   const handleInputChange = (field, value) => {
@@ -95,7 +114,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
 
   const handleSubmit = async () => {
     // Validation
-    let newErrors = { name: '', registrationNumber: '', phone: '' };
+    let newErrors = { name: '', registrationNumber: '' };
     let hasError = false;
 
     if (!formData.name.trim()) {
@@ -106,16 +125,10 @@ const AddCompany = ({ onNavigate, routeData }) => {
       newErrors.registrationNumber = 'Registration / GSTIN is required';
       hasError = true;
     }
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Mobile Number is required';
-      hasError = true;
-    } else if (formData.phone.length !== 10) {
-      newErrors.phone = 'Please enter a valid 10-digit number';
-      hasError = true;
-    }
 
     if (hasError) {
       setErrors(newErrors);
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
 
@@ -131,7 +144,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
       const payload = {
         name: formData.name,
         email: formData.email,
-        phone: formData.phone,
+        phone: userMobile || routeData?.user?.mobileNumber || routeData?.user?.mobile || '',
         type: formData.type,
         registrationNumber: formData.registrationNumber,
         industry: formData.industryId,   // send _id to API
@@ -159,7 +172,8 @@ const AddCompany = ({ onNavigate, routeData }) => {
         const errMsg = response.message || 'Failed to register company.';
         const lowerMsg = errMsg.toLowerCase();
         if (lowerMsg.includes('already exists') || lowerMsg.includes('duplicate') || lowerMsg.includes('registration') || lowerMsg.includes('gst')) {
-          setErrors(prev => ({ ...prev, registrationNumber: errMsg }));
+          setErrors(prev => ({ ...prev, registrationNumber: 'GST number is duplicate' }));
+          scrollViewRef.current?.scrollTo({ y: 0, animated: true });
         } else {
           Alert.alert('Error', errMsg);
         }
@@ -168,7 +182,8 @@ const AddCompany = ({ onNavigate, routeData }) => {
       const errMsg = error.message || 'An error occurred while registering company.';
       const lowerMsg = errMsg.toLowerCase();
       if (lowerMsg.includes('already exists') || lowerMsg.includes('duplicate') || lowerMsg.includes('registration') || lowerMsg.includes('gst')) {
-        setErrors(prev => ({ ...prev, registrationNumber: errMsg }));
+        setErrors(prev => ({ ...prev, registrationNumber: 'GST number is duplicate' }));
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       } else {
         Alert.alert('API Error', errMsg);
       }
@@ -183,7 +198,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollViewRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
@@ -233,24 +248,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
               {errors.registrationNumber ? <Text style={styles.errorText}>{errors.registrationNumber}</Text> : null}
             </View>
 
-            <View style={styles.fieldContainer}>
-              <Text style={styles.inputLabel}>Mobile Number*</Text>
-              <View style={[styles.mobileInputContainer, errors.phone && styles.inputErrorBorder]}>
-                <View style={styles.countryCode}>
-                  <Text style={styles.countryCodeText}>+91</Text>
-                </View>
-                <TextInput
-                  style={styles.mobileInput}
-                  placeholder="10-digit number"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  value={formData.phone}
-                  onChangeText={(text) => handleInputChange('phone', text)}
-                />
-              </View>
-              {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
-            </View>
+
 
             <View style={styles.fieldContainer}>
               <Text style={styles.inputLabel}>Email Address</Text>

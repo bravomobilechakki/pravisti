@@ -33,6 +33,7 @@ const Signup = ({ onNavigate, routeData }) => {
   const otpRefs = useRef([]);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [timer, setTimer] = useState(60); // 60 seconds
+  const [errorMessage, setErrorMessage] = useState('');
 
   const themeColor = '#4F46E5';
 
@@ -99,13 +100,14 @@ const Signup = ({ onNavigate, routeData }) => {
 
   const handleSignup = async () => {
     if (!name || !mobile) {
-      Alert.alert('Error', 'Please fill in Name and Mobile Number.');
+      setErrorMessage('Please fill in Name and Mobile Number.');
       return;
     }
     if (mobile.length !== 10) {
-      Alert.alert('Error', 'Please enter a valid 10-digit mobile number.');
+      setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
+    setErrorMessage('');
 
     setIsLoading(true);
     try {
@@ -113,7 +115,6 @@ const Signup = ({ onNavigate, routeData }) => {
       if (response && response.success) {
         setOtpSent(true);
         setTimer(60);
-        Alert.alert('Success', 'Signup initiated! OTP has been sent.');
       } else {
         const msg = response.message || '';
         if (
@@ -128,7 +129,7 @@ const Signup = ({ onNavigate, routeData }) => {
             onNavigate('Login', { mobile, autoSendOtp: true });
           }
         } else {
-          Alert.alert('Error', response.message || 'Failed to send OTP.');
+          setErrorMessage(msg || 'Failed to send OTP.');
         }
       }
     } catch (error) {
@@ -145,7 +146,7 @@ const Signup = ({ onNavigate, routeData }) => {
           onNavigate('Login', { mobile, autoSendOtp: true });
         }
       } else {
-        Alert.alert('API Error', error.message || 'An error occurred during signup.');
+        setErrorMessage(errMsg || 'An error occurred during signup.');
       }
     } finally {
       setIsLoading(false);
@@ -262,31 +263,36 @@ const Signup = ({ onNavigate, routeData }) => {
                 </View>
 
                  {/* Mobile Number */}
-                <Text style={styles.inputLabel}>Mobile Number</Text>
-                <View style={[styles.inputWrapper, otpSent && { backgroundColor: '#F1F5F9' }]}>
-                  <Text style={styles.prefixText}>+91</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="00000 00000"
-                    placeholderTextColor="#CBD5E1"
-                    value={mobile}
-                    onChangeText={setMobile}
-                    keyboardType="phone-pad"
-                    maxLength={10}
-                    editable={!otpSent}
-                  />
-                  {otpSent && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setOtpSent(false);
-                        setOtp(['', '', '', '']);
-                      }}
-                      style={[styles.editNumberBtn, { justifyContent: 'center', alignItems: 'center' }]}
-                    >
-                      <Edit3 size={14} color="#64748B" />
-                    </TouchableOpacity>
-                  )}
-                </View>
+                 <Text style={styles.inputLabel}>Mobile Number</Text>
+                 <View style={[styles.inputWrapper, otpSent && { backgroundColor: '#F1F5F9' }, !!errorMessage && styles.inputErrorBorder]}>
+                   <Text style={styles.prefixText}>+91</Text>
+                   <TextInput
+                     style={styles.input}
+                     placeholder="00000 00000"
+                     placeholderTextColor="#CBD5E1"
+                     value={mobile}
+                     onChangeText={(text) => {
+                       setMobile(text);
+                       if (errorMessage) setErrorMessage('');
+                     }}
+                     keyboardType="phone-pad"
+                     maxLength={10}
+                     editable={!otpSent}
+                   />
+                   {otpSent && (
+                     <TouchableOpacity
+                       onPress={() => {
+                         setOtpSent(false);
+                         setOtp(['', '', '', '']);
+                         if (errorMessage) setErrorMessage('');
+                       }}
+                       style={[styles.editNumberBtn, { justifyContent: 'center', alignItems: 'center' }]}
+                     >
+                       <Edit3 size={14} color="#64748B" />
+                     </TouchableOpacity>
+                   )}
+                 </View>
+                 {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
                 {/* OTP Section */}
                 {otpSent && (
@@ -521,6 +527,17 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: -8,
+    marginLeft: 4,
+    marginBottom: 16,
+  },
+  inputErrorBorder: {
+    borderColor: '#EF4444',
   },
 });
 

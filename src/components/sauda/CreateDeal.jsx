@@ -73,8 +73,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   // Parties Selection
-  const initialCompany = routeData?.originCompany || routeData?.company || routeData?.user?.companies?.[0];
-  const [party1, setParty1] = useState(initialCompany?.name || 'My Company');
+  const initialCompany = routeData?.originCompany || routeData?.company || (routeData?.companyId ? { _id: routeData.companyId, name: routeData.companyName } : null) || routeData?.user?.companies?.[0];
+  const [party1, setParty1] = useState(initialCompany?.name || routeData?.companyName || 'My Company');
   const [party2, setParty2] = useState(routeData?.prefillParty2?.name || prefillBuyerName || '');
   const [party2Data, setParty2Data] = useState(
     routeData?.prefillParty2
@@ -109,7 +109,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [activeUserCompany, setActiveUserCompany] = useState(initialCompany);
   const [activeUserId, setActiveUserId] = useState(routeData?.user?._id || routeData?.user?.id);
 
-  const [role, setRole] = useState(routeData?.prefill?.role || 'seller');
+  const [role, setRole] = useState(routeData?.prefill?.role || routeData?.role || 'seller');
   const [brokerCompanyId, setBrokerCompanyId] = useState(routeData?.prefill?.brokerCompanyId || '');
   const [brokerCompany, setBrokerCompany] = useState('');
   const [brokerCompanyData, setBrokerCompanyData] = useState(null);
@@ -205,8 +205,12 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     }));
   };
 
+  const handleProductNameChange = (id, value) => {
+    updateProductField(id, 'productName', value);
+  };
+
   React.useEffect(() => {
-    if (activeUserCompany && !routeData?.prefill?.role) {
+    if (activeUserCompany && !routeData?.prefill?.role && !routeData?.role) {
       const coType = String(activeUserCompany.companyType || activeUserCompany.type || '').toLowerCase();
       setRole(coType === 'broker' ? 'broker' : coType === 'buyer' ? 'buyer' : 'seller');
     }
@@ -231,25 +235,94 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   React.useEffect(() => {
     const fetchCompanyInventory = async () => {
-      const targetCompany = role === 'seller' ? activeUserCompany : role === 'buyer' ? party2Data : sellerCompanyData;
-      if (!targetCompany) {
-        setCompanyProducts([]);
-        return;
-      }
       try {
         const token = await AsyncStorage.getItem('userToken');
-        const companyId = targetCompany?._id || targetCompany?.id || targetCompany?.companyId;
-        if (!companyId) return;
-        const response = await getProducts(companyId, token);
-        if (response && response.success && response.data) {
-          setCompanyProducts(response.data);
+        const combinedProducts = [];
+        const seenIds = new Set();
+        const seenNames = new Set();
+
+        const addProducts = (resObj) => {
+          if (!resObj) return;
+          const prodList = Array.isArray(resObj)
+            ? resObj
+            : (Array.isArray(resObj.data)
+              ? resObj.data
+              : (resObj.data && Array.isArray(resObj.data.data) ? resObj.data.data : []));
+
+          prodList.forEach(p => {
+            const id = p._id || p.id;
+            const name = String(p.name || '').trim().toLowerCase();
+            if (id && !seenIds.has(String(id)) && name && !seenNames.has(name)) {
+              seenIds.add(String(id));
+              seenNames.add(name);
+              combinedProducts.push(p);
+            }
+          });
+        };
+
+        // 1. Fetch products of activeUserCompany (always relevant!)
+        const activeCompanyId =
+          activeUserCompany?._id ||
+          activeUserCompany?.id ||
+          activeUserCompany?.companyId ||
+          routeData?.companyId ||
+          routeData?.company?._id ||
+          routeData?.company?.id ||
+          routeData?.originCompany?._id ||
+          routeData?.originCompany?.id;
+
+        console.warn('DEBUG [activeCompanyId]:', activeCompanyId);
+
+        if (activeCompanyId) {
+          const resActive = await getProducts(activeCompanyId, token, undefined, undefined, 'active');
+          console.warn('DEBUG [resActive]:', { success: resActive?.success, count: resActive?.data?.length });
+          if (resActive && resActive.success && resActive.data) {
+            addProducts(resActive.data);
+          }
         }
+
+        // 2. Fetch products of the other target company (buyer/seller/party2)
+        const targetCompany = role === 'seller' ? activeUserCompany : role === 'buyer' ? party2Data : sellerCompanyData;
+        const targetCompanyId = targetCompany?._id || targetCompany?.id || targetCompany?.companyId;
+        console.warn('DEBUG [targetCompanyId]:', targetCompanyId);
+
+        if (targetCompanyId && String(targetCompanyId) !== String(activeCompanyId)) {
+          const resTarget = await getProducts(targetCompanyId, token, undefined, undefined, 'active');
+          console.warn('DEBUG [resTarget]:', { success: resTarget?.success, count: resTarget?.data?.length });
+          if (resTarget && resTarget.success && resTarget.data) {
+            addProducts(resTarget.data);
+          }
+        }
+
+        console.warn('DEBUG [combinedProducts]:', combinedProducts.map(p => p.name));
+        setCompanyProducts(combinedProducts);
       } catch (e) {
         console.warn('Failed to load company products:', e);
       }
     };
     fetchCompanyInventory();
-  }, [activeUserCompany, party2Data, sellerCompanyData, role]);
+  }, [activeUserCompany, party2Data, sellerCompanyData, role, routeData]);
+
+  React.useEffect(() => {
+    if (companyProducts && companyProducts.length > 0) {
+      setProductsList(prev => {
+        return prev.map(item => {
+          if (!item.productName || item.productName.trim() === '') {
+            const defaultProd = companyProducts[0];
+            const gstMatch = String(defaultProd.gstCode || '').match(/\d+/);
+            const parsedGst = gstMatch ? gstMatch[0] : '';
+            return {
+              ...item,
+              productName: defaultProd.name,
+              price: defaultProd.price ? String(defaultProd.price) : item.price,
+              gst: parsedGst || item.gst,
+            };
+          }
+          return item;
+        });
+      });
+    }
+  }, [companyProducts]);
 
   React.useEffect(() => {
     const refreshIdentity = async () => {
@@ -290,20 +363,26 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           }
         }
 
-        if (!targetCo) {
+        if (!targetCo && !routeCompanyId) {
           const companiesRes = await getCompanies(1, 10);
           if (companiesRes && companiesRes.success && companiesRes.data?.companies?.length > 0) {
             targetCo = companiesRes.data.companies[0];
           }
         }
 
-        if (!targetCo && userCompanies.length > 0) {
+        if (!targetCo && !routeCompanyId && userCompanies.length > 0) {
           targetCo = userCompanies[0];
+        }
+
+        if (!targetCo && routeCompanyId) {
+          targetCo = { _id: routeCompanyId };
         }
 
         if (targetCo) {
           setActiveUserCompany(targetCo);
-          setParty1(targetCo.name);
+          if (targetCo.name) {
+            setParty1(targetCo.name);
+          }
         }
       } catch (e) {
         console.warn("Identity refresh failed", e);
@@ -350,11 +429,27 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     setIsDatePickerVisible(false);
   };
 
+  const navigateToContactPicker = (pickingFor) => {
+    onNavigate('ContactPicker', {
+      pickingFor,
+      companyId: activeUserCompany?._id || activeUserCompany?.id || activeUserCompany?.companyId || routeData?.companyId,
+      companyName: activeUserCompany?.name || party1 || routeData?.companyName,
+      role: role,
+      originCompany: routeData?.originCompany || (activeUserCompany?.name ? activeUserCompany : undefined),
+      company: routeData?.company || (activeUserCompany?.name ? activeUserCompany : undefined),
+      prefill: routeData?.prefill,
+    });
+  };
+
   const resolveProductId = async (name, companyId, token) => {
     try {
-      const productsRes = await getProducts(companyId, token);
-      if (productsRes && productsRes.success && productsRes.data && productsRes.data.length > 0) {
-        const matched = productsRes.data.find(
+      const productsRes = await getProducts(companyId, token, undefined, undefined, 'active');
+      const prodList = productsRes && (Array.isArray(productsRes.data)
+        ? productsRes.data
+        : (productsRes.data && Array.isArray(productsRes.data.data) ? productsRes.data.data : []));
+
+      if (prodList && prodList.length > 0) {
+        const matched = prodList.find(
           p => String(p.name || '').toLowerCase().trim() === String(name).toLowerCase().trim()
         );
         if (matched) return matched._id || matched.id;
@@ -788,7 +883,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         ]}
                         onPress={() => {
                           setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-                          onNavigate('ContactPicker', { pickingFor: 'sellerCompany' });
+                          navigateToContactPicker('sellerCompany');
                         }}
                         activeOpacity={0.8}
                       >
@@ -836,7 +931,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         onPress={() => {
                           setFocusedField('sellerCompany');
                           setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-                          onNavigate('ContactPicker', { pickingFor: 'sellerCompany' });
+                          navigateToContactPicker('sellerCompany');
                         }}
                         activeOpacity={0.7}
                       >
@@ -885,7 +980,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       ]}
                       onPress={() => {
                         setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                        onNavigate('ContactPicker', { pickingFor: 'party2' });
+                        navigateToContactPicker('party2');
                       }}
                       activeOpacity={0.8}
                     >
@@ -933,7 +1028,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       onPress={() => {
                         setFocusedField('party2');
                         setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                        onNavigate('ContactPicker', { pickingFor: 'party2' });
+                        navigateToContactPicker('party2');
                       }}
                       activeOpacity={0.7}
                     >
@@ -973,7 +1068,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         <TouchableOpacity
                           style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
                           onPress={() => {
-                            onNavigate('ContactPicker', { pickingFor: 'brokerCompany' });
+                            navigateToContactPicker('brokerCompany');
                           }}
                           activeOpacity={0.8}
                         >
@@ -1022,7 +1117,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         style={styles.counterpartySelector}
                         onPress={() => {
                           setFocusedField('brokerCompany');
-                          onNavigate('ContactPicker', { pickingFor: 'brokerCompany' });
+                          navigateToContactPicker('brokerCompany');
                         }}
                         activeOpacity={0.7}
                       >
@@ -1152,7 +1247,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                                     key={p._id || p.id}
                                     style={[styles.productChip, isSel && styles.productChipActive]}
                                     onPress={() => {
+                                      const gstMatch = String(p.gstCode || '').match(/\d+/);
+                                      const parsedGst = gstMatch ? gstMatch[0] : '';
                                       updateProductField(prod.id, 'productName', p.name);
+                                      updateProductField(prod.id, 'price', p.price ? String(p.price) : prod.price);
+                                      updateProductField(prod.id, 'gst', parsedGst || prod.gst);
                                       updateProductField(prod.id, 'showProductDropdown', false);
                                     }}
                                     activeOpacity={0.7}
@@ -1201,8 +1300,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         </View>
                         {prodErrors.productName && <Text style={styles.fieldErrorText}>⚠ {prodErrors.productName}</Text>}
 
-                        {prod.showProductDropdown && prod.productName.trim().length > 0 && (() => {
-                          const filtered = productsData.filter(p => p.name.toLowerCase().includes(prod.productName.toLowerCase()));
+                        {prod.showProductDropdown && (() => {
+                          const filtered = companyProducts.filter(p => !prod.productName || p.name.toLowerCase().includes(prod.productName.toLowerCase()));
                           if (filtered.length === 0) return null;
                           return (
                             <View style={styles.autocompleteDropdown}>
@@ -1212,7 +1311,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                                     key={p._id || p.id}
                                     style={styles.dropdownItem}
                                     onPress={() => {
+                                      const gstMatch = String(p.gstCode || '').match(/\d+/);
+                                      const parsedGst = gstMatch ? gstMatch[0] : '';
                                       updateProductField(prod.id, 'productName', p.name);
+                                      updateProductField(prod.id, 'price', p.price ? String(p.price) : prod.price);
+                                      updateProductField(prod.id, 'gst', parsedGst || prod.gst);
                                       updateProductField(prod.id, 'showProductDropdown', false);
                                     }}
                                   >
@@ -1339,20 +1442,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   );
                 })()}
 
-                {role !== 'broker' && (
-                  <View style={[styles.inputGroup, { marginTop: 14, marginBottom: 0 }]}>
-                    <Text style={styles.fieldLabel}>Broker Company ID (Optional)</Text>
-                    <TextInput
-                      style={[styles.textInput, focusedField === 'brokerCompanyId' && styles.inputFocused]}
-                      placeholder="Provide Broker ID to register commissions"
-                      placeholderTextColor="#94A3B8"
-                      value={brokerCompanyId}
-                      onChangeText={setBrokerCompanyId}
-                      onFocus={() => setFocusedField('brokerCompanyId')}
-                      onBlur={() => setFocusedField('')}
-                    />
-                  </View>
-                )}
+
 
                 {/* Ticket Stub Total Value (Elegant Contrast element) */}
                 {showTicketStub && (

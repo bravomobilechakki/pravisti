@@ -32,12 +32,14 @@ const Login = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [timer, setTimer] = useState(60); // 60 seconds
+  const [errorMessage, setErrorMessage] = useState('');
 
   const themeColor = '#4F46E5';
 
   useEffect(() => {
     if (routeData?.autoSendOtp && routeData?.mobile && routeData.mobile.length === 10) {
       const autoTriggerSend = async () => {
+        setErrorMessage('');
         setIsLoading(true);
         try {
           const response = await loginUser(routeData.mobile);
@@ -63,7 +65,7 @@ const Login = ({ onNavigate, routeData }) => {
                 onNavigate('Signup', { mobile: routeData.mobile });
               }
             } else {
-              Alert.alert('Error', response.message || 'Failed to send OTP.');
+              setErrorMessage(msg || 'Failed to send OTP.');
             }
           }
         } catch (error) {
@@ -79,7 +81,7 @@ const Login = ({ onNavigate, routeData }) => {
               onNavigate('Signup', { mobile: routeData.mobile });
             }
           } else {
-            Alert.alert('API Error', error.message || 'An error occurred while sending OTP.');
+            setErrorMessage(errMsg || 'An error occurred while sending OTP.');
           }
         } finally {
           setIsLoading(false);
@@ -149,9 +151,10 @@ const Login = ({ onNavigate, routeData }) => {
 
   const handleSendOtp = async () => {
     if (mobile.length !== 10) {
-      Alert.alert('Error', 'Please enter a valid 10-digit mobile number.');
+      setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
+    setErrorMessage('');
     setIsLoading(true);
     try {
       const response = await loginUser(mobile);
@@ -177,7 +180,7 @@ const Login = ({ onNavigate, routeData }) => {
             onNavigate('Signup', { mobile });
           }
         } else {
-          Alert.alert('Error', response.message || 'Failed to send OTP.');
+          setErrorMessage(msg || 'Failed to send OTP.');
         }
       }
     } catch (error) {
@@ -193,7 +196,7 @@ const Login = ({ onNavigate, routeData }) => {
           onNavigate('Signup', { mobile });
         }
       } else {
-        Alert.alert('API Error', error.message || 'An error occurred while sending OTP.');
+        setErrorMessage(errMsg || 'An error occurred while sending OTP.');
       }
     } finally {
       setIsLoading(false);
@@ -277,14 +280,17 @@ const Login = ({ onNavigate, routeData }) => {
 
                  {/* Mobile input */}
                 <Text style={styles.inputLabel}>Mobile Number</Text>
-                <View style={[styles.inputWrapper, otpSent && { backgroundColor: '#F1F5F9' }]}>
+                <View style={[styles.inputWrapper, otpSent && { backgroundColor: '#F1F5F9' }, !!errorMessage && styles.inputErrorBorder]}>
                   <Text style={styles.prefixText}>+91</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="00000 00000"
                     placeholderTextColor="#CBD5E1"
                     value={mobile}
-                    onChangeText={setMobile}
+                    onChangeText={(text) => {
+                      setMobile(text);
+                      if (errorMessage) setErrorMessage('');
+                    }}
                     keyboardType="phone-pad"
                     maxLength={10}
                     editable={!otpSent}
@@ -294,6 +300,7 @@ const Login = ({ onNavigate, routeData }) => {
                       onPress={() => {
                         setOtpSent(false);
                         setOtp(['', '', '', '']);
+                        if (errorMessage) setErrorMessage('');
                       }}
                       style={[styles.editNumberBtn, { justifyContent: 'center', alignItems: 'center' }]}
                     >
@@ -301,6 +308,7 @@ const Login = ({ onNavigate, routeData }) => {
                     </TouchableOpacity>
                   )}
                 </View>
+                {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
                 {/* OTP */}
                 {otpSent && (
@@ -531,6 +539,17 @@ const styles = StyleSheet.create({
   },
   editNumberText: {
     fontSize: 14,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: -8,
+    marginLeft: 4,
+    marginBottom: 16,
+  },
+  inputErrorBorder: {
+    borderColor: '#EF4444',
   },
 });
 

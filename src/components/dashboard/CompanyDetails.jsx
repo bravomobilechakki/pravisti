@@ -142,6 +142,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       }
     };
     fetchUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchDetails = React.useCallback(async () => {
@@ -406,69 +407,66 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Dynamic Premium Hero Card */}
+        {/* Dynamic Premium Hero Card (Fintech Card Style with wavy corners and ambient glow) */}
         <View style={styles.softHeroContainer}>
+          {/* Ambient Glow Circles */}
+          <View style={styles.glowCircle1} />
+          <View style={styles.glowCircle2} />
+
           <View style={styles.softHeroHeader}>
-            <View style={styles.softAvatar}>
-              {company.type === 'trader' ? (
-                <Briefcase size={26} color="#4F46E5" />
-              ) : (
-                <Building2 size={26} color="#4F46E5" />
-              )}
-            </View>
             <View style={styles.softHeroInfo}>
-              <Text style={styles.softHeroName} numberOfLines={2}>{company.name}</Text>
+              <Text style={styles.softHeroName} numberOfLines={1}>{company.name}</Text>
+
               <View style={styles.metaBadgeRow}>
                 <View style={[
                   styles.softStatusBadge,
                   {
-                    backgroundColor: company.isVerified ? '#ECFDF5' : '#FFFBEB',
-                    borderColor: company.isVerified ? '#A7F3D0' : '#FDE68A',
+                    backgroundColor: company.isVerified ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                    borderColor: company.isVerified ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)',
                   }
                 ]}>
                   <View style={[styles.statusDot, { backgroundColor: company.isVerified ? '#10B981' : '#F59E0B' }]} />
                   <Text style={[
                     styles.softStatusText,
-                    { color: company.isVerified ? '#047857' : '#B45309' }
+                    { color: company.isVerified ? '#34D399' : '#FBBF24' }
                   ]}>{company.status || 'Pending'}</Text>
                 </View>
-                {(company.registrationNumber || company.gstin) && (
-                  <View style={styles.gstinBadge}>
-                    <Text style={styles.gstinBadgeText}>GST/Reg: {company.registrationNumber || company.gstin}</Text>
-                  </View>
-                )}
                 {/* User Role Badge */}
                 <View style={[
                   styles.userRoleBadge,
                   {
-                    backgroundColor: getUserRoleInCompany() === 'Owner' ? '#EEF2FF' : '#F1F5F9',
-                    borderColor: getUserRoleInCompany() === 'Owner' ? '#C7D2FE' : '#E2E8F0',
+                    backgroundColor: getUserRoleInCompany() === 'Owner' ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: getUserRoleInCompany() === 'Owner' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(255, 255, 255, 0.15)',
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 4,
                   }
                 ]}>
-                  <User size={10} color={getUserRoleInCompany() === 'Owner' ? '#4F46E5' : '#475569'} />
+                  <User size={10} color={getUserRoleInCompany() === 'Owner' ? '#FBBF24' : '#E2E8F0'} />
                   <Text style={[
                     styles.userRoleText,
-                    { color: getUserRoleInCompany() === 'Owner' ? '#4F46E5' : '#475569' }
+                    { color: getUserRoleInCompany() === 'Owner' ? '#FBBF24' : '#E2E8F0' }
                   ]}>
                     {getUserRoleInCompany()}
                   </Text>
                 </View>
               </View>
             </View>
+
+            {/* Gold Card Chip */}
+            <View style={styles.cardChip}>
+              <View style={styles.cardChipInner} />
+            </View>
           </View>
 
-          {/* Stats & Activity Summary */}
-          <View style={styles.heroStatsRow}>
-            <View style={styles.heroStatItem}>
-              <Text style={[styles.heroStatValue, { color: '#4F46E5' }]}>{deals.length}</Text>
-              <Text style={styles.heroStatLabel}>Total Deals</Text>
+          {/* Balance Display */}
+          <View style={styles.fintechBalanceContainer}>
+            <View style={styles.fintechBalanceLabelCol}>
+              <Text style={styles.fintechBalanceLabel}>TOTAL VOLUME</Text>
             </View>
-            <View style={styles.heroStatDivider} />
-            <View style={styles.heroStatItem}>
-              <Text style={[styles.heroStatValue, { color: '#10B981' }]} adjustsFontSizeToFit numberOfLines={1}>
+            <View style={styles.fintechBalanceValueCol}>
+              <ArrowUpRight size={14} color="#C7D2FE" style={{ marginRight: 4 }} />
+              <Text style={styles.fintechBalanceValue}>
                 {formatVolume(deals.reduce((acc, deal) => {
                   const firstProd = deal.products?.[0] || deal.product || {};
                   const qty = Number(firstProd.quantity || deal.quantity || deal.qty || 0);
@@ -477,58 +475,65 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                   return acc + Number(total);
                 }, 0))}
               </Text>
-              <Text style={styles.heroStatLabel}>Volume</Text>
             </View>
-            <View style={styles.heroStatDivider} />
-            <View style={styles.heroStatItem}>
-              <Text style={[styles.heroStatValue, { color: '#2563EB' }]}>{company.type === 'trader' ? 'Trader' : 'Broker'}</Text>
-              <Text style={styles.heroStatLabel}>Company Type</Text>
+          </View>
+
+          {/* Card footer details */}
+          <View style={styles.fintechCardFooterDetails}>
+            <View style={{ flex: 1.5 }}>
+              <Text style={styles.fintechCardFooterLabel}>REGISTRATION / GST</Text>
+              <Text style={styles.fintechCardFooterValue} numberOfLines={1}>
+                {company.registrationNumber || company.gstin || 'NOT REGISTERED'}
+              </Text>
+            </View>
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={styles.fintechCardFooterLabel}>TOTAL DEALS</Text>
+              <Text style={styles.fintechCardFooterValue}>
+                {deals.length}
+              </Text>
+            </View>
+            <View style={{ flex: 1, alignItems: 'flex-end' }}>
+              <Text style={styles.fintechCardFooterLabel}>TYPE</Text>
+              <Text style={styles.fintechCardFooterValue}>
+                {(company.type || 'broker').toUpperCase()}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* Elegant Grid/Flex Tab Buttons */}
-        <View style={styles.tabButtonsContainer}>
+        {/* Paytm/PhonePe style Quick Services Container */}
+        <View style={styles.quickServicesContainer}>
           <TouchableOpacity
-            style={[styles.tabButton, styles.tabButtonSauda]}
+            style={styles.serviceItem}
             onPress={() => onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name })}
-            activeOpacity={0.85}
+            activeOpacity={0.7}
           >
-            <View style={styles.navigationArrow}>
-              <ArrowUpRight size={14} color="#4338CA" />
+            <View style={[styles.serviceIconCircle, { backgroundColor: '#EBF5FF' }]}>
+              <Handshake size={22} color="#0052FF" />
             </View>
-            <View style={styles.tabButtonIconCircleIndigo}>
-              <Handshake size={18} color="#4338CA" />
-            </View>
-            <Text style={styles.tabButtonTextIndigo}>My Sauda</Text>
+            <Text style={styles.serviceLabel}>My Sauda</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabButton, styles.tabButtonCategories]}
+            style={styles.serviceItem}
             onPress={() => onNavigate('CategoryPage', { company })}
-            activeOpacity={0.85}
+            activeOpacity={0.7}
           >
-            <View style={styles.navigationArrow}>
-              <ArrowUpRight size={14} color="#6D28D9" />
+            <View style={[styles.serviceIconCircle, { backgroundColor: '#F5F3FF' }]}>
+              <Tag size={20} color="#7C3AED" />
             </View>
-            <View style={styles.tabButtonIconCircleViolet}>
-              <Tag size={16} color="#6D28D9" />
-            </View>
-            <Text style={styles.tabButtonTextViolet}>Categories</Text>
+            <Text style={styles.serviceLabel}>Categories</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabButton, styles.tabButtonProducts]}
+            style={styles.serviceItem}
             onPress={() => onNavigate('AddProductPage', { company })}
-            activeOpacity={0.85}
+            activeOpacity={0.7}
           >
-            <View style={styles.navigationArrow}>
-              <ArrowUpRight size={14} color="#047857" />
+            <View style={[styles.serviceIconCircle, { backgroundColor: '#E6F4EA' }]}>
+              <Box size={22} color="#137333" />
             </View>
-            <View style={styles.tabButtonIconCircleEmerald}>
-              <Box size={18} color="#047857" />
-            </View>
-            <Text style={styles.tabButtonTextEmerald}>Products</Text>
+            <Text style={styles.serviceLabel}>Products</Text>
           </TouchableOpacity>
         </View>
 
@@ -1048,6 +1053,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   );
 };
 
+
+
+
+
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1092,38 +1102,56 @@ const styles = StyleSheet.create({
   },
   softHeroContainer: {
     backgroundColor: '#1E1B4B',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#312E81',
-    shadowColor: '#312E81',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
+    borderTopLeftRadius: 36,
+    borderBottomRightRadius: 36,
+    borderTopRightRadius: 12,
+    borderBottomLeftRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#4F46E5',
+    shadowColor: '#1E1B4B',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
     elevation: 8,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  glowCircle1: {
+    position: 'absolute',
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    top: -100,
+    right: -80,
+  },
+  glowCircle2: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    bottom: -80,
+    left: -60,
   },
   softHeroHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   softAvatar: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: '#c7c6efff',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
     borderWidth: 1,
-    borderColor: '#4338CA',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   softAvatarText: {
     fontSize: 26,
@@ -1133,9 +1161,10 @@ const styles = StyleSheet.create({
   },
   softHeroName: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '850',
     color: '#FFFFFF',
     marginBottom: 6,
+    letterSpacing: 0.2,
   },
   metaBadgeRow: {
     flexDirection: 'row',
@@ -1147,22 +1176,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 3,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#C7D2FE',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
   },
   softStatusText: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#4F46E5',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -1172,35 +1193,101 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   gstinBadge: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
+    alignSelf: 'flex-start',
   },
   gstinBadgeText: {
     fontSize: 9,
-    color: '#64748B',
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  cardChip: {
+    width: 38,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#EAB308',
+    padding: 5,
+    opacity: 0.85,
+    borderWidth: 1,
+    borderColor: '#CA8A04',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardChipInner: {
+    width: '100%',
+    height: '100%',
+    borderWidth: 1,
+    borderColor: '#A16207',
+    borderRadius: 4,
+    opacity: 0.7,
+  },
+  fintechBalanceContainer: {
+    marginTop: 10,
+    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  fintechBalanceLabelCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  fintechBalanceLabel: {
+    fontSize: 9.5,
+    color: '#C7D2FE',
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  fintechBalanceValueCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  fintechBalanceValue: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  fintechCardFooterDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: 10,
+    marginTop: 0,
+  },
+  fintechCardFooterLabel: {
+    fontSize: 8,
+    color: '#C7D2FE',
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  fintechCardFooterValue: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '800',
+    marginTop: 2,
+    letterSpacing: 0.3,
   },
   heroStatsRow: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: 16,
     padding: 14,
-    marginTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 4,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   heroStatItem: {
     flex: 1,
@@ -1209,108 +1296,61 @@ const styles = StyleSheet.create({
   heroStatValue: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#0F172A',
+    color: '#FFFFFF',
     marginBottom: 3,
   },
   heroStatLabel: {
     fontSize: 10,
-    color: '#64748B',
+    color: '#A5C1E1',
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   heroStatDivider: {
     width: 1,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     marginVertical: 4,
   },
-  tabButtonsContainer: {
+  quickServicesContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    paddingHorizontal: 2,
-  },
-  tabButton: {
-    flex: 1,
+    justifyContent: 'space-around',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    marginHorizontal: 3,
-    borderWidth: 1,
-    position: 'relative',
-    overflow: 'hidden',
+    marginBottom: 20,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowRadius: 12,
     elevation: 2,
   },
-  tabButtonSauda: {
-    backgroundColor: '#F5F7FF',
-    borderColor: '#C7D2FE',
+  serviceItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
   },
-  tabButtonCategories: {
-    backgroundColor: '#FAF5FF',
-    borderColor: '#E9D5FF',
+  serviceIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  tabButtonProducts: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#A7F3D0',
-  },
-  navigationArrow: {
-    position: 'absolute',
-    top: 4,
-    right: 6,
+  serviceLabel: {
     fontSize: 11,
-    fontWeight: 'bold',
-    color: '#94A3B8',
-  },
-  tabButtonIconCircleIndigo: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E0E7FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  tabButtonIconCircleViolet: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F3E8FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  tabButtonIconCircleEmerald: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#D1FAE5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  tabButtonEmoji: {
-    fontSize: 14,
-  },
-  tabButtonTextIndigo: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#4338CA',
-  },
-  tabButtonTextViolet: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#6D28D9',
-  },
-  tabButtonTextEmerald: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#047857',
+    fontWeight: '600',
+    color: '#334155',
+    textAlign: 'center',
   },
   tabPanelContainer: {
     flex: 1,

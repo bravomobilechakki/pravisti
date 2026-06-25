@@ -182,7 +182,7 @@ const Profile = ({ onNavigate, routeData }) => {
             </View>
           </View>
           <Text style={styles.userName}>{displayName}</Text>
-          
+
           <View style={styles.divider} />
 
           <View style={styles.infoList}>
@@ -264,9 +264,14 @@ const Profile = ({ onNavigate, routeData }) => {
               const AsyncStorage = require('@react-native-async-storage/async-storage').default;
               const token = await AsyncStorage.getItem('userToken');
               if (token) {
-                await logoutUser(token);
+                try {
+                  await logoutUser(token);
+                } catch (apiErr) {
+                  console.log("Backend logout API failed:", apiErr);
+                }
                 await AsyncStorage.removeItem('userToken');
               }
+              await AsyncStorage.removeItem('user_completed_profile');
             } catch (e) {
               console.log("Error logging out", e);
             }

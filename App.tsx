@@ -60,14 +60,16 @@ function App() {
           } else {
             // Token invalid or expired
             await AsyncStorage.removeItem('userToken');
+            await AsyncStorage.removeItem('user_completed_profile');
           }
         }
       } catch (error) {
         console.error('Failed to restore session automatically', error);
         try {
           await AsyncStorage.removeItem('userToken');
+          await AsyncStorage.removeItem('user_completed_profile');
         } catch (clearError) {
-          console.warn('Failed to clear invalid userToken', clearError);
+          console.warn('Failed to clear invalid credentials', clearError);
         }
       } finally {
         setIsInitializing(false);

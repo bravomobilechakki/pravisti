@@ -450,10 +450,67 @@ const TransactionHistory = ({ onNavigate, routeData }) => {
     );
   }
 
+  const getCreatedByName = (item) => {
+    if (!item) return 'N/A';
+
+    // 1. If it's already an object with a name, use it
+    if (item.createdBy && typeof item.createdBy === 'object') {
+      if (item.createdBy.name) return item.createdBy.name;
+    }
+
+    const createdByIdStr = String(item.createdBy?._id || item.createdBy?.id || item.createdBy || '').trim().toLowerCase();
+
+    if (!createdByIdStr) return 'N/A';
+
+    // 2. If it matches current logged in user
+    const loggedInIdStr = String(currentUserId || '').trim().toLowerCase();
+    if (loggedInIdStr && createdByIdStr === loggedInIdStr) {
+      return 'You';
+    }
+
+    // 3. Match against deal companies or roles
+    const normalizeId = (val) => String(val?._id || val?.id || val || '').trim().toLowerCase();
+
+    // Resolve company names
+    const sellerName = deal?.sellerCompany?.name || deal?.sellerCompanyId?.companyName || deal?.sellerCompanyId?.name || 'Seller';
+    const buyerName = deal?.buyerCompany?.name || deal?.buyerCompanyId?.companyName || deal?.buyerCompanyId?.name || 'Buyer';
+    const brokerName = deal?.brokerCompany?.name || deal?.brokerCompanyId?.companyName || deal?.brokerCompanyId?.name || 'Broker';
+
+    // Check if createdBy matches company owner IDs
+    const sellerOwnerId = normalizeId(deal?.sellerCompany?.owner || deal?.sellerCompanyId?.owner);
+    const buyerOwnerId = normalizeId(deal?.buyerCompany?.owner || deal?.buyerCompanyId?.owner);
+    const brokerOwnerId = normalizeId(deal?.brokerCompany?.owner || deal?.brokerCompanyId?.owner);
+
+    if (sellerOwnerId && createdByIdStr === sellerOwnerId) {
+      return sellerName;
+    }
+    if (buyerOwnerId && createdByIdStr === buyerOwnerId) {
+      return buyerName;
+    }
+    if (brokerOwnerId && createdByIdStr === brokerOwnerId) {
+      return brokerName;
+    }
+
+    // Check if createdBy matches broker user ID
+    const brokerUserId = normalizeId(deal?.brokerId || deal?.brokerUserId || deal?.createdBy);
+    if (brokerUserId && createdByIdStr === brokerUserId) {
+      return brokerName;
+    }
+
+    // 4. Fallback to transaction metadata role/type
+    if (item.timelineType === 'payment') {
+      const isSent = item.paymentType === 'sent' || item.paymentType === 'given';
+      return isSent ? buyerName : sellerName;
+    } else {
+      const isSent = item.deliveryType === 'sent';
+      return isSent ? sellerName : buyerName;
+    }
+  };
+
   const renderHistoryRow = (item, idx) => {
     const isPayment = item.timelineType === 'payment';
     const status = String(item.status || 'pending').toLowerCase();
-    
+
     let icon = null;
     let title = 'Logistics';
     let value = '';
@@ -517,10 +574,10 @@ const TransactionHistory = ({ onNavigate, routeData }) => {
             <Text style={styles.timelineTitle} numberOfLines={1}>{title}</Text>
             <Text style={[styles.timelineValue, { color: valueColor }]}>{value}</Text>
           </View>
-          
+
           <View style={styles.timelineMetaRow}>
             <Text style={styles.timelineMetaText}>
-              {dateStr} • By: {item.createdBy?.name || item.createdBy || 'N/A'}
+              {dateStr} • By: {getCreatedByName(item)}
             </Text>
             <Text style={[styles.timelineStatusText, { color: statusColor }]}>
               ● {statusLabel}
@@ -534,25 +591,7 @@ const TransactionHistory = ({ onNavigate, routeData }) => {
             </View>
           ) : null}
 
-          {/* Verification action triggers */}
-          {((isPayment && canVerifyPayment(item)) || (!isPayment && canVerifyDelivery(item))) && (
-            <View style={styles.timelineVerifyRow}>
-              <TouchableOpacity
-                style={[styles.timelineVerifyBtn, styles.timelineDeclineBtn]}
-                onPress={() => isPayment ? confirmPaymentStatusChange(item, 'rejected') : confirmDeliveryStatusChange(item, 'rejected')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.timelineDeclineBtnText}>Reject</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.timelineVerifyBtn, styles.timelineApproveBtn]}
-                onPress={() => isPayment ? confirmPaymentStatusChange(item, 'approved') : confirmDeliveryStatusChange(item, 'approved')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.timelineApproveBtnText}>Approve</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+
         </View>
       </View>
     );
@@ -575,7 +614,7 @@ const TransactionHistory = ({ onNavigate, routeData }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
+
         {/* 📊 COMBINED MINIMALIST PROGRESS DASHBOARD */}
         <View style={styles.metricRow}>
           {/* Logistics Progress */}
@@ -649,27 +688,7 @@ const TransactionHistory = ({ onNavigate, routeData }) => {
 
       </ScrollView>
 
-      {/* Sticky Bottom Actions */}
-      {String(deal.status || '').toLowerCase() === 'approved' && (qtyTotals.left > 0 || pendingPaymentVal > 0) && (
-        <View style={styles.stickyFooter}>
-          {qtyTotals.left > 0 && (
-            <TouchableOpacity style={[styles.stickyFooterBtn, { backgroundColor: '#3B82F6' }]} onPress={openDeliveryModal} activeOpacity={0.8}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Truck size={16} color="#FFFFFF" />
-                <Text style={styles.stickyFooterBtnText}>Log Delivery</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-          {pendingPaymentVal > 0 && (
-            <TouchableOpacity style={[styles.stickyFooterBtn, { backgroundColor: '#10B981' }]} onPress={openPaymentModal} activeOpacity={0.8}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <CreditCard size={16} color="#FFFFFF" />
-                <Text style={styles.stickyFooterBtnText}>Log Payment</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+
 
       {/* 💳 LOG PAYMENT MODAL */}
       <Modal visible={isPaymentModalVisible} animationType="slide" transparent={true} onRequestClose={() => setIsPaymentModalVisible(false)}>

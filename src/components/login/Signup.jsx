@@ -14,18 +14,72 @@ import {
   ScrollView,
   Platform,
   TouchableWithoutFeedback,
-  Keyboard
+  Keyboard,
+  StatusBar,
 } from 'react-native';
+import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { signUpUser, verifyOtp } from '../../services/api';
-import { Edit3 } from 'lucide-react-native';
+import { Edit3, Phone, ShieldCheck, ArrowRight, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const THEME = '#4F46E5';
+
+// Screen dimensions calculated statically to avoid keyboard buffer updates
+
+// Memoized Wavy Header to prevent expensive SVG redraws during text entry/keyboard toggle
+const WaveHeader = React.memo(({ width, height }) => {
+  return (
+    <View style={{ width, height, backgroundColor: '#F8FAFC', overflow: 'hidden', position: 'relative' }}>
+      <Svg height="100%" width="100%" viewBox="0 0 1440 320" preserveAspectRatio="none">
+        <Defs>
+          <LinearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#6366F1" />
+            <Stop offset="50%" stopColor="#4F46E5" />
+            <Stop offset="100%" stopColor="#312E81" />
+          </LinearGradient>
+          <LinearGradient id="waveGradBack" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#818CF8" stopOpacity="0.35" />
+            <Stop offset="100%" stopColor="#4F46E5" stopOpacity="0.05" />
+          </LinearGradient>
+        </Defs>
+        {/* Background Wave */}
+        <Path
+          fill="url(#waveGradBack)"
+          d="M0,0 L0,270 C360,330 720,200 1080,280 L1440,220 L1440,0 Z"
+        />
+        {/* Foreground Wave */}
+        <Path
+          fill="url(#waveGrad)"
+          d="M0,0 L0,220 C360,280 720,150 1080,230 L1440,170 L1440,0 Z"
+        />
+      </Svg>
+
+      {/* Floating Logo Badge Container */}
+      <View style={styles.logoBadgeContainer}>
+        <View style={styles.logoBadgeShadow}>
+          <View style={styles.logoBadge}>
+            <Image
+              source={require('../../images/trader1.png')}
+              style={{ width: width * 0.42, height: (width * 0.42) / 2.5 }}
+              resizeMode="contain"
+            />
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+});
+
 const Signup = ({ onNavigate, routeData }) => {
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
+  const headerHeight = 200;
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState(routeData?.mobile || '');
   const [role, setRole] = useState('Broker'); // 'Broker' or 'Trader'
   const [isLoading, setIsLoading] = useState(false);
+
+  const [nameFocused, setNameFocused] = useState(false);
+  const [mobileFocused, setMobileFocused] = useState(false);
 
   // OTP Verification States
   const [otpSent, setOtpSent] = useState(false);
@@ -34,10 +88,6 @@ const Signup = ({ onNavigate, routeData }) => {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [timer, setTimer] = useState(60); // 60 seconds
   const [errorMessage, setErrorMessage] = useState('');
-
-  const themeColor = '#4F46E5';
-
-
 
   // Timer Effect
   useEffect(() => {
@@ -57,6 +107,7 @@ const Signup = ({ onNavigate, routeData }) => {
         otpRefs.current[0]?.focus();
       }, 300);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otpSent]);
 
   // Auto-verify when OTP is full
@@ -65,10 +116,10 @@ const Signup = ({ onNavigate, routeData }) => {
     if (otpCode.length === 4 && !isLoading) {
       handleVerifyOtp();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otp]);
 
   const handleOtpChange = (text, index) => {
-    // Handle pasting or fast typing of multiple characters
     if (text.length > 1) {
       const pastedOtp = text.slice(0, 4).split('');
       const newOtp = [...otp];
@@ -76,7 +127,6 @@ const Signup = ({ onNavigate, routeData }) => {
         if (index + i < 4) newOtp[index + i] = char;
       });
       setOtp(newOtp);
-      // Focus the last filled box or the next empty one
       const nextIndex = Math.min(index + pastedOtp.length, 3);
       otpRefs.current[nextIndex]?.focus();
       return;
@@ -164,14 +214,12 @@ const Signup = ({ onNavigate, routeData }) => {
       const response = await verifyOtp(mobile, otpCode);
       if (response && response.success) {
         const { token, user } = response.data;
-        // Store the token
         try {
           await AsyncStorage.setItem('userToken', token);
         } catch (e) {
           console.error("AsyncStorage error", e);
         }
 
-        // Pass to App state or navigate
         if (onNavigate) {
           const userRole = user && user.roles && user.roles[0] ? user.roles[0] : role;
           onNavigate('Dashboard', { role: userRole, user });
@@ -186,14 +234,9 @@ const Signup = ({ onNavigate, routeData }) => {
     }
   };
 
-  const formatTimer = () => {
-    const minutes = Math.floor(timer / 60);
-    const seconds = timer % 60;
-    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-  };
-
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#312E81" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -205,53 +248,61 @@ const Signup = ({ onNavigate, routeData }) => {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={{ flex: 1 }}>
-              <View style={styles.topLogoContainer}>
-                <Image
-                  source={require('../../images/trader1.png')}
-                  style={[styles.mainLogoImage, { width: width * 0.5, height: (width * 0.5) / 2.5 }]}
-                  resizeMode="contain"
-                />
-              </View>
 
-              <Image
-                source={require('../../images/login1.png')}
-                style={[styles.heroImage, { height: height * 0.22 }]}
-                resizeMode="cover"
-              />
+              {/* Wavy Header */}
+              <WaveHeader width={width} height={headerHeight} />
 
+              {/* Form Card */}
               <View style={styles.formCard}>
                 <Text style={styles.titleText}>Create an Account</Text>
                 <Text style={styles.subtitleText}>Join Pravisti to manage your sovereign ledger.</Text>
 
-                {/* Role Checkboxes */}
+                {/* Role Selection Cards */}
                 <Text style={styles.inputLabel}>Select Role</Text>
-                <View style={styles.checkboxRow}>
+                <View style={styles.roleCardRow}>
                   <TouchableOpacity
-                    style={styles.checkboxContainer}
+                    style={[
+                      styles.roleCard,
+                      role === 'Broker' && styles.roleCardActive,
+                      otpSent && styles.roleCardDisabled,
+                    ]}
                     onPress={() => !otpSent && setRole('Broker')}
                     activeOpacity={0.8}
                   >
-                    <View style={[styles.checkbox, role === 'Broker' && styles.checkboxChecked]}>
-                      {role === 'Broker' && <Text style={styles.checkmark}>✓</Text>}
+                    <View style={[styles.roleDot, role === 'Broker' && styles.roleDotActive]}>
+                      {role === 'Broker' && <View style={styles.roleDotInner} />}
                     </View>
-                    <Text style={styles.checkboxLabel}>Broker</Text>
+                    <Text style={[styles.roleCardText, role === 'Broker' && styles.roleCardTextActive]}>
+                      Broker
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.checkboxContainer}
+                    style={[
+                      styles.roleCard,
+                      role === 'Trader' && styles.roleCardActive,
+                      otpSent && styles.roleCardDisabled,
+                    ]}
                     onPress={() => !otpSent && setRole('Trader')}
                     activeOpacity={0.8}
                   >
-                    <View style={[styles.checkbox, role === 'Trader' && styles.checkboxChecked]}>
-                      {role === 'Trader' && <Text style={styles.checkmark}>✓</Text>}
+                    <View style={[styles.roleDot, role === 'Trader' && styles.roleDotActive]}>
+                      {role === 'Trader' && <View style={styles.roleDotInner} />}
                     </View>
-                    <Text style={styles.checkboxLabel}>Trader</Text>
+                    <Text style={[styles.roleCardText, role === 'Trader' && styles.roleCardTextActive]}>
+                      Trader
+                    </Text>
                   </TouchableOpacity>
                 </View>
 
-                {/* Name */}
+                {/* Name Input */}
                 <Text style={styles.inputLabel}>Name</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[
+                  styles.inputWrapper,
+                  otpSent && styles.inputDisabled,
+                  nameFocused && styles.inputFocused,
+                ]}>
+                  <User size={18} color={nameFocused ? THEME : '#94A3B8'} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter your name"
@@ -259,53 +310,66 @@ const Signup = ({ onNavigate, routeData }) => {
                     value={name}
                     onChangeText={setName}
                     editable={!otpSent}
+                    onFocus={() => setNameFocused(true)}
+                    onBlur={() => setNameFocused(false)}
                   />
                 </View>
 
-                 {/* Mobile Number */}
-                 <Text style={styles.inputLabel}>Mobile Number</Text>
-                 <View style={[styles.inputWrapper, otpSent && { backgroundColor: '#F1F5F9' }, !!errorMessage && styles.inputErrorBorder]}>
-                   <Text style={styles.prefixText}>+91</Text>
-                   <TextInput
-                     style={styles.input}
-                     placeholder="00000 00000"
-                     placeholderTextColor="#CBD5E1"
-                     value={mobile}
-                     onChangeText={(text) => {
-                       setMobile(text);
-                       if (errorMessage) setErrorMessage('');
-                     }}
-                     keyboardType="phone-pad"
-                     maxLength={10}
-                     editable={!otpSent}
-                   />
-                   {otpSent && (
-                     <TouchableOpacity
-                       onPress={() => {
-                         setOtpSent(false);
-                         setOtp(['', '', '', '']);
-                         if (errorMessage) setErrorMessage('');
-                       }}
-                       style={[styles.editNumberBtn, { justifyContent: 'center', alignItems: 'center' }]}
-                     >
-                       <Edit3 size={14} color="#64748B" />
-                     </TouchableOpacity>
-                   )}
-                 </View>
-                 {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+                {/* Mobile Number Input */}
+                <Text style={styles.inputLabel}>Mobile Number</Text>
+                <View style={[
+                  styles.inputWrapper,
+                  otpSent && styles.inputDisabled,
+                  mobileFocused && styles.inputFocused,
+                  !!errorMessage && styles.inputErrorBorder,
+                ]}>
+                  <Phone size={18} color={mobileFocused ? THEME : '#94A3B8'} style={styles.inputIcon} />
+                  <Text style={styles.prefixText}>+91</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="00000 00000"
+                    placeholderTextColor="#CBD5E1"
+                    value={mobile}
+                    onChangeText={(text) => {
+                      setMobile(text);
+                      if (errorMessage) setErrorMessage('');
+                    }}
+                    keyboardType="phone-pad"
+                    maxLength={10}
+                    editable={!otpSent}
+                    onFocus={() => setMobileFocused(true)}
+                    onBlur={() => setMobileFocused(false)}
+                  />
+                  {otpSent && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setOtpSent(false);
+                        setOtp(['', '', '', '']);
+                        if (errorMessage) setErrorMessage('');
+                      }}
+                      style={styles.editNumberBtn}
+                    >
+                      <Edit3 size={16} color="#4F46E5" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
                 {/* OTP Section */}
                 {otpSent && (
                   <>
                     <View style={styles.otpHeaderRow}>
-                      <Text style={styles.inputLabel}>Verification Code</Text>
+                      <View style={styles.otpLabelRow}>
+                        <ShieldCheck size={16} color={THEME} style={{ marginRight: 4 }} />
+                        <Text style={styles.inputLabel}>Verification Code</Text>
+                      </View>
                       {timer > 0 ? (
                         <Text style={[styles.resendText, { color: '#64748B' }]}>
                           Resend OTP in {timer}s
                         </Text>
                       ) : (
                         <TouchableOpacity onPress={handleSignup}>
-                          <Text style={[styles.resendText, { color: themeColor, fontWeight: '700' }]}>
+                          <Text style={[styles.resendText, { color: THEME, fontWeight: '700' }]}>
                             Resend OTP
                           </Text>
                         </TouchableOpacity>
@@ -319,7 +383,7 @@ const Signup = ({ onNavigate, routeData }) => {
                           ref={(ref) => (otpRefs.current[index] = ref)}
                           style={[
                             styles.otpInput,
-                            focusedIndex === index && { borderColor: themeColor, borderWidth: 2 }
+                            focusedIndex === index && { borderColor: THEME, borderWidth: 2 }
                           ]}
                           keyboardType="number-pad"
                           maxLength={index === 0 && otp[0] === '' ? 4 : 1}
@@ -335,8 +399,9 @@ const Signup = ({ onNavigate, routeData }) => {
                   </>
                 )}
 
+                {/* Sign Up / Verify Button */}
                 <TouchableOpacity
-                  style={[styles.verifyButton, { backgroundColor: themeColor, shadowColor: themeColor }]}
+                  style={[styles.verifyButton, { backgroundColor: THEME, shadowColor: THEME }]}
                   activeOpacity={0.8}
                   onPress={otpSent ? handleVerifyOtp : handleSignup}
                   disabled={isLoading}
@@ -344,15 +409,20 @@ const Signup = ({ onNavigate, routeData }) => {
                   {isLoading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.verifyButtonText}>
-                      {otpSent ? 'Verify & Sign Up' : `Sign Up as ${role}`}
-                    </Text>
+                    <View style={styles.buttonContent}>
+                      <Text style={styles.verifyButtonText}>
+                        {otpSent ? 'Verify & Sign Up' : `Sign Up as ${role}`}
+                      </Text>
+                      <ArrowRight size={18} color="#FFF" style={{ marginLeft: 6 }} />
+                    </View>
                   )}
                 </TouchableOpacity>
 
+                {/* Login Link */}
                 <View style={styles.switchRoleContainer}>
-                  <TouchableOpacity onPress={() => onNavigate && onNavigate('Login')}>
-                    <Text style={styles.switchRoleLabel}>Already have an account? Login</Text>
+                  <TouchableOpacity onPress={() => onNavigate && onNavigate('Login')} style={styles.switchRoleBtn}>
+                    <Text style={styles.switchRoleLabel}>Already have an account? </Text>
+                    <Text style={[styles.switchRoleLabel, { color: THEME, fontWeight: '700' }]}>Login</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -367,177 +437,243 @@ const Signup = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7FF',
+    backgroundColor: '#F8FAFC',
   },
-  topLogoContainer: {
+  logoBadgeContainer: {
+    position: 'absolute',
+    top: '30%',
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    paddingTop: 38,
+    justifyContent: 'center',
+    zIndex: 10,
   },
-  mainLogoImage: {
-    width: 200,
-    height: 60,
+  logoBadgeShadow: {
+    borderRadius: 20,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 8,
+    backgroundColor: 'transparent',
   },
-  heroImage: {
-    width: '100%',
+  logoBadge: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    alignItems: 'center',
   },
   formCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,
-    marginTop: -30,
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 16,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 15,
-    elevation: 10,
+    marginTop: -25,
+    paddingHorizontal: 26,
+    paddingTop: 36,
+    paddingBottom: 24,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -12 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 0,
   },
   titleText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
   },
   subtitleText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#64748B',
-    marginBottom: 20,
+    marginBottom: 26,
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 12,
   },
   inputLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+    color: '#334155',
+    marginBottom: 8,
+  },
+  roleCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+    gap: 12,
+  },
+  roleCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  roleCardActive: {
+    borderColor: '#4F46E5',
+    backgroundColor: '#EEF2F6',
+  },
+  roleCardDisabled: {
+    opacity: 0.6,
+  },
+  roleDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  roleDotActive: {
+    borderColor: '#4F46E5',
+  },
+  roleDotInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4F46E5',
+  },
+  roleCardText: {
+    fontSize: 15,
+    fontWeight: '600',
     color: '#475569',
-    marginBottom: 6,
+  },
+  roleCardTextActive: {
+    color: '#4F46E5',
+    fontWeight: '700',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    height: 48,
+    borderRadius: 12,
+    height: 56,
     paddingHorizontal: 16,
-    marginBottom: 16,
-    borderWidth: 1,
+    marginBottom: 18,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
   },
-  prefixText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#475569',
+  inputIcon: {
     marginRight: 10,
+  },
+  inputFocused: {
+    borderColor: '#4F46E5',
+    backgroundColor: '#FFFFFF',
+  },
+  inputDisabled: {
+    backgroundColor: '#F1F5F9',
+    opacity: 0.9,
+  },
+  inputErrorBorder: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  prefixText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#334155',
+    marginRight: 8,
   },
   input: {
     flex: 1,
-    fontSize: 15,
-    color: '#1E293B',
+    fontSize: 16,
+    color: '#0F172A',
     fontWeight: '500',
-  },
-  verifyButton: {
-    height: 52,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-    marginTop: 8,
-  },
-  verifyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  switchRoleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  switchRoleLabel: {
-    fontSize: 13,
-    color: '#4F46E5',
-    fontWeight: '600'
+    paddingVertical: 0,
   },
   editNumberBtn: {
-    padding: 6,
-  },
-  editNumberText: {
-    fontSize: 14,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    marginTop: 4,
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 24,
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderWidth: 2,
-    borderColor: '#4F46E5',
-    borderRadius: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  checkboxChecked: {
-    backgroundColor: '#4F46E5',
-  },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  checkboxLabel: {
-    fontSize: 14,
-    color: '#1E293B',
-    fontWeight: '500',
-  },
-  otpHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  resendText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  otpInput: {
-    width: '22%',
-    height: 52,
-    backgroundColor: '#F8FAFC',
+    padding: 8,
     borderRadius: 8,
-    textAlign: 'center',
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    backgroundColor: '#EEF2F6',
   },
   errorText: {
     color: '#EF4444',
     fontSize: 12,
     fontWeight: '600',
-    marginTop: -8,
+    marginTop: -10,
     marginLeft: 4,
     marginBottom: 16,
   },
-  inputErrorBorder: {
-    borderColor: '#EF4444',
+  otpHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  otpLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  resendText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  otpInput: {
+    width: '22%',
+    height: 56,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0F172A',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  verifyButton: {
+    height: 56,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 5,
+    marginTop: 10,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  verifyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  switchRoleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  switchRoleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  switchRoleLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
   },
 });
 

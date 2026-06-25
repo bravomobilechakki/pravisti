@@ -553,29 +553,27 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                 {/* Action Buttons */}
                 <View style={styles.productCardActions}>
                   <TouchableOpacity
-                    style={[styles.actionBtnEdit, { flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' }]}
+                    style={styles.actionBtnEdit}
                     onPress={() => openEditProduct(prod)}
                     activeOpacity={0.7}
                   >
-                    <Edit3 size={11} color="#475569" />
-                    <Text style={styles.actionTextEdit}>Edit</Text>
+                    <Edit3 size={15} color="#475569" />
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionBtnDelete, { flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' }]}
+                    style={styles.actionBtnDelete}
                     onPress={() => handleDeleteProduct(prod)}
                     activeOpacity={0.7}
                   >
-                    <Trash2 size={11} color="#DC2626" />
-                    <Text style={styles.actionTextDelete}>Delete</Text>
+                    <Trash2 size={15} color="#EF4444" />
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionBtnSauda, { flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }]}
+                    style={styles.actionBtnSauda}
                     onPress={() => handleInitiateSauda(prod)}
                     activeOpacity={0.8}
                   >
-                    <Handshake size={13} color="#FFFFFF" />
+                    <Handshake size={15} color="#FFFFFF" />
                     <Text style={styles.actionTextSauda}>Start Sauda</Text>
                   </TouchableOpacity>
                 </View>
@@ -1065,25 +1063,25 @@ const styles = StyleSheet.create({
   productCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 16,
+    padding: 18,
     marginBottom: 16,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: '#1E1B4B',
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.05,
     shadowRadius: 16,
-    elevation: 4,
+    elevation: 3,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
     position: 'relative',
     overflow: 'hidden',
   },
   unitBadgeCompact: {
     position: 'absolute',
-    top: 14,
-    right: 14,
-    backgroundColor: '#F0FDF4',
-    borderColor: '#DCFCE7',
-    borderWidth: 1.2,
+    top: 18,
+    right: 18,
+    backgroundColor: '#EEF2FF',
+    borderColor: '#E0E7FF',
+    borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
@@ -1091,8 +1089,8 @@ const styles = StyleSheet.create({
   },
   unitBadgeTextCompact: {
     fontSize: 9,
-    fontWeight: '900',
-    color: '#15803D',
+    fontWeight: '800',
+    color: '#4F46E5',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -1105,38 +1103,38 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
   productImageLarge: {
-    width: 82,
-    height: 82,
-    borderRadius: 16,
+    width: 80,
+    height: 80,
+    borderRadius: 14,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   imageStatusIndicator: {
     position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 13,
-    height: 13,
-    borderRadius: 6.5,
-    borderWidth: 2,
+    bottom: -1,
+    right: -1,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2.2,
     borderColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 1,
+    elevation: 1,
   },
   productMainDetails: {
     flex: 1,
     justifyContent: 'center',
-    paddingRight: 64, // Leave space for unit badge
+    paddingRight: 56, // Leave space for unit badge
   },
   productTitle: {
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '800',
     color: '#0F172A',
-    letterSpacing: -0.3,
+    letterSpacing: -0.1,
     marginBottom: 6,
   },
   badgeRow: {
@@ -1150,27 +1148,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#EEF2FF',
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 7,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#E0E7FF',
   },
   categoryBadgeText: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#4F46E5',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   subcategoryBadge: {
     backgroundColor: '#F5F3FF',
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 7,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#EDE9FE',
   },
   subcategoryBadgeText: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#7C3AED',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   statusBadgeActive: {
     backgroundColor: '#ECFDF5',
@@ -1199,30 +1197,30 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   hsnBadge: {
-    backgroundColor: '#F0F9FF',
-    borderColor: '#E0F2FE',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
   hsnText: {
-    color: '#0369A1',
-    fontSize: 10,
-    fontWeight: '700',
+    color: '#64748B',
+    fontSize: 9,
+    fontWeight: '600',
   },
   gstBadge: {
-    backgroundColor: '#FFF7ED',
-    borderColor: '#FFEDD5',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
   },
   gstText: {
-    color: '#C2410C',
-    fontSize: 10,
-    fontWeight: '700',
+    color: '#64748B',
+    fontSize: 9,
+    fontWeight: '600',
   },
   productPrice: {
     fontSize: 11,
@@ -1238,17 +1236,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   productDescriptionText: {
-    fontSize: 12,
-    color: '#475569',
+    fontSize: 13,
+    color: '#64748B',
     lineHeight: 18,
     marginBottom: 14,
-    backgroundColor: '#F8FAFC',
-    paddingLeft: 12,
-    paddingRight: 10,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderLeftWidth: 3.5,
-    borderLeftColor: '#4F46E5',
+    paddingHorizontal: 2,
   },
   productCardActions: {
     flexDirection: 'row',
@@ -1260,37 +1252,39 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionBtnEdit: {
-    backgroundColor: '#FFFFFF',
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.2,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   actionBtnDelete: {
     backgroundColor: '#FFF5F5',
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.2,
-    borderColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FFE3E3',
   },
   actionBtnSauda: {
     backgroundColor: '#4F46E5',
-    flex: 1.3,
-    paddingVertical: 9,
-    borderRadius: 10,
+    flex: 1,
+    height: 40,
+    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
     shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.18,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 3,
   },
   actionTextEdit: {
     fontSize: 11,
@@ -1303,10 +1297,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   actionTextSauda: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#FFFFFF',
-    fontWeight: '900',
-    letterSpacing: 0.3,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   modalOverlay: {
     flex: 1,

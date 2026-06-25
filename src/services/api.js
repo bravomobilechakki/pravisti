@@ -19,6 +19,24 @@ const handleResponse = async (response) => {
 };
 
 /**
+ * Fetch with timeout — prevents infinite hang on slow/cold-start server
+ * Default: 30 seconds
+ */
+const fetchWithTimeout = (url, options, timeoutMs = 30000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal })
+    .then(res => { clearTimeout(timer); return res; })
+    .catch(err => {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        throw new Error('Request timed out. Server may be waking up — please try again in a few seconds.');
+      }
+      throw err;
+    });
+};
+
+/**
  * Standard POST request helper
  */
 const postRequest = async (apiConfig, body, token = null) => {
@@ -40,7 +58,7 @@ const postRequest = async (apiConfig, body, token = null) => {
     headers.Authorization = `Bearer ${activeToken}`;
   }
 
-  const response = await fetch(apiConfig.url, {
+  const response = await fetchWithTimeout(apiConfig.url, {
     method: apiConfig.method || 'POST',
     headers,
     body: JSON.stringify(body),
@@ -70,7 +88,7 @@ const getRequest = async (apiConfig, token = null) => {
     headers.Authorization = `Bearer ${activeToken}`;
   }
 
-  const response = await fetch(apiConfig.url, {
+  const response = await fetchWithTimeout(apiConfig.url, {
     method: apiConfig.method || 'GET',
     headers,
   });

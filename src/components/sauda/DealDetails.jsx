@@ -36,6 +36,8 @@ import {
   ArrowDownLeft,
   Truck,
   Box,
+  Percent,
+  Calendar,
 } from 'lucide-react-native';
 import {
   getDealDetails,
@@ -73,6 +75,9 @@ const DealDetails = ({ onNavigate, routeData }) => {
   const [paymentMethod, setPaymentMethod] = React.useState('UPI');
   const [paymentNotes, setPaymentNotes] = React.useState('');
   const [isLoggingPayment, setIsLoggingPayment] = React.useState(false);
+
+  // GST Breakdown Modal State
+  const [isGstModalVisible, setIsGstModalVisible] = React.useState(false);
 
   // Fetch current user identity once on mount
   React.useEffect(() => {
@@ -508,7 +513,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
       );
     } else {
       const isSent = item.deliveryType === 'sent';
-      
+
       let prodName = 'Product';
       if (deal.products && deal.products.length > 0) {
         const matchedProd = deal.products.find(p => {
@@ -735,6 +740,75 @@ const DealDetails = ({ onNavigate, routeData }) => {
   const expiryDateRaw = deal.expiryDate || deal.validityDate;
   const validityDateDisplay = expiryDateRaw ? new Date(expiryDateRaw).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
 
+  const getGstBreakdown = () => {
+    if (!deal) return { items: [], baseTotal: 0, discountTotal: 0, gstTotal: 0, grandTotal: 0 };
+    let baseTotal = 0;
+    let discountTotal = 0;
+    let gstTotal = 0;
+    let items = [];
+
+    if (deal.products && deal.products.length > 0) {
+      deal.products.forEach((prod, index) => {
+        const qtyVal = Number(prod.quantity) || 0;
+        const priceVal = Number(prod.price) || 0;
+        const discountVal = Number(prod.discount) || 0;
+        const gstPercent = Number(prod.gst) || 0;
+
+        const subtotal = qtyVal * priceVal;
+        const subtotalAfterDiscount = Math.max(0, subtotal - discountVal);
+        const gstAmount = subtotalAfterDiscount * (gstPercent / 100);
+        const total = subtotalAfterDiscount + gstAmount;
+
+        baseTotal += subtotal;
+        discountTotal += discountVal;
+        gstTotal += gstAmount;
+
+        items.push({
+          name: prod.productId?.name || prod.name || `Item #${index + 1}`,
+          qty: qtyVal,
+          price: priceVal,
+          discount: discountVal,
+          gstPercent: gstPercent,
+          gstAmount: gstAmount,
+          total: total
+        });
+      });
+    } else {
+      const firstProd = deal.product || {};
+      const qtyVal = Number(firstProd.quantity || deal.qty) || 0;
+      const priceVal = Number(firstProd.price || deal.price) || 0;
+      const discountVal = Number(deal.discount || firstProd.discount) || 0;
+      const gstPercent = Number(deal.gst || firstProd.gst || 0);
+
+      const subtotal = qtyVal * priceVal;
+      const subtotalAfterDiscount = Math.max(0, subtotal - discountVal);
+      const gstAmount = subtotalAfterDiscount * (gstPercent / 100);
+      const total = subtotalAfterDiscount + gstAmount;
+
+      baseTotal = subtotal;
+      discountTotal = discountVal;
+      gstTotal = gstAmount;
+
+      items.push({
+        name: firstProd.productId?.name || firstProd.name || 'Sauda Product',
+        qty: qtyVal,
+        price: priceVal,
+        discount: discountVal,
+        gstPercent: gstPercent,
+        gstAmount: gstAmount,
+        total: total
+      });
+    }
+
+    return {
+      items,
+      baseTotal,
+      discountTotal,
+      gstTotal,
+      grandTotal: baseTotal - discountTotal + gstTotal
+    };
+  };
+
   const sellerName = deal.sellerCompany?.name || deal.sellerCompanyId?.companyName || deal.sellerCompanyId?.name || deal.party1?.company?.name || deal.party1?.companyId?.name || deal.party1?.name || 'Seller';
   const buyerName = deal.buyerCompany?.name || deal.buyerCompanyId?.companyName || deal.buyerCompanyId?.name || deal.party2?.company?.name || deal.party2?.companyId?.name || deal.party2?.name || 'Buyer';
 
@@ -789,25 +863,24 @@ const DealDetails = ({ onNavigate, routeData }) => {
           <ArrowLeft size={18} color="#0F172A" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          Sauda Agreement Details
-        </Text>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={styles.headerTitleText} numberOfLines={1}>
+            Sauda Details
+          </Text>
+          <Text style={styles.headerSubtitleText}>
+            #{deal.dealNumber || deal._id?.slice(-6).toUpperCase()}
+          </Text>
+        </View>
 
         <View style={styles.headerRightActions}>
-          <View style={[styles.statusBadge, { backgroundColor: statusCfg.bgColor, borderColor: statusCfg.border }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusCfg.dotColor }]} />
-            <Text style={[styles.statusText, { color: statusCfg.textColor }]}>
-              {statusCfg.label}
-            </Text>
-          </View>
-
           {!isExpired && (
             <TouchableOpacity
-              style={styles.headerChatButton}
+              style={styles.premiumHeaderChatButton}
               onPress={() => onNavigate('DealChat', { dealId: deal._id })}
               activeOpacity={0.7}
             >
-              <MessageSquare size={18} color="#0F172A" />
+              <MessageSquare size={18} color="#4F46E5" />
+              <View style={styles.chatNotificationDot} />
             </TouchableOpacity>
           )}
         </View>
@@ -829,11 +902,215 @@ const DealDetails = ({ onNavigate, routeData }) => {
           </Text>
         </View>
 
+        {/* Fintech Quick Actions Row (inspired by reference screen quick buttons) */}
+        <View style={styles.fintechActionsRow}>
+          {/* Action 1: Chat Discussion */}
+          {!isExpired && (
+            <View style={styles.fintechActionItem}>
+              <TouchableOpacity
+                style={[styles.fintechActionButton, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}
+                onPress={() => onNavigate('DealChat', { dealId: deal._id })}
+                activeOpacity={0.8}
+              >
+                <MessageSquare size={20} color="#4F46E5" />
+              </TouchableOpacity>
+              <Text style={styles.fintechActionLabel}>Trade Chat</Text>
+            </View>
+          )}
+
+          {/* Action 2: Sign Agreement (if pending and has action buttons) */}
+          {isPending && showActionButtons && (
+            <View style={styles.fintechActionItem}>
+              <TouchableOpacity
+                style={[styles.fintechActionButton, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
+                onPress={handleAcceptDeal}
+                activeOpacity={0.8}
+              >
+                <PenTool size={20} color="#059669" />
+              </TouchableOpacity>
+              <Text style={styles.fintechActionLabel}>Sign Deal</Text>
+            </View>
+          )}
+
+          {/* Action 3: Log Payment (if approved/completed) */}
+          {isActiveOrCompleted && (
+            <View style={styles.fintechActionItem}>
+              <TouchableOpacity
+                style={[styles.fintechActionButton, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}
+                onPress={openPaymentModal}
+                activeOpacity={0.8}
+              >
+                <CreditCard size={20} color="#D97706" />
+              </TouchableOpacity>
+              <Text style={styles.fintechActionLabel}>Log Pay</Text>
+            </View>
+          )}
+
+          {/* Action 4: Edit Terms */}
+          {isPending && (
+            <View style={styles.fintechActionItem}>
+              <TouchableOpacity
+                style={[styles.fintechActionButton, { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }]}
+                onPress={() => {
+                  onNavigate('CreateDeal', { prefill: deal });
+                }}
+                activeOpacity={0.8}
+              >
+                <Edit3 size={20} color="#7C3AED" />
+              </TouchableOpacity>
+              <Text style={styles.fintechActionLabel}>Edit Terms</Text>
+            </View>
+          )}
+
+          {/* Action 5: Share Sauda */}
+          <View style={styles.fintechActionItem}>
+            <TouchableOpacity
+              style={[styles.fintechActionButton, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}
+              onPress={() => {
+                Alert.alert("Share Sauda", "Sharing sauda contract terms...");
+              }}
+              activeOpacity={0.8}
+            >
+              <Share2 size={20} color="#2563EB" />
+            </TouchableOpacity>
+            <Text style={styles.fintechActionLabel}>Share</Text>
+          </View>
+
+          {/* Action 5b: GST Details */}
+          <View style={styles.fintechActionItem}>
+            <TouchableOpacity
+              style={[styles.fintechActionButton, { backgroundColor: '#FFF1F2', borderColor: '#FECDD3' }]}
+              onPress={() => setIsGstModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Percent size={20} color="#E11D48" />
+            </TouchableOpacity>
+            <Text style={styles.fintechActionLabel}>GST</Text>
+          </View>
+
+          {/* Action 6: Trade Ledger / History */}
+          <View style={styles.fintechActionItem}>
+            <TouchableOpacity
+              style={[styles.fintechActionButton, { backgroundColor: '#EBFDF5', borderColor: '#A7F3D0' }]}
+              onPress={() => {
+                onNavigate('TransactionHistory', { dealId: deal._id, deal });
+              }}
+              activeOpacity={0.8}
+            >
+              <FileText size={20} color="#059669" />
+            </TouchableOpacity>
+            <Text style={styles.fintechActionLabel}>Ledger</Text>
+          </View>
+        </View>
+
+        {/* ACTION COMPLIANCE PANEL (Pending approvals decision overlay) */}
+        {isPending && (showActionButtons || (viewerApprovalStatus === 'approved' && !isBroker) || isBroker) && (
+          <View style={styles.actionPanelContainer}>
+            {/* Action Required: Receiver Decision Buttons */}
+            {showActionButtons && (
+              <View style={styles.actionDecisionCard}>
+                {otherPartyApprovedLabel && (
+                  <View style={styles.decisionStatusBadgeRow}>
+                    <View style={[styles.counterpartyApprovedBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                      <Check size={12} color="#065F46" />
+                      <Text style={styles.counterpartyApprovedBadgeText}>{otherPartyApprovedLabel}</Text>
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.decisionHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8 }}>
+                    <Clock size={10} color="#B45309" />
+                    <Text style={{ fontSize: 9, fontWeight: '950', color: '#B45309' }}>PENDING SIGNATURE</Text>
+                  </View>
+                  <View style={styles.myRoleIndicatorBadge}>
+                    <Text style={styles.myRoleIndicatorText}>
+                      My Role: {isSeller ? 'SELLER' : isBuyer ? 'BUYER' : isBroker ? 'BROKER' : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.decisionTitle}>Sign Trade Agreement</Text>
+                  <Text style={styles.decisionDesc}>
+                    Your formal approval is strictly required to activate this Sauda contract. Please carefully verify the pricing ledgers before signing.
+                  </Text>
+                </View>
+
+                <View style={styles.decisionButtonsRow}>
+                  {showRejectButton && (
+                    <TouchableOpacity
+                      style={[styles.decisionBtn, styles.declineBtn]}
+                      onPress={handleRejectDeal}
+                      disabled={isUpdating}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.declineBtnText}>
+                        {isUpdating ? 'Declining...' : 'Decline Terms'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {showApproveButton && (
+                    <TouchableOpacity
+                      style={[styles.decisionBtn, styles.approveBtn]}
+                      onPress={handleAcceptDeal}
+                      disabled={isUpdating}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.approveBtnText}>
+                        {isUpdating ? 'Approving...' : 'Sign & Approve'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Waiting State: Creator View */}
+            {viewerApprovalStatus === 'approved' && deal.status === 'pending' && !isBroker && (
+              <View style={styles.waitingCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 4 }}>
+                  <Text style={styles.waitingSingleText}>
+                    My Role: <Text style={styles.approvedHighlight}>{isSeller ? 'SELLER' : isBuyer ? 'BUYER' : isBroker ? 'BROKER' : ''} (Approved)</Text>  ·  <Text style={styles.pendingHighlight}>Waiting for {pendingApprovalFor ? pendingApprovalFor.toUpperCase() : otherPartyLabel}</Text>
+                  </Text>
+                  <Clock size={12} color="#B45309" />
+                </View>
+              </View>
+            )}
+
+            {/* Read-Only State: Broker View */}
+            {isBroker && (
+              <View style={styles.brokerCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <Briefcase size={16} color="#3B82F6" />
+                  <Text style={[styles.brokerCardTitle, { marginBottom: 0 }]}>Broker Agreement Overview</Text>
+                </View>
+                <Text style={styles.brokerCardDesc}>
+                  Seller Signature: {sellerApproved ? 'Signed' : 'Pending'}  |  Buyer Signature: {buyerApproved ? 'Signed' : 'Pending'}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+
+
+        {/* Rejected Alert Card */}
+        {isRejected && (
+          <View style={styles.rejectedCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
+              <XCircle size={20} color="#B91C1C" />
+              <Text style={[styles.rejectedCardTitle, { marginBottom: 0 }]}>Deal Declined</Text>
+            </View>
+            <Text style={styles.rejectedCardDesc}>
+              This agreement was rejected. You may recreate this Sauda ledger to coordinate with the party under revised terms.
+            </Text>
+          </View>
+        )}
+
         {/* UNIFIED SAUDA DETAILS CARD */}
         <View style={styles.passportCard}>
           <View style={styles.passportHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <FileText size={14} color="#475569" />
+              <FileText size={14} color="#4F46E5" />
               <Text style={styles.passportTag}>SAUDA AGREEMENT PASSPORT</Text>
             </View>
             <Text style={styles.passportId}>#{deal.dealNumber || deal._id?.slice(-6).toUpperCase()}</Text>
@@ -846,11 +1123,17 @@ const DealDetails = ({ onNavigate, routeData }) => {
           {/* Agreement & Validity Details Grid */}
           <View style={styles.passportGrid}>
             <View style={styles.passportGridCol}>
-              <Text style={styles.passportLabel}>AGREEMENT DATE</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                <Calendar size={11} color="#64748B" />
+                <Text style={styles.passportLabel}>AGREEMENT DATE</Text>
+              </View>
               <Text style={styles.passportValue}>{dealDateDisplay}</Text>
             </View>
             <View style={styles.passportGridCol}>
-              <Text style={styles.passportLabel}>VALIDITY TERMS</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                <Clock size={11} color="#64748B" />
+                <Text style={styles.passportLabel}>VALIDITY TERMS</Text>
+              </View>
               <Text style={[styles.passportValue, isExpired && { color: '#EF4444' }]}>
                 {isExpired ? 'Expired' : `Until ${validityDateDisplay}`}
               </Text>
@@ -859,12 +1142,21 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
           <View style={styles.passportGrid}>
             <View style={styles.passportGridCol}>
-              <Text style={styles.passportLabel}>FACILITATOR</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                <Briefcase size={11} color="#64748B" />
+                <Text style={styles.passportLabel}>FACILITATOR</Text>
+              </View>
               <Text style={styles.passportValue}>{deal.broker?.name || 'DIRECT'}</Text>
             </View>
             <View style={styles.passportGridCol}>
-              <Text style={styles.passportLabel}>DEAL STATUS</Text>
-              <Text style={[styles.passportValue, { color: statusCfg.dotColor }]}>{statusCfg.label}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                <CheckCircle size={11} color="#64748B" />
+                <Text style={styles.passportLabel}>DEAL STATUS</Text>
+              </View>
+              <View style={[styles.statusBadgeInline, { backgroundColor: statusCfg.bgColor, borderColor: statusCfg.border }]}>
+                <View style={[styles.statusDot, { backgroundColor: statusCfg.dotColor }]} />
+                <Text style={[styles.statusBadgeTextInline, { color: statusCfg.textColor }]}>{statusCfg.label}</Text>
+              </View>
             </View>
           </View>
 
@@ -1005,246 +1297,79 @@ const DealDetails = ({ onNavigate, routeData }) => {
           )}
         </View>
 
-        {(String(deal.status || '').toLowerCase() === 'approved' || String(deal.status || '').toLowerCase() === 'completed') && (
-          <TouchableOpacity
-            style={[styles.sectionCard, { paddingVertical: 18, borderLeftWidth: 4, borderLeftColor: '#3B82F6', shadowColor: '#3B82F6', shadowOpacity: 0.08 }]}
-            onPress={() => onNavigate('TransactionHistory', { dealId: deal._id, deal })}
-            activeOpacity={0.8}
-          >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <FileText size={16} color="#3B82F6" />
-                  <Text style={[styles.sectionTitle, { color: '#1E293B', marginBottom: 0 }]}>Trade Execution Ledger & History</Text>
-                </View>
-                <Text style={{ fontSize: 12, color: '#64748B', lineHeight: 16 }}>
-                  Track your dispatch progress, receipts, payment milestones, and outstanding balances.
-                </Text>
-              </View>
-              <ChevronRight size={20} color="#3B82F6" style={{ marginRight: 4 }} />
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* ACTION COMPLIANCE PANEL (Pending approvals decision overlay) */}
-        {isPending && (showActionButtons || (viewerApprovalStatus === 'approved' && !isBroker) || isBroker) && (
-          <View style={styles.actionPanelContainer}>
-            {/* Action Required: Receiver Decision Buttons */}
-            {showActionButtons && (
-              <View style={styles.actionDecisionCard}>
-                {otherPartyApprovedLabel && (
-                  <View style={styles.decisionStatusBadgeRow}>
-                    <View style={[styles.counterpartyApprovedBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                      <Check size={12} color="#065F46" />
-                      <Text style={styles.counterpartyApprovedBadgeText}>{otherPartyApprovedLabel}</Text>
-                    </View>
-                  </View>
-                )}
-
-                <View style={styles.decisionHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8 }}>
-                    <Clock size={10} color="#B45309" />
-                    <Text style={{ fontSize: 9, fontWeight: '950', color: '#B45309' }}>PENDING SIGNATURE</Text>
-                  </View>
-                  <View style={styles.myRoleIndicatorBadge}>
-                    <Text style={styles.myRoleIndicatorText}>
-                      My Role: {isSeller ? 'SELLER' : isBuyer ? 'BUYER' : isBroker ? 'BROKER' : ''}
-                    </Text>
-                  </View>
-                  <Text style={styles.decisionTitle}>Sign Trade Agreement</Text>
-                  <Text style={styles.decisionDesc}>
-                    Your formal approval is strictly required to activate this Sauda contract. Please carefully verify the pricing ledgers before signing.
-                  </Text>
-                </View>
-
-                <View style={styles.decisionButtonsRow}>
-                  {showRejectButton && (
-                    <TouchableOpacity
-                      style={[styles.decisionBtn, styles.declineBtn]}
-                      onPress={handleRejectDeal}
-                      disabled={isUpdating}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.declineBtnText}>
-                        {isUpdating ? 'Declining...' : 'Decline Terms'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {showApproveButton && (
-                    <TouchableOpacity
-                      style={[styles.decisionBtn, styles.approveBtn]}
-                      onPress={handleAcceptDeal}
-                      disabled={isUpdating}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.approveBtnText}>
-                        {isUpdating ? 'Approving...' : 'Sign & Approve'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* Waiting State: Creator View */}
-            {viewerApprovalStatus === 'approved' && deal.status === 'pending' && !isBroker && (
-              <View style={styles.waitingCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 4 }}>
-                  <Text style={styles.waitingSingleText}>
-                    My Role: <Text style={styles.approvedHighlight}>{isSeller ? 'SELLER' : isBuyer ? 'BUYER' : isBroker ? 'BROKER' : ''} (Approved)</Text>  ·  <Text style={styles.pendingHighlight}>Waiting for {pendingApprovalFor ? pendingApprovalFor.toUpperCase() : otherPartyLabel}</Text>
-                  </Text>
-                  <Clock size={12} color="#B45309" />
-                </View>
-              </View>
-            )}
-
-            {/* Read-Only State: Broker View */}
-            {isBroker && (
-              <View style={styles.brokerCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  <Briefcase size={16} color="#3B82F6" />
-                  <Text style={[styles.brokerCardTitle, { marginBottom: 0 }]}>Broker Agreement Overview</Text>
-                </View>
-                <Text style={styles.brokerCardDesc}>
-                  Seller Signature: {sellerApproved ? 'Signed' : 'Pending'}  |  Buyer Signature: {buyerApproved ? 'Signed' : 'Pending'}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
         {/* 📜 DIGITAL CONTRACT SIGNATURE MATRIX */}
         {deal.approvalStatus && (
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Dual-Signature Escrow Stamp</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={styles.sectionTitle}>Dual-Signature Escrow Stamp</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EEF2FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                <ShieldCheck size={12} color="#4F46E5" />
+                <Text style={{ fontSize: 9.5, fontWeight: '800', color: '#4F46E5' }}>SECURE LOCK</Text>
+              </View>
+            </View>
 
             <View style={styles.signatureSealsContainer}>
               {/* Seller Seal */}
               <View style={[
-                styles.sealCard,
+                styles.compactSealCard,
                 sellerApproved ? styles.sealApproved : sellerStatus === 'rejected' ? styles.sealRejected : styles.sealPending
               ]}>
                 <View style={[
-                  styles.sealCircle,
-                  sellerApproved ? styles.sealCircleApproved : sellerStatus === 'rejected' ? styles.sealCircleRejected : styles.sealCirclePending
+                  styles.compactSealCircle,
+                  sellerApproved ? styles.sealCircleApproved : sellerStatus === 'rejected' ? styles.sealCircleRejected : sellerStatus === 'approved' ? styles.sealCircleApproved : styles.sealCirclePending
                 ]}>
                   {sellerApproved ? (
-                    <PenTool size={18} color="#047857" />
+                    <PenTool size={14} color="#047857" />
                   ) : sellerStatus === 'rejected' ? (
-                    <X size={18} color="#B91C1C" />
+                    <X size={14} color="#B91C1C" />
                   ) : (
-                    <Clock size={18} color="#B45309" />
+                    <Clock size={14} color="#B45309" />
                   )}
                 </View>
-                <Text style={styles.sealRole}>SELLER SIGNATURE</Text>
-                <Text style={styles.sealCompany} numberOfLines={1}>{sellerName}</Text>
-                <Text style={[
-                  styles.sealStatusText,
-                  { color: sellerApproved ? '#047857' : sellerStatus === 'rejected' ? '#B91C1C' : '#B45309' }
-                ]}>
-                  {sellerStatus?.toUpperCase()}
-                </Text>
+                <View style={styles.compactSealInfo}>
+                  <Text style={styles.compactSealRole}>SELLER</Text>
+                  <Text style={styles.compactSealCompany} numberOfLines={1}>{sellerName}</Text>
+                  <Text style={[
+                    styles.compactSealStatusText,
+                    { color: sellerApproved ? '#047857' : sellerStatus === 'rejected' ? '#B91C1C' : '#B45309' }
+                  ]}>
+                    {sellerApproved ? 'Signed' : sellerStatus === 'rejected' ? 'Declined' : 'Pending'}
+                  </Text>
+                </View>
               </View>
 
               {/* Buyer Seal */}
               <View style={[
-                styles.sealCard,
+                styles.compactSealCard,
                 buyerApproved ? styles.sealApproved : buyerStatus === 'rejected' ? styles.sealRejected : styles.sealPending
               ]}>
                 <View style={[
-                  styles.sealCircle,
-                  buyerApproved ? styles.sealCircleApproved : buyerStatus === 'rejected' ? styles.sealCircleRejected : buyerStatus === 'approved' ? styles.sealCircleApproved : styles.sealCirclePending
+                  styles.compactSealCircle,
+                  buyerApproved ? styles.sealCircleApproved : buyerStatus === 'rejected' ? styles.sealCircleRejected : buyerStatus === 'approved' ? styles.sealCircleApproved : buyerStatus === 'pending' ? styles.sealCirclePending : styles.sealCirclePending
                 ]}>
                   {buyerApproved ? (
-                    <PenTool size={18} color="#047857" />
+                    <PenTool size={14} color="#047857" />
                   ) : buyerStatus === 'rejected' ? (
-                    <X size={18} color="#B91C1C" />
+                    <X size={14} color="#B91C1C" />
                   ) : (
-                    <Clock size={18} color="#B45309" />
+                    <Clock size={14} color="#B45309" />
                   )}
                 </View>
-                <Text style={styles.sealRole}>BUYER SIGNATURE</Text>
-                <Text style={styles.sealCompany} numberOfLines={1}>{buyerName}</Text>
-                <Text style={[
-                  styles.sealStatusText,
-                  { color: buyerApproved ? '#047857' : buyerStatus === 'rejected' ? '#B91C1C' : '#B45309' }
-                ]}>
-                  {buyerStatus?.toUpperCase()}
-                </Text>
+                <View style={styles.compactSealInfo}>
+                  <Text style={styles.compactSealRole}>BUYER</Text>
+                  <Text style={styles.compactSealCompany} numberOfLines={1}>{buyerName}</Text>
+                  <Text style={[
+                    styles.compactSealStatusText,
+                    { color: buyerApproved ? '#047857' : buyerStatus === 'rejected' ? '#B91C1C' : '#B45309' }
+                  ]}>
+                    {buyerApproved ? 'Signed' : buyerStatus === 'rejected' ? 'Declined' : 'Pending'}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
         )}
 
-
-
-        {/* Fully Approved Celebratory Overlay */}
-        {deal.status === 'approved' && (
-          <View style={styles.approvedCelebrationCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
-              <ShieldCheck size={20} color="#047857" />
-              <Text style={[styles.approvedCelebrationTitle, { marginBottom: 0 }]}>Agreement Signed & Activated!</Text>
-            </View>
-            <Text style={styles.approvedCelebrationDesc}>
-              Both counterparties have approved the ledger. Real-time chat negotiations are now fully unlocked for this Sauda.
-            </Text>
-          </View>
-        )}
-
-
-        {/* Rejected Alert Card */}
-        {isRejected && (
-          <View style={styles.rejectedCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
-              <XCircle size={20} color="#B91C1C" />
-              <Text style={[styles.rejectedCardTitle, { marginBottom: 0 }]}>Deal Declined</Text>
-            </View>
-            <Text style={styles.rejectedCardDesc}>
-              This agreement was rejected. You may recreate this Sauda ledger to coordinate with the party under revised terms.
-            </Text>
-          </View>
-        )}
-
-        {/* Primary Action Button (Chat Thread OR Recreate) */}
-        <TouchableOpacity
-          style={[styles.primaryActionBtn, isExpired && { backgroundColor: '#475569', shadowColor: '#475569' }]}
-          onPress={() =>
-            isExpired
-              ? onNavigate('CreateDeal', { prefill: deal })
-              : onNavigate('DealChat', { dealId: deal._id })
-          }
-          activeOpacity={0.8}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            {isExpired ? (
-              <RefreshCw size={16} color="#FFFFFF" />
-            ) : (
-              <MessageSquare size={16} color="#FFFFFF" />
-            )}
-            <Text style={styles.primaryActionText}>
-              {isExpired ? 'Recreate Trade Agreement' : 'Open Trade Discussion'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* STUNNING QUICK SHARE PANEL */}
-        <View style={styles.shareRow}>
-          <TouchableOpacity style={styles.shareCard} activeOpacity={0.7}>
-            <Share2 size={20} color="#3B82F6" style={{ marginBottom: 4 }} />
-            <Text style={styles.shareLabel}>Share Sauda</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.shareCard} activeOpacity={0.7}>
-            <FileText size={20} color="#10B981" style={{ marginBottom: 4 }} />
-            <Text style={styles.shareLabel}>Invoice PDF</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.shareCard} activeOpacity={0.7}>
-            <Edit3 size={20} color="#8B5CF6" style={{ marginBottom: 4 }} />
-            <Text style={styles.shareLabel}>Edit Terms</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
 
       {/* 💳 LOG PAYMENT MODAL */}
@@ -1362,7 +1487,151 @@ const DealDetails = ({ onNavigate, routeData }) => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+
+      {/* 🧾 GST BREAKDOWN MODAL */}
+      <Modal
+        visible={isGstModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsGstModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Percent size={18} color="#E11D48" />
+                <Text style={styles.modalTitle}>GST Invoice Breakdown</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsGstModalVisible(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+              {(() => {
+                const breakdown = getGstBreakdown();
+                return (
+                  <View style={{ gap: 16 }}>
+                    {/* Itemized Table */}
+                    <Text style={[styles.modalInputLabel, { marginBottom: 4 }]}>Itemized Commercials</Text>
+                    {breakdown.items.map((item, index) => (
+                      <View key={index} style={styles.gstItemCard}>
+                        <Text style={styles.gstItemName}>{item.name}</Text>
+
+                        <View style={styles.gstGridRow}>
+                          <View style={styles.gstGridCol}>
+                            <Text style={styles.gstGridLabel}>Qty</Text>
+                            <Text style={styles.gstGridValue}>{item.qty} MT</Text>
+                          </View>
+                          <View style={styles.gstGridCol}>
+                            <Text style={styles.gstGridLabel}>Price/MT</Text>
+                            <Text style={styles.gstGridValue}>₹{item.price.toLocaleString('en-IN')}</Text>
+                          </View>
+                          <View style={styles.gstGridCol}>
+                            <Text style={styles.gstGridLabel}>GST Rate</Text>
+                            <Text style={styles.gstGridValue}>{item.gstPercent}%</Text>
+                          </View>
+                        </View>
+
+                        <View style={[styles.gstGridRow, { marginTop: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 8 }]}>
+                          <View style={styles.gstGridCol}>
+                            <Text style={styles.gstGridLabel}>Discount</Text>
+                            <Text style={[styles.gstGridValue, { color: item.discount > 0 ? '#10B981' : '#64748B' }]}>
+                              -₹{item.discount.toLocaleString('en-IN')}
+                            </Text>
+                          </View>
+                          <View style={styles.gstGridCol}>
+                            <Text style={styles.gstGridLabel}>GST Tax</Text>
+                            <Text style={[styles.gstGridValue, { color: '#E11D48' }]}>
+                              +₹{Math.round(item.gstAmount).toLocaleString('en-IN')}
+                            </Text>
+                          </View>
+                          <View style={styles.gstGridCol}>
+                            <Text style={styles.gstGridLabel}>Net Amount</Text>
+                            <Text style={[styles.gstGridValue, { fontWeight: '800', color: '#0F172A' }]}>
+                              ₹{Math.round(item.total).toLocaleString('en-IN')}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    ))}
+
+                    {/* Tax Division Box (CGST/SGST/IGST breakdown) */}
+                    <View style={styles.taxDivisionCard}>
+                      <Text style={styles.taxDivisionTitle}>Tax Liability Split</Text>
+
+                      <View style={styles.taxSplitRow}>
+                        <Text style={styles.taxSplitLabel}>Central GST (CGST) - 50%</Text>
+                        <Text style={styles.taxSplitValue}>₹{Math.round(breakdown.gstTotal / 2).toLocaleString('en-IN')}</Text>
+                      </View>
+
+                      <View style={styles.taxSplitRow}>
+                        <Text style={styles.taxSplitLabel}>State GST (SGST) - 50%</Text>
+                        <Text style={styles.taxSplitValue}>₹{Math.round(breakdown.gstTotal / 2).toLocaleString('en-IN')}</Text>
+                      </View>
+
+                      <View style={[styles.taxSplitRow, { borderTopWidth: 1, borderTopColor: '#FFE4E6', paddingTop: 8, marginTop: 4 }]}>
+                        <Text style={[styles.taxSplitLabel, { fontWeight: '700', color: '#E11D48' }]}>Total Tax Value (GST)</Text>
+                        <Text style={[styles.taxSplitValue, { fontWeight: '800', color: '#E11D48' }]}>₹{Math.round(breakdown.gstTotal).toLocaleString('en-IN')}</Text>
+                      </View>
+                    </View>
+
+                    {/* Financial Summary */}
+                    <View style={styles.financialSummaryCard}>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Total Base Value</Text>
+                        <Text style={styles.summaryValue}>₹{breakdown.baseTotal.toLocaleString('en-IN')}</Text>
+                      </View>
+
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Deducted Discounts</Text>
+                        <Text style={[styles.summaryValue, { color: '#10B981' }]}>
+                          -₹{breakdown.discountTotal.toLocaleString('en-IN')}
+                        </Text>
+                      </View>
+
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Taxable Value</Text>
+                        <Text style={styles.summaryValue}>₹{(breakdown.baseTotal - breakdown.discountTotal).toLocaleString('en-IN')}</Text>
+                      </View>
+
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Applied GST Tax</Text>
+                        <Text style={[styles.summaryValue, { color: '#E11D48' }]}>
+                          +₹{Math.round(breakdown.gstTotal).toLocaleString('en-IN')}
+                        </Text>
+                      </View>
+
+                      <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 12, marginTop: 4 }]}>
+                        <Text style={[styles.summaryLabel, { fontSize: 14, fontWeight: '900', color: '#0F172A' }]}>Grand Gross Total</Text>
+                        <Text style={{ fontSize: 16, fontWeight: '900', color: '#4F46E5' }}>
+                          ₹{Math.round(breakdown.grandTotal).toLocaleString('en-IN')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Disclaimer Banner */}
+                    <View style={styles.disclaimerBanner}>
+                      <Text style={styles.disclaimerText}>
+                        * These figures are computed dynamically based on the verified quantity, rates, and active discount/GST policies signed in this Sauda.
+                      </Text>
+                    </View>
+
+                    {/* Close Action */}
+                    <TouchableOpacity
+                      style={[styles.modalActionBtn, styles.modalSubmitBtn, { backgroundColor: '#E11D48', marginTop: 8 }]}
+                      onPress={() => setIsGstModalVisible(false)}
+                    >
+                      <Text style={styles.modalSubmitBtnText}>Got it</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })()}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView >
   );
 };
 
@@ -1439,6 +1708,17 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     letterSpacing: -0.2,
   },
+  headerTitleText: {
+    fontSize: 15,
+    fontWeight: '805',
+    color: '#0F172A',
+  },
+  headerSubtitleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
   headerRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1453,6 +1733,28 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  premiumHeaderChatButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  chatNotificationDot: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   headerChatIcon: {
     fontSize: 15,
@@ -1484,10 +1786,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 20,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
     elevation: 4,
     borderWidth: 1,
     borderColor: '#ECEEF2',
@@ -1500,9 +1802,25 @@ const styles = StyleSheet.create({
   },
   passportTag: {
     fontSize: 10,
+    fontWeight: '900',
+    color: '#4F46E5',
+    letterSpacing: 1.2,
+  },
+  statusBadgeInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 4,
+    gap: 4,
+  },
+  statusBadgeTextInline: {
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#007AFF',
-    letterSpacing: 0.8,
+    letterSpacing: 0.3,
   },
   passportId: {
     fontSize: 10.5,
@@ -1715,21 +2033,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    padding: 10,
-    borderRadius: 10,
+    backgroundColor: '#EEF2FF',
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#C7D2FE',
+    marginTop: 12,
   },
   ledgerTotalLabel: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#475569',
+    color: '#4F46E5',
   },
   ledgerTotalValue: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontSize: 14.5,
+    fontWeight: '900',
+    color: '#4F46E5',
   },
 
   /* DIGITAL STAMPS VALIDATION PANEL */
@@ -1738,73 +2057,89 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 4,
   },
-  sealCard: {
+  compactSealCard: {
     flex: 1,
-    borderRadius: 20,
-    padding: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderWidth: 1.5,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.02,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 2,
+    gap: 8,
   },
   sealApproved: {
     backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
+    borderColor: '#10B981',
+    borderStyle: 'solid',
   },
   sealPending: {
     backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
+    borderColor: '#F59E0B',
+    borderStyle: 'dashed',
   },
   sealRejected: {
     backgroundColor: '#FEF2F2',
-    borderColor: '#FCA5A5',
+    borderColor: '#EF4444',
+    borderStyle: 'solid',
   },
-  sealCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  compactSealCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
-    borderWidth: 2,
-    elevation: 2,
+    borderWidth: 1.5,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   sealCircleApproved: {
-    backgroundColor: '#D1FAE5',
+    backgroundColor: '#FFFFFF',
     borderColor: '#10B981',
+    shadowColor: '#10B981',
+    shadowOpacity: 0.2,
   },
   sealCirclePending: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: '#FFFFFF',
     borderColor: '#F59E0B',
+    shadowColor: '#F59E0B',
+    shadowOpacity: 0.1,
   },
   sealCircleRejected: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FFFFFF',
     borderColor: '#EF4444',
+    shadowColor: '#EF4444',
+    shadowOpacity: 0.15,
   },
-  sealEmoji: {
-    fontSize: 18,
+  compactSealInfo: {
+    flex: 1,
+    justifyContent: 'center',
   },
-  sealRole: {
-    fontSize: 8.5,
-    fontWeight: '800',
+  compactSealRole: {
+    fontSize: 8,
+    fontWeight: '900',
     color: '#64748B',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
     marginBottom: 2,
   },
-  sealCompany: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 6,
-    textAlign: 'center',
+  compactSealCompany: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 2,
   },
-  sealStatusText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+  compactSealStatusText: {
+    fontSize: 9.5,
+    fontWeight: '700',
   },
 
   /* VALIDITY STATUS BANNER */
@@ -2519,6 +2854,155 @@ const styles = StyleSheet.create({
   },
   timelineAmountReceivedGreen: {
     color: '#059669',
+  },
+  /* FINTECH ACTIONS ROW */
+  fintechActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginVertical: 16,
+    marginHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#ECEEF2',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  fintechActionItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fintechActionButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  fintechActionLabel: {
+    fontSize: 10.5,
+    color: '#64748B',
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  /* GST BREAKDOWN MODAL STYLES */
+  gstItemCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8,
+  },
+  gstItemName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 10,
+  },
+  gstGridRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  gstGridCol: {
+    flex: 1,
+  },
+  gstGridLabel: {
+    fontSize: 10,
+    color: '#94A3B8',
+    fontWeight: '600',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  gstGridValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  taxDivisionCard: {
+    backgroundColor: '#FFF1F2',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#FFE4E6',
+  },
+  taxDivisionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#E11D48',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  taxSplitRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  taxSplitLabel: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  taxSplitValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  financialSummaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 6,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  summaryValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  disclaimerBanner: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  disclaimerText: {
+    fontSize: 9,
+    color: '#64748B',
+    lineHeight: 14,
+    fontStyle: 'italic',
   },
 });
 

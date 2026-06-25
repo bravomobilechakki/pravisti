@@ -153,7 +153,7 @@ const ChatList = ({ onNavigate }) => {
               <TouchableOpacity
                 key={conv._id || conv.id}
                 style={styles.chatCard}
-                onPress={() => onNavigate('DealChat', { dealId: conv.dealId?._id || conv.dealId })}
+                onPress={() => onNavigate('DealChat', { dealId: conv.dealId?._id || conv.dealId, conversationId: conv._id || conv.id })}
                 activeOpacity={0.7}
               >
                 <View style={styles.chatIconContainer}>

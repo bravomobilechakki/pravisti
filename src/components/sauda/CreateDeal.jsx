@@ -49,6 +49,9 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [focusedField, setFocusedField] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
+  const [showAdditionalDetails, setShowAdditionalDetails] = useState(false);
+  const [btnErrorMessage, setBtnErrorMessage] = useState('');
+  const [dropdownSearchText, setDropdownSearchText] = useState('');
 
   // Defensive Prefill Mappings
   const prefillBuyer = routeData?.prefill?.buyerCompany || routeData?.prefill?.buyerCompanyId || routeData?.prefill?.party2 || {};
@@ -274,7 +277,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         console.warn('DEBUG [activeCompanyId]:', activeCompanyId);
 
         if (activeCompanyId) {
-          const resActive = await getProducts(activeCompanyId, token, undefined, undefined, 'active');
+          const resActive = await getProducts(activeCompanyId, token, undefined, undefined, undefined);
           console.warn('DEBUG [resActive]:', { success: resActive?.success, count: resActive?.data?.length });
           if (resActive && resActive.success && resActive.data) {
             addProducts(resActive.data);
@@ -287,7 +290,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         console.warn('DEBUG [targetCompanyId]:', targetCompanyId);
 
         if (targetCompanyId && String(targetCompanyId) !== String(activeCompanyId)) {
-          const resTarget = await getProducts(targetCompanyId, token, undefined, undefined, 'active');
+          const resTarget = await getProducts(targetCompanyId, token, undefined, undefined, undefined);
           console.warn('DEBUG [resTarget]:', { success: resTarget?.success, count: resTarget?.data?.length });
           if (resTarget && resTarget.success && resTarget.data) {
             addProducts(resTarget.data);
@@ -443,7 +446,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   const resolveProductId = async (name, companyId, token) => {
     try {
-      const productsRes = await getProducts(companyId, token, undefined, undefined, 'active');
+      const productsRes = await getProducts(companyId, token, undefined, undefined, undefined);
       const prodList = productsRes && (Array.isArray(productsRes.data)
         ? productsRes.data
         : (productsRes.data && Array.isArray(productsRes.data.data) ? productsRes.data.data : []));
@@ -491,7 +494,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     );
 
     if (activeProducts.length === 0) {
-      Alert.alert('Validation Error', 'Please complete at least one product ledger in your Sauda.');
+      setBtnErrorMessage('Add at least one product');
+      setTimeout(() => setBtnErrorMessage(''), 3000);
       return;
     }
 
@@ -516,7 +520,23 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      Alert.alert('Validation Error', 'Please complete all required fields for your products ledger.');
+      let firstMsg = 'Complete required fields';
+      if (role === 'broker') {
+        if (!party2) firstMsg = 'Select Buyer';
+        else if (!sellerCompany) firstMsg = 'Select Seller';
+      } else if (!party2) {
+        firstMsg = `Select ${role === 'buyer' ? 'Seller' : 'Buyer'}`;
+      } else {
+        const firstErrProdId = Object.keys(errors).find(k => k.startsWith('product_'));
+        if (firstErrProdId) {
+          const prodErrs = errors[firstErrProdId];
+          if (prodErrs.productName) firstMsg = 'Product name required';
+          else if (prodErrs.quantity) firstMsg = 'Quantity required';
+          else if (prodErrs.price) firstMsg = 'Price required';
+        }
+      }
+      setBtnErrorMessage(firstMsg);
+      setTimeout(() => setBtnErrorMessage(''), 3000);
       return;
     }
     setFieldErrors({});
@@ -766,25 +786,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             <Text style={[
               styles.wizardStepLabel,
               currentStep === 2 && { color: rTheme.color, fontWeight: '800' }
-            ]}>Ledger</Text>
-          </View>
-
-          <View style={[styles.wizardStepLine, currentStep >= 3 && { backgroundColor: rTheme.color }]} />
-
-          <View style={styles.wizardStepCol}>
-            <View style={[
-              styles.wizardStepCircle,
-              currentStep >= 3 && [styles.wizardStepCircleActive, { backgroundColor: rTheme.bg, borderColor: rTheme.color }]
-            ]}>
-              <Text style={[
-                styles.wizardStepCircleText,
-                currentStep >= 3 && [styles.wizardStepCircleTextActive, { color: rTheme.color }]
-              ]}>3</Text>
-            </View>
-            <Text style={[
-              styles.wizardStepLabel,
-              currentStep === 3 && { color: rTheme.color, fontWeight: '800' }
-            ]}>Terms</Text>
+            ]}>Ledger & Terms</Text>
           </View>
         </View>
 
@@ -805,20 +807,32 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                 {/* Role Selector */}
                 <Text style={styles.fieldLabel}>Your Trade Role</Text>
                 <View style={styles.roleContainer}>
-                  {['seller', 'buyer'].map((r) => {
+                  {(activeUserCompany?.companyType?.toLowerCase() === 'broker' || activeUserCompany?.type?.toLowerCase() === 'broker' || role === 'broker'
+                    ? ['seller', 'buyer', 'broker']
+                    : ['seller', 'buyer']
+                  ).map((r) => {
                     const isActive = role === r;
                     const config = {
                       seller: { icon: <Building2 size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
                       buyer: { icon: <User size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
+                      broker: { icon: <Briefcase size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
                     }[r];
+                    
+                    let activeBg = '#059669';
+                    if (r === 'buyer') activeBg = '#0284C7';
+                    if (r === 'broker') activeBg = '#7C3AED';
+
                     return (
                       <TouchableOpacity
                         key={r}
                         style={[
                           styles.roleTab,
-                          isActive && styles.roleTabActive
+                          isActive && [styles.roleTabActive, { backgroundColor: activeBg, shadowColor: activeBg }]
                         ]}
-                        onPress={() => setRole(r)}
+                        onPress={() => {
+                          setRole(r);
+                          setFieldErrors({});
+                        }}
                         activeOpacity={0.8}
                       >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -836,34 +850,13 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   })}
                 </View>
 
-                {/* Origin Company Card */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.fieldLabel}>
-                    {role === 'buyer' ? 'My Buyer Company' : role === 'broker' ? 'My Broker Firm' : 'My Seller Company'}
-                  </Text>
-                  <View style={[styles.profileCard, { borderColor: rTheme.border, backgroundColor: '#FFFFFF', shadowColor: rTheme.glow }]}>
-                    <View style={[styles.profileAvatar, { backgroundColor: rTheme.color, shadowColor: rTheme.glow }]}>
-                      <Text style={styles.profileAvatarText}>{party1.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <View style={styles.profileCardInfo}>
-                      <Text style={[styles.profileCardName, { color: '#0F172A' }]}>{party1}</Text>
-                      <Text style={[styles.profileCardRole, { color: rTheme.color }]}>
-                        {role === 'buyer' ? 'BUYER PROFILE' : role === 'broker' ? 'BROKER PROFILE' : 'SELLER PROFILE'}
-                      </Text>
-                    </View>
-                    <View style={[styles.profileCardBadge, { backgroundColor: rTheme.bg, borderColor: rTheme.border, borderWidth: 1 }]}>
-                      <Text style={[styles.profileCardBadgeText, { color: rTheme.color }]}>✓ Verified</Text>
-                    </View>
+                {/* Sleek Subtitle showing Own Company info instead of full card */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 14, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B' }}>Trading as: </Text>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: rTheme.color }}>{party1}</Text>
+                  <View style={{ marginLeft: 'auto', backgroundColor: rTheme.bg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 9, fontWeight: '800', color: rTheme.color }}>Verified Profile</Text>
                   </View>
-                </View>
-
-                {/* Visual Flow Connector */}
-                <View style={styles.flowConnectorContainer}>
-                  <View style={styles.flowConnectorLine} />
-                  <View style={[styles.flowConnectorBadge, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}>
-                    <Handshake size={14} color="#94A3B8" />
-                  </View>
-                  <View style={styles.flowConnectorLine} />
                 </View>
 
                 {/* Seller Company Selector (Only for Broker) */}
@@ -876,9 +869,9 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         style={[
                           styles.profileCard,
                           {
-                            borderColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#E2E8F0',
+                            borderColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#BBF7D0',
                             backgroundColor: '#FFFFFF',
-                            shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#0284C7',
+                            shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669',
                           }
                         ]}
                         onPress={() => {
@@ -887,7 +880,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         }}
                         activeOpacity={0.8}
                       >
-                        <View style={[styles.profileAvatar, { backgroundColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#0284C7', shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#0284C7' }]}>
+                        <View style={[styles.profileAvatar, { backgroundColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669', shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669' }]}>
                           <Text style={styles.profileAvatarText}>
                             {(sellerCompanyData.company || sellerCompany).charAt(0).toUpperCase()}
                           </Text>
@@ -898,7 +891,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                           </Text>
                           <Text style={[
                             styles.profileCardRole,
-                            { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#0284C7' }
+                            { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#059669' }
                           ]}>
                             {sellerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
                           </Text>
@@ -907,19 +900,19 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                           <View style={[
                             styles.profileCardBadge,
                             {
-                              backgroundColor: sellerCompanyData.isRegistered === false ? '#FEF3C7' : '#E0F2FE',
-                              borderColor: sellerCompanyData.isRegistered === false ? '#FCD34D' : '#BAE6FD',
+                              backgroundColor: sellerCompanyData.isRegistered === false ? '#FEF3C7' : '#E0FDF4',
+                              borderColor: sellerCompanyData.isRegistered === false ? '#FCD34D' : '#BBF7D0',
                               borderWidth: 1,
                             }
                           ]}>
                             <Text style={[
                               styles.profileCardBadgeText,
-                              { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#0284C7' }
+                              { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#059669' }
                             ]}>
                               {sellerCompanyData.isRegistered === false ? 'Invite' : 'Active'}
                             </Text>
                           </View>
-                          <Text style={styles.changeText}>Edit ›</Text>
+                          <Text style={[styles.changeText, { color: '#059669' }]}>Edit ›</Text>
                         </View>
                       </TouchableOpacity>
                     ) : (
@@ -936,29 +929,18 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         activeOpacity={0.7}
                       >
                         <View style={styles.counterpartySelectorInner}>
-                          <View style={styles.selectorAvatarPlaceholder}>
-                            <Building2 size={16} color="#94A3B8" />
+                          <View style={[styles.selectorAvatarPlaceholder, { backgroundColor: '#E0FDF4', borderColor: '#BBF7D0' }]}>
+                            <Building2 size={16} color="#059669" />
                           </View>
                           <View>
-                            <Text style={styles.counterpartySelectorLabel}>Select Seller Company</Text>
-                            <Text style={styles.counterpartySelectorHint}>Pick from your contact directory</Text>
+                            <Text style={styles.counterpartySelectorLabel}>Select & Add Seller</Text>
+                            <Text style={styles.counterpartySelectorHint}>Tap to select from directory</Text>
                           </View>
                         </View>
                         <Text style={styles.dropdownIcon}>›</Text>
                       </TouchableOpacity>
                     )}
                     {fieldErrors.sellerCompany && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.sellerCompany}</Text>}
-                  </View>
-                )}
-
-                {/* Visual Flow Connector (between Seller and Buyer in Broker mode) */}
-                {role === 'broker' && (
-                  <View style={styles.flowConnectorContainer}>
-                    <View style={styles.flowConnectorLine} />
-                    <View style={[styles.flowConnectorBadge, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}>
-                      <Box size={14} color="#94A3B8" />
-                    </View>
-                    <View style={styles.flowConnectorLine} />
                   </View>
                 )}
 
@@ -969,56 +951,65 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   </Text>
 
                   {party2 && party2Data ? (
-                    <TouchableOpacity
-                      style={[
-                        styles.profileCard,
-                        {
-                          borderColor: party2Data.isRegistered === false ? '#F59E0B' : '#E2E8F0',
-                          backgroundColor: '#FFFFFF',
-                          shadowColor: party2Data.isRegistered === false ? '#F59E0B' : '#0284C7',
-                        }
-                      ]}
-                      onPress={() => {
-                        setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                        navigateToContactPicker('party2');
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <View style={[styles.profileAvatar, { backgroundColor: party2Data.isRegistered === false ? '#F59E0B' : '#0284C7', shadowColor: party2Data.isRegistered === false ? '#F59E0B' : '#0284C7' }]}>
-                        <Text style={styles.profileAvatarText}>
-                          {(party2Data.company || party2).charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={styles.profileCardInfo}>
-                        <Text style={styles.profileCardName}>
-                          {party2Data.company ? `${party2Data.company} (${party2Data.name || party2})` : (party2Data.name || party2)}
-                        </Text>
-                        <Text style={[
-                          styles.profileCardRole,
-                          { color: party2Data.isRegistered === false ? '#D97706' : '#0284C7' }
-                        ]}>
-                          {party2Data.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <View style={[
-                          styles.profileCardBadge,
-                          {
-                            backgroundColor: party2Data.isRegistered === false ? '#FEF3C7' : '#E0F2FE',
-                            borderColor: party2Data.isRegistered === false ? '#FCD34D' : '#BAE6FD',
-                            borderWidth: 1,
-                          }
-                        ]}>
-                          <Text style={[
-                            styles.profileCardBadgeText,
-                            { color: party2Data.isRegistered === false ? '#D97706' : '#0284C7' }
-                          ]}>
-                            {party2Data.isRegistered === false ? 'Invite' : 'Active'}
-                          </Text>
-                        </View>
-                        <Text style={styles.changeText}>Edit ›</Text>
-                      </View>
-                    </TouchableOpacity>
+                    (() => {
+                      const isSellerCp = role === 'buyer';
+                      const cpColor = isSellerCp ? '#059669' : '#0284C7';
+                      const cpBg = isSellerCp ? '#E0FDF4' : '#E0F2FE';
+                      const cpBorder = isSellerCp ? '#BBF7D0' : '#BAE6FD';
+
+                      return (
+                        <TouchableOpacity
+                          style={[
+                            styles.profileCard,
+                            {
+                              borderColor: party2Data.isRegistered === false ? '#F59E0B' : cpBorder,
+                              backgroundColor: '#FFFFFF',
+                              shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor,
+                            }
+                          ]}
+                          onPress={() => {
+                            setFieldErrors(prev => ({ ...prev, party2: undefined }));
+                            navigateToContactPicker('party2');
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.profileAvatar, { backgroundColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor, shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor }]}>
+                            <Text style={styles.profileAvatarText}>
+                              {(party2Data.company || party2).charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={styles.profileCardInfo}>
+                            <Text style={styles.profileCardName}>
+                              {party2Data.company ? `${party2Data.company} (${party2Data.name || party2})` : (party2Data.name || party2)}
+                            </Text>
+                            <Text style={[
+                              styles.profileCardRole,
+                              { color: party2Data.isRegistered === false ? '#D97706' : cpColor }
+                            ]}>
+                              {party2Data.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                            </Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <View style={[
+                              styles.profileCardBadge,
+                              {
+                                backgroundColor: party2Data.isRegistered === false ? '#FEF3C7' : cpBg,
+                                borderColor: party2Data.isRegistered === false ? '#FCD34D' : cpBorder,
+                                borderWidth: 1,
+                              }
+                            ]}>
+                              <Text style={[
+                                styles.profileCardBadgeText,
+                                { color: party2Data.isRegistered === false ? '#D97706' : cpColor }
+                              ]}>
+                                {party2Data.isRegistered === false ? 'Invite' : 'Active'}
+                              </Text>
+                            </View>
+                            <Text style={[styles.changeText, { color: cpColor }]}>Edit ›</Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })()
                   ) : (
                     <TouchableOpacity
                       style={[
@@ -1033,14 +1024,21 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       activeOpacity={0.7}
                     >
                       <View style={styles.counterpartySelectorInner}>
-                        <View style={styles.selectorAvatarPlaceholder}>
-                          <User size={16} color="#94A3B8" />
+                        <View style={[styles.selectorAvatarPlaceholder, {
+                          backgroundColor: role === 'buyer' ? '#E0FDF4' : '#E0F2FE',
+                          borderColor: role === 'buyer' ? '#BBF7D0' : '#BAE6FD'
+                        }]}>
+                          {role === 'buyer' ? (
+                            <Building2 size={16} color="#059669" />
+                          ) : (
+                            <User size={16} color="#0284C7" />
+                          )}
                         </View>
                         <View>
                           <Text style={styles.counterpartySelectorLabel}>
-                            {role === 'broker' ? 'Select Buyer Company' : `Select Counterparty ${role === 'buyer' ? 'Seller' : 'Buyer'}`}
+                            {role === 'broker' ? 'Select & Add Buyer' : `Select & Add ${role === 'buyer' ? 'Seller' : 'Buyer'}`}
                           </Text>
-                          <Text style={styles.counterpartySelectorHint}>Pick from your contact directory</Text>
+                          <Text style={styles.counterpartySelectorHint}>Tap to select from directory</Text>
                         </View>
                       </View>
                       <Text style={styles.dropdownIcon}>›</Text>
@@ -1059,7 +1057,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         style={[
                           styles.profileCard,
                           {
-                            borderColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#E2E8F0',
+                            borderColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#DDD6FE',
                             backgroundColor: '#FFFFFF',
                             shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED',
                           }
@@ -1109,7 +1107,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                           >
                             <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
                           </TouchableOpacity>
-                          <Text style={styles.changeText}>Edit ›</Text>
+                          <Text style={[styles.changeText, { color: '#7C3AED' }]}>Edit ›</Text>
                         </View>
                       </View>
                     ) : (
@@ -1122,12 +1120,12 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         activeOpacity={0.7}
                       >
                         <View style={styles.counterpartySelectorInner}>
-                          <View style={styles.selectorAvatarPlaceholder}>
-                            <Briefcase size={16} color="#94A3B8" />
+                          <View style={[styles.selectorAvatarPlaceholder, { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }]}>
+                            <Briefcase size={16} color="#7C3AED" />
                           </View>
                           <View>
-                            <Text style={styles.counterpartySelectorLabel}>Select Broker Company</Text>
-                            <Text style={styles.counterpartySelectorHint}>Pick from your contact directory</Text>
+                            <Text style={styles.counterpartySelectorLabel}>Select & Add Broker (Optional)</Text>
+                            <Text style={styles.counterpartySelectorHint}>Tap to select from directory</Text>
                           </View>
                         </View>
                         <Text style={styles.dropdownIcon}>›</Text>
@@ -1143,26 +1141,40 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           {currentStep === 1 && (
             <View style={styles.wizardNavRow}>
               <TouchableOpacity
-                style={[styles.wizardNextBtn, { backgroundColor: rTheme.color }]}
+                style={[styles.wizardNextBtn, { backgroundColor: btnErrorMessage ? '#EF4444' : rTheme.color }]}
                 onPress={() => {
                   const errors = {};
+                  let firstErrorMsg = '';
                   if (role === 'broker') {
-                    if (!party2) errors.party2 = 'Please select a buyer company';
-                    if (!sellerCompany) errors.sellerCompany = 'Please select a seller company';
+                    if (!party2) {
+                      errors.party2 = 'Please select a buyer company';
+                      firstErrorMsg = 'Select Buyer';
+                    }
+                    if (!sellerCompany) {
+                      errors.sellerCompany = 'Please select a seller company';
+                      if (!firstErrorMsg) firstErrorMsg = 'Select Seller';
+                    }
                   } else {
-                    if (!party2) errors.party2 = `Please select a ${role === 'buyer' ? 'seller' : 'buyer'} company`;
+                    if (!party2) {
+                      errors.party2 = `Please select a ${role === 'buyer' ? 'seller' : 'buyer'} company`;
+                      firstErrorMsg = `Select ${role === 'buyer' ? 'Seller' : 'Buyer'}`;
+                    }
                   }
                   if (Object.keys(errors).length > 0) {
                     setFieldErrors(errors);
-                    Alert.alert('Validation Error', 'Please select trade counterparties first.');
+                    setBtnErrorMessage(firstErrorMsg);
+                    setTimeout(() => setBtnErrorMessage(''), 3000);
                     return;
                   }
                   setFieldErrors({});
+                  setBtnErrorMessage('');
                   setCurrentStep(2);
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.wizardNextBtnText}>Continue to Products Ledger ›</Text>
+                <Text style={styles.wizardNextBtnText}>
+                  {btnErrorMessage ? `⚠ ${btnErrorMessage}` : 'Continue to Products Ledger ›'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1179,133 +1191,129 @@ const CreateDeal = ({ onNavigate, routeData }) => {
               </View>
 
               <View style={styles.cardBody}>
-                {/* Horizontal Tabs Row */}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.tabsScrollContent}
-                >
-                  {productsList.map((prod, idx) => {
-                    const isActive = prod.id === activeTabId;
-                    const label = prod.productName.trim() || `Product #${idx + 1}`;
-                    return (
-                      <TouchableOpacity
-                        key={prod.id}
-                        style={[
-                          styles.tabItem,
-                          isActive && [styles.tabItemActive, { backgroundColor: rTheme.bg, borderColor: rTheme.border }]
-                        ]}
-                        onPress={() => setActiveTabId(prod.id)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[
-                          styles.tabItemText,
-                          isActive && [styles.tabItemTextActive, { color: rTheme.color }]
-                        ]}>
-                          {label}
-                        </Text>
-                        {productsList.length > 1 && (
-                          <TouchableOpacity
-                            style={styles.tabDeleteBtn}
-                            onPress={() => removeProductItem(prod.id)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.tabDeleteText}>✕</Text>
-                          </TouchableOpacity>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
+                {/* Add Product Button (Small Pill style) */}
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8, marginTop: 4 }}>
                   <TouchableOpacity
-                    style={[styles.addTabBtn, { borderColor: rTheme.border }]}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: rTheme.bg,
+                      borderColor: rTheme.color,
+                      borderWidth: 1.2,
+                      borderRadius: 20,
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      gap: 4,
+                      shadowColor: rTheme.color,
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.08,
+                      shadowRadius: 2,
+                      elevation: 1,
+                    }}
                     onPress={addProductItem}
                     activeOpacity={0.8}
                   >
-                    <Text style={[styles.addTabBtnText, { color: rTheme.color }]}>+ Add</Text>
+                    <Plus size={12} color={rTheme.color} />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: rTheme.color }}>
+                      Add Product
+                    </Text>
                   </TouchableOpacity>
-                </ScrollView>
+                </View>
 
-                {/* Single Active Product Form Card */}
-                {(() => {
-                  const prod = productsList.find(p => p.id === activeTabId) || productsList[0];
-                  if (!prod) return null;
+                {/* Vertical list of all products in the deal */}
+                {productsList.map((prod, idx) => {
                   const prodErrors = fieldErrors[`product_${prod.id}`] || {};
-
                   return (
-                    <View key={prod.id} style={styles.productItemCard}>
+                    <View key={prod.id} style={[styles.productItemCard, { marginBottom: 12, marginTop: idx === 0 ? 6 : 12 }]}>
+                      {/* Product Header Row with Index & Delete option */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: rTheme.bg, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 11, fontWeight: '900', color: rTheme.color }}>{idx + 1}</Text>
+                          </View>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: '#0F172A' }}>
+                            {prod.productName ? prod.productName : `Product #${idx + 1}`}
+                          </Text>
+                        </View>
+                        
+                        {productsList.length > 1 && (
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: '#FEF2F2',
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 6,
+                              borderWidth: 1,
+                              borderColor: '#FCA5A5',
+                            }}
+                            onPress={() => removeProductItem(prod.id)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '800' }}>Remove ✕</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
                       {/* Product Name Input */}
                       <View style={styles.inputGroup}>
                         <Text style={styles.fieldLabel}>Product / Commodity Name*</Text>
 
-                        {companyProducts.length > 0 && (
-                          <View style={{ marginBottom: 10 }}>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
-                              {companyProducts.map((p) => {
-                                const isSel = String(prod.productName).toLowerCase().trim() === String(p.name || '').toLowerCase().trim();
-                                return (
-                                  <TouchableOpacity
-                                    key={p._id || p.id}
-                                    style={[styles.productChip, isSel && styles.productChipActive]}
-                                    onPress={() => {
-                                      const gstMatch = String(p.gstCode || '').match(/\d+/);
-                                      const parsedGst = gstMatch ? gstMatch[0] : '';
-                                      updateProductField(prod.id, 'productName', p.name);
-                                      updateProductField(prod.id, 'price', p.price ? String(p.price) : prod.price);
-                                      updateProductField(prod.id, 'gst', parsedGst || prod.gst);
-                                      updateProductField(prod.id, 'showProductDropdown', false);
-                                    }}
-                                    activeOpacity={0.7}
-                                  >
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                      {p.image ? (
-                                        <Image source={{ uri: p.image }} style={styles.miniProductImage} />
-                                      ) : (
-                                        <Box size={12} color="#94A3B8" />
-                                      )}
-                                      <Text style={[styles.productChipText, isSel && styles.productChipTextActive]}>
-                                        {p.name}
-                                      </Text>
-                                    </View>
-                                  </TouchableOpacity>
-                                );
-                              })}
-                            </ScrollView>
-                          </View>
-                        )}
-
                         <View style={styles.productInputWrapper}>
-                          <TextInput
+                          <TouchableOpacity
                             style={[
                               styles.textInput,
-                              focusedField === `productName_${prod.id}` && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
-                              prodErrors.productName && styles.inputError,
-                              { flex: 1 }
+                              { flex: 1, justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF' },
+                              focusedField === `productSelect_${prod.id}` && [styles.inputFocused, { borderColor: rTheme.color, shadowColor: rTheme.color }],
+                              prodErrors.productName && styles.inputError
                             ]}
-                            placeholder="Type product name (e.g. Cotton Bales)"
-                            placeholderTextColor="#94A3B8"
-                            value={prod.productName}
-                            onChangeText={(v) => handleProductNameChange(prod.id, v)}
-                            onFocus={() => {
-                              setFocusedField(`productName_${prod.id}`);
-                              updateProductField(prod.id, 'showProductDropdown', true);
-                            }}
-                            onBlur={() => {
-                              // Delay collapse slightly to allow clicking item list
-                              setTimeout(() => {
-                                updateProductField(prod.id, 'showProductDropdown', false);
+                            onPress={() => {
+                              const isShowing = prod.showProductDropdown;
+                              setProductsList(prev => prev.map(item => ({
+                                ...item,
+                                showProductDropdown: item.id === prod.id ? !isShowing : false
+                              })));
+                              if (!isShowing) {
+                                setFocusedField(`productSelect_${prod.id}`);
+                                setDropdownSearchText(''); // Show all products initially when opening
+                              } else {
                                 setFocusedField('');
-                              }, 200);
+                              }
                             }}
-                          />
+                            activeOpacity={0.7}
+                          >
+                            <Text style={{ fontSize: 13, fontWeight: '600', color: prod.productName ? '#0F172A' : '#94A3B8' }}>
+                              {prod.productName || "Select & Add Product"}
+                            </Text>
+                            <Text style={{ fontSize: 14, color: '#64748B', fontWeight: '800' }}>▾</Text>
+                          </TouchableOpacity>
                         </View>
                         {prodErrors.productName && <Text style={styles.fieldErrorText}>⚠ {prodErrors.productName}</Text>}
 
                         {prod.showProductDropdown && (() => {
-                          const filtered = companyProducts.filter(p => !prod.productName || p.name.toLowerCase().includes(prod.productName.toLowerCase()));
-                          if (filtered.length === 0) return null;
+                          const filtered = companyProducts.filter(p => !dropdownSearchText || p.name.toLowerCase().includes(dropdownSearchText.toLowerCase()));
                           return (
-                            <View style={styles.autocompleteDropdown}>
-                              <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always" style={{ maxHeight: 150 }}>
+                            <View style={[styles.autocompleteDropdown, { position: 'relative', top: 0, marginTop: 4, width: '100%' }]}>
+                              <View style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+                                <TextInput
+                                  style={{
+                                    height: 38,
+                                    backgroundColor: '#F8FAFC',
+                                    borderRadius: 8,
+                                    paddingHorizontal: 10,
+                                    fontSize: 12,
+                                    fontWeight: '600',
+                                    color: '#0F172A',
+                                    borderWidth: 1,
+                                    borderColor: '#E2E8F0',
+                                  }}
+                                  placeholder="Search or enter custom product..."
+                                  placeholderTextColor="#94A3B8"
+                                  value={dropdownSearchText}
+                                  onChangeText={(v) => setDropdownSearchText(v)}
+                                  onFocus={() => setFocusedField(`productSelect_${prod.id}`)}
+                                />
+                              </View>
+                              <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always" style={{ maxHeight: 180 }}>
                                 {filtered.map((p) => (
                                   <TouchableOpacity
                                     key={p._id || p.id}
@@ -1317,18 +1325,40 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                                       updateProductField(prod.id, 'price', p.price ? String(p.price) : prod.price);
                                       updateProductField(prod.id, 'gst', parsedGst || prod.gst);
                                       updateProductField(prod.id, 'showProductDropdown', false);
+                                      setFocusedField('');
+                                      setDropdownSearchText('');
                                     }}
                                   >
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
                                       {p.image ? (
                                         <Image source={{ uri: p.image }} style={styles.dropdownProductImage} />
                                       ) : (
-                                        <Box size={14} color="#94A3B8" />
+                                        <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: rTheme.bg, alignItems: 'center', justifyContent: 'center' }}>
+                                          <Box size={12} color={rTheme.color} />
+                                        </View>
                                       )}
-                                      <Text style={styles.dropdownItemText}>{p.name}</Text>
+                                      <View>
+                                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }}>{p.name}</Text>
+                                        {p.price ? <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600', marginTop: 1 }}>₹ {p.price} / Unit</Text> : null}
+                                      </View>
                                     </View>
                                   </TouchableOpacity>
                                 ))}
+                                {dropdownSearchText.trim() !== '' && !companyProducts.some(p => p.name.toLowerCase().trim() === dropdownSearchText.toLowerCase().trim()) && (
+                                  <TouchableOpacity
+                                    style={[styles.dropdownItem, { backgroundColor: rTheme.bg }]}
+                                    onPress={() => {
+                                      updateProductField(prod.id, 'productName', dropdownSearchText);
+                                      updateProductField(prod.id, 'showProductDropdown', false);
+                                      setFocusedField('');
+                                      setDropdownSearchText('');
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 12, fontWeight: '800', color: rTheme.color }}>
+                                      Use Custom: "{dropdownSearchText}"
+                                    </Text>
+                                  </TouchableOpacity>
+                                )}
                               </ScrollView>
                             </View>
                           );
@@ -1338,11 +1368,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       {/* Qty & Price row */}
                       <View style={styles.row}>
                         <View style={[styles.inputGroup, { flex: 1 }]}>
-                          <Text style={styles.fieldLabel}>Quantity*</Text>
+                          <Text style={styles.fieldLabel}>Quantity (MT)*</Text>
                           <TextInput
                             style={[
                               styles.textInput,
-                              focusedField === `quantity_${prod.id}` && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
+                              focusedField === `quantity_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }],
                               prodErrors.quantity && styles.inputError
                             ]}
                             placeholder="0"
@@ -1370,7 +1400,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                           <TextInput
                             style={[
                               styles.textInput,
-                              focusedField === `price_${prod.id}` && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }],
+                              focusedField === `price_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }],
                               prodErrors.price && styles.inputError
                             ]}
                             placeholder="₹ 0.00"
@@ -1394,53 +1424,135 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         </View>
                       </View>
 
-                      {/* Discount & GST row */}
-                      <View style={styles.row}>
-                        <View style={[styles.inputGroup, { flex: 1 }]}>
-                          <Text style={styles.fieldLabel}>Discount (₹)</Text>
-                          <TextInput
-                            style={[styles.textInput, focusedField === `discount_${prod.id}` && styles.inputFocused]}
-                            placeholder="0"
-                            placeholderTextColor="#94A3B8"
-                            value={prod.discount}
-                            onChangeText={(v) => updateProductField(prod.id, 'discount', v)}
-                            keyboardType="numeric"
-                            onFocus={() => setFocusedField(`discount_${prod.id}`)}
-                            onBlur={() => setFocusedField('')}
-                          />
-                        </View>
+                      {/* Collapsible Additional Details Section */}
+                      <TouchableOpacity
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          paddingVertical: 10,
+                          backgroundColor: '#F8FAFC',
+                          borderRadius: 10,
+                          marginTop: 12,
+                          borderWidth: 1,
+                          borderColor: '#E2E8F0',
+                          gap: 6
+                        }}
+                        onPress={() => setShowAdditionalDetails(!showAdditionalDetails)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: rTheme.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          {showAdditionalDetails ? 'Hide Additional Details ▴' : 'Show Additional Details (Taxes, Dates, Terms) ▾'}
+                        </Text>
+                      </TouchableOpacity>
 
-                        <View style={[styles.inputGroup, { flex: 1 }]}>
-                          <Text style={styles.fieldLabel}>GST (%)</Text>
-                          <TextInput
-                            style={[styles.textInput, focusedField === `gst_${prod.id}` && styles.inputFocused]}
-                            placeholder="e.g. 18"
-                            placeholderTextColor="#94A3B8"
-                            value={prod.gst}
-                            onChangeText={(v) => updateProductField(prod.id, 'gst', v)}
-                            keyboardType="numeric"
-                            onFocus={() => setFocusedField(`gst_${prod.id}`)}
-                            onBlur={() => setFocusedField('')}
-                          />
-                        </View>
-                      </View>
+                      {showAdditionalDetails && (
+                        <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 12, gap: 10 }}>
+                          {/* Discount & GST row */}
+                          <View style={styles.row}>
+                            <View style={[styles.inputGroup, { flex: 1 }]}>
+                              <Text style={styles.fieldLabel}>Discount (₹)</Text>
+                              <TextInput
+                                style={[
+                                  styles.textInput,
+                                  focusedField === `discount_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }]
+                                ]}
+                                placeholder="0"
+                                placeholderTextColor="#94A3B8"
+                                value={prod.discount}
+                                onChangeText={(v) => updateProductField(prod.id, 'discount', v)}
+                                keyboardType="numeric"
+                                onFocus={() => setFocusedField(`discount_${prod.id}`)}
+                                onBlur={() => setFocusedField('')}
+                              />
+                            </View>
 
-                      {/* Payment Terms row */}
-                      <View style={[styles.inputGroup, { marginBottom: 0 }]}>
-                        <Text style={styles.fieldLabel}>Payment Terms</Text>
-                        <TextInput
-                          style={[styles.textInput, focusedField === `paymentTerms_${prod.id}` && styles.inputFocused]}
-                          placeholder="e.g. 100% Advance"
-                          placeholderTextColor="#94A3B8"
-                          value={prod.paymentTerms}
-                          onChangeText={(v) => updateProductField(prod.id, 'paymentTerms', v)}
-                          onFocus={() => setFocusedField(`paymentTerms_${prod.id}`)}
-                          onBlur={() => setFocusedField('')}
-                        />
-                      </View>
+                            <View style={[styles.inputGroup, { flex: 1 }]}>
+                              <Text style={styles.fieldLabel}>GST (%)</Text>
+                              <TextInput
+                                style={[
+                                  styles.textInput,
+                                  focusedField === `gst_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }]
+                                ]}
+                                placeholder="e.g. 18"
+                                placeholderTextColor="#94A3B8"
+                                value={prod.gst}
+                                onChangeText={(v) => updateProductField(prod.id, 'gst', v)}
+                                keyboardType="numeric"
+                                onFocus={() => setFocusedField(`gst_${prod.id}`)}
+                                onBlur={() => setFocusedField('')}
+                              />
+                            </View>
+                          </View>
+
+                          {/* Payment Terms row */}
+                          <View style={[styles.inputGroup, { marginBottom: 10 }]}>
+                            <Text style={styles.fieldLabel}>Payment Terms</Text>
+                            <TextInput
+                              style={[
+                                styles.textInput,
+                                focusedField === `paymentTerms_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }]
+                              ]}
+                              placeholder="e.g. 100% Advance"
+                              placeholderTextColor="#94A3B8"
+                              value={prod.paymentTerms}
+                              onChangeText={(v) => updateProductField(prod.id, 'paymentTerms', v)}
+                              onFocus={() => setFocusedField(`paymentTerms_${prod.id}`)}
+                              onBlur={() => setFocusedField('')}
+                            />
+                          </View>
+
+                          <View style={{ height: 1, backgroundColor: '#E2E8F0', marginVertical: 4 }} />
+
+                          {/* Date Selectors */}
+                          <View style={styles.row}>
+                            <View style={[styles.inputGroup, { flex: 1 }]}>
+                              <Text style={styles.fieldLabel}>Agreement Date</Text>
+                              <TouchableOpacity
+                                style={[styles.dateSelector, focusedField === 'dealDate' && [styles.inputFocused, { borderColor: rTheme.color, shadowColor: rTheme.color }]]}
+                                onPress={() => { setFocusedField('dealDate'); openDatePicker('deal'); }}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={styles.dateSelectorText}>{formatDateLabel(dealDate)}</Text>
+                              </TouchableOpacity>
+                            </View>
+
+                            <View style={[styles.inputGroup, { flex: 1 }]}>
+                              <Text style={styles.fieldLabel}>Validity Expiry</Text>
+                              <TouchableOpacity
+                                style={[styles.dateSelector, focusedField === 'validityDate' && [styles.inputFocused, { borderColor: rTheme.color, shadowColor: rTheme.color }]]}
+                                onPress={() => { setFocusedField('validityDate'); openDatePicker('validity'); }}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={styles.dateSelectorText}>{formatDateLabel(validityDate)}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Description */}
+                          <View style={[styles.inputGroup, { marginBottom: 0 }]}>
+                            <Text style={styles.fieldLabel}>Custom Trade Terms</Text>
+                            <TextInput
+                              style={[
+                                styles.textInput,
+                                styles.multilineInput,
+                                focusedField === 'description' && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }]
+                              ]}
+                              placeholder="Specify delivery locations, commission terms, quality specs..."
+                              placeholderTextColor="#94A3B8"
+                              value={description}
+                              onChangeText={setDescription}
+                              multiline
+                              numberOfLines={3}
+                              onFocus={() => setFocusedField('description')}
+                              onBlur={() => setFocusedField('')}
+                            />
+                          </View>
+                        </View>
+                      )}
                     </View>
                   );
-                })()}
+                })}
 
 
 
@@ -1452,10 +1564,10 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       <Text style={styles.ticketValue}>₹ {totals.total.toLocaleString('en-IN')}</Text>
                       <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                         {totals.discount > 0 && (
-                          <Text style={styles.ticketDiscount}>After ₹{totals.discount.toLocaleString('en-IN')} disc.</Text>
+                          <Text style={[styles.ticketDiscount, { color: '#94A3B8' }]}>After ₹{totals.discount.toLocaleString('en-IN')} disc.</Text>
                         )}
                         {totals.gstAmount > 0 && (
-                          <Text style={styles.ticketDiscount}>Incl. GST (+₹{totals.gstAmount.toLocaleString('en-IN')})</Text>
+                          <Text style={[styles.ticketDiscount, { color: '#94A3B8' }]}>Incl. GST (+₹{totals.gstAmount.toLocaleString('en-IN')})</Text>
                         )}
                       </View>
                     </View>
@@ -1475,108 +1587,12 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             </View>
           )}
 
-          {/* Step 2 Navigation Row */}
+          {/* Step 2 Navigation Row (Final Step) */}
           {currentStep === 2 && (
             <View style={styles.wizardNavRow}>
               <TouchableOpacity
                 style={styles.wizardBackBtn}
                 onPress={() => setCurrentStep(1)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.wizardBackBtnText}>‹ Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.wizardNextBtn, { backgroundColor: rTheme.color, flex: 2 }]}
-                onPress={() => {
-                  const activeProd = productsList.find(p => p.id === activeTabId) || productsList[0];
-                  const errors = {};
-                  if (!activeProd || !activeProd.productName.trim()) {
-                    errors[`product_${activeProd?.id}`] = { productName: 'Product name is required' };
-                  } else {
-                    if (!activeProd.quantity.trim()) errors[`product_${activeProd.id}`] = { ...errors[`product_${activeProd.id}`], quantity: 'Quantity is required' };
-                    if (!activeProd.price.trim()) errors[`product_${activeProd.id}`] = { ...errors[`product_${activeProd.id}`], price: 'Price is required' };
-                  }
-                  if (Object.keys(errors).length > 0) {
-                    setFieldErrors(errors);
-                    Alert.alert('Validation Error', 'Please complete the product ledger fields first.');
-                    return;
-                  }
-                  setFieldErrors({});
-                  setCurrentStep(3);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.wizardNextBtnText}>Continue to Terms ›</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* ═══════════ CARD 3: TERMS (STEP 3) ═══════════ */}
-          {currentStep === 3 && (
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeader}>
-                <View style={[styles.sectionDot, { backgroundColor: '#0284C7' }]} />
-                <Text style={styles.sectionTitle}>Agreement Terms & Dates</Text>
-                <View style={styles.sectionBadgeContainer}>
-                  <Text style={[styles.sectionBadge, { color: '#0284C7', backgroundColor: '#E0F2FE' }]}>STEP 3</Text>
-                </View>
-              </View>
-
-              <View style={styles.cardBody}>
-                {/* Date Selectors */}
-                <View style={styles.row}>
-                  <View style={[styles.inputGroup, { flex: 1 }]}>
-                    <Text style={styles.fieldLabel}>Agreement Date</Text>
-                    <TouchableOpacity
-                      style={[styles.dateSelector, focusedField === 'dealDate' && styles.inputFocused]}
-                      onPress={() => { setFocusedField('dealDate'); openDatePicker('deal'); }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.dateSelectorText}>{formatDateLabel(dealDate)}</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={[styles.inputGroup, { flex: 1 }]}>
-                    <Text style={styles.fieldLabel}>Validity Expiry</Text>
-                    <TouchableOpacity
-                      style={[styles.dateSelector, focusedField === 'validityDate' && styles.inputFocused]}
-                      onPress={() => { setFocusedField('validityDate'); openDatePicker('validity'); }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.dateSelectorText}>{formatDateLabel(validityDate)}</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Description */}
-                <View style={[styles.inputGroup, { marginBottom: 0 }]}>
-                  <Text style={styles.fieldLabel}>Custom Trade Terms</Text>
-                  <TextInput
-                    style={[
-                      styles.textInput,
-                      styles.multilineInput,
-                      focusedField === 'description' && [styles.inputFocused, { shadowColor: '#0284C7', borderColor: '#0284C7' }]
-                    ]}
-                    placeholder="Specify delivery locations, commission terms, quality specs..."
-                    placeholderTextColor="#94A3B8"
-                    value={description}
-                    onChangeText={setDescription}
-                    multiline
-                    numberOfLines={3}
-                    onFocus={() => setFocusedField('description')}
-                    onBlur={() => setFocusedField('')}
-                  />
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Step 3 Navigation Row */}
-          {currentStep === 3 && (
-            <View style={styles.wizardNavRow}>
-              <TouchableOpacity
-                style={styles.wizardBackBtn}
-                onPress={() => setCurrentStep(2)}
                 activeOpacity={0.8}
               >
                 <Text style={styles.wizardBackBtnText}>‹ Back</Text>
@@ -1587,9 +1603,10 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   styles.submitButton,
                   isSubmitting && styles.submitButtonDisabled,
                   isInviteMode && styles.inviteButton,
+                  btnErrorMessage ? { backgroundColor: '#EF4444', shadowColor: '#EF4444' } : null,
                   { flex: 2, marginTop: 0 }
                 ]}
-                activeOpacity={0.85}
+                activeOpacity={0.855}
                 onPress={handleCreateDeal}
                 disabled={isSubmitting}
               >
@@ -1597,14 +1614,20 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <View style={styles.submitButtonContent}>
-                    {isInviteMode ? (
-                      <Send size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    {btnErrorMessage ? (
+                      <Text style={styles.submitButtonText}>⚠ {btnErrorMessage}</Text>
                     ) : (
-                      <Handshake size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <>
+                        {isInviteMode ? (
+                          <Send size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        ) : (
+                          <Handshake size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        )}
+                        <Text style={styles.submitButtonText}>
+                          {isInviteMode ? 'Send WhatsApp Invite' : 'Confirm Trade Agreement'}
+                        </Text>
+                      </>
                     )}
-                    <Text style={styles.submitButtonText}>
-                      {isInviteMode ? 'Send WhatsApp Invite' : 'Confirm Trade Agreement'}
-                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -1646,7 +1669,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       return (
                         <TouchableOpacity
                           key={day}
-                          style={[styles.dayCell, isSel && styles.activeDayCell]}
+                          style={[styles.dayCell, isSel && [styles.activeDayCell, { backgroundColor: rTheme.color, borderColor: rTheme.color }]]}
                           onPress={() => { const d = new Date(tempDate); d.setDate(day); setTempDate(d); }}
                           activeOpacity={0.7}
                         >
@@ -1660,7 +1683,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   <TouchableOpacity style={styles.cancelAction} onPress={() => setIsDatePickerVisible(false)} activeOpacity={0.7}>
                     <Text style={styles.cancelText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.confirmAction} onPress={() => { confirmDateSelection(); setFocusedField(''); }} activeOpacity={0.7}>
+                  <TouchableOpacity style={[styles.confirmAction, { backgroundColor: rTheme.color }]} onPress={() => { confirmDateSelection(); setFocusedField(''); }} activeOpacity={0.7}>
                     <Text style={styles.confirmText}>Confirm Date ✓</Text>
                   </TouchableOpacity>
                 </View>
@@ -1674,9 +1697,9 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           <View style={styles.successOverlay}>
             <View style={styles.successContent}>
               <View style={styles.successRings}>
-                <View style={styles.successRingOuter} />
-                <View style={styles.successCheckCircle}>
-                  <Text style={styles.successCheckIcon}>✓</Text>
+                <View style={[styles.successRingOuter, { backgroundColor: rTheme.bg }]} />
+                <View style={[styles.successCheckCircle, { backgroundColor: rTheme.bg, borderColor: rTheme.border }]}>
+                  <Text style={[styles.successCheckIcon, { color: rTheme.color }]}>✓</Text>
                 </View>
               </View>
               <Text style={styles.successTitle}>Sauda Established!</Text>
@@ -1897,13 +1920,11 @@ const styles = StyleSheet.create({
   },
   flowConnectorEmoji: { fontSize: 12 },
 
-  // COUNTERPARTY SELECTOR
   counterpartySelector: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderStyle: 'dashed',
     paddingHorizontal: 13,
     paddingVertical: 12,
     flexDirection: 'row',
@@ -2003,10 +2024,10 @@ const styles = StyleSheet.create({
   ticketDiscount: { fontSize: 11, color: '#64748B', marginTop: 4 },
   ticketDivider: { width: 30, alignItems: 'center', justifyContent: 'center' },
   ticketPunchTop: {
-    width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF', position: 'absolute', top: -10,
+    width: 20, height: 20, borderRadius: 10, backgroundColor: '#F8FAFC', position: 'absolute', top: -10,
   },
   ticketPunchBottom: {
-    width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF', position: 'absolute', bottom: -10,
+    width: 20, height: 20, borderRadius: 10, backgroundColor: '#F8FAFC', position: 'absolute', bottom: -10,
   },
   ticketDashedLine: {
     flex: 1, borderLeftWidth: 2, borderLeftColor: 'rgba(255,255,255,0.1)', borderStyle: 'dashed',

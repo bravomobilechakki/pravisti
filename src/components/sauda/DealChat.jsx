@@ -22,6 +22,7 @@ import {
   getConversations,
   getConversationMessages,
   markConversationAsRead,
+  createConversation,
   recordPayment,
   getPaymentDashboard,
   getPayments,
@@ -216,6 +217,7 @@ const DealChat = ({ onNavigate, routeData }) => {
   const [chatMessages, setChatMessages] = useState([]);
   const [deal, setDeal] = useState(routeData?.deal || null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [conversationId, setConversationId] = useState(routeData?.conversationId || null);
   const [currentUserCompanyIds, setCurrentUserCompanyIds] = useState([]);
   const [onlineStatus, setOnlineStatus] = useState('offline');
   const [isCounterpartyTyping, setIsCounterpartyTyping] = useState(false);
@@ -251,10 +253,15 @@ const DealChat = ({ onNavigate, routeData }) => {
   const fetchDealPaymentsRef = useRef();
   const fetchDealDeliveriesRef = useRef();
   const currentUserIdRef = useRef(null);
+  const conversationIdRef = useRef(routeData?.conversationId || null);
 
   useEffect(() => {
     currentUserIdRef.current = currentUserId;
   }, [currentUserId]);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
 
   const dealId = routeData?.dealId || deal?._id;
 
@@ -379,16 +386,21 @@ const DealChat = ({ onNavigate, routeData }) => {
         fetchDealPayments();
 
         // Reload conversation messages to display updated counterparts/status in chat log
-        const id = routeData?.dealId || deal?._id;
-        const convsRes = await getConversations(token, 1, 50);
-        let activeConversationId = null;
-        if (convsRes && convsRes.success && convsRes.data?.data) {
-          const matchedConv = convsRes.data.data.find(c => {
-            const cDealId = c.dealId?._id || c.dealId?.id || c.dealId;
-            return String(cDealId) === String(id);
-          });
-          if (matchedConv) {
-            activeConversationId = matchedConv._id || matchedConv.id;
+        let activeConversationId = conversationId;
+        if (!activeConversationId) {
+          const id = routeData?.dealId || deal?._id;
+          const convsRes = await getConversations(token, 1, 50);
+          if (convsRes && convsRes.success && convsRes.data?.data) {
+            const matchedConv = convsRes.data.data.find(c => {
+              const cDealId = c.dealId?._id || c.dealId?.id || c.dealId;
+              const targetId = id?._id || id?.id || id;
+              if (!cDealId || !targetId) return false;
+              return String(cDealId).toLowerCase().trim() === String(targetId).toLowerCase().trim();
+            });
+            if (matchedConv) {
+              activeConversationId = matchedConv._id || matchedConv.id;
+              setConversationId(activeConversationId);
+            }
           }
         }
         if (activeConversationId) {
@@ -435,16 +447,21 @@ const DealChat = ({ onNavigate, routeData }) => {
         fetchDealDeliveries();
 
         // Reload conversation messages to display updated counterparts/status in chat log
-        const id = routeData?.dealId || deal?._id;
-        const convsRes = await getConversations(token, 1, 50);
-        let activeConversationId = null;
-        if (convsRes && convsRes.success && convsRes.data?.data) {
-          const matchedConv = convsRes.data.data.find(c => {
-            const cDealId = c.dealId?._id || c.dealId?.id || c.dealId;
-            return String(cDealId) === String(id);
-          });
-          if (matchedConv) {
-            activeConversationId = matchedConv._id || matchedConv.id;
+        let activeConversationId = conversationId;
+        if (!activeConversationId) {
+          const id = routeData?.dealId || deal?._id;
+          const convsRes = await getConversations(token, 1, 50);
+          if (convsRes && convsRes.success && convsRes.data?.data) {
+            const matchedConv = convsRes.data.data.find(c => {
+              const cDealId = c.dealId?._id || c.dealId?.id || c.dealId;
+              const targetId = id?._id || id?.id || id;
+              if (!cDealId || !targetId) return false;
+              return String(cDealId).toLowerCase().trim() === String(targetId).toLowerCase().trim();
+            });
+            if (matchedConv) {
+              activeConversationId = matchedConv._id || matchedConv.id;
+              setConversationId(activeConversationId);
+            }
           }
         }
         if (activeConversationId) {
@@ -570,8 +587,8 @@ const DealChat = ({ onNavigate, routeData }) => {
     }
 
     const statusLower = String(deal?.status || '').toLowerCase();
-    if (statusLower !== 'approved') {
-      Alert.alert('Validation Error', 'Payments can only be added to approved deals.');
+    if (statusLower !== 'approved' && statusLower !== 'active' && statusLower !== 'in_progress') {
+      Alert.alert('Validation Error', 'Payments can only be added to active or approved deals.');
       return;
     }
 
@@ -633,8 +650,8 @@ const DealChat = ({ onNavigate, routeData }) => {
     }
 
     const statusLower = String(deal?.status || '').toLowerCase();
-    if (statusLower !== 'approved' && statusLower !== 'completed') {
-      Alert.alert('Validation Error', 'Deliveries can only be added to approved or completed deals.');
+    if (statusLower !== 'approved' && statusLower !== 'active' && statusLower !== 'in_progress' && statusLower !== 'completed') {
+      Alert.alert('Validation Error', 'Deliveries can only be added to active, approved or completed deals.');
       return;
     }
 
@@ -745,29 +762,46 @@ const DealChat = ({ onNavigate, routeData }) => {
           }
         }
 
-        // Lock Negotiations for non-approved deals
-        const dealStatus = activeDeal?.status || '';
-        const isDealApproved = dealStatus === 'approved';
-
-        if (!isDealApproved) {
-          setIsLoading(false);
-          return;
-        }
+        // Check deal approval status
+        const dealStatus = String(activeDeal?.status || '').toLowerCase();
+        const isDealApproved = dealStatus === 'approved' || dealStatus === 'active' || dealStatus === 'in_progress';
 
         // 3. Load conversation thread and message history via REST API
-        console.log('Loading active conversations...');
-        const convsRes = await getConversations(token, 1, 50);
-        let activeConversationId = null;
+        let activeConversationId = conversationIdRef.current || conversationId;
 
-        if (convsRes && convsRes.success && convsRes.data?.data) {
-          const conversations = convsRes.data.data;
-          const matchedConv = conversations.find(c => {
-            const cDealId = c.dealId?._id || c.dealId?.id || c.dealId;
-            return String(cDealId) === String(id);
-          });
-          if (matchedConv) {
-            activeConversationId = matchedConv._id || matchedConv.id;
-            console.log('Found matching conversation ID:', activeConversationId);
+        if (!activeConversationId) {
+          console.log('Loading active conversations to find match...');
+          const convsRes = await getConversations(token, 1, 50);
+          if (convsRes && convsRes.success && convsRes.data?.data) {
+            const conversations = convsRes.data.data;
+            const matchedConv = conversations.find(c => {
+              const cDealId = c.dealId?._id || c.dealId?.id || c.dealId;
+              const targetId = id?._id || id?.id || id;
+              if (!cDealId || !targetId) return false;
+              return String(cDealId).toLowerCase().trim() === String(targetId).toLowerCase().trim();
+            });
+            if (matchedConv) {
+              activeConversationId = matchedConv._id || matchedConv.id;
+              setConversationId(activeConversationId);
+              conversationIdRef.current = activeConversationId;
+              console.log('Found matching conversation ID from list:', activeConversationId);
+            }
+          }
+        }
+
+        // 3b. If still no conversation and deal is approved, create one
+        if (!activeConversationId && isDealApproved && id) {
+          try {
+            console.log('No conversation found — creating one for deal:', id);
+            const createRes = await createConversation({ dealId: id, participants: [] }, token);
+            if (createRes && createRes.success && createRes.data) {
+              activeConversationId = createRes.data._id || createRes.data.id;
+              setConversationId(activeConversationId);
+              conversationIdRef.current = activeConversationId;
+              console.log('Conversation created successfully:', activeConversationId);
+            }
+          } catch (convErr) {
+            console.warn('Failed to create conversation:', convErr);
           }
         }
 
@@ -799,8 +833,16 @@ const DealChat = ({ onNavigate, routeData }) => {
             setChatMessages(historyMessages);
           }
 
-          console.log('Marking conversation as read...');
-          await markConversationAsRead(activeConversationId, token);
+          if (isDealApproved) {
+            console.log('Marking conversation as read...');
+            await markConversationAsRead(activeConversationId, token);
+          }
+        }
+
+        // Lock socket/sending for non-approved deals — history is still shown above
+        if (!isDealApproved) {
+          setIsLoading(false);
+          return;
         }
 
         // 5. Establish Socket connection
@@ -975,15 +1017,27 @@ const DealChat = ({ onNavigate, routeData }) => {
     }
     socketRef.current.emit('typing_stop', { dealId: id });
 
+    const activeConvId = conversationIdRef.current;
+    const payload = { dealId: id, content: messageText, type: 'text' };
+    if (activeConvId) {
+      payload.conversationId = activeConvId;
+    }
+
     socketRef.current.emit(
       'send_message',
-      { dealId: id, content: messageText, type: 'text' },
+      payload,
       (response) => {
         if (response && response.success) {
           const msgObj = response.data || response.message;
           if (msgObj && typeof msgObj === 'object') {
             console.log('Message sent & saved successfully:', msgObj);
             onReceiveMessage(msgObj, currentUserId);
+            // If the response returned a conversationId, store it for future messages
+            const returnedConvId = msgObj.conversationId || response.conversationId;
+            if (returnedConvId && !conversationIdRef.current) {
+              conversationIdRef.current = returnedConvId;
+              setConversationId(returnedConvId);
+            }
           } else {
             console.log('Message sent successfully (no object in response):', response);
           }
@@ -1084,7 +1138,12 @@ const DealChat = ({ onNavigate, routeData }) => {
     ? (deal.products?.[0]?.productId?.name || deal.products?.[0]?.name || deal.dealNumber || 'Sauda Agreement')
     : (routeData?.deal?.title || 'Sauda Agreement');
 
-  const isDealApproved = deal?.status === 'approved';
+  const isDealApproved = deal
+    ? (() => {
+        const s = String(deal.status || '').toLowerCase();
+        return s === 'approved' || s === 'active' || s === 'in_progress';
+      })()
+    : false;
 
   if (isLoading) {
     return (

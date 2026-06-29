@@ -88,6 +88,18 @@ function App() {
     setNavigationStack([{ screen, data }]);
   };
 
+  const navigateTab = (screen: string) => {
+    const userData = current?.data?.user || {};
+    if (screen === 'Dashboard') {
+      setNavigationStack([{ screen: 'Dashboard', data: { user: userData } }]);
+    } else {
+      setNavigationStack([
+        { screen: 'Dashboard', data: { user: userData } },
+        { screen, data: { user: userData } }
+      ]);
+    }
+  };
+
   const popScreen = React.useCallback(() => {
     if (navigationStack.length > 1) {
       setNavigationStack(prev => prev.slice(0, -1));
@@ -218,7 +230,7 @@ function App() {
       <View style={styles.container}>
         {renderScreen()}
         {showFooter && current && (
-          <Footer onNavigate={pushScreen} activeScreen={current.screen} />
+          <Footer onNavigate={navigateTab} activeScreen={current.screen} />
         )}
       </View>
     </SafeAreaProvider>

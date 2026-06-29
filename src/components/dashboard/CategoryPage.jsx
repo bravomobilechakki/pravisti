@@ -299,7 +299,7 @@ const BottomSheetModal = ({ visible, onClose, title, children }) => {
         useNativeDriver: true,
       }).start();
     }
-  }, [visible]);
+  }, [visible, slideAnim]);
 
   if (!visible) return null;
 

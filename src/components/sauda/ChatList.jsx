@@ -40,6 +40,7 @@ const ChatList = ({ onNavigate }) => {
       const response = await getConversations(token, 1, 50);
       if (response && response.success && response.data?.data) {
         setConversations(response.data.data);
+        await AsyncStorage.setItem('cached_conversations', JSON.stringify(response.data.data));
       }
     } catch (error) {
       console.error('Failed to load conversations:', error);
@@ -50,6 +51,18 @@ const ChatList = ({ onNavigate }) => {
   };
 
   useEffect(() => {
+    const loadCachedConversations = async () => {
+      try {
+        const cached = await AsyncStorage.getItem('cached_conversations');
+        if (cached) {
+          setConversations(JSON.parse(cached));
+          setIsLoading(false);
+        }
+      } catch (e) {
+        console.warn('Failed to load cached conversations:', e);
+      }
+    };
+    loadCachedConversations();
     fetchConversations();
   }, []);
 

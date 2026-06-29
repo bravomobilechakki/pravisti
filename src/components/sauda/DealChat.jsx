@@ -297,15 +297,27 @@ const DealChat = ({ onNavigate, routeData }) => {
     setChatMessages(prev => {
       if (prev.some(m => m.id === mapped.id)) return prev;
 
+      let updated = [];
       if (isMe) {
         const hasTemp = prev.some(m => m.type === 'me' && m.text === mapped.text && !isNaN(Number(m.id)));
         if (hasTemp) {
-          return prev.map(m => (m.type === 'me' && m.text === mapped.text && !isNaN(Number(m.id))) ? mapped : m);
+          updated = prev.map(m => (m.type === 'me' && m.text === mapped.text && !isNaN(Number(m.id))) ? mapped : m);
+        } else {
+          updated = [...prev, mapped];
         }
+      } else {
+        updated = [...prev, mapped];
       }
-      return [...prev, mapped];
+
+      // Save to local cache asynchronously
+      const convId = conversationIdRef.current || conversationId;
+      if (convId) {
+        AsyncStorage.setItem(`cached_messages_${convId}`, JSON.stringify(updated)).catch(() => {});
+      }
+
+      return updated;
     });
-  }, []);
+  }, [conversationId]);
 
   const refreshDealDetails = useCallback(async () => {
     try {
@@ -792,8 +804,42 @@ const DealChat = ({ onNavigate, routeData }) => {
         // 3b. If still no conversation and deal is approved, create one
         if (!activeConversationId && isDealApproved && id) {
           try {
-            console.log('No conversation found — creating one for deal:', id);
-            const createRes = await createConversation({ dealId: id, participants: [] }, token);
+            // Build participants array dynamically from deal information
+            const participantIds = new Set();
+            const addUid = (val) => {
+              if (!val) return;
+              let idStr = '';
+              if (typeof val === 'object') {
+                idStr = String(val._id || val.id || val.userId || '');
+              } else {
+                idStr = String(val);
+              }
+              idStr = idStr.trim();
+              if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
+                participantIds.add(idStr);
+              }
+            };
+
+            if (activeDeal) {
+              addUid(activeDeal.sellerCompany?.owner);
+              addUid(activeDeal.sellerCompanyId?.owner);
+              addUid(activeDeal.buyerCompany?.owner);
+              addUid(activeDeal.buyerCompanyId?.owner);
+              addUid(activeDeal.brokerCompany?.owner);
+              addUid(activeDeal.brokerCompanyId?.owner);
+              addUid(activeDeal.party1?.userId);
+              addUid(activeDeal.party1?._id || activeDeal.party1?.id);
+              addUid(activeDeal.party2?.userId);
+              addUid(activeDeal.party2?._id || activeDeal.party2?.id);
+              addUid(activeDeal.createdBy);
+              addUid(activeDeal.creatorId);
+            }
+            addUid(myUserId);
+
+            const participantsPayload = Array.from(participantIds).map(uid => ({ userId: uid }));
+            console.log('No conversation found — creating one for deal:', id, 'with participants:', participantsPayload);
+
+            const createRes = await createConversation({ dealId: id, participants: participantsPayload }, token);
             if (createRes && createRes.success && createRes.data) {
               activeConversationId = createRes.data._id || createRes.data.id;
               setConversationId(activeConversationId);
@@ -806,6 +852,20 @@ const DealChat = ({ onNavigate, routeData }) => {
         }
 
         if (activeConversationId) {
+          // Load cached messages first to prevent blank screen
+          try {
+            const cachedMsgs = await AsyncStorage.getItem(`cached_messages_${activeConversationId}`);
+            if (cachedMsgs) {
+              const parsed = JSON.parse(cachedMsgs);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setChatMessages(parsed);
+                setIsLoading(false);
+              }
+            }
+          } catch (cacheErr) {
+            console.warn('Failed to load cached messages:', cacheErr);
+          }
+
           console.log('Loading conversation message history...');
           const msgsRes = await getConversationMessages(activeConversationId, token, 1, 50);
           if (msgsRes && msgsRes.success && msgsRes.data?.data) {
@@ -831,6 +891,8 @@ const DealChat = ({ onNavigate, routeData }) => {
               };
             });
             setChatMessages(historyMessages);
+            // Save to local cache
+            await AsyncStorage.setItem(`cached_messages_${activeConversationId}`, JSON.stringify(historyMessages));
           }
 
           if (isDealApproved) {
@@ -984,6 +1046,7 @@ const DealChat = ({ onNavigate, routeData }) => {
         clearTimeout(typingTimeoutRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeData, onReceiveMessage]);
 
   const handleInputChange = (text) => {

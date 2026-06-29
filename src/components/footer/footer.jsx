@@ -41,7 +41,7 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard' }) => {
             onPress={() => onNavigate(tab.screen)}
             activeOpacity={0.7}
           >
-            <Icon size={20} color={isActive ? '#3B82F6' : '#9CA3AF'} />
+            <Icon size={20} color={isActive ? '#4F46E5' : '#9CA3AF'} />
             <Text style={isActive ? styles.tabLabelActive : styles.tabLabel}>
               {tab.label}
             </Text>
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     fontSize: 10,
-    color: '#3B82F6',
+    color: '#4F46E5',
     fontWeight: 'bold',
   },
 });

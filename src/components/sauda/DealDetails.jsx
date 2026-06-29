@@ -533,7 +533,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
           <View style={styles.timelineLeftColumn}>
             <View style={[styles.timelineNode, isSent ? styles.timelineNodeSentBlue : styles.timelineNodeReceivedGreen]}>
               {isSent ? (
-                <Truck size={14} color="#2563EB" />
+                <Truck size={14} color="#4F46E5" />
               ) : (
                 <Box size={14} color="#059669" />
               )}
@@ -602,7 +602,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
   if (isLoading) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#4F46E5" />
         <Text style={styles.loadingText}>Fetching agreement records...</Text>
       </View>
     );
@@ -965,13 +965,13 @@ const DealDetails = ({ onNavigate, routeData }) => {
           {/* Action 5: Share Sauda */}
           <View style={styles.fintechActionItem}>
             <TouchableOpacity
-              style={[styles.fintechActionButton, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}
+              style={[styles.fintechActionButton, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}
               onPress={() => {
                 Alert.alert("Share Sauda", "Sharing sauda contract terms...");
               }}
               activeOpacity={0.8}
             >
-              <Share2 size={20} color="#2563EB" />
+              <Share2 size={20} color="#4F46E5" />
             </TouchableOpacity>
             <Text style={styles.fintechActionLabel}>Share</Text>
           </View>
@@ -1080,7 +1080,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
             {isBroker && (
               <View style={styles.brokerCard}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  <Briefcase size={16} color="#3B82F6" />
+                  <Briefcase size={16} color="#4F46E5" />
                   <Text style={[styles.brokerCardTitle, { marginBottom: 0 }]}>Broker Agreement Overview</Text>
                 </View>
                 <Text style={styles.brokerCardDesc}>
@@ -1191,7 +1191,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
                         styles.progressBarFill,
                         {
                           width: `${Math.min(100, Math.max(0, ((deal.deliveredQuantity || deal.product?.deliveredQuantity || 0) / (deal.qty || deal.product?.quantity || 1)) * 100))}%`,
-                          backgroundColor: '#3B82F6' // Blue for delivery progress
+                          backgroundColor: '#4F46E5' // Indigo for delivery progress
                         }
                       ]}
                     />
@@ -1264,7 +1264,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
                             styles.progressBarFill,
                             {
                               width: `${Math.min(100, Math.max(0, ((prod.deliveredQuantity || 0) / (prod.quantity || 1)) * 100))}%`,
-                              backgroundColor: '#3B82F6' // Blue for delivery progress
+                              backgroundColor: '#4F46E5' // Indigo for delivery progress
                             }
                           ]}
                         />
@@ -1656,7 +1656,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   backBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#4F46E5',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 10,
@@ -2398,14 +2398,14 @@ const styles = StyleSheet.create({
 
   /* Primary Open chat button */
   primaryActionBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#4F46E5',
     marginHorizontal: 16,
     marginTop: 16,
     padding: 16,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#007AFF',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 10,
@@ -2492,20 +2492,20 @@ const styles = StyleSheet.create({
   logPaymentActionBtn: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: '#007AFF',
+    borderColor: '#4F46E5',
     borderRadius: 12,
     paddingVertical: 11,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 6,
-    shadowColor: '#007AFF',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
     elevation: 1,
   },
   logPaymentActionBtnText: {
-    color: '#007AFF',
+    color: '#4F46E5',
     fontWeight: '900',
     fontSize: 12,
     letterSpacing: 0.2,
@@ -2671,7 +2671,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalSelectorBtnActive: {
-    borderColor: '#007AFF',
+    borderColor: '#4F46E5',
     backgroundColor: '#EEF2FF',
   },
   modalSelectorBtnText: {
@@ -2680,7 +2680,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   modalSelectorBtnTextActive: {
-    color: '#007AFF',
+    color: '#4F46E5',
     fontWeight: '900',
   },
   methodGrid: {
@@ -2697,7 +2697,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   methodGridItemActive: {
-    borderColor: '#007AFF',
+    borderColor: '#4F46E5',
     backgroundColor: '#EEF2FF',
   },
   methodGridText: {
@@ -2706,7 +2706,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   methodGridTextActive: {
-    color: '#007AFF',
+    color: '#4F46E5',
     fontWeight: '900',
   },
   modalButtonsRow: {
@@ -2730,7 +2730,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   modalSubmitBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#4F46E5',
   },
   modalSubmitBtnText: {
     color: '#FFFFFF',
@@ -2850,7 +2850,7 @@ const styles = StyleSheet.create({
     borderColor: '#A7F3D0',
   },
   timelineAmountSentBlue: {
-    color: '#2563EB',
+    color: '#4F46E5',
   },
   timelineAmountReceivedGreen: {
     color: '#059669',

@@ -39,6 +39,7 @@ const DealsList = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deals, setDeals] = useState([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [activeCompanyId, setActiveCompanyId] = useState(
     routeData?.companyId || 
@@ -135,6 +136,7 @@ const DealsList = ({ onNavigate, routeData }) => {
     if (deals && deals.length > 0) {
       fetchMissingCompanyNames();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deals, filter]);
 
   React.useEffect(() => {
@@ -172,7 +174,14 @@ const DealsList = ({ onNavigate, routeData }) => {
     if (cid) {
       setActiveCompanyId(cid);
       setActiveCompanyName(cname || 'Company');
+    } else {
+      setActiveCompanyId(null);
+      setActiveCompanyName(null);
     }
+    if (routeData?.filter) {
+      setFilter(routeData.filter);
+    }
+    setRefreshKey(prev => prev + 1);
   }, [routeData]);
 
   const fetchDeals = useCallback(async () => {
@@ -209,7 +218,7 @@ const DealsList = ({ onNavigate, routeData }) => {
 
   React.useEffect(() => {
     fetchDeals();
-  }, [fetchDeals]);
+  }, [fetchDeals, refreshKey]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -354,13 +363,16 @@ const DealsList = ({ onNavigate, routeData }) => {
       const hasImage = typeof productImage === 'string' && productImage.trim().length > 0;
 
       return (
-        <View style={[styles.dealCard, { borderColor: '#A7F3D0' }]}>
+        <View style={[styles.dealCard, { borderColor: '#EADFC9' }]}>
+          {/* Visual left accent bar in gold */}
+          <View style={[styles.cardLeftAccent, { backgroundColor: '#D4AF37' }]} />
+          
           <View style={styles.cardTop}>
             {hasImage ? (
               <Image source={{ uri: productImage }} style={styles.dealProductImage} resizeMode="cover" />
             ) : (
-              <View style={[styles.iconBubble, { backgroundColor: '#ECFDF5' }]}>
-                <Mail size={22} color="#059669" />
+              <View style={[styles.iconBubble, { backgroundColor: '#FDF6E2', borderColor: '#F0DFA7' }]}>
+                <Mail size={20} color="#D4AF37" />
               </View>
             )}
             <View style={styles.cardMain}>
@@ -377,28 +389,28 @@ const DealsList = ({ onNavigate, routeData }) => {
                       ]}>
                         <Text style={[
                           styles.roleBadgeText,
-                          { color: myRole === 'Seller' ? '#4F46E5' : '#EF4444' }
+                          { color: myRole === 'Seller' ? '#4F46E5' : '#D97706' }
                         ]}>
                           {myRole.toUpperCase()}
                         </Text>
                       </View>
                     </View>
                   )}
-                  <View style={[styles.statusBadge, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
-                    <Text style={[styles.statusText, { color: '#059669' }]}>INVITE</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: '#FDF6E2', borderColor: '#F0DFA7' }]}>
+                    <Text style={[styles.statusText, { color: '#B58900' }]}>INVITE</Text>
                   </View>
                 </View>
               </View>
               
               <View style={{ marginTop: 4, gap: 4 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Building2 size={12} color="#64748B" />
+                  <Building2 size={12} color="#8C7A5B" />
                   <Text style={styles.companyNameText} numberOfLines={1}>
                     Seller: <Text style={styles.creatorValueText}>{sellerName}</Text>
                   </Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <User size={12} color="#64748B" />
+                  <User size={12} color="#8C7A5B" />
                   <Text style={styles.companyNameText} numberOfLines={1}>
                     Buyer: <Text style={styles.creatorValueText}>{buyerName}</Text>
                   </Text>
@@ -423,7 +435,7 @@ const DealsList = ({ onNavigate, routeData }) => {
                 <View style={styles.sleekStatSeparator} />
                 <View style={styles.sleekStatBlock}>
                   <Text style={styles.sleekStatLabel}>TOTAL VALUE</Text>
-                  <Text style={[styles.sleekStatValue, { color: '#059669', fontWeight: '900' }]}>
+                  <Text style={[styles.sleekStatValue, { color: '#4F46E5', fontWeight: '900' }]}>
                     ₹{Number(totalAmt).toLocaleString('en-IN')}
                   </Text>
                 </View>
@@ -459,35 +471,40 @@ const DealsList = ({ onNavigate, routeData }) => {
     const isRejected = itemStatusLower === 'rejected' || itemStatusLower === 'cancelled';
 
     let StatusIcon = FileText;
-    let bgColor = '#F1F5F9';
+    let bgColor = '#FAF8F5';
     let statusTextColor = '#475569';
-    let statusBorderColor = '#CBD5E1';
+    let statusBorderColor = '#EADFC9';
     let labelText = (item.status || 'EXPIRED').toUpperCase();
+    let leftAccentColor = '#4F46E5'; // Default Indigo
 
     if (isPending) {
       StatusIcon = PenTool;
-      bgColor = '#FFFBEB'; // Amber-50
+      bgColor = '#FFFBEB'; // warm gold light
       statusTextColor = '#D97706';
       statusBorderColor = '#FDE68A';
       labelText = 'PENDING SIGN';
+      leftAccentColor = '#F59E0B'; // Gold
     } else if (isActive) {
       StatusIcon = Box;
-      bgColor = '#EEF2FF'; // Indigo-50
+      bgColor = '#EEF2FF'; // light indigo
       statusTextColor = '#4F46E5';
       statusBorderColor = '#C7D2FE';
       labelText = 'ACTIVE TRADE';
+      leftAccentColor = '#4F46E5'; // Indigo
     } else if (isCompleted) {
       StatusIcon = CheckCircle;
       bgColor = '#ECFDF5'; // Emerald-50
       statusTextColor = '#059669';
       statusBorderColor = '#A7F3D0';
       labelText = 'COMPLETED';
+      leftAccentColor = '#059669'; // Green
     } else if (isRejected) {
       StatusIcon = XCircle;
       bgColor = '#FEF2F2'; // Red-50
       statusTextColor = '#EF4444';
       statusBorderColor = '#FCA5A5';
       labelText = 'REJECTED';
+      leftAccentColor = '#EF4444'; // Red
     }
 
     const firstProd = item.products?.[0] || item.product || {};
@@ -512,16 +529,19 @@ const DealsList = ({ onNavigate, routeData }) => {
 
     return (
       <TouchableOpacity
-        style={[styles.dealCard, { borderColor: statusBorderColor }, isPending && styles.pendingGlowCard]}
+        style={[styles.dealCard, { borderColor: '#EADFC9' }]}
         onPress={() => onNavigate('DealDetails', { dealId, deal: item })}
         activeOpacity={0.75}
       >
+        {/* Visual left accent bar */}
+        <View style={[styles.cardLeftAccent, { backgroundColor: leftAccentColor }]} />
+
         <View style={styles.cardTop}>
           {hasImage ? (
             <Image source={{ uri: productImage }} style={styles.dealProductImage} resizeMode="cover" />
           ) : (
-            <View style={[styles.iconBubble, { backgroundColor: bgColor }]}>
-              <StatusIcon size={22} color={statusTextColor} />
+            <View style={[styles.iconBubble, { backgroundColor: bgColor, borderColor: statusBorderColor }]}>
+              <StatusIcon size={20} color={statusTextColor} />
             </View>
           )}
           <View style={styles.cardMain}>
@@ -539,7 +559,7 @@ const DealsList = ({ onNavigate, routeData }) => {
                     ]}>
                       <Text style={[
                         styles.roleBadgeText,
-                        { color: myRole === 'Seller' ? '#4F46E5' : '#EF4444' }
+                        { color: myRole === 'Seller' ? '#4F46E5' : '#D97706' }
                       ]}>
                         {myRole.toUpperCase()}
                       </Text>
@@ -556,13 +576,13 @@ const DealsList = ({ onNavigate, routeData }) => {
 
             <View style={{ marginTop: 4, gap: 4 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Building2 size={12} color="#64748B" />
+                <Building2 size={12} color="#8C7A5B" />
                 <Text style={styles.companyNameText} numberOfLines={1}>
                   Seller: <Text style={styles.creatorValueText}>{sellerName}</Text>
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <User size={12} color="#64748B" />
+                <User size={12} color="#8C7A5B" />
                 <Text style={styles.companyNameText} numberOfLines={1}>
                   Buyer: <Text style={styles.creatorValueText}>{buyerName}</Text>
                 </Text>
@@ -589,11 +609,7 @@ const DealsList = ({ onNavigate, routeData }) => {
                 <Text style={styles.sleekStatLabel}>VALUE</Text>
                 <Text style={[
                   styles.sleekStatValue,
-                  { fontWeight: '900' },
-                  isPending && { color: '#D97706' },
-                  isActive && { color: '#4F46E5' },
-                  isCompleted && { color: '#059669' },
-                  isRejected && { color: '#EF4444' }
+                  { fontWeight: '900', color: leftAccentColor }
                 ]}>
                   ₹{Number(totalAmt).toLocaleString('en-IN')}
                 </Text>
@@ -679,7 +695,7 @@ const DealsList = ({ onNavigate, routeData }) => {
 
       {isLoading ? (
         <View style={styles.loaderWrap}>
-          <ActivityIndicator size="large" color="#0284C7" />
+          <ActivityIndicator size="large" color="#4F46E5" />
           <Text style={styles.loadingText}>Synchronizing trades...</Text>
         </View>
       ) : (
@@ -690,7 +706,7 @@ const DealsList = ({ onNavigate, routeData }) => {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0284C7" colors={['#0284C7']} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4F46E5" colors={['#4F46E5']} />
           }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
@@ -718,7 +734,7 @@ const DealsList = ({ onNavigate, routeData }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  container: { flex: 1, backgroundColor: '#F8FAFC' }, // slate/off-white background matching dashboard
 
   // HEADER
   header: {
@@ -729,99 +745,46 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1.5,
-    borderBottomColor: '#E2E8F0',
-    shadowColor: '#0F172A',
+    borderBottomColor: '#E2E8F0', // slate border
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.03,
     shadowRadius: 12,
-    elevation: 4,
+    elevation: 3,
   },
   backButton: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  backIcon: { fontSize: 20, color: '#0F172A', fontWeight: '700' },
+  backIcon: { fontSize: 20, color: '#4F46E5', fontWeight: '700' },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '900', color: '#0F172A', letterSpacing: 0.3 },
+  headerTitle: { fontSize: 16, fontWeight: '900', color: '#1E1B4B', letterSpacing: 0.3 }, // Midnight Indigo Title
   headerSubtitle: { fontSize: 11, color: '#64748B', fontWeight: '600', marginTop: 2 },
   newDealBtn: {
     paddingHorizontal: 16,
     paddingVertical: 9,
-    backgroundColor: '#0284C7',
+    backgroundColor: '#4F46E5', // Deep Indigo button
     borderRadius: 12,
-    shadowColor: '#0284C7',
-    shadowOpacity: 0.22,
+    shadowColor: '#4F46E5',
+    shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 3,
   },
   newDealBtnText: { fontSize: 13, fontWeight: '900', color: '#FFFFFF' },
-
-  // STATS DASHBOARD TILES GRID
-  statsDashboard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginHorizontal: 16,
-    marginTop: 16,
-    gap: 8,
-  },
-  statTile: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 12,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 6,
-  },
-  statTileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statTileEmoji: {
-    fontSize: 14,
-  },
-  statTileLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#64748B',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    flex: 1,
-  },
-  statTileValue: {
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  statTileBlue: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
-  },
-  statTileAmber: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
-  },
-  statTileEmerald: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-  },
 
   // FILTER BADGE
   filterBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F0F9FF',
-    borderColor: '#BAE6FD',
+    backgroundColor: '#EEF2FF', // Light indigo bg
+    borderColor: '#C7D2FE', // Indigo border
     borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 14,
@@ -829,20 +792,22 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 10,
   },
-  filterBadgeText: { fontSize: 13, color: '#0284C7', fontWeight: '700' },
+  filterBadgeText: { fontSize: 13, color: '#4F46E5', fontWeight: '700' },
   clearFilterBtn: {
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
   },
-  clearFilterText: { fontSize: 11, fontWeight: '800', color: '#0284C7' },
+  clearFilterText: { fontSize: 11, fontWeight: '800', color: '#4F46E5' },
 
   // TAB BAR
   tabBar: {
     flexDirection: 'row',
     padding: 4,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#E2E8F0', // slate background
     borderRadius: 14,
     marginHorizontal: 16,
     marginVertical: 12,
@@ -859,14 +824,14 @@ const styles = StyleSheet.create({
   },
   activeTab: {
     backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
-  tabText: { fontSize: 12, fontWeight: '700', color: '#64748B' },
-  activeTabText: { color: '#0284C7', fontWeight: '800' },
+  tabText: { fontSize: 12, fontWeight: '700', color: '#4F46E5' },
+  activeTabText: { color: '#4F46E5', fontWeight: '800' },
 
   // LIST
   listContent: { padding: 16, paddingBottom: 120 },
@@ -874,21 +839,28 @@ const styles = StyleSheet.create({
   // DEAL CARD
   dealCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    marginBottom: 12,
+    borderRadius: 16,
+    marginBottom: 14,
     padding: 16,
-    shadowColor: '#64748B',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.03,
     shadowRadius: 16,
-    elevation: 3,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: '#ECEEF2',
+    borderColor: '#EADFC9', // Heritage beige border
     gap: 12,
     position: 'relative',
     overflow: 'hidden',
   },
-  cardTop: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  cardLeftAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 5,
+  },
+  cardTop: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', paddingLeft: 6 }, // Add paddingLeft to offset the left accent bar
   iconBubble: {
     width: 48,
     height: 48,
@@ -896,20 +868,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#ECEEF2',
+    borderColor: '#EADFC9',
   },
   dealProductImage: {
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF8F5',
     borderWidth: 1,
-    borderColor: '#ECEEF2',
+    borderColor: '#EADFC9',
   },
   iconEmoji: { fontSize: 20 },
   cardMain: { flex: 1, gap: 4 },
   cardTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  productName: { fontSize: 15, fontWeight: '800', color: '#1E293B', flex: 1, marginRight: 8, letterSpacing: -0.2 },
+  productName: { fontSize: 15, fontWeight: '800', color: '#1F2937', flex: 1, marginRight: 8, letterSpacing: -0.2 },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -918,112 +890,18 @@ const styles = StyleSheet.create({
   },
   statusText: { fontSize: 8.5, fontWeight: '900', letterSpacing: 0.4 },
 
-  // LEDGER ROUTE GRAPHICS
-  routeFlow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginVertical: 4,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 8,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    gap: 6,
-  },
-  routePartyBlock: {
-    flex: 1.2,
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
-    gap: 3,
-  },
-  routePartyEmoji: {
-    fontSize: 14,
-  },
-  routePartyName: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#1E293B',
-    textAlign: 'center',
-    width: '100%',
-  },
-  sellerRolePill: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  buyerRolePill: {
-    backgroundColor: '#FFF5F5',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  rolePillText: {
-    fontSize: 7,
-    fontWeight: '900',
-    color: '#4F46E5',
-    letterSpacing: 0.3,
-  },
-  routePartySeller: {
-    borderColor: '#C7D2FE',
-  },
-  routePartyBuyer: {
-    borderColor: '#FECACA',
-  },
-  routeConnectorLine: {
-    flex: 0.8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-  },
-  connectorDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#CBD5E1',
-  },
-  connectorDashed: {
-    width: 8,
-    height: 1,
-    backgroundColor: '#CBD5E1',
-  },
-  connectorArrowContainer: {
-    backgroundColor: '#E2E8F0',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  connectorArrow: {
-    fontSize: 8,
-    color: '#64748B',
-    fontWeight: 'bold',
-  },
-
   // SLEEK STATS ROW
   sleekStatsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAF8F5', // warm cream stats table bg
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#EADFC9',
     marginTop: 4,
+    marginLeft: 6, // Offset for left accent bar
   },
   sleekStatBlock: {
     flex: 1,
@@ -1032,7 +910,7 @@ const styles = StyleSheet.create({
   sleekStatLabel: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#94A3B8',
+    color: '#8C7A5B', // muted gold text label
     letterSpacing: 0.4,
     marginBottom: 3,
     textTransform: 'uppercase',
@@ -1040,37 +918,37 @@ const styles = StyleSheet.create({
   sleekStatValue: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#1F2937',
   },
   sleekStatSeparator: {
     width: 1,
     height: 16,
-    backgroundColor: '#ECEEF2',
+    backgroundColor: '#EADFC9',
   },
 
   // CARD FOOTER
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  dealNumber: { fontSize: 10, fontWeight: '700', color: '#94A3B8' },
-  datePill: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingLeft: 6 },
+  dealNumber: { fontSize: 10, fontWeight: '700', color: '#8C7A5B' },
+  datePill: { backgroundColor: '#FAF8F5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#EADFC9' },
   datePillText: { fontSize: 10, color: '#64748B', fontWeight: '600' },
   footerRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 
   // INVITE
   inviteCodeBadge: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#FDF6E2',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: '#F0DFA7',
   },
-  inviteCodeText: { fontSize: 10, fontWeight: '800', color: '#059669' },
+  inviteCodeText: { fontSize: 10, fontWeight: '800', color: '#B58900' },
   reshareBtn: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#128C7E', // WhatsApp Green
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 10,
-    shadowColor: '#10B981',
+    shadowColor: '#128C7E',
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 2,
@@ -1078,8 +956,8 @@ const styles = StyleSheet.create({
   reshareBtnText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
 
   // LOADER
-  loaderWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: '#64748B', fontWeight: '600' },
+  loaderWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: '#FAF8F5' },
+  loadingText: { fontSize: 14, color: '#4F46E5', fontWeight: '600' },
 
   // EMPTY STATE
   emptyWrap: { alignItems: 'center', paddingTop: 64, paddingHorizontal: 24 },
@@ -1093,21 +971,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
-    shadowColor: '#0284C7',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.05,
     shadowRadius: 16,
     elevation: 4,
   },
   emptyIcon: { fontSize: 44 },
-  emptyTitle: { fontSize: 18, fontWeight: '900', color: '#0F172A', marginBottom: 8, letterSpacing: -0.2 },
+  emptyTitle: { fontSize: 18, fontWeight: '900', color: '#1E1B4B', marginBottom: 8, letterSpacing: -0.2 },
   emptySubtitle: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 20, marginBottom: 28, fontWeight: '500' },
   emptyBtn: {
-    backgroundColor: '#0284C7',
+    backgroundColor: '#4F46E5', // Deep Indigo button
     paddingHorizontal: 28,
     paddingVertical: 14,
     borderRadius: 14,
-    shadowColor: '#0284C7',
+    shadowColor: '#4F46E5',
     shadowOpacity: 0.22,
     shadowRadius: 12,
     elevation: 6,
@@ -1127,7 +1005,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#D97706',
+    backgroundColor: '#D4AF37', // Gold pulsing dot
     marginRight: 8,
     alignSelf: 'center',
   },
@@ -1161,12 +1039,12 @@ const styles = StyleSheet.create({
     borderColor: '#C7D2FE',
   },
   buyerRoleBadge: {
-    backgroundColor: '#FFF5F5',
-    borderColor: '#FECACA',
+    backgroundColor: '#FDF6E2',
+    borderColor: '#F0DFA7',
   },
   brokerRoleBadge: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
+    backgroundColor: '#F3E8FF',
+    borderColor: '#DDD6FE',
   },
   roleBadgeText: {
     fontSize: 8,

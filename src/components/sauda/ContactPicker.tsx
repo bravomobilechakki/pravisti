@@ -65,6 +65,16 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
   const [isLoading, setIsLoading] = useState(false);
   const [hasPermission, setHasPermission] = useState<'granted' | 'denied' | 'undetermined'>('undetermined');
 
+  const role = routeData?.role || 'seller';
+  const getRoleTheme = () => {
+    if (role === 'buyer') return { color: '#0284C7', bg: '#F0F9FF', border: '#BAE6FD', glow: '#0284C7' };
+    if (role === 'broker') return { color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE', glow: '#7C3AED' };
+    return { color: '#059669', bg: '#F0FDF4', border: '#BBF7D0', glow: '#059669' };
+  };
+  const rTheme = getRoleTheme();
+
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
   // Bottom Sheet Modal for Company Selection
   const [selectedContactForModal, setSelectedContactForModal] = useState<Contact | null>(null);
   const [isCompanyModalVisible, setIsCompanyModalVisible] = useState(false);
@@ -411,7 +421,10 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       <View
         style={[
           styles.contactCard,
-          item.id.toString().startsWith('lookup_') && styles.lookupMatchCard
+          item.id.toString().startsWith('lookup_') && [
+            styles.lookupMatchCard,
+            { borderColor: rTheme.color, backgroundColor: rTheme.bg }
+          ]
         ]}
       >
         <View style={[
@@ -469,7 +482,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
         {/* Dynamic Action Button based on category tab */}
         {isActiveMember && (
           <TouchableOpacity
-            style={styles.actionBtnActive}
+            style={[styles.actionBtnActive, { backgroundColor: rTheme.color }]}
             onPress={() => handleSelectContact(item)}
             activeOpacity={0.7}
           >
@@ -507,7 +520,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: '#F8FAFC' }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('CreateDeal', {
@@ -518,7 +531,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           company: routeData?.company,
           prefill: routeData?.prefill,
         })}>
-          <ArrowLeft size={18} color="#1E293B" />
+          <ArrowLeft size={18} color="#0F172A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Select Contact</Text>
         <View style={{ width: 40 }} />
@@ -526,10 +539,10 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
 
       {/* Permission Landing Block */}
       {hasPermission === 'undetermined' ? (
-        <View style={styles.permissionContainer}>
+        <View style={[styles.permissionContainer, { backgroundColor: '#F8FAFC' }]}>
           <View style={styles.permissionCard}>
-            <View style={styles.permissionIconCircle}>
-              <Users size={32} color="#4F46E5" />
+            <View style={[styles.permissionIconCircle, { backgroundColor: rTheme.bg }]}>
+              <Users size={32} color={rTheme.color} />
             </View>
             <Text style={styles.permissionTitle}>Sync Your Business Contacts</Text>
             <Text style={styles.permissionSubtitle}>
@@ -537,7 +550,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
             </Text>
 
             <TouchableOpacity
-              style={styles.grantButton}
+              style={[styles.grantButton, { backgroundColor: rTheme.color, shadowColor: rTheme.color }]}
               onPress={handleRequestAccess}
               activeOpacity={0.8}
             >
@@ -557,8 +570,11 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
         <>
           {/* Search */}
           <View style={styles.searchContainer}>
-            <View style={styles.searchInputWrapper}>
-              <Search size={16} color="#94A3B8" style={{ marginRight: 6 }} />
+            <View style={[
+              styles.searchInputWrapper,
+              isSearchFocused && { borderColor: rTheme.color, borderWidth: 1.5, shadowColor: rTheme.color, shadowOpacity: 0.1 }
+            ]}>
+              <Search size={16} color={isSearchFocused ? rTheme.color : "#94A3B8"} style={{ marginRight: 6 }} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search name or mobile number..."
@@ -566,9 +582,11 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 keyboardType="phone-pad"
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
               />
               {searchingNumber && (
-                <ActivityIndicator size="small" color="#4F46E5" style={{ marginLeft: 6 }} />
+                <ActivityIndicator size="small" color={rTheme.color} style={{ marginLeft: 6 }} />
               )}
             </View>
           </View>
@@ -576,34 +594,55 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           {/* Category Tabs Selector Bar */}
           <View style={styles.tabsContainer}>
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'active' && styles.tabButtonActive, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }]}
+              style={[
+                styles.tabButton,
+                activeTab === 'active' && { backgroundColor: '#DCFCE7' },
+                { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }
+              ]}
               onPress={() => setActiveTab('active')}
               activeOpacity={0.7}
             >
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' }} />
-              <Text style={[styles.tabButtonText, activeTab === 'active' && styles.tabButtonTextActive]}>
+              <Text style={[
+                styles.tabButtonText,
+                activeTab === 'active' && { color: '#166534', fontWeight: '800' }
+              ]}>
                 Active ({activeMembers.length})
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'pending' && styles.tabButtonActive, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }]}
+              style={[
+                styles.tabButton,
+                activeTab === 'pending' && { backgroundColor: '#FEF3C7' },
+                { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }
+              ]}
               onPress={() => setActiveTab('pending')}
               activeOpacity={0.7}
             >
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#F59E0B' }} />
-              <Text style={[styles.tabButtonText, activeTab === 'pending' && styles.tabButtonTextActive]}>
+              <Text style={[
+                styles.tabButtonText,
+                activeTab === 'pending' && { color: '#92400E', fontWeight: '800' }
+              ]}>
                 Pending ({pendingMembers.length})
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'invite' && styles.tabButtonActive, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }]}
+              style={[
+                styles.tabButton,
+                activeTab === 'invite' && { backgroundColor: rTheme.bg },
+                { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }
+              ]}
               onPress={() => setActiveTab('invite')}
               activeOpacity={0.7}
             >
-              <Mail size={12} color={activeTab === 'invite' ? '#4F46E5' : '#64748B'} />
-              <Text style={[styles.tabButtonText, activeTab === 'invite' && styles.tabButtonTextActive]}>
+              <Mail size={12} color={activeTab === 'invite' ? rTheme.color : '#64748B'} />
+              <Text style={[
+                styles.tabButtonText,
+                activeTab === 'invite' && { color: rTheme.color, fontWeight: '800' }
+              ]}>
                 Invite ({inviteContacts.length})
               </Text>
             </TouchableOpacity>
@@ -612,7 +651,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           {/* Contacts List */}
           {isLoading ? (
             <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color="#4F46E5" />
+              <ActivityIndicator size="large" color={rTheme.color} />
               <Text style={styles.loaderText}>Syncing contacts from address book...</Text>
             </View>
           ) : (
@@ -626,11 +665,11 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>No contacts found</Text>
                   <TouchableOpacity
-                    style={styles.addManualButton}
+                    style={[styles.addManualButton, { borderColor: rTheme.color }]}
                     onPress={handleAddManualNumber}
                     disabled={!searchQuery.trim()}
                   >
-                    <Text style={styles.addManualText}>
+                    <Text style={[styles.addManualText, { color: rTheme.color }]}>
                       {searchQuery.trim() ? `+ Use "${searchQuery}" Manually` : '+ Add Number Manually'}
                     </Text>
                   </TouchableOpacity>
@@ -671,12 +710,12 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                     onPress={() => handleSelectCompanyFromModal(co)}
                     activeOpacity={0.7}
                   >
-                    <View style={styles.companyIconBg}>
-                      <Building2 size={18} color="#4F46E5" />
+                    <View style={[styles.companyIconBg, { backgroundColor: rTheme.bg }]}>
+                      <Building2 size={18} color={rTheme.color} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.companyNameText}>{co.companyName}</Text>
-                      <Text style={styles.companyTypeText}>{co.companyType.toUpperCase()}</Text>
+                      <Text style={[styles.companyTypeText, { color: rTheme.color }]}>{co.companyType.toUpperCase()}</Text>
                     </View>
                     <ChevronRight size={18} color="#94A3B8" />
                   </TouchableOpacity>
@@ -701,27 +740,42 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7FF',
+    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
     backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 3,
+    marginTop: Platform.OS === 'android' ? 30 : 0,
   },
   backButton: {
-    padding: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backIcon: {
-    fontSize: 24,
+    fontSize: 18,
     color: '#0F172A',
+    fontWeight: '700',
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     color: '#0F172A',
+    letterSpacing: 0.2,
   },
   searchContainer: {
     padding: 20,
@@ -731,14 +785,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 50,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 13,
+    height: 44,
   },
   searchIcon: {
     fontSize: 16,
@@ -746,8 +797,10 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 13,
+    fontWeight: '600',
     color: '#0F172A',
+    paddingVertical: 0,
   },
   listContainer: {
     paddingHorizontal: 20,
@@ -755,15 +808,17 @@ const styles = StyleSheet.create({
   },
   contactCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 14,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
     elevation: 2,
   },
   lookupMatchCard: {

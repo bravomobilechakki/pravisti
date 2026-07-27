@@ -107,14 +107,25 @@ function App() {
   const navigateTab = (screen: string) => {
     const userData = current?.data?.user || {};
     const roleStr = (current?.data?.role || userData?.role || (userData?.roles && userData.roles[0]) || '').toString().toLowerCase();
-    const homeScreen = roleStr.includes('broker') ? 'BrokerDashboard' : 'Dashboard';
+    const isBroker = roleStr.includes('broker');
 
+    let targetScreen = screen;
     if (screen === 'Dashboard' || screen === 'BrokerDashboard') {
-      setNavigationStack([{ screen: homeScreen, data: { user: userData } }]);
+      targetScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
+    } else if (screen === 'Profile' || screen === 'BrokerProfile') {
+      targetScreen = isBroker ? 'BrokerProfile' : 'Profile';
+    } else if (screen === 'AddCompany' || screen === 'BrokerAddCompany') {
+      targetScreen = isBroker ? 'BrokerAddCompany' : 'AddCompany';
+    }
+
+    const homeScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
+
+    if (targetScreen === homeScreen) {
+      setNavigationStack([{ screen: homeScreen, data: { user: userData, role: isBroker ? 'Broker' : 'Trader' } }]);
     } else {
       setNavigationStack([
-        { screen: homeScreen, data: { user: userData } },
-        { screen, data: { user: userData } }
+        { screen: homeScreen, data: { user: userData, role: isBroker ? 'Broker' : 'Trader' } },
+        { screen: targetScreen, data: { user: userData, role: isBroker ? 'Broker' : 'Trader' } }
       ]);
     }
   };
@@ -154,7 +165,6 @@ function App() {
       if (token) {
         const response = await getUserProfile(token);
         if (response && response.success) {
-          // Update the current screen's data with the new user profile
           setNavigationStack(prev => {
             const newStack = [...prev];
             const lastIdx = newStack.length - 1;
@@ -174,10 +184,13 @@ function App() {
 
   const renderScreen = () => {
     const { screen, data } = current || { screen: 'Login', data: {} as any };
+    const checkUser = data?.user || {};
+    const userRole = (data?.role || checkUser?.role || (checkUser?.roles && checkUser.roles[0]) || '').toString().toLowerCase();
+    const isBrokerUser = userRole.includes('broker');
+
     const onNavigate = async (target: string, targetData = {} as any, options = { replace: false, refresh: false }) => {
       let finalData = targetData;
 
-      // If refresh is requested, fetch latest profile before navigating
       if (options.refresh) {
         const freshUser = await refreshUserProfile();
         if (freshUser) {
@@ -186,25 +199,26 @@ function App() {
       }
 
       let finalTarget = target;
-      const checkUser = finalData?.user || current?.data?.user;
-      const checkRole = (finalData?.role || checkUser?.role || (checkUser?.roles && checkUser.roles[0]) || '').toString().toLowerCase();
+      const targetUser = finalData?.user || checkUser;
+      const targetRole = (finalData?.role || targetUser?.role || (targetUser?.roles && targetUser.roles[0]) || userRole).toString().toLowerCase();
+      const isTargetBroker = targetRole.includes('broker');
 
-      if (finalTarget === 'Dashboard' && checkRole.includes('broker')) {
+      if (finalTarget === 'Dashboard' && isTargetBroker) {
         finalTarget = 'BrokerDashboard';
       }
 
-      if ((finalTarget === 'AddCompany' || finalTarget === 'BrokerAddCompany') && checkRole.includes('broker')) {
+      if ((finalTarget === 'AddCompany' || finalTarget === 'BrokerAddCompany') && isTargetBroker) {
         finalTarget = 'BrokerAddCompany';
       }
 
-      if ((finalTarget === 'Profile' || finalTarget === 'BrokerProfile') && checkRole.includes('broker')) {
+      if ((finalTarget === 'Profile' || finalTarget === 'BrokerProfile') && isTargetBroker) {
         finalTarget = 'BrokerProfile';
       }
 
       if (finalTarget === 'pop') {
         const popped = popScreen();
         if (!popped) {
-          replaceScreen(checkRole.includes('broker') ? 'BrokerDashboard' : 'Dashboard', finalData);
+          replaceScreen(isTargetBroker ? 'BrokerDashboard' : 'Dashboard', finalData);
         }
         return;
       }
@@ -224,9 +238,17 @@ function App() {
       case 'ChooseIndustry':
         return <ChooseIndustryScreen onNavigate={onNavigate} routeData={data} />;
       case 'Dashboard':
-        return <DashboardScreen onNavigate={onNavigate} routeData={data} />;
+        return isBrokerUser ? (
+          <BrokerDashboardScreen onNavigate={onNavigate} routeData={data} />
+        ) : (
+          <DashboardScreen onNavigate={onNavigate} routeData={data} />
+        );
       case 'AddCompany':
-        return <AddCompanyScreen onNavigate={onNavigate} routeData={data} />;
+        return isBrokerUser ? (
+          <BrokerAddCompanyScreen onNavigate={onNavigate} routeData={data} />
+        ) : (
+          <AddCompanyScreen onNavigate={onNavigate} routeData={data} />
+        );
       case 'CompanyDetails':
         return (
           <CompanyDetailsScreen onNavigate={onNavigate} routeData={data} />
@@ -242,7 +264,11 @@ function App() {
       case 'ChatList':
         return <ChatListScreen onNavigate={onNavigate} routeData={data} />;
       case 'Profile':
-        return <ProfileScreen onNavigate={onNavigate} routeData={data} />;
+        return isBrokerUser ? (
+          <BrokerProfileScreen onNavigate={onNavigate} routeData={data} />
+        ) : (
+          <ProfileScreen onNavigate={onNavigate} routeData={data} />
+        );
       case 'MyCompanies':
         return <MyCompaniesScreen onNavigate={onNavigate} routeData={data} />;
       case 'ContactPicker':

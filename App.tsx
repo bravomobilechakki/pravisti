@@ -172,16 +172,30 @@ function App() {
       if (token) {
         const response = await getUserProfile(token);
         if (response && response.success) {
+          const storedProfileStr = await AsyncStorage.getItem('user_completed_profile');
+          const storedProfile = storedProfileStr ? JSON.parse(storedProfileStr) : null;
+          const currentRole = (current?.data?.role || storedProfile?.role || response.data?.role || '').toString().toLowerCase();
+          const isBrokerRole = currentRole.includes('broker') || ['BrokerDashboard', 'BrokerProfile', 'BrokerAddCompany', 'BrokerDealsList'].includes(current?.screen || '');
+          const updatedUser = {
+            ...response.data,
+            ...(storedProfile || {}),
+            ...(isBrokerRole ? { role: 'Broker' } : {}),
+          };
+
           setNavigationStack(prev => {
             const newStack = [...prev];
             const lastIdx = newStack.length - 1;
             newStack[lastIdx] = {
               ...newStack[lastIdx],
-              data: { ...newStack[lastIdx].data, user: response.data }
+              data: {
+                ...newStack[lastIdx].data,
+                role: isBrokerRole ? 'Broker' : (newStack[lastIdx].data?.role || 'Trader'),
+                user: updatedUser
+              }
             };
             return newStack;
           });
-          return response.data;
+          return updatedUser;
         }
       }
     } catch (error) {

@@ -55,7 +55,10 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
               company: parsed.company !== undefined ? parsed.company : userRes.data.company,
               gstin: parsed.gstin !== undefined ? parsed.gstin : userRes.data.gstin,
               address: parsed.address !== undefined ? parsed.address : userRes.data.address,
+              role: 'Broker',
             };
+          } else {
+            mergedProfile = { ...userRes.data, role: 'Broker' };
           }
           setCurrentUser(mergedProfile);
           await AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedProfile));

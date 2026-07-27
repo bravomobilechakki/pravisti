@@ -70,9 +70,15 @@ function App() {
           const response = await getUserProfile(token);
           if (response && response.success) {
             const userData = response.data;
-            const roleStr = (userData?.role || (userData?.roles && userData.roles[0]) || '').toString().toLowerCase();
-            const initialScreen = roleStr.includes('broker') ? 'BrokerDashboard' : 'Dashboard';
-            setNavigationStack([{ screen: initialScreen, data: { user: userData } }]);
+            const storedProfileStr = await AsyncStorage.getItem('user_completed_profile');
+            let mergedUser = userData;
+            if (storedProfileStr) {
+              mergedUser = { ...userData, ...JSON.parse(storedProfileStr) };
+            }
+            const roleStr = (mergedUser?.role || (mergedUser?.roles && mergedUser.roles[0]) || '').toString().toLowerCase();
+            const isBroker = roleStr.includes('broker');
+            const initialScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
+            setNavigationStack([{ screen: initialScreen, data: { user: mergedUser, role: isBroker ? 'Broker' : 'Trader' } }]);
           } else {
             // Token invalid or expired
             await AsyncStorage.removeItem('userToken');
@@ -106,8 +112,9 @@ function App() {
 
   const navigateTab = (screen: string) => {
     const userData = current?.data?.user || {};
+    const currentScreen = current?.screen || '';
     const roleStr = (current?.data?.role || userData?.role || (userData?.roles && userData.roles[0]) || '').toString().toLowerCase();
-    const isBroker = roleStr.includes('broker');
+    const isBroker = roleStr.includes('broker') || ['BrokerDashboard', 'BrokerProfile', 'BrokerAddCompany', 'BrokerDealsList'].includes(currentScreen);
 
     let targetScreen = screen;
     if (screen === 'Dashboard' || screen === 'BrokerDashboard') {
@@ -186,7 +193,7 @@ function App() {
     const { screen, data } = current || { screen: 'Login', data: {} as any };
     const checkUser = data?.user || {};
     const userRole = (data?.role || checkUser?.role || (checkUser?.roles && checkUser.roles[0]) || '').toString().toLowerCase();
-    const isBrokerUser = userRole.includes('broker');
+    const isBrokerUser = userRole.includes('broker') || ['BrokerDashboard', 'BrokerProfile', 'BrokerAddCompany', 'BrokerDealsList'].includes(screen);
 
     const onNavigate = async (target: string, targetData = {} as any, options = { replace: false, refresh: false }) => {
       let finalData = targetData;

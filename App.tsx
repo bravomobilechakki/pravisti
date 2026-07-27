@@ -32,6 +32,9 @@ import {
   BrokerAuthGateway,
   BrokerAddCompany,
   BrokerProfile,
+  CreateBrokerDeal,
+  BrokerPendingQueue,
+  OwnershipConfirmationModal,
 } from './src/components/broker';
 
 const LoginScreen = Login as any;
@@ -54,12 +57,16 @@ const TransactionHistoryScreen = TransactionHistory as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
 const BrokerAddCompanyScreen = BrokerAddCompany as any;
 const BrokerProfileScreen = BrokerProfile as any;
+const CreateBrokerDealScreen = CreateBrokerDeal as any;
+const BrokerPendingQueueScreen = BrokerPendingQueue as any;
 
 function App() {
   const [navigationStack, setNavigationStack] = useState([
     { screen: 'Login', data: {} as any },
   ]);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
+  const [pendingUserData, setPendingUserData] = useState<any>(null);
 
   // Auto-login logic
   useEffect(() => {
@@ -277,7 +284,15 @@ function App() {
       case 'DealsList':
         return <DealsListScreen onNavigate={onNavigate} routeData={data} />;
       case 'CreateDeal':
-        return <CreateDealScreen onNavigate={onNavigate} routeData={data} />;
+        return isBrokerUser ? (
+          <CreateBrokerDealScreen onNavigate={onNavigate} routeData={data} />
+        ) : (
+          <CreateDealScreen onNavigate={onNavigate} routeData={data} />
+        );
+      case 'CreateBrokerDeal':
+        return <CreateBrokerDealScreen onNavigate={onNavigate} routeData={data} />;
+      case 'BrokerPendingQueue':
+        return <BrokerPendingQueueScreen onNavigate={onNavigate} routeData={data} />;
       case 'DealDetails':
         return <DealDetailsScreen onNavigate={onNavigate} routeData={data} />;
       case 'DealChat':
@@ -320,6 +335,17 @@ function App() {
         {showFooter && current && (
           <Footer onNavigate={navigateTab} activeScreen={current.screen} />
         )}
+        <OwnershipConfirmationModal
+          visible={showOwnershipModal}
+          onClose={() => setShowOwnershipModal(false)}
+          userData={pendingUserData}
+          onConfirmed={() => {
+            setShowOwnershipModal(false);
+          }}
+          onRejected={() => {
+            setShowOwnershipModal(false);
+          }}
+        />
       </View>
     </SafeAreaProvider>
   );

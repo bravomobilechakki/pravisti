@@ -674,3 +674,85 @@ export const updateDeliveryStatus = async (deliveryId, status, token) => {
     throw error;
   }
 };
+
+// --- BROKER ASSISTED REGISTRATION & QUEUE APIs ---
+
+export const assistedCreatePartyAccount = async (payload, token) => {
+  try {
+    if (SummaryApi.assistedCreatePartyAccount) {
+      return await postRequest(SummaryApi.assistedCreatePartyAccount, payload, token);
+    }
+    // Mock fallback response if server endpoint is not yet deployed
+    const newId = 'ASSISTED-' + Math.random().toString(36).substring(2, 9);
+    const mockUser = {
+      _id: 'USER-' + newId,
+      name: payload.ownerName,
+      mobileNumber: payload.mobileNumber,
+      role: 'Trader',
+      status: 'Pending Owner Verification',
+      createdByBroker: true,
+      brokerUserId: payload.brokerUserId,
+      brokerName: payload.brokerName,
+      creationType: 'Broker Assisted Registration',
+    };
+    const mockCompany = {
+      _id: 'COMP-' + newId,
+      companyName: payload.companyName,
+      address: payload.companyAddress || payload.mandiAddress,
+      gstin: payload.gstin || '',
+      ownerId: mockUser._id,
+      status: 'Pending Owner Verification',
+      createdByBroker: true,
+    };
+    const mockProducts = (payload.products || []).map((p, idx) => ({
+      _id: `PROD-${newId}-${idx}`,
+      name: p.name || p,
+      category: null,
+      subcategory: null,
+      companyId: mockCompany._id,
+      status: 'Pending Owner Verification',
+    }));
+
+    return {
+      success: true,
+      data: {
+        user: mockUser,
+        company: mockCompany,
+        products: mockProducts,
+      },
+    };
+  } catch (error) {
+    console.error('Error in assistedCreatePartyAccount:', error.message || error);
+    throw error;
+  }
+};
+
+export const confirmOwnerVerification = async (payload, token) => {
+  try {
+    if (SummaryApi.confirmOwnerVerification) {
+      return await postRequest(SummaryApi.confirmOwnerVerification, payload, token);
+    }
+    return {
+      success: true,
+      message: payload.confirm ? 'Ownership verified successfully' : 'Ownership rejected',
+    };
+  } catch (error) {
+    console.error('Error confirming owner verification:', error.message || error);
+    throw error;
+  }
+};
+
+export const getBrokerPendingQueue = async (brokerId, token) => {
+  try {
+    if (SummaryApi.getBrokerPendingQueue) {
+      return await getRequest(SummaryApi.getBrokerPendingQueue(brokerId), token);
+    }
+    return {
+      success: true,
+      data: [],
+    };
+  } catch (error) {
+    console.error('Error fetching broker pending queue:', error.message || error);
+    throw error;
+  }
+};

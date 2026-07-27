@@ -23,6 +23,7 @@ import {
   User,
   ShieldCheck,
   ChevronRight,
+  Clock,
 } from 'lucide-react-native';
 import { getCompanies, getUserProfile } from '../../services/api';
 
@@ -310,6 +311,20 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
               <Text style={styles.createDealSub}>Match Buyer and Seller for instant sauda chitti</Text>
             </View>
             <ChevronRight size={20} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.createDealCard, { marginTop: 12, backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}
+            onPress={() => onNavigate('BrokerPendingQueue')}
+            activeOpacity={0.85}>
+            <View style={[styles.createDealIconBox, { backgroundColor: '#D97706' }]}>
+              <Clock size={22} color="#FFFFFF" />
+            </View>
+            <View style={styles.createDealTextBox}>
+              <Text style={[styles.createDealTitle, { color: '#92400E' }]}>Pending Verification Queue</Text>
+              <Text style={[styles.createDealSub, { color: '#B45309' }]}>View assisted deals waiting for Seller/Buyer sign</Text>
+            </View>
+            <ChevronRight size={20} color="#D97706" />
           </TouchableOpacity>
         </View>
 

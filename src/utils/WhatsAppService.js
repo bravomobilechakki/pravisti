@@ -14,7 +14,20 @@ export const generateWhatsAppLink = (dealData) => {
 
 export const shareToWhatsApp = (dealData) => {
   const url = generateWhatsAppLink(dealData);
-  // In a real RN app, we would use Linking.openURL(url)
   console.log('Opening WhatsApp with URL:', url);
   return url;
+};
+
+export const generateAssistedRegistrationLink = (inviteData) => {
+  const { partyType, ownerName, companyName, brokerName, brokerCompany, mobileNumber, dealRef } = inviteData;
+  const message = `*Welcome to Pravisti — Account & Deal Invitation*%0A%0A` +
+    `Hello *${ownerName}*,%0A` +
+    `Broker *${brokerName}* (${brokerCompany}) has created a temporary business account for *${companyName}* on Pravisti to facilitate a Sauda Deal (${dealRef || 'Deal'}).%0A%0A` +
+    `*Log in to verify your business & view the deal:*%0A` +
+    `1. Download Pravisti App: https://play.google.com/store/apps/details?id=com.pravisti%0A` +
+    `2. Log in using your mobile number: +91 ${mobileNumber}%0A` +
+    `3. Confirm ownership to activate your company & deals instantly!%0A%0A` +
+    `_Pravisti — B2B Agri & Commodity Trading Platform_`;
+
+  return `whatsapp://send?text=${message}`;
 };

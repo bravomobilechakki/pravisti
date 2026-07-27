@@ -6,22 +6,33 @@ import { getUserProfile } from './src/services/api';
 
 import Login from './src/components/login/login';
 import Signup from './src/components/login/Signup';
-import Dashboard from './src/components/dashboard/dashboard';
-import AddCompany from './src/components/dashboard/addCompany';
-import CompanyDetails from './src/components/dashboard/CompanyDetails';
-import DealsList from './src/components/sauda/DealsList';
-import CreateDeal from './src/components/sauda/CreateDeal';
-import DealDetails from './src/components/sauda/DealDetails';
-import DealChat from './src/components/sauda/DealChat';
-import ChatList from './src/components/sauda/ChatList';
-import Profile from './src/components/profile/profile';
-import MyCompanies from './src/components/profile/MyCompanies';
-import ContactPicker from './src/components/sauda/ContactPicker';
-import Footer from './src/components/footer/footer';
 import ChooseIndustry from './src/components/login/ChooseIndustry';
-import CategoryPage from './src/components/dashboard/CategoryPage';
-import AddProductPage from './src/components/dashboard/AddProductPage';
-import TransactionHistory from './src/components/sauda/TransactionHistory';
+import Footer from './src/components/footer/footer';
+import {
+  Dashboard,
+  AddCompany,
+  CompanyDetails,
+  DealsList,
+  CreateDeal,
+  DealDetails,
+  DealChat,
+  ChatList,
+  Profile,
+  MyCompanies,
+  ContactPicker,
+  CategoryPage,
+  AddProductPage,
+  TransactionHistory,
+} from './src/components/trader';
+import {
+  BrokerDashboard,
+  BrokerLogin,
+  BrokerOTPVerify,
+  BrokerRegistration,
+  BrokerAuthGateway,
+  BrokerAddCompany,
+  BrokerProfile,
+} from './src/components/broker';
 
 const LoginScreen = Login as any;
 const SignupScreen = Signup as any;
@@ -40,6 +51,9 @@ const ContactPickerScreen = ContactPicker as any;
 const CategoryPageScreen = CategoryPage as any;
 const AddProductPageScreen = AddProductPage as any;
 const TransactionHistoryScreen = TransactionHistory as any;
+const BrokerDashboardScreen = BrokerDashboard as any;
+const BrokerAddCompanyScreen = BrokerAddCompany as any;
+const BrokerProfileScreen = BrokerProfile as any;
 
 function App() {
   const [navigationStack, setNavigationStack] = useState([
@@ -55,8 +69,10 @@ function App() {
         if (token) {
           const response = await getUserProfile(token);
           if (response && response.success) {
-            // Restore user session to Dashboard automatically
-            setNavigationStack([{ screen: 'Dashboard', data: { user: response.data } }]);
+            const userData = response.data;
+            const roleStr = (userData?.role || (userData?.roles && userData.roles[0]) || '').toString().toLowerCase();
+            const initialScreen = roleStr.includes('broker') ? 'BrokerDashboard' : 'Dashboard';
+            setNavigationStack([{ screen: initialScreen, data: { user: userData } }]);
           } else {
             // Token invalid or expired
             await AsyncStorage.removeItem('userToken');
@@ -90,11 +106,14 @@ function App() {
 
   const navigateTab = (screen: string) => {
     const userData = current?.data?.user || {};
-    if (screen === 'Dashboard') {
-      setNavigationStack([{ screen: 'Dashboard', data: { user: userData } }]);
+    const roleStr = (current?.data?.role || userData?.role || (userData?.roles && userData.roles[0]) || '').toString().toLowerCase();
+    const homeScreen = roleStr.includes('broker') ? 'BrokerDashboard' : 'Dashboard';
+
+    if (screen === 'Dashboard' || screen === 'BrokerDashboard') {
+      setNavigationStack([{ screen: homeScreen, data: { user: userData } }]);
     } else {
       setNavigationStack([
-        { screen: 'Dashboard', data: { user: userData } },
+        { screen: homeScreen, data: { user: userData } },
         { screen, data: { user: userData } }
       ]);
     }
@@ -155,15 +174,7 @@ function App() {
 
   const renderScreen = () => {
     const { screen, data } = current || { screen: 'Login', data: {} as any };
-    const onNavigate = async (target: string, targetData = {}, options = { replace: false, refresh: false }) => {
-      if (target === 'pop') {
-        const popped = popScreen();
-        if (!popped) {
-          replaceScreen('Dashboard');
-        }
-        return;
-      }
-
+    const onNavigate = async (target: string, targetData = {} as any, options = { replace: false, refresh: false }) => {
       let finalData = targetData;
 
       // If refresh is requested, fetch latest profile before navigating
@@ -174,10 +185,34 @@ function App() {
         }
       }
 
-      if (options.replace || target === 'Dashboard' || target === 'Login') {
-        replaceScreen(target, finalData);
+      let finalTarget = target;
+      const checkUser = finalData?.user || current?.data?.user;
+      const checkRole = (finalData?.role || checkUser?.role || (checkUser?.roles && checkUser.roles[0]) || '').toString().toLowerCase();
+
+      if (finalTarget === 'Dashboard' && checkRole.includes('broker')) {
+        finalTarget = 'BrokerDashboard';
+      }
+
+      if ((finalTarget === 'AddCompany' || finalTarget === 'BrokerAddCompany') && checkRole.includes('broker')) {
+        finalTarget = 'BrokerAddCompany';
+      }
+
+      if ((finalTarget === 'Profile' || finalTarget === 'BrokerProfile') && checkRole.includes('broker')) {
+        finalTarget = 'BrokerProfile';
+      }
+
+      if (finalTarget === 'pop') {
+        const popped = popScreen();
+        if (!popped) {
+          replaceScreen(checkRole.includes('broker') ? 'BrokerDashboard' : 'Dashboard', finalData);
+        }
+        return;
+      }
+
+      if (options.replace || finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'Login') {
+        replaceScreen(finalTarget, finalData);
       } else {
-        pushScreen(target, finalData);
+        pushScreen(finalTarget, finalData);
       }
     };
 
@@ -218,12 +253,18 @@ function App() {
         return <AddProductPageScreen onNavigate={onNavigate} routeData={data} />;
       case 'TransactionHistory':
         return <TransactionHistoryScreen onNavigate={onNavigate} routeData={data} />;
+      case 'BrokerDashboard':
+        return <BrokerDashboardScreen onNavigate={onNavigate} routeData={data} />;
+      case 'BrokerAddCompany':
+        return <BrokerAddCompanyScreen onNavigate={onNavigate} routeData={data} />;
+      case 'BrokerProfile':
+        return <BrokerProfileScreen onNavigate={onNavigate} routeData={data} />;
       default:
         return <LoginScreen onNavigate={onNavigate} routeData={data} />;
     }
   };
 
-  const showFooter = current ? ['Dashboard', 'DealsList', 'ChatList', 'Profile'].includes(current.screen) : false;
+  const showFooter = current ? ['Dashboard', 'BrokerDashboard', 'DealsList', 'ChatList', 'Profile'].includes(current.screen) : false;
 
   return (
     <SafeAreaProvider>

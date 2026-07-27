@@ -22,7 +22,7 @@ import {
   X,
   Check
 } from 'lucide-react-native';
-import { createCompany, getIndustries } from '../../services/api';
+import { createCompany, getIndustries } from '../../../services/api';
 
 const AddCompany = ({ onNavigate, routeData }) => {
   const scrollViewRef = useRef(null);
@@ -72,7 +72,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
       try {
         const token = await AsyncStorage.getItem('userToken');
         if (token) {
-          const { getUserProfile } = require('../../services/api');
+          const { getUserProfile } = require('../../../services/api');
           const response = await getUserProfile(token);
           if (response && response.success && response.data?.mobileNumber) {
             setUserMobile(response.data.mobileNumber);

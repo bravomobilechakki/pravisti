@@ -32,7 +32,7 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard' }) => {
           );
         }
 
-        const isActive = activeScreen === tab.screen;
+        const isActive = activeScreen === tab.screen || (tab.screen === 'Dashboard' && activeScreen === 'BrokerDashboard');
         const Icon = tab.Icon;
         return (
           <TouchableOpacity

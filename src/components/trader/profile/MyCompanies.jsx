@@ -9,7 +9,7 @@ import {
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
-import { getCompanies } from '../../services/api';
+import { getCompanies, getUserProfile } from '../../../services/api';
 import {
   ArrowLeft,
   Plus,
@@ -31,7 +31,7 @@ const MyCompanies = ({ onNavigate }) => {
         const AsyncStorage = require('@react-native-async-storage/async-storage').default;
         const token = await AsyncStorage.getItem('userToken');
         if (token) {
-          const { getUserProfile } = require('../../services/api');
+          const { getUserProfile } = require('../../../services/api');
           const response = await getUserProfile(token);
           if (response && response.success) {
             setCurrentUser(response.data);

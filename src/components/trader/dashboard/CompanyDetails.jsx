@@ -34,7 +34,7 @@ import {
   ArrowUpRight,
   ChevronRight,
 } from 'lucide-react-native';
-import { getCompanyDetails, updateCompany, deleteCompany, getDeals, getExpiredDeals, getUserProfile } from '../../services/api';
+import { getCompanyDetails, updateCompany, deleteCompany, getDeals, getExpiredDeals, getUserProfile } from '../../../services/api';
 
 const formatVolume = (value) => {
   const num = Number(value);

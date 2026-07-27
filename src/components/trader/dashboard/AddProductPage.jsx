@@ -36,7 +36,7 @@ import {
   updateProduct,
   deleteProduct,
   getUnits,
-} from '../../services/api';
+} from '../../../services/api';
 
 let DYNAMIC_UNIT_MAPPING = {
   'bale': '6a0c118913e627687603da11',

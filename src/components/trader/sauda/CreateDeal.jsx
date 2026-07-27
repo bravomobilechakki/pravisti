@@ -40,7 +40,7 @@ import {
   createProduct,
   getCompanies,
   getCompanyDetails,
-} from '../../services/api';
+} from '../../../services/api';
 import { Linking } from 'react-native';
 
 const CreateDeal = ({ onNavigate, routeData }) => {

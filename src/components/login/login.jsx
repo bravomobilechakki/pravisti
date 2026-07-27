@@ -226,8 +226,10 @@ const Login = ({ onNavigate, routeData }) => {
         const { token, user } = response.data;
         try { await AsyncStorage.setItem('userToken', token); } catch (e) { console.error('AsyncStorage error', e); }
         if (onNavigate) {
-          const userRole = user && user.roles && user.roles[0] ? user.roles[0] : 'Broker';
-          onNavigate('Dashboard', { role: userRole, user });
+          const userRole = user && user.roles && user.roles[0] ? user.roles[0] : (user?.role || 'Broker');
+          const isBroker = userRole.toString().toLowerCase().includes('broker');
+          const targetScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
+          onNavigate(targetScreen, { role: userRole, user });
         }
       } else {
         const msg = response?.message || response?.error || 'Invalid OTP. Please try again.';

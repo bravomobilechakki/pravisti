@@ -51,7 +51,7 @@ import {
   updatePaymentStatus,
   getDeliveries,
   updateDeliveryStatus
-} from '../../services/api';
+} from '../../../services/api';
 
 const DealDetails = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = React.useState(!routeData?.deal);

@@ -22,7 +22,7 @@ import {
   TrendingDown,
   User,
 } from 'lucide-react-native';
-import { getCompanies, getUserProfile } from '../../services/api';
+import { getCompanies, getUserProfile } from '../../../services/api';
 
 const Dashboard = ({ onNavigate, routeData }) => {
   const [refreshing, setRefreshing] = React.useState(false);
@@ -191,7 +191,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
             {/* Center: Main Logo Image */}
             <View style={styles.brandContainer}>
               <Image
-                source={require('../../images/trader1.png')}
+                source={require('../../../images/trader1.png')}
                 style={styles.brandLogo}
                 resizeMode="contain"
               />

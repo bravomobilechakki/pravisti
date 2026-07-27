@@ -13,7 +13,7 @@ import {
   Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDeals, getExpiredDeals, getPendingInvitations, getUserProfile, getCompanyDetails } from '../../services/api';
+import { getDeals, getExpiredDeals, getPendingInvitations, getUserProfile, getCompanyDetails } from '../../../services/api';
 import {
   ArrowLeft,
   Building2,

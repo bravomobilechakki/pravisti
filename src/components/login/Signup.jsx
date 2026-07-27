@@ -222,7 +222,9 @@ const Signup = ({ onNavigate, routeData }) => {
 
         if (onNavigate) {
           const userRole = user && user.roles && user.roles[0] ? user.roles[0] : role;
-          onNavigate('Dashboard', { role: userRole, user });
+          const isBroker = userRole.toString().toLowerCase().includes('broker');
+          const targetScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
+          onNavigate(targetScreen, { role: userRole, user });
         }
       } else {
         Alert.alert('Error', response.message || 'Invalid OTP.');

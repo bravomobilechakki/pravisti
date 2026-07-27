@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getConversations, getUserProfile } from '../../services/api';
+import { getConversations, getUserProfile } from '../../../services/api';
 import { ArrowLeft, MessageSquare, Handshake } from 'lucide-react-native';
 
 const ChatList = ({ onNavigate }) => {

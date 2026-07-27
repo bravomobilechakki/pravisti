@@ -33,7 +33,7 @@ import {
   getDeliveries,
   createDelivery,
   updateDeliveryStatus
-} from '../../services/api';
+} from '../../../services/api';
 
 const TransactionHistory = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = React.useState(!routeData?.deal);

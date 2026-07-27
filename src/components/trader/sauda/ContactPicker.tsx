@@ -14,7 +14,7 @@ import {
   Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { filterContacts, getCompaniesByNumber } from '../../services/api';
+import { filterContacts, getCompaniesByNumber } from '../../../services/api';
 import Contacts from 'react-native-contacts';
 import {
   ArrowLeft,

@@ -45,7 +45,7 @@ import {
   updateSubCategory,
   deleteSubCategory,
   getProducts,
-} from '../../services/api';
+} from '../../../services/api';
 
 /* ─── Safe Image with fallback ─── */
 const SafeImage = ({ uri, style, fallbackUri }) => {

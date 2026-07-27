@@ -59,7 +59,7 @@ const Profile = ({ onNavigate, routeData }) => {
           return;
         }
 
-        const { getUserProfile } = require('../../services/api');
+        const { getUserProfile } = require('../../../services/api');
         const response = await getUserProfile();
         if (response && response.success) {
           setProfileData(response.data);
@@ -79,7 +79,7 @@ const Profile = ({ onNavigate, routeData }) => {
   React.useEffect(() => {
     const fetchCompanies = async () => {
       try {
-        const { getCompanies } = require('../../services/api');
+        const { getCompanies } = require('../../../services/api');
         const response = await getCompanies(1, 100);
         if (response && response.success && response.data?.companies) {
           setCompaniesCount(response.data.companies.length);

@@ -31,10 +31,7 @@ import {
   MessageSquare,
   HelpCircle,
   Lock,
-  Sparkles,
-  Share2,
   CreditCard,
-  Layers,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserProfile, logoutUser } from '../../../services/api';
@@ -48,11 +45,20 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
+        const storedProfile = await AsyncStorage.getItem('user_completed_profile');
+        if (storedProfile) {
+          setUser(JSON.parse(storedProfile));
+        }
         const token = await AsyncStorage.getItem('userToken');
         if (token) {
           const res = await getUserProfile(token);
           if (res && res.success) {
-            setUser(res.data);
+            let merged = res.data;
+            if (storedProfile) {
+              merged = { ...merged, ...JSON.parse(storedProfile) };
+            }
+            setUser(merged);
+            await AsyncStorage.setItem('user_completed_profile', JSON.stringify(merged));
           }
         }
       } catch (err) {
@@ -84,11 +90,20 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
     ]);
   };
 
-  const userName = user?.name || routeData?.user?.name || 'Ramesh Sharma';
-  const mobile = user?.mobileNumber || user?.phone || routeData?.user?.mobileNumber || '9876543210';
-  const email = user?.email || routeData?.user?.email || 'ramesh.broker@pravisti.com';
-  const firmName = user?.company || 'Ganesha Commodity Brokers';
-  const licenseNo = user?.gstin || 'APMC/MUM/2026/88';
+  const userName = user?.name || routeData?.user?.name || 'Broker Partner';
+  const mobile = user?.mobileNumber || user?.phone || routeData?.user?.mobileNumber || 'Not Registered';
+  const email = user?.email || routeData?.user?.email || 'Not Provided';
+  const firmName = user?.company || user?.firmName || 'No Firm Registered';
+  const licenseNo = user?.gstin || user?.apmcLicense || 'Pending Verification';
+  const mandis = user?.mandiLocation || user?.address || 'General APMC Mandis';
+  const bankAccount = user?.bankName
+    ? `${user.bankName} (${user.accountNumber ? '••• ' + user.accountNumber.slice(-4) : 'Linked'})`
+    : 'Bank Account Not Linked';
+
+  const earnedBrokerage = user?.totalBrokerage != null ? `₹${user.totalBrokerage.toLocaleString('en-IN')}` : '₹0';
+  const completedDeals = user?.completedDeals != null ? `${user.completedDeals} Deals` : '0 Deals';
+  const totalClients = user?.totalClients != null ? `${user.totalClients} Clients` : '0 Clients';
+  const commissionRate = user?.commissionRate != null ? `${user.commissionRate} %` : '1.0 %';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -116,7 +131,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
           </Svg>
 
           <View style={styles.heroHeaderContent}>
-            {/* Avatar Circle with Gold Ring */}
+            {/* Avatar Circle */}
             <View style={styles.avatarWrapper}>
               <View style={styles.avatarCircle}>
                 <Text style={styles.avatarText}>
@@ -136,7 +151,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
             </View>
 
             <Text style={styles.contactSubtitle}>
-              +91 {mobile} • {email}
+              {mobile !== 'Not Registered' ? `+91 ${mobile}` : mobile} • {email}
             </Text>
           </View>
         </View>
@@ -148,7 +163,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
               <View style={[styles.statIconCircle, { backgroundColor: '#EEF2FF' }]}>
                 <DollarSign size={18} color="#4F46E5" />
               </View>
-              <Text style={styles.statVal}>₹1,48,000</Text>
+              <Text style={styles.statVal}>{earnedBrokerage}</Text>
               <Text style={styles.statLbl}>Earned Brokerage</Text>
             </View>
 
@@ -156,7 +171,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
               <View style={[styles.statIconCircle, { backgroundColor: '#ECFDF5' }]}>
                 <Briefcase size={18} color="#10B981" />
               </View>
-              <Text style={styles.statVal}>15 Deals</Text>
+              <Text style={styles.statVal}>{completedDeals}</Text>
               <Text style={styles.statLbl}>Completed Saudas</Text>
             </View>
           </View>
@@ -166,7 +181,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
               <View style={[styles.statIconCircle, { backgroundColor: '#FEF3C7' }]}>
                 <Award size={18} color="#D97706" />
               </View>
-              <Text style={styles.statVal}>48 Clients</Text>
+              <Text style={styles.statVal}>{totalClients}</Text>
               <Text style={styles.statLbl}>Traders & Mills</Text>
             </View>
 
@@ -174,7 +189,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
               <View style={[styles.statIconCircle, { backgroundColor: '#F3E8FF' }]}>
                 <Percent size={18} color="#8B5CF6" />
               </View>
-              <Text style={styles.statVal}>1.0 %</Text>
+              <Text style={styles.statVal}>{commissionRate}</Text>
               <Text style={styles.statLbl}>Commission Rate</Text>
             </View>
           </View>
@@ -195,7 +210,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
           <View style={styles.firmBox}>
             <Text style={styles.firmNameText}>{firmName}</Text>
             <View style={styles.licenseBadge}>
-              <Text style={styles.licenseBadgeText}>APMC LICENSE: {licenseNo}</Text>
+              <Text style={styles.licenseBadgeText}>APMC / GST: {licenseNo}</Text>
             </View>
 
             <View style={styles.divider} />
@@ -203,13 +218,13 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
             <View style={styles.firmMetaRow}>
               <MapPin size={15} color="#64748B" style={{ marginRight: 6 }} />
               <Text style={styles.firmMetaLbl}>Operating Mandis:</Text>
-              <Text style={styles.firmMetaVal}>Rajkot, Unjha, MP Mandis</Text>
+              <Text style={styles.firmMetaVal}>{mandis}</Text>
             </View>
 
             <View style={styles.firmMetaRow}>
               <CreditCard size={15} color="#64748B" style={{ marginRight: 6 }} />
               <Text style={styles.firmMetaLbl}>Commission Payout:</Text>
-              <Text style={styles.firmMetaVal}>HDFC Bank (••• 4920)</Text>
+              <Text style={styles.firmMetaVal}>{bankAccount}</Text>
             </View>
           </View>
 
@@ -282,7 +297,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
           <TouchableOpacity
             style={styles.menuItem}
             activeOpacity={0.8}
-            onPress={() => Alert.alert('Broker Support', 'Calling APMC Broker Support Desk: +91 1800-420-999')}
+            onPress={() => Alert.alert('Broker Support Desk', 'Calling APMC Support Desk: 1800-420-999')}
           >
             <View style={styles.menuLeft}>
               <View style={[styles.menuIconBox, { backgroundColor: '#FEF3C7' }]}>

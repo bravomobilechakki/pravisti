@@ -188,14 +188,16 @@ const Dashboard = ({ onNavigate, routeData }) => {
               <View style={styles.notifDot} />
             </TouchableOpacity>
 
-            {/* Center: Main Logo Image */}
-            <View style={styles.brandContainer}>
+            {/* Left: Brand Logo & Title */}
+          <View style={styles.brandRow}>
+            <View style={styles.logoBox}>
               <Image
-                source={require('../../../images/trader1.png')}
-                style={styles.brandLogo}
+                source={require('../../../images/logo/new_logo.png')}
+                style={styles.logoImage}
                 resizeMode="contain"
               />
             </View>
+          </View>
 
             {/* Right: Profile Section (Avatar with initials) */}
             <View style={styles.profileSection}>
@@ -246,7 +248,7 @@ const Dashboard = ({ onNavigate, routeData }) => {
               activeOpacity={0.8}
             >
               <Plus size={14} color="#4F46E5" />
-              <Text style={styles.registerPromptText}>Link Your Business Company</Text>
+              <Text style={styles.registerPromptText}>Add Your Company</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -11,6 +11,8 @@ import {
   Alert,
   TextInput,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -22,13 +24,11 @@ import {
   CreditCard,
   ChevronRight,
   Check,
-  AlertCircle,
+  CircleAlert as AlertCircle,
   Clock,
   Briefcase,
   CheckCircle,
   XCircle,
-  PenTool,
-  RefreshCw,
   Share2,
   Edit3,
   X,
@@ -38,6 +38,8 @@ import {
   Box,
   Percent,
   Calendar,
+  User,
+  Building2,
 } from 'lucide-react-native';
 import {
   getDealDetails,
@@ -50,8 +52,93 @@ import {
   getPaymentDashboard,
   updatePaymentStatus,
   getDeliveries,
-  updateDeliveryStatus
+  updateDeliveryStatus,
 } from '../../../services/api';
+
+// Design Tokens Palette
+const COLORS = {
+  bg: '#F6F7F9',
+  surface: '#FFFFFF',
+  navy: '#172554',
+  primary: '#2563EB',
+  primaryPressed: '#1D4ED8',
+  textPrimary: '#111827',
+  textSecondary: '#64748B',
+  textMuted: '#94A3B8',
+  border: '#E5E7EB',
+  success: '#059669',
+  successBg: '#ECFDF5',
+  warning: '#D97706',
+  warningBg: '#FFFBEB',
+  error: '#DC2626',
+  errorBg: '#FEF2F2',
+  infoBg: '#EFF6FF',
+};
+
+// Reusable Presentational Components
+const SectionHeader = ({ title, actionText, onAction }) => (
+  <View style={styles.sectionHeaderRow}>
+    <Text style={styles.sectionHeading}>{title}</Text>
+    {actionText && onAction ? (
+      <TouchableOpacity onPress={onAction} accessibilityRole="button">
+        <Text style={styles.sectionActionText}>{actionText}</Text>
+      </TouchableOpacity>
+    ) : null}
+  </View>
+);
+
+const InfoRow = ({ label, value, valueColor = COLORS.textPrimary, numberOfLines = 1 }) => (
+  <View style={styles.infoRow}>
+    <Text style={styles.infoRowLabel}>{label}</Text>
+    <Text style={[styles.infoRowVal, { color: valueColor }]} numberOfLines={numberOfLines}>
+      {value}
+    </Text>
+  </View>
+);
+
+const StatusBadge = ({ label, type = 'info' }) => {
+  let bg = COLORS.infoBg;
+  let text = COLORS.primary;
+  if (type === 'success') {
+    bg = COLORS.successBg;
+    text = COLORS.success;
+  } else if (type === 'warning') {
+    bg = COLORS.warningBg;
+    text = COLORS.warning;
+  } else if (type === 'error') {
+    bg = COLORS.errorBg;
+    text = COLORS.error;
+  } else if (type === 'muted') {
+    bg = '#F1F5F9';
+    text = COLORS.textSecondary;
+  }
+  return (
+    <View style={[styles.badgeContainer, { backgroundColor: bg }]}>
+      <Text style={[styles.badgeText, { color: text }]}>{label}</Text>
+    </View>
+  );
+};
+
+const ProgressBar = ({ progress = 0, color = COLORS.success }) => {
+  const clamped = Math.min(100, Math.max(0, progress));
+  return (
+    <View style={styles.progressBarTrack}>
+      <View style={[styles.progressBarFill, { width: `${clamped}%`, backgroundColor: color }]} />
+    </View>
+  );
+};
+
+const EmptyState = ({ title, message, actionLabel, onAction }) => (
+  <View style={styles.emptyStateBox}>
+    <Text style={styles.emptyStateTitle}>{title}</Text>
+    <Text style={styles.emptyStateMsg}>{message}</Text>
+    {actionLabel && onAction ? (
+      <TouchableOpacity style={styles.emptyStateBtn} onPress={onAction} accessibilityRole="button">
+        <Text style={styles.emptyStateBtnText}>{actionLabel}</Text>
+      </TouchableOpacity>
+    ) : null}
+  </View>
+);
 
 const DealDetails = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = React.useState(!routeData?.deal);
@@ -89,9 +176,8 @@ const DealDetails = ({ onNavigate, routeData }) => {
         if (response && response.success && response.data) {
           const user = response.data;
           setCurrentUserId(user._id || user.id);
-          // Collect all company IDs this user belongs to
-          const companyIds = (user.companies || []).map(
-            (c) => String(c._id || c.id || c)
+          const companyIds = (user.companies || []).map((c) =>
+            String(c._id || c.id || c)
           );
           setCurrentUserCompanyIds(companyIds);
         }
@@ -103,19 +189,30 @@ const DealDetails = ({ onNavigate, routeData }) => {
   }, []);
 
   const fetchDealDetails = React.useCallback(async () => {
-    const id = routeData?.dealId || routeData?.deal?._id;
+    const passedDeal = routeData?.deal;
+    if (passedDeal) {
+      setDeal(passedDeal);
+    }
+    const id = passedDeal?._id || routeData?.dealId || passedDeal?.id;
     if (!id) {
       setIsLoading(false);
       return;
     }
+
+    const isValidObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+    if (!isValidObjectId) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const token = await AsyncStorage.getItem('userToken');
       const response = await getDealDetails(id, token);
-      if (response && response.success) {
+      if (response && response.success && response.data) {
         setDeal(response.data);
       }
     } catch (error) {
-      console.error('Error fetching deal details:', error);
+      console.warn('Error fetching deal details API, using passed deal fallback:', error);
     } finally {
       setIsLoading(false);
     }
@@ -145,30 +242,69 @@ const DealDetails = ({ onNavigate, routeData }) => {
       const vRole = deal.viewerRole || deal.currentUserRole || '';
       const cUserRole = deal.currentUserRole || vRole;
 
-      const isS = (cUserRole === 'seller' || vRole === 'seller') || currentUserCompanyIds.some(cid => cid && String(cid).toLowerCase() === String(sCid).toLowerCase());
-      const isB = (cUserRole === 'buyer' || vRole === 'buyer') || currentUserCompanyIds.some(cid => cid && String(cid).toLowerCase() === String(bCid).toLowerCase());
-      const isBr = (cUserRole === 'broker' || vRole === 'broker') || (!!brCid && currentUserCompanyIds.some(cid => cid && String(cid).toLowerCase() === String(brCid).toLowerCase()));
+      const isS =
+        cUserRole === 'seller' ||
+        vRole === 'seller' ||
+        currentUserCompanyIds.some(
+          (cid) => cid && String(cid).toLowerCase() === String(sCid).toLowerCase()
+        );
+      const isB =
+        cUserRole === 'buyer' ||
+        vRole === 'buyer' ||
+        currentUserCompanyIds.some(
+          (cid) => cid && String(cid).toLowerCase() === String(bCid).toLowerCase()
+        );
+      const isBr =
+        cUserRole === 'broker' ||
+        vRole === 'broker' ||
+        (!!brCid &&
+          currentUserCompanyIds.some(
+            (cid) => cid && String(cid).toLowerCase() === String(brCid).toLowerCase()
+          ));
 
-      const myCompanyId = isS ? sCid : isB ? bCid : isBr ? brCid : (currentUserCompanyIds[0] || '');
+      const myCompanyId = isS
+        ? sCid
+        : isB
+        ? bCid
+        : isBr
+        ? brCid
+        : currentUserCompanyIds[0] || '';
 
       setIsDashboardLoading(true);
       setIsHistoryLoading(true);
       setIsDeliveriesLoading(true);
 
       const [dashRes, histRes, delivRes] = await Promise.all([
-        getPaymentDashboard(myCompanyId, id, token).catch(e => { console.warn(e); return null; }),
-        getPayments({ dealId: id, companyId: myCompanyId, limit: 50 }, token).catch(e => { console.warn(e); return null; }),
-        getDeliveries({ dealId: id, limit: 50 }, token).catch(e => { console.warn(e); return null; })
+        getPaymentDashboard(myCompanyId, id, token).catch((e) => {
+          console.warn(e);
+          return null;
+        }),
+        getPayments({ dealId: id, companyId: myCompanyId, limit: 50 }, token).catch((e) => {
+          console.warn(e);
+          return null;
+        }),
+        getDeliveries({ dealId: id, limit: 50 }, token).catch((e) => {
+          console.warn(e);
+          return null;
+        }),
       ]);
 
       if (dashRes && dashRes.success) {
         setPaymentSummary(dashRes.data);
       }
       if (histRes && histRes.success) {
-        setPaymentsHistory(histRes.data?.data || histRes.data?.payments || (Array.isArray(histRes.data) ? histRes.data : []));
+        setPaymentsHistory(
+          histRes.data?.data ||
+            histRes.data?.payments ||
+            (Array.isArray(histRes.data) ? histRes.data : [])
+        );
       }
       if (delivRes && delivRes.success) {
-        setDeliveriesHistory(delivRes.data?.data || delivRes.data?.deliveries || (Array.isArray(delivRes.data) ? delivRes.data : []));
+        setDeliveriesHistory(
+          delivRes.data?.data ||
+            delivRes.data?.deliveries ||
+            (Array.isArray(delivRes.data) ? delivRes.data : [])
+        );
       }
     } catch (e) {
       console.warn('Failed to load payment data:', e);
@@ -189,12 +325,14 @@ const DealDetails = ({ onNavigate, routeData }) => {
     setIsUpdating(true);
     try {
       const id = deal?._id || routeData?.dealId;
-      const role = deal?.currentUserRole || (isSeller ? 'seller' : isBuyer ? 'buyer' : isBroker ? 'broker' : '');
+      const role =
+        deal?.currentUserRole ||
+        (isSeller ? 'seller' : isBuyer ? 'buyer' : isBroker ? 'broker' : '');
       const token = await AsyncStorage.getItem('userToken');
       const response = await acceptDeal(id, role, token);
       if (response && response.success) {
         Alert.alert('Success', 'Deal approved successfully', [
-          { text: 'OK', onPress: () => fetchDealDetails() }
+          { text: 'OK', onPress: () => fetchDealDetails() },
         ]);
       }
     } catch (error) {
@@ -217,12 +355,19 @@ const DealDetails = ({ onNavigate, routeData }) => {
             setIsUpdating(true);
             try {
               const id = deal?._id || routeData?.dealId;
-              const role = deal?.currentUserRole || (isSeller ? 'seller' : isBuyer ? 'buyer' : isBroker ? 'broker' : '');
+              const role =
+                deal?.currentUserRole ||
+                (isSeller ? 'seller' : isBuyer ? 'buyer' : isBroker ? 'broker' : '');
               const token = await AsyncStorage.getItem('userToken');
-              const response = await rejectDeal(id, role, 'Deal terms not acceptable', token);
+              const response = await rejectDeal(
+                id,
+                role,
+                'Deal terms not acceptable',
+                token
+              );
               if (response && response.success) {
                 Alert.alert('Success', 'Agreement declined successfully', [
-                  { text: 'OK', onPress: () => fetchDealDetails() }
+                  { text: 'OK', onPress: () => fetchDealDetails() },
                 ]);
               }
             } catch (error) {
@@ -230,12 +375,11 @@ const DealDetails = ({ onNavigate, routeData }) => {
             } finally {
               setIsUpdating(false);
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
-
 
   const openPaymentModal = () => {
     setPaymentType(isBuyer ? 'sent' : isSeller ? 'received' : 'sent');
@@ -258,9 +402,21 @@ const DealDetails = ({ onNavigate, routeData }) => {
       return;
     }
 
-    const remainingPayable = Number(paymentSummary ? (isSeller ? paymentSummary.totalPendingToReceive : paymentSummary.totalPendingToPay) : (deal.totalAmount || 0)) || 0;
+    const remainingPayable =
+      Number(
+        paymentSummary
+          ? isSeller
+            ? paymentSummary.totalPendingToReceive
+            : paymentSummary.totalPendingToPay
+          : deal.totalAmount || 0
+      ) || 0;
     if (amt > remainingPayable) {
-      Alert.alert('Validation Error', `Amount cannot exceed the remaining balance of ₹${remainingPayable.toLocaleString('en-IN')}`);
+      Alert.alert(
+        'Validation Error',
+        `Amount cannot exceed the remaining balance of ₹${remainingPayable.toLocaleString(
+          'en-IN'
+        )}`
+      );
       return;
     }
 
@@ -284,8 +440,8 @@ const DealDetails = ({ onNavigate, routeData }) => {
               setIsPaymentModalVisible(false);
               fetchPaymentData();
               fetchDealDetails();
-            }
-          }
+            },
+          },
         ]);
       }
     } catch (err) {
@@ -297,19 +453,10 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
   const canVerifyPayment = (pmt) => {
     if (!pmt || pmt.status !== 'pending') return false;
-
-    // Buyer Created Payment (paymentType == sent) AND Current User represents Seller Company
     const isBuyerCreated = pmt.paymentType === 'sent' || pmt.paymentType === 'given';
-    if (isBuyerCreated && isSeller) {
-      return true;
-    }
-
-    // Seller Created Payment (paymentType == received) AND Current User represents Buyer Company
+    if (isBuyerCreated && isSeller) return true;
     const isSellerCreated = pmt.paymentType === 'received';
-    if (isSellerCreated && isBuyer) {
-      return true;
-    }
-
+    if (isSellerCreated && isBuyer) return true;
     return false;
   };
 
@@ -319,18 +466,25 @@ const DealDetails = ({ onNavigate, routeData }) => {
       setIsUpdating(true);
       const res = await updatePaymentStatus(paymentId, status, token);
       if (res && res.success) {
-        Alert.alert('Success', `Payment request has been ${status === 'approved' ? 'approved' : 'rejected'}.`, [
-          {
-            text: 'OK',
-            onPress: () => {
-              fetchPaymentData();
-              fetchDealDetails();
-            }
-          }
-        ]);
+        Alert.alert(
+          'Success',
+          `Payment request has been ${status === 'approved' ? 'approved' : 'rejected'}.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                fetchPaymentData();
+                fetchDealDetails();
+              },
+            },
+          ]
+        );
       }
     } catch (err) {
-      Alert.alert('Failed to update status', err.message || 'Failed to update payment status');
+      Alert.alert(
+        'Failed to update status',
+        err.message || 'Failed to update payment status'
+      );
     } finally {
       setIsUpdating(false);
     }
@@ -339,28 +493,23 @@ const DealDetails = ({ onNavigate, routeData }) => {
   const confirmPaymentStatusChange = (pmt, status) => {
     Alert.alert(
       `${status === 'approved' ? 'Approve' : 'Reject'} Payment`,
-      `Are you sure you want to ${status === 'approved' ? 'approve' : 'reject'} this payment entry of ₹${Number(pmt.amount).toLocaleString('en-IN')}?`,
+      `Are you sure you want to ${
+        status === 'approved' ? 'approve' : 'reject'
+      } this payment entry of ₹${Number(pmt.amount).toLocaleString('en-IN')}?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Yes', onPress: () => handleUpdatePaymentStatus(pmt._id || pmt.id, status) }
+        {
+          text: 'Yes',
+          onPress: () => handleUpdatePaymentStatus(pmt._id || pmt.id, status),
+        },
       ]
     );
   };
 
-  // Delivery Verification Helpers
   const canVerifyDelivery = (deliv) => {
     if (!deliv || deliv.status !== 'pending') return false;
-
-    // Sent delivery created by seller (dispatched) -> Buyer verifies/approves
-    if (deliv.deliveryType === 'sent' && isBuyer) {
-      return true;
-    }
-
-    // Received delivery created by buyer (receipt confirmed) -> Seller verifies/approves
-    if (deliv.deliveryType === 'received' && isSeller) {
-      return true;
-    }
-
+    if (deliv.deliveryType === 'sent' && isBuyer) return true;
+    if (deliv.deliveryType === 'received' && isSeller) return true;
     return false;
   };
 
@@ -370,18 +519,25 @@ const DealDetails = ({ onNavigate, routeData }) => {
       setIsUpdating(true);
       const res = await updateDeliveryStatus(deliveryId, status, token);
       if (res && res.success) {
-        Alert.alert('Success', `Delivery request has been ${status === 'approved' ? 'approved' : 'rejected'}.`, [
-          {
-            text: 'OK',
-            onPress: () => {
-              fetchPaymentData();
-              fetchDealDetails();
-            }
-          }
-        ]);
+        Alert.alert(
+          'Success',
+          `Delivery request has been ${status === 'approved' ? 'approved' : 'rejected'}.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                fetchPaymentData();
+                fetchDealDetails();
+              },
+            },
+          ]
+        );
       }
     } catch (err) {
-      Alert.alert('Failed to update status', err.message || 'Failed to update delivery status');
+      Alert.alert(
+        'Failed to update status',
+        err.message || 'Failed to update delivery status'
+      );
     } finally {
       setIsUpdating(false);
     }
@@ -390,10 +546,15 @@ const DealDetails = ({ onNavigate, routeData }) => {
   const confirmDeliveryStatusChange = (deliv, status) => {
     Alert.alert(
       `${status === 'approved' ? 'Approve' : 'Reject'} Delivery`,
-      `Are you sure you want to ${status === 'approved' ? 'approve' : 'reject'} this delivery entry of ${deliv.quantity} MT?`,
+      `Are you sure you want to ${
+        status === 'approved' ? 'approve' : 'reject'
+      } this delivery entry of ${deliv.quantity} MT?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Yes', onPress: () => handleUpdateDeliveryStatus(deliv._id || deliv.id, status) }
+        {
+          text: 'Yes',
+          onPress: () => handleUpdateDeliveryStatus(deliv._id || deliv.id, status),
+        },
       ]
     );
   };
@@ -401,7 +562,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
   const combinedHistory = React.useMemo(() => {
     const list = [];
     if (paymentsHistory && Array.isArray(paymentsHistory)) {
-      paymentsHistory.forEach(pmt => {
+      paymentsHistory.forEach((pmt) => {
         list.push({
           ...pmt,
           timelineType: 'payment',
@@ -410,7 +571,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
       });
     }
     if (deliveriesHistory && Array.isArray(deliveriesHistory)) {
-      deliveriesHistory.forEach(deliv => {
+      deliveriesHistory.forEach((deliv) => {
         list.push({
           ...deliv,
           timelineType: 'delivery',
@@ -421,236 +582,82 @@ const DealDetails = ({ onNavigate, routeData }) => {
     return list.sort((a, b) => b.dateForSort - a.dateForSort);
   }, [paymentsHistory, deliveriesHistory]);
 
-  const renderTimelineItem = (item, idx) => {
-    const isLast = idx === combinedHistory.length - 1;
-    const itemDate = item.createdAt
-      ? new Date(item.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-      : '';
-
-    const getStatusConfig = (status) => {
-      switch (status?.toLowerCase()) {
-        case 'approved':
-          return { label: 'APPROVED', bgColor: '#ECFDF5', textColor: '#047857', border: '#A7F3D0' };
-        case 'rejected':
-          return { label: 'REJECTED', bgColor: '#FEF2F2', textColor: '#B91C1C', border: '#FCA5A5' };
-        case 'pending':
-        default:
-          return { label: 'PENDING', bgColor: '#FFFBEB', textColor: '#B45309', border: '#FDE68A' };
-      }
-    };
-    const cfg = getStatusConfig(item.status);
-
-    if (item.timelineType === 'payment') {
-      const isSent = item.paymentType === 'sent' || item.paymentType === 'given';
-      return (
-        <View key={`pmt-${item._id || idx}`} style={styles.timelineItem}>
-          <View style={styles.timelineLeftColumn}>
-            <View style={[styles.timelineNode, isSent ? styles.timelineNodeSent : styles.timelineNodeReceived]}>
-              {isSent ? (
-                <ArrowUpRight size={14} color="#EF4444" />
-              ) : (
-                <ArrowDownLeft size={14} color="#10B981" />
-              )}
-            </View>
-            {!isLast && <View style={styles.timelineConnectorLine} />}
-          </View>
-
-          <View style={styles.timelineContentCard}>
-            <View style={styles.timelineContentHeader}>
-              <Text style={styles.timelineMethodText}>{item.paymentMethod || 'Payment'}</Text>
-              <Text style={[styles.timelineAmountText, isSent ? styles.timelineAmountSent : styles.timelineAmountReceived]}>
-                {isSent ? '-' : '+'}₹{Number(item.amount).toLocaleString('en-IN')}
-              </Text>
-            </View>
-
-            <View style={styles.pmtDetailsRow}>
-              <Text style={styles.pmtDetailText}>Type: {String(item.paymentType || '').toUpperCase()}</Text>
-              <Text style={styles.pmtDetailText}>By: {item.createdBy?.name || item.createdBy || 'N/A'}</Text>
-            </View>
-
-            {item.notes ? (
-              <Text style={styles.timelineNotesText} numberOfLines={2}>{item.notes}</Text>
-            ) : null}
-
-            <View style={styles.pmtFooterRow}>
-              <Text style={styles.timelineDateText}>{itemDate}</Text>
-              <View style={[
-                styles.pmtStatusBadge,
-                { backgroundColor: cfg.bgColor, borderColor: cfg.border }
-              ]}>
-                <Text style={[styles.pmtStatusText, { color: cfg.textColor }]}>
-                  {cfg.label}
-                </Text>
-              </View>
-            </View>
-
-            {canVerifyPayment(item) && (
-              <View style={styles.verifyButtonsRow}>
-                <TouchableOpacity
-                  style={[styles.verifyBtn, styles.declineVerifyBtn]}
-                  onPress={() => confirmPaymentStatusChange(item, 'rejected')}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <XCircle size={14} color="#EF4444" />
-                    <Text style={styles.declineVerifyBtnText}>Reject</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.verifyBtn, styles.approveVerifyBtn]}
-                  onPress={() => confirmPaymentStatusChange(item, 'approved')}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <CheckCircle size={14} color="#10B981" />
-                    <Text style={styles.approveVerifyBtnText}>Verify</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      );
-    } else {
-      const isSent = item.deliveryType === 'sent';
-
-      let prodName = 'Product';
-      if (deal.products && deal.products.length > 0) {
-        const matchedProd = deal.products.find(p => {
-          const pId = p.productId?._id || p.productId || p._id || p.id;
-          const dpId = item.productId?._id || item.productId;
-          return String(pId) === String(dpId);
-        });
-        if (matchedProd) {
-          prodName = matchedProd.productId?.name || matchedProd.name || 'Product';
-        }
-      } else if (deal.product) {
-        prodName = deal.product?.productId?.name || deal.product?.name || (typeof deal.product === 'string' ? deal.product : 'Product');
-      }
-
-      return (
-        <View key={`deliv-${item._id || idx}`} style={styles.timelineItem}>
-          <View style={styles.timelineLeftColumn}>
-            <View style={[styles.timelineNode, isSent ? styles.timelineNodeSentBlue : styles.timelineNodeReceivedGreen]}>
-              {isSent ? (
-                <Truck size={14} color="#4F46E5" />
-              ) : (
-                <Box size={14} color="#059669" />
-              )}
-            </View>
-            {!isLast && <View style={styles.timelineConnectorLine} />}
-          </View>
-
-          <View style={styles.timelineContentCard}>
-            <View style={styles.timelineContentHeader}>
-              <Text style={styles.timelineMethodText}>{prodName}</Text>
-              <Text style={[styles.timelineAmountText, isSent ? styles.timelineAmountSentBlue : styles.timelineAmountReceivedGreen]}>
-                {isSent ? 'Dispatched' : 'Received'}: {item.quantity} MT
-              </Text>
-            </View>
-
-            <View style={styles.pmtDetailsRow}>
-              <Text style={styles.pmtDetailText}>Type: {isSent ? 'DISPATCHED' : 'RECEIVED'}</Text>
-            </View>
-
-            {item.notes ? (
-              <Text style={styles.timelineNotesText} numberOfLines={2}>Notes: {item.notes}</Text>
-            ) : null}
-
-            <View style={styles.pmtFooterRow}>
-              <Text style={styles.timelineDateText}>{itemDate}</Text>
-              <View style={[
-                styles.pmtStatusBadge,
-                { backgroundColor: cfg.bgColor, borderColor: cfg.border }
-              ]}>
-                <Text style={[styles.pmtStatusText, { color: cfg.textColor }]}>
-                  {cfg.label}
-                </Text>
-              </View>
-            </View>
-
-            {canVerifyDelivery(item) && (
-              <View style={styles.verifyButtonsRow}>
-                <TouchableOpacity
-                  style={[styles.verifyBtn, styles.declineVerifyBtn]}
-                  onPress={() => confirmDeliveryStatusChange(item, 'rejected')}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <XCircle size={14} color="#EF4444" />
-                    <Text style={styles.declineVerifyBtnText}>Reject</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.verifyBtn, styles.approveVerifyBtn]}
-                  onPress={() => confirmDeliveryStatusChange(item, 'approved')}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <CheckCircle size={14} color="#10B981" />
-                    <Text style={styles.approveVerifyBtnText}>Verify</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      );
-    }
-  };
-
   if (isLoading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#4F46E5" />
-        <Text style={styles.loadingText}>Fetching agreement records...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerBox}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Fetching agreement records...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!deal) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={styles.errorText}>Deal record not found</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => onNavigate('DealsList')}>
-          <Text style={styles.backBtnText}>Return to List</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <EmptyState
+          title="Deal record not found"
+          message="The requested deal record could not be loaded."
+          actionLabel="Return to List"
+          onAction={() => onNavigate('DealsList')}
+        />
+      </SafeAreaView>
     );
   }
 
   const isExpired = String(deal.status || '').toLowerCase() === 'expired';
   const isPending = String(deal.status || '').toLowerCase() === 'pending';
-  const isActive = String(deal.status || '').toLowerCase() === 'active' || String(deal.status || '').toLowerCase() === 'approved' || String(deal.status || '').toLowerCase() === 'in_progress';
-  const isRejected = String(deal.status || '').toLowerCase() === 'rejected' || String(deal.status || '').toLowerCase() === 'cancelled';
+  const isActive =
+    String(deal.status || '').toLowerCase() === 'active' ||
+    String(deal.status || '').toLowerCase() === 'approved' ||
+    String(deal.status || '').toLowerCase() === 'in_progress';
+  const isRejected =
+    String(deal.status || '').toLowerCase() === 'rejected' ||
+    String(deal.status || '').toLowerCase() === 'cancelled';
   const isCompleted = String(deal.status || '').toLowerCase() === 'completed';
   const isActiveOrCompleted = isActive || isCompleted;
 
-  // ── Deal Approval Flow — Spec Implementation ─────────────────────────
   const normalizeId = (val) => String(val?._id || val?.id || val || '');
   const sellerCid = normalizeId(deal.sellerCompanyId);
   const buyerCid = normalizeId(deal.buyerCompanyId);
   const brokerCid = normalizeId(deal.brokerCompanyId);
 
-  // Specs compliance: Retrieve current user's role from backend details or calculate
   const viewerRole = deal.viewerRole || deal.currentUserRole || '';
   const currentUserRole = deal.currentUserRole || viewerRole;
 
-  const isSeller = (currentUserRole === 'seller' || viewerRole === 'seller') || currentUserCompanyIds.some(id => id && String(id).toLowerCase() === String(sellerCid).toLowerCase());
-  const isBuyer = (currentUserRole === 'buyer' || viewerRole === 'buyer') || currentUserCompanyIds.some(id => id && String(id).toLowerCase() === String(buyerCid).toLowerCase());
-  const isBroker = (currentUserRole === 'broker' || viewerRole === 'broker') || (!!brokerCid && currentUserCompanyIds.some(id => id && String(id).toLowerCase() === String(brokerCid).toLowerCase()));
+  const isSeller =
+    currentUserRole === 'seller' ||
+    viewerRole === 'seller' ||
+    currentUserCompanyIds.some(
+      (id) => id && String(id).toLowerCase() === String(sellerCid).toLowerCase()
+    );
+  const isBuyer =
+    currentUserRole === 'buyer' ||
+    viewerRole === 'buyer' ||
+    currentUserCompanyIds.some(
+      (id) => id && String(id).toLowerCase() === String(buyerCid).toLowerCase()
+    );
+  const isBroker =
+    currentUserRole === 'broker' ||
+    viewerRole === 'broker' ||
+    (!!brokerCid &&
+      currentUserCompanyIds.some(
+        (id) => id && String(id).toLowerCase() === String(brokerCid).toLowerCase()
+      ));
 
-  // Fallback to acceptedBy array if approvalStatus is not populated
   const approvalStatus = deal.approvalStatus || {};
   const getPartyApprovalStatus = (partyRole, companyId) => {
     if (approvalStatus[partyRole]) {
       return approvalStatus[partyRole];
     }
     if (deal.acceptedBy && deal.acceptedBy.length > 0 && companyId) {
-      const record = deal.acceptedBy.find(r => normalizeId(r.companyId) === normalizeId(companyId));
+      const record = deal.acceptedBy.find(
+        (r) => normalizeId(r.companyId) === normalizeId(companyId)
+      );
       if (record) {
         if (record.status === 'accepted') return 'approved';
-        return record.status; // 'pending' or 'rejected'
+        return record.status;
       }
     }
     return 'pending';
@@ -668,12 +675,24 @@ const DealDetails = ({ onNavigate, routeData }) => {
     (creatorRole === 'buyer' && isBuyer) ||
     (creatorRole === 'broker' && isBroker);
 
-  const viewerApprovalStatus = deal.viewerApprovalStatus || (isCreatorCompany ? 'approved' : (((isSeller && sellerApproved) || (isBuyer && buyerApproved)) ? 'approved' : 'pending'));
-  const pendingApprovalFor = deal.pendingApprovalFor || (
-    isPending ? (creatorRole === 'seller' ? 'buyer' : creatorRole === 'buyer' ? 'seller' : '') : ''
-  );
+  const viewerApprovalStatus =
+    deal.viewerApprovalStatus ||
+    (isCreatorCompany
+      ? 'approved'
+      : (isSeller && sellerApproved) || (isBuyer && buyerApproved)
+      ? 'approved'
+      : 'pending');
 
-  // Determine visibility of buttons: creator company doesn't see buttons, other party sees them
+  const pendingApprovalFor =
+    deal.pendingApprovalFor ||
+    (isPending
+      ? creatorRole === 'seller'
+        ? 'buyer'
+        : creatorRole === 'buyer'
+        ? 'seller'
+        : ''
+      : '');
+
   let showApproveButton = false;
   let showRejectButton = false;
 
@@ -688,60 +707,97 @@ const DealDetails = ({ onNavigate, routeData }) => {
   }
 
   const showActionButtons = showApproveButton || showRejectButton;
-
   const otherPartyLabel = isSeller ? 'Buyer' : isBuyer ? 'Seller' : 'Other Party';
-
-  const otherPartyApprovedLabel = isBuyer && sellerApproved
-    ? 'Seller Side Approved'
-    : isSeller && buyerApproved
-      ? 'Buyer Side Approved'
-      : null;
 
   const getDealTotals = () => {
     if (deal.products && deal.products.length > 0) {
       let totalQty = 0;
       let totalValueAmt = 0;
-
-      deal.products.forEach(p => {
+      deal.products.forEach((p) => {
         totalQty += Number(p.quantity) || 0;
-        totalValueAmt += Number(p.totalAmount || (Number(p.quantity) * Number(p.price))) || 0;
+        totalValueAmt +=
+          Number(p.totalAmount || Number(p.quantity) * Number(p.price)) || 0;
       });
-
       return {
         qty: totalQty,
         totalVal: totalValueAmt,
-        firstProductName: deal.products[0]?.productId?.name || deal.products[0]?.name || 'Unknown Product',
+        firstProductName:
+          deal.products[0]?.productId?.name ||
+          deal.products[0]?.name ||
+          'Commodity Item',
         hasMultiple: deal.products.length > 1,
-        count: deal.products.length
+        count: deal.products.length,
       };
     }
 
     const firstProd = deal.product || {};
     const qtyVal = Number(firstProd.quantity || deal.qty) || 0;
     const priceVal = Number(firstProd.price || deal.price) || 0;
-    const computedTotal = deal.totalAmount || firstProd.totalAmount || (qtyVal * priceVal) || 0;
+    const computedTotal =
+      deal.totalAmount || firstProd.totalAmount || qtyVal * priceVal || 0;
 
     return {
       qty: qtyVal || 0,
       totalVal: computedTotal || priceVal || 0,
-      firstProductName: firstProd.productId?.name || firstProd.name || (typeof firstProd === 'string' ? firstProd : '') || 'Unknown Product',
+      firstProductName:
+        firstProd.productId?.name ||
+        firstProd.name ||
+        (typeof firstProd === 'string' ? firstProd : '') ||
+        'Commodity Item',
       hasMultiple: false,
-      count: 1
+      count: 1,
     };
   };
 
   const dealTotals = getDealTotals();
   const productName = dealTotals.hasMultiple
-    ? `${dealTotals.firstProductName} + ${dealTotals.count - 1} more items`
+    ? `${dealTotals.firstProductName} + ${dealTotals.count - 1} more`
     : dealTotals.firstProductName;
   const qty = dealTotals.qty;
-  const totalVal = typeof dealTotals.totalVal === 'number' ? dealTotals.totalVal.toLocaleString('en-IN') : dealTotals.totalVal;
-  const dealDateDisplay = deal.dealDate ? new Date(deal.dealDate).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
+  const totalValFormatted =
+    typeof dealTotals.totalVal === 'number'
+      ? dealTotals.totalVal.toLocaleString('en-IN')
+      : dealTotals.totalVal;
+
+  const dealDateDisplay = deal.dealDate
+    ? new Date(deal.dealDate).toLocaleDateString([], {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'N/A';
   const expiryDateRaw = deal.expiryDate || deal.validityDate;
-  const validityDateDisplay = expiryDateRaw ? new Date(expiryDateRaw).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
+  const validityDateDisplay = expiryDateRaw
+    ? new Date(expiryDateRaw).toLocaleDateString([], {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'N/A';
+
+  const sellerName =
+    deal.sellerCompany?.name ||
+    deal.sellerCompanyId?.companyName ||
+    deal.sellerCompanyId?.name ||
+    deal.party1?.company?.name ||
+    deal.party1?.name ||
+    'Seller Business';
+  const buyerName =
+    deal.buyerCompany?.name ||
+    deal.buyerCompanyId?.companyName ||
+    deal.buyerCompanyId?.name ||
+    deal.party2?.company?.name ||
+    deal.party2?.name ||
+    'Buyer Business';
+  const brokerNameDisplay =
+    deal.broker?.name ||
+    deal.brokerCompanyId?.name ||
+    deal.brokerCompanyId?.companyName ||
+    'Direct Trade';
 
   const getGstBreakdown = () => {
-    if (!deal) return { items: [], baseTotal: 0, discountTotal: 0, gstTotal: 0, grandTotal: 0 };
+    if (!deal)
+      return { items: [], baseTotal: 0, discountTotal: 0, gstTotal: 0, grandTotal: 0 };
     let baseTotal = 0;
     let discountTotal = 0;
     let gstTotal = 0;
@@ -768,9 +824,9 @@ const DealDetails = ({ onNavigate, routeData }) => {
           qty: qtyVal,
           price: priceVal,
           discount: discountVal,
-          gstPercent: gstPercent,
-          gstAmount: gstAmount,
-          total: total
+          gstPercent,
+          gstAmount,
+          total,
         });
       });
     } else {
@@ -794,9 +850,9 @@ const DealDetails = ({ onNavigate, routeData }) => {
         qty: qtyVal,
         price: priceVal,
         discount: discountVal,
-        gstPercent: gstPercent,
-        gstAmount: gstAmount,
-        total: total
+        gstPercent,
+        gstAmount,
+        total,
       });
     }
 
@@ -805,82 +861,78 @@ const DealDetails = ({ onNavigate, routeData }) => {
       baseTotal,
       discountTotal,
       gstTotal,
-      grandTotal: baseTotal - discountTotal + gstTotal
+      grandTotal: baseTotal - discountTotal + gstTotal,
     };
   };
 
-  const sellerName = deal.sellerCompany?.name || deal.sellerCompanyId?.companyName || deal.sellerCompanyId?.name || deal.party1?.company?.name || deal.party1?.companyId?.name || deal.party1?.name || 'Seller';
-  const buyerName = deal.buyerCompany?.name || deal.buyerCompanyId?.companyName || deal.buyerCompanyId?.name || deal.party2?.company?.name || deal.party2?.companyId?.name || deal.party2?.name || 'Buyer';
-
-  const getInitials = (name) => {
-    return name
-      ? name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
-      : '??';
-  };
-
-  const getStatusConfig = (status) => {
+  const getStatusBadgeType = (status) => {
     switch (status?.toLowerCase()) {
       case 'active':
       case 'approved':
       case 'in_progress':
-        return { label: 'ACTIVE TRADE', bgColor: '#ECFDF5', textColor: '#047857', border: '#A7F3D0', dotColor: '#10B981' };
+        return { label: 'Active Trade', type: 'success' };
       case 'pending':
-        return { label: 'PENDING APPROVAL', bgColor: '#FFFBEB', textColor: '#B45309', border: '#FDE68A', dotColor: '#F59E0B' };
+        return { label: 'Pending Signature', type: 'warning' };
       case 'completed':
-        return { label: 'COMPLETED', bgColor: '#EFF6FF', textColor: '#1D4ED8', border: '#BFDBFE', dotColor: '#3B82F6' };
+        return { label: 'Completed', type: 'info' };
       case 'cancelled':
       case 'rejected':
-        return { label: 'REJECTED', bgColor: '#FEF2F2', textColor: '#B91C1C', border: '#FCA5A5', dotColor: '#EF4444' };
+        return { label: 'Declined', type: 'error' };
       case 'expired':
-        return { label: 'EXPIRED', bgColor: '#F8FAFC', textColor: '#475569', border: '#CBD5E1', dotColor: '#64748B' };
+        return { label: 'Expired', type: 'muted' };
       default:
-        return { label: status?.toUpperCase() || 'UNKNOWN', bgColor: '#F8FAFC', textColor: '#475569', border: '#CBD5E1', dotColor: '#64748B' };
+        return { label: status?.toUpperCase() || 'Pending', type: 'info' };
     }
   };
 
-  const statusCfg = getStatusConfig(deal.status);
-
-  const totalDealVal = Number(dealTotals.totalVal || deal.grandTotal || deal.totalAmount || 1);
-  const totalSentVal = paymentSummary ? Number(paymentSummary.totalAmountSent || 0) : 0;
+  const statusBadge = getStatusBadgeType(deal.status);
+  const totalDealVal = Number(
+    dealTotals.totalVal || deal.grandTotal || deal.totalAmount || 1
+  );
+  const totalSentVal = paymentSummary
+    ? Number(paymentSummary.totalAmountSent || 0)
+    : 0;
   const percentPaid = Math.min(100, Math.max(0, (totalSentVal / totalDealVal) * 100));
+
+  const deliveredQty = deal.deliveredQuantity || deal.product?.deliveredQuantity || 0;
+  const totalQtyVal = Number(qty) || 1;
+  const percentDelivered = Math.min(100, Math.max(0, (deliveredQty / totalQtyVal) * 100));
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* 📋 PREMIUM COMPACT HEADER BAR (No cover image) */}
+      {/* 1. COMPACT APP HEADER */}
       <View style={styles.header}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.iconBtn}
           onPress={() => onNavigate('pop')}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
           activeOpacity={0.7}
         >
-          <ArrowLeft size={18} color="#0F172A" />
+          <ArrowLeft size={20} color={COLORS.textPrimary} />
         </TouchableOpacity>
 
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={styles.headerTitleText} numberOfLines={1}>
-            Sauda Details
+        <View style={styles.headerTitleBox}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            Deal Details
           </Text>
-          <Text style={styles.headerSubtitleText}>
+          <Text style={styles.headerSub}>
             #{deal.dealNumber || deal._id?.slice(-6).toUpperCase()}
           </Text>
         </View>
 
-        <View style={styles.headerRightActions}>
+        <View style={styles.headerRightRow}>
           {!isExpired && (
             <TouchableOpacity
-              style={styles.premiumHeaderChatButton}
+              style={styles.iconBtn}
               onPress={() => onNavigate('DealChat', { dealId: deal._id })}
+              accessibilityRole="button"
+              accessibilityLabel="Chat"
               activeOpacity={0.7}
             >
-              <MessageSquare size={18} color="#4F46E5" />
-              <View style={styles.chatNotificationDot} />
+              <MessageSquare size={19} color={COLORS.primary} />
             </TouchableOpacity>
           )}
         </View>
@@ -890,2119 +942,1063 @@ const DealDetails = ({ onNavigate, routeData }) => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Validity Status Bar */}
-        <View style={[styles.statusBanner, isExpired ? styles.statusBannerExpired : styles.statusBannerActive, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }]}>
-          {isExpired ? (
-            <AlertTriangle size={14} color="#EF4444" />
-          ) : (
-            <ShieldCheck size={14} color="#10B981" />
-          )}
-          <Text style={[styles.statusBannerText, isExpired ? styles.statusTextExpired : styles.statusTextActive]}>
-            {isExpired ? 'Agreement Expired' : 'Legally Active & Enforceable until'} {validityDateDisplay}
-          </Text>
+
+        {/* 2. PROMINENT DEAL SUMMARY CARD */}
+        <View style={styles.card}>
+          <View style={styles.summaryTopRow}>
+            <Text style={styles.productTitle} numberOfLines={1}>
+              {productName}
+            </Text>
+            <StatusBadge label={statusBadge.label} type={statusBadge.type} />
+          </View>
+
+          <Text style={styles.dealAmount}>₹{totalValFormatted}</Text>
+
+          <View style={styles.divider} />
+
+          <View style={styles.gridRow}>
+            <View style={styles.gridCol}>
+              <InfoRow label="Quantity" value={`${qty} MT`} />
+            </View>
+            <View style={styles.gridCol}>
+              <InfoRow
+                label="Price / Rate"
+                value={`₹${Number(deal.price || deal.product?.price || 0).toLocaleString('en-IN')}`}
+              />
+            </View>
+          </View>
+
+          <View style={[styles.gridRow, { marginTop: 12 }]}>
+            <View style={styles.gridCol}>
+              <InfoRow label="Agreement Date" value={dealDateDisplay} />
+            </View>
+            <View style={styles.gridCol}>
+              <InfoRow label="Broker Facilitator" value={brokerNameDisplay} />
+            </View>
+          </View>
         </View>
 
-        {/* Fintech Quick Actions Row (inspired by reference screen quick buttons) */}
-        <View style={styles.fintechActionsRow}>
-          {/* Action 1: Chat Discussion */}
+        {/* 3. QUICK ACTIONS ROW */}
+        <View style={styles.quickActionsRow}>
           {!isExpired && (
-            <View style={styles.fintechActionItem}>
-              <TouchableOpacity
-                style={[styles.fintechActionButton, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}
-                onPress={() => onNavigate('DealChat', { dealId: deal._id })}
-                activeOpacity={0.8}
-              >
-                <MessageSquare size={20} color="#4F46E5" />
-              </TouchableOpacity>
-              <Text style={styles.fintechActionLabel}>Trade Chat</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.quickActionBtn}
+              onPress={() => onNavigate('DealChat', { dealId: deal._id })}
+              accessibilityRole="button"
+            >
+              <MessageSquare size={16} color={COLORS.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.quickActionLabel}>Chat</Text>
+            </TouchableOpacity>
           )}
 
-          {/* Action 2: Sign Agreement (if pending and has action buttons) */}
-          {isPending && showActionButtons && (
-            <View style={styles.fintechActionItem}>
-              <TouchableOpacity
-                style={[styles.fintechActionButton, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
-                onPress={handleAcceptDeal}
-                activeOpacity={0.8}
-              >
-                <PenTool size={20} color="#059669" />
-              </TouchableOpacity>
-              <Text style={styles.fintechActionLabel}>Sign Deal</Text>
-            </View>
-          )}
-
-          {/* Action 3: Log Payment (if approved/completed) */}
           {isActiveOrCompleted && (
-            <View style={styles.fintechActionItem}>
-              <TouchableOpacity
-                style={[styles.fintechActionButton, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}
-                onPress={openPaymentModal}
-                activeOpacity={0.8}
-              >
-                <CreditCard size={20} color="#D97706" />
-              </TouchableOpacity>
-              <Text style={styles.fintechActionLabel}>Log Pay</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.quickActionBtn}
+              onPress={openPaymentModal}
+              accessibilityRole="button"
+            >
+              <CreditCard size={16} color={COLORS.success} style={{ marginRight: 6 }} />
+              <Text style={styles.quickActionLabel}>Record Pay</Text>
+            </TouchableOpacity>
           )}
 
-          {/* Action 4: Edit Terms */}
           {isPending && (
-            <View style={styles.fintechActionItem}>
-              <TouchableOpacity
-                style={[styles.fintechActionButton, { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }]}
-                onPress={() => {
-                  onNavigate('CreateDeal', { prefill: deal });
-                }}
-                activeOpacity={0.8}
-              >
-                <Edit3 size={20} color="#7C3AED" />
-              </TouchableOpacity>
-              <Text style={styles.fintechActionLabel}>Edit Terms</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.quickActionBtn}
+              onPress={() => onNavigate('CreateDeal', { prefill: deal })}
+              accessibilityRole="button"
+            >
+              <Edit3 size={16} color={COLORS.warning} style={{ marginRight: 6 }} />
+              <Text style={styles.quickActionLabel}>Edit</Text>
+            </TouchableOpacity>
           )}
 
-          {/* Action 5: Share Sauda */}
-          <View style={styles.fintechActionItem}>
-            <TouchableOpacity
-              style={[styles.fintechActionButton, { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' }]}
-              onPress={() => {
-                Alert.alert("Share Sauda", "Sharing sauda contract terms...");
-              }}
-              activeOpacity={0.8}
-            >
-              <Share2 size={20} color="#4F46E5" />
-            </TouchableOpacity>
-            <Text style={styles.fintechActionLabel}>Share</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.quickActionBtn}
+            onPress={() => setIsGstModalVisible(true)}
+            accessibilityRole="button"
+          >
+            <Percent size={16} color={COLORS.primary} style={{ marginRight: 6 }} />
+            <Text style={styles.quickActionLabel}>GST</Text>
+          </TouchableOpacity>
 
-          {/* Action 5b: GST Details */}
-          <View style={styles.fintechActionItem}>
-            <TouchableOpacity
-              style={[styles.fintechActionButton, { backgroundColor: '#FFF1F2', borderColor: '#FECDD3' }]}
-              onPress={() => setIsGstModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <Percent size={20} color="#E11D48" />
-            </TouchableOpacity>
-            <Text style={styles.fintechActionLabel}>GST</Text>
-          </View>
-
-          {/* Action 6: Trade Ledger / History */}
-          <View style={styles.fintechActionItem}>
-            <TouchableOpacity
-              style={[styles.fintechActionButton, { backgroundColor: '#EBFDF5', borderColor: '#A7F3D0' }]}
-              onPress={() => {
-                onNavigate('TransactionHistory', { dealId: deal._id, deal });
-              }}
-              activeOpacity={0.8}
-            >
-              <FileText size={20} color="#059669" />
-            </TouchableOpacity>
-            <Text style={styles.fintechActionLabel}>Ledger</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.quickActionBtn}
+            onPress={() => Alert.alert('Share Deal', 'Sharing agreement summary...')}
+            accessibilityRole="button"
+          >
+            <Share2 size={16} color={COLORS.textSecondary} style={{ marginRight: 6 }} />
+            <Text style={styles.quickActionLabel}>Share</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* ACTION COMPLIANCE PANEL (Pending approvals decision overlay) */}
-        {isPending && (showActionButtons || (viewerApprovalStatus === 'approved' && !isBroker) || isBroker) && (
-          <View style={styles.actionPanelContainer}>
-            {/* Action Required: Receiver Decision Buttons */}
-            {showActionButtons && (
-              <View style={styles.actionDecisionCard}>
-                {otherPartyApprovedLabel && (
-                  <View style={styles.decisionStatusBadgeRow}>
-                    <View style={[styles.counterpartyApprovedBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                      <Check size={12} color="#065F46" />
-                      <Text style={styles.counterpartyApprovedBadgeText}>{otherPartyApprovedLabel}</Text>
-                    </View>
-                  </View>
-                )}
-
-                <View style={styles.decisionHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8 }}>
-                    <Clock size={10} color="#B45309" />
-                    <Text style={{ fontSize: 9, fontWeight: '950', color: '#B45309' }}>PENDING SIGNATURE</Text>
-                  </View>
-                  <View style={styles.myRoleIndicatorBadge}>
-                    <Text style={styles.myRoleIndicatorText}>
-                      My Role: {isSeller ? 'SELLER' : isBuyer ? 'BUYER' : isBroker ? 'BROKER' : ''}
-                    </Text>
-                  </View>
-                  <Text style={styles.decisionTitle}>Sign Trade Agreement</Text>
-                  <Text style={styles.decisionDesc}>
-                    Your formal approval is strictly required to activate this Sauda contract. Please carefully verify the pricing ledgers before signing.
+        {/* 4. APPROVAL OR REJECTION ACTION PANEL */}
+        {isPending && showActionButtons && (
+          <View style={[styles.card, styles.actionCard]}>
+            <Text style={styles.actionCardTitle}>Review this deal</Text>
+            <Text style={styles.actionCardSub}>
+              Please review trade terms and confirm your approval to activate this agreement.
+            </Text>
+            <View style={styles.actionBtnRow}>
+              {showRejectButton && (
+                <TouchableOpacity
+                  style={styles.declineBtn}
+                  onPress={handleRejectDeal}
+                  disabled={isUpdating}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.declineBtnText}>
+                    {isUpdating ? 'Declining...' : 'Decline'}
                   </Text>
-                </View>
+                </TouchableOpacity>
+              )}
 
-                <View style={styles.decisionButtonsRow}>
-                  {showRejectButton && (
-                    <TouchableOpacity
-                      style={[styles.decisionBtn, styles.declineBtn]}
-                      onPress={handleRejectDeal}
-                      disabled={isUpdating}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.declineBtnText}>
-                        {isUpdating ? 'Declining...' : 'Decline Terms'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {showApproveButton && (
-                    <TouchableOpacity
-                      style={[styles.decisionBtn, styles.approveBtn]}
-                      onPress={handleAcceptDeal}
-                      disabled={isUpdating}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.approveBtnText}>
-                        {isUpdating ? 'Approving...' : 'Sign & Approve'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* Waiting State: Creator View */}
-            {viewerApprovalStatus === 'approved' && deal.status === 'pending' && !isBroker && (
-              <View style={styles.waitingCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 4 }}>
-                  <Text style={styles.waitingSingleText}>
-                    My Role: <Text style={styles.approvedHighlight}>{isSeller ? 'SELLER' : isBuyer ? 'BUYER' : isBroker ? 'BROKER' : ''} (Approved)</Text>  ·  <Text style={styles.pendingHighlight}>Waiting for {pendingApprovalFor ? pendingApprovalFor.toUpperCase() : otherPartyLabel}</Text>
+              {showApproveButton && (
+                <TouchableOpacity
+                  style={styles.approveBtn}
+                  onPress={handleAcceptDeal}
+                  disabled={isUpdating}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.approveBtnText}>
+                    {isUpdating ? 'Approving...' : 'Approve Deal'}
                   </Text>
-                  <Clock size={12} color="#B45309" />
-                </View>
-              </View>
-            )}
-
-            {/* Read-Only State: Broker View */}
-            {isBroker && (
-              <View style={styles.brokerCard}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  <Briefcase size={16} color="#4F46E5" />
-                  <Text style={[styles.brokerCardTitle, { marginBottom: 0 }]}>Broker Agreement Overview</Text>
-                </View>
-                <Text style={styles.brokerCardDesc}>
-                  Seller Signature: {sellerApproved ? 'Signed' : 'Pending'}  |  Buyer Signature: {buyerApproved ? 'Signed' : 'Pending'}
-                </Text>
-              </View>
-            )}
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         )}
 
-
-
-        {/* Rejected Alert Card */}
-        {isRejected && (
-          <View style={styles.rejectedCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4 }}>
-              <XCircle size={20} color="#B91C1C" />
-              <Text style={[styles.rejectedCardTitle, { marginBottom: 0 }]}>Deal Declined</Text>
-            </View>
-            <Text style={styles.rejectedCardDesc}>
-              This agreement was rejected. You may recreate this Sauda ledger to coordinate with the party under revised terms.
+        {/* Pending Waiting Banner */}
+        {isPending && viewerApprovalStatus === 'approved' && !isBroker && (
+          <View style={styles.neutralNoticeBox}>
+            <Clock size={16} color={COLORS.warning} style={{ marginRight: 8 }} />
+            <Text style={styles.neutralNoticeText}>
+              Waiting for {pendingApprovalFor ? pendingApprovalFor.toUpperCase() : otherPartyLabel} to approve this deal.
             </Text>
           </View>
         )}
 
-        {/* UNIFIED SAUDA DETAILS CARD */}
-        <View style={styles.passportCard}>
-          <View style={styles.passportHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <FileText size={14} color="#4F46E5" />
-              <Text style={styles.passportTag}>SAUDA AGREEMENT PASSPORT</Text>
-            </View>
-            <Text style={styles.passportId}>#{deal.dealNumber || deal._id?.slice(-6).toUpperCase()}</Text>
+        {/* Declined Banner */}
+        {isRejected && (
+          <View style={styles.errorNoticeBox}>
+            <XCircle size={16} color={COLORS.error} style={{ marginRight: 8 }} />
+            <Text style={styles.errorNoticeText}>
+              This trade agreement was declined.
+            </Text>
           </View>
+        )}
 
-          <Text style={styles.passportTitle}>{productName}</Text>
+        {/* 5. PARTIES SECTION */}
+        <View style={styles.card}>
+          <SectionHeader title="Parties" />
+
+          {/* Seller Row */}
+          <View style={styles.partyRow}>
+            <View style={styles.partyIconBadge}>
+              <Building2 size={16} color={COLORS.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.partyRoleLabel}>Seller</Text>
+              <Text style={styles.partyName}>{sellerName}</Text>
+            </View>
+            <StatusBadge
+              label={sellerApproved ? 'Signed' : 'Pending'}
+              type={sellerApproved ? 'success' : 'warning'}
+            />
+          </View>
 
           <View style={styles.divider} />
 
-          {/* Agreement & Validity Details Grid */}
-          <View style={styles.passportGrid}>
-            <View style={styles.passportGridCol}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                <Calendar size={11} color="#64748B" />
-                <Text style={styles.passportLabel}>AGREEMENT DATE</Text>
-              </View>
-              <Text style={styles.passportValue}>{dealDateDisplay}</Text>
+          {/* Buyer Row */}
+          <View style={styles.partyRow}>
+            <View style={styles.partyIconBadge}>
+              <User size={16} color={COLORS.success} />
             </View>
-            <View style={styles.passportGridCol}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                <Clock size={11} color="#64748B" />
-                <Text style={styles.passportLabel}>VALIDITY TERMS</Text>
-              </View>
-              <Text style={[styles.passportValue, isExpired && { color: '#EF4444' }]}>
-                {isExpired ? 'Expired' : `Until ${validityDateDisplay}`}
-              </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.partyRoleLabel}>Buyer</Text>
+              <Text style={styles.partyName}>{buyerName}</Text>
             </View>
+            <StatusBadge
+              label={buyerApproved ? 'Signed' : 'Pending'}
+              type={buyerApproved ? 'success' : 'warning'}
+            />
           </View>
 
-          <View style={styles.passportGrid}>
-            <View style={styles.passportGridCol}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                <Briefcase size={11} color="#64748B" />
-                <Text style={styles.passportLabel}>FACILITATOR</Text>
-              </View>
-              <Text style={styles.passportValue}>{deal.broker?.name || 'DIRECT'}</Text>
-            </View>
-            <View style={styles.passportGridCol}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                <CheckCircle size={11} color="#64748B" />
-                <Text style={styles.passportLabel}>DEAL STATUS</Text>
-              </View>
-              <View style={[styles.statusBadgeInline, { backgroundColor: statusCfg.bgColor, borderColor: statusCfg.border }]}>
-                <View style={[styles.statusDot, { backgroundColor: statusCfg.dotColor }]} />
-                <Text style={[styles.statusBadgeTextInline, { color: statusCfg.textColor }]}>{statusCfg.label}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Product Commercial Details */}
-          {/* Product Commercial Details */}
-          {!deal.products || deal.products.length === 0 ? (
-            <View style={styles.unifiedProductSection}>
+          {/* Broker Row (if applicable) */}
+          {deal.broker && (
+            <>
               <View style={styles.divider} />
-              <View style={styles.passportGrid}>
-                <View style={styles.passportGridCol}>
-                  <Text style={styles.passportLabel}>QUANTITY</Text>
-                  <Text style={styles.passportValue}>{deal.qty || deal.product?.quantity || 0} MT</Text>
+              <View style={styles.partyRow}>
+                <View style={styles.partyIconBadge}>
+                  <Briefcase size={16} color={COLORS.warning} />
                 </View>
-                <View style={styles.passportGridCol}>
-                  <Text style={styles.passportLabel}>BASE RATE</Text>
-                  <Text style={styles.passportValue}>₹{Number(deal.price || deal.product?.price || 0).toLocaleString('en-IN')}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.partyRoleLabel}>Broker</Text>
+                  <Text style={styles.partyName}>{brokerNameDisplay}</Text>
                 </View>
               </View>
-
-              {/* Delivery Qty Progress (Only show if deal is approved/completed) */}
-              {isActiveOrCompleted && (
-                <View style={styles.deliveryProgressCard}>
-                  <View style={styles.deliveryProgressHeader}>
-                    <Text style={styles.deliveryProgressTitle}>DELIVERY PROGRESS</Text>
-                    <Text style={styles.deliveryProgressQty}>
-                      {deal.deliveredQuantity || deal.product?.deliveredQuantity || 0} / {deal.qty || deal.product?.quantity || 0} MT Sent
-                    </Text>
-                  </View>
-                  <View style={styles.progressBarTrack}>
-                    <View
-                      style={[
-                        styles.progressBarFill,
-                        {
-                          width: `${Math.min(100, Math.max(0, ((deal.deliveredQuantity || deal.product?.deliveredQuantity || 0) / (deal.qty || deal.product?.quantity || 1)) * 100))}%`,
-                          backgroundColor: '#4F46E5' // Indigo for delivery progress
-                        }
-                      ]}
-                    />
-                  </View>
-                  <View style={styles.deliveryProgressFooter}>
-                    <Text style={[styles.deliveryProgressText, { color: '#059669' }]}>
-                      Delivered: {deal.deliveredQuantity || deal.product?.deliveredQuantity || 0} MT
-                    </Text>
-                    <Text style={[styles.deliveryProgressText, { color: '#EF4444' }]}>
-                      Remaining: {Math.max(0, (deal.qty || deal.product?.quantity || 0) - (deal.deliveredQuantity || deal.product?.deliveredQuantity || 0))} MT
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              <View style={styles.ledgerTotalRow}>
-                <Text style={styles.ledgerTotalLabel}>Computed Item Net Value</Text>
-                <Text style={styles.ledgerTotalValue}>
-                  ₹{Number(deal.totalAmount || (Number(deal.qty || 0) * Number(deal.price || 0))).toLocaleString('en-IN')}
-                </Text>
-              </View>
-            </View>
-          ) : (
-            deal.products.map((prod, idx) => {
-              const itemTotal = Number(prod.totalAmount || (Number(prod.quantity) * Number(prod.price))) || 0;
-              return (
-                <View key={prod._id || idx} style={styles.unifiedProductSection}>
-                  <View style={styles.divider} />
-
-                  {deal.products.length > 1 && (
-                    <Text style={styles.itemTitle}>Item #{idx + 1}: {prod.productId?.name || prod.name || 'Product'}</Text>
-                  )}
-
-                  <View style={styles.passportGrid}>
-                    <View style={styles.passportGridCol}>
-                      <Text style={styles.passportLabel}>QUANTITY</Text>
-                      <Text style={styles.passportValue}>{prod.quantity} MT</Text>
-                    </View>
-                    <View style={styles.passportGridCol}>
-                      <Text style={styles.passportLabel}>BASE RATE</Text>
-                      <Text style={styles.passportValue}>₹{Number(prod.price).toLocaleString('en-IN')}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.passportGrid}>
-                    <View style={styles.passportGridCol}>
-                      <Text style={styles.passportLabel}>GST APPLIED</Text>
-                      <Text style={styles.passportValue}>{Number(prod.gst || 0) > 0 ? `${prod.gst}%` : '0%'}</Text>
-                    </View>
-                    <View style={styles.passportGridCol}>
-                      <Text style={styles.passportLabel}>DISCOUNT</Text>
-                      <Text style={[styles.passportValue, Number(prod.discount || 0) > 0 && { color: '#10B981' }]}>
-                        {Number(prod.discount || 0) > 0 ? `-₹${Number(prod.discount).toLocaleString('en-IN')}` : '₹0'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Delivery Qty Progress (Only show if deal is approved/completed) */}
-                  {isActiveOrCompleted && (
-                    <View style={styles.deliveryProgressCard}>
-                      <View style={styles.deliveryProgressHeader}>
-                        <Text style={styles.deliveryProgressTitle}>DELIVERY PROGRESS</Text>
-                        <Text style={styles.deliveryProgressQty}>
-                          {prod.deliveredQuantity || 0} / {prod.quantity} MT Sent
-                        </Text>
-                      </View>
-                      <View style={styles.progressBarTrack}>
-                        <View
-                          style={[
-                            styles.progressBarFill,
-                            {
-                              width: `${Math.min(100, Math.max(0, ((prod.deliveredQuantity || 0) / (prod.quantity || 1)) * 100))}%`,
-                              backgroundColor: '#4F46E5' // Indigo for delivery progress
-                            }
-                          ]}
-                        />
-                      </View>
-                      <View style={styles.deliveryProgressFooter}>
-                        <Text style={[styles.deliveryProgressText, { color: '#059669' }]}>
-                          Delivered: {prod.deliveredQuantity || 0} MT
-                        </Text>
-                        <Text style={[styles.deliveryProgressText, { color: '#EF4444' }]}>
-                          Remaining: {Math.max(0, (prod.quantity || 0) - (prod.deliveredQuantity || 0))} MT
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  {prod.paymentTerms ? (
-                    <View style={[styles.ledgerTermsBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                      <CreditCard size={12} color="#475569" />
-                      <Text style={styles.ledgerTermsText}>Payment Terms: {prod.paymentTerms}</Text>
-                    </View>
-                  ) : null}
-
-                  <View style={styles.ledgerTotalRow}>
-                    <Text style={styles.ledgerTotalLabel}>Computed Item Net Value</Text>
-                    <Text style={styles.ledgerTotalValue}>₹{itemTotal.toLocaleString('en-IN')}</Text>
-                  </View>
-                </View>
-              );
-            })
+            </>
           )}
         </View>
 
-        {/* 📜 DIGITAL CONTRACT SIGNATURE MATRIX */}
-        {deal.approvalStatus && (
-          <View style={styles.sectionCard}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={styles.sectionTitle}>Dual-Signature Escrow Stamp</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EEF2FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-                <ShieldCheck size={12} color="#4F46E5" />
-                <Text style={{ fontSize: 9.5, fontWeight: '800', color: '#4F46E5' }}>SECURE LOCK</Text>
-              </View>
+        {/* 6. PAYMENT OVERVIEW */}
+        {isActiveOrCompleted && (
+          <View style={styles.card}>
+            <SectionHeader
+              title="Payment Overview"
+              actionText="+ Record Payment"
+              onAction={openPaymentModal}
+            />
+
+            <View style={styles.progressHeaderRow}>
+              <Text style={styles.progressLabel}>
+                Paid: ₹{totalSentVal.toLocaleString('en-IN')}
+              </Text>
+              <Text style={styles.progressPercent}>{Math.round(percentPaid)}%</Text>
             </View>
 
-            <View style={styles.signatureSealsContainer}>
-              {/* Seller Seal */}
-              <View style={[
-                styles.compactSealCard,
-                sellerApproved ? styles.sealApproved : sellerStatus === 'rejected' ? styles.sealRejected : styles.sealPending
-              ]}>
-                <View style={[
-                  styles.compactSealCircle,
-                  sellerApproved ? styles.sealCircleApproved : sellerStatus === 'rejected' ? styles.sealCircleRejected : sellerStatus === 'approved' ? styles.sealCircleApproved : styles.sealCirclePending
-                ]}>
-                  {sellerApproved ? (
-                    <PenTool size={14} color="#047857" />
-                  ) : sellerStatus === 'rejected' ? (
-                    <X size={14} color="#B91C1C" />
-                  ) : (
-                    <Clock size={14} color="#B45309" />
-                  )}
-                </View>
-                <View style={styles.compactSealInfo}>
-                  <Text style={styles.compactSealRole}>SELLER</Text>
-                  <Text style={styles.compactSealCompany} numberOfLines={1}>{sellerName}</Text>
-                  <Text style={[
-                    styles.compactSealStatusText,
-                    { color: sellerApproved ? '#047857' : sellerStatus === 'rejected' ? '#B91C1C' : '#B45309' }
-                  ]}>
-                    {sellerApproved ? 'Signed' : sellerStatus === 'rejected' ? 'Declined' : 'Pending'}
-                  </Text>
-                </View>
-              </View>
+            <ProgressBar progress={percentPaid} color={COLORS.success} />
 
-              {/* Buyer Seal */}
-              <View style={[
-                styles.compactSealCard,
-                buyerApproved ? styles.sealApproved : buyerStatus === 'rejected' ? styles.sealRejected : styles.sealPending
-              ]}>
-                <View style={[
-                  styles.compactSealCircle,
-                  buyerApproved ? styles.sealCircleApproved : buyerStatus === 'rejected' ? styles.sealCircleRejected : buyerStatus === 'approved' ? styles.sealCircleApproved : buyerStatus === 'pending' ? styles.sealCirclePending : styles.sealCirclePending
-                ]}>
-                  {buyerApproved ? (
-                    <PenTool size={14} color="#047857" />
-                  ) : buyerStatus === 'rejected' ? (
-                    <X size={14} color="#B91C1C" />
-                  ) : (
-                    <Clock size={14} color="#B45309" />
-                  )}
-                </View>
-                <View style={styles.compactSealInfo}>
-                  <Text style={styles.compactSealRole}>BUYER</Text>
-                  <Text style={styles.compactSealCompany} numberOfLines={1}>{buyerName}</Text>
-                  <Text style={[
-                    styles.compactSealStatusText,
-                    { color: buyerApproved ? '#047857' : buyerStatus === 'rejected' ? '#B91C1C' : '#B45309' }
-                  ]}>
-                    {buyerApproved ? 'Signed' : buyerStatus === 'rejected' ? 'Declined' : 'Pending'}
-                  </Text>
-                </View>
+            <View style={styles.gridRow}>
+              <View style={styles.gridCol}>
+                <InfoRow label="Total Value" value={`₹${totalValFormatted}`} />
+              </View>
+              <View style={styles.gridCol}>
+                <InfoRow
+                  label="Remaining Balance"
+                  value={`₹${(totalDealVal - totalSentVal).toLocaleString('en-IN')}`}
+                />
               </View>
             </View>
           </View>
         )}
 
+        {/* 7. DELIVERY OVERVIEW */}
+        {isActiveOrCompleted && (
+          <View style={styles.card}>
+            <SectionHeader title="Delivery Overview" />
+
+            <View style={styles.progressHeaderRow}>
+              <Text style={styles.progressLabel}>
+                Delivered: {deliveredQty} / {qty} MT
+              </Text>
+              <Text style={styles.progressPercent}>{Math.round(percentDelivered)}%</Text>
+            </View>
+
+            <ProgressBar progress={percentDelivered} color={COLORS.primary} />
+          </View>
+        )}
+
+        {/* 8. TRANSACTION HISTORY LIST */}
+        {isActiveOrCompleted && combinedHistory.length > 0 && (
+          <View style={styles.card}>
+            <SectionHeader title="Activity & Ledger History" />
+            {combinedHistory.map((item, idx) => {
+              const isLast = idx === combinedHistory.length - 1;
+              const itemDate = item.createdAt
+                ? new Date(item.createdAt).toLocaleDateString([], {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '';
+
+              const isPmt = item.timelineType === 'payment';
+              const isSent = isPmt
+                ? item.paymentType === 'sent' || item.paymentType === 'given'
+                : item.deliveryType === 'sent';
+
+              const isAppr = item.status === 'approved';
+              const isRej = item.status === 'rejected';
+
+              return (
+                <View key={`hist-${item._id || idx}`}>
+                  <View style={styles.historyRow}>
+                    <View style={[
+                      styles.historyIconBadge,
+                      { backgroundColor: isSent ? (isPmt ? COLORS.infoBg : '#F1F5F9') : COLORS.successBg }
+                    ]}>
+                      {isPmt ? (
+                        isSent ? (
+                          <ArrowUpRight size={16} color={COLORS.primary} />
+                        ) : (
+                          <ArrowDownLeft size={16} color={COLORS.success} />
+                        )
+                      ) : (
+                        <Truck size={16} color={COLORS.primary} />
+                      )}
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyTitle}>
+                        {isPmt ? `${item.paymentMethod || 'Payment'} (${isSent ? 'Sent' : 'Received'})` : `Delivery (${isSent ? 'Dispatched' : 'Received'})`}
+                      </Text>
+                      <Text style={styles.historySub}>{itemDate}</Text>
+                    </View>
+
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.historyAmount}>
+                        {isPmt ? `₹${Number(item.amount).toLocaleString('en-IN')}` : `${item.quantity} MT`}
+                      </Text>
+                      <StatusBadge
+                        label={item.status || 'Pending'}
+                        type={isAppr ? 'success' : isRej ? 'error' : 'warning'}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Verification Action Buttons */}
+                  {isPmt && canVerifyPayment(item) && (
+                    <View style={styles.inlineVerifyRow}>
+                      <TouchableOpacity
+                        style={styles.inlineDeclineBtn}
+                        onPress={() => confirmPaymentStatusChange(item, 'rejected')}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.inlineDeclineText}>Reject</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.inlineApproveBtn}
+                        onPress={() => confirmPaymentStatusChange(item, 'approved')}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.inlineApproveText}>Verify Payment</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {!isPmt && canVerifyDelivery(item) && (
+                    <View style={styles.inlineVerifyRow}>
+                      <TouchableOpacity
+                        style={styles.inlineDeclineBtn}
+                        onPress={() => confirmDeliveryStatusChange(item, 'rejected')}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.inlineDeclineText}>Reject</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.inlineApproveBtn}
+                        onPress={() => confirmDeliveryStatusChange(item, 'approved')}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.inlineApproveText}>Verify Delivery</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {!isLast && <View style={styles.divider} />}
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* 9. SECONDARY DETAILS */}
+        <View style={styles.card}>
+          <SectionHeader title="Contract Information" />
+
+          <InfoRow label="Payment Terms" value={deal.paymentTerms || 'Standard Trade Terms'} />
+          <View style={styles.divider} />
+
+          <InfoRow label="Delivery Terms" value={deal.deliveryTerms || 'Standard Delivery'} />
+          <View style={styles.divider} />
+
+          <InfoRow label="Validity Date" value={validityDateDisplay} />
+
+          {deal.remarks || deal.comments ? (
+            <>
+              <View style={styles.divider} />
+              <InfoRow label="Remarks / Notes" value={deal.remarks || deal.comments} numberOfLines={3} />
+            </>
+          ) : null}
+        </View>
+
       </ScrollView>
 
-      {/* 💳 LOG PAYMENT MODAL */}
+      {/* ─── RECORD PAYMENT MODAL ─── */}
       <Modal
         visible={isPaymentModalVisible}
-        animationType="slide"
         transparent={true}
+        animationType="slide"
         onRequestClose={() => setIsPaymentModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Log Payment Entry</Text>
+              <Text style={styles.modalTitle}>Record Payment</Text>
               <TouchableOpacity onPress={() => setIsPaymentModalVisible(false)}>
-                <X size={20} color="#64748B" />
+                <X size={20} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
-              {/* Amount input */}
-              <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Payment Amount (INR)*</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Type Selection */}
+              <Text style={styles.inputLabel}>Payment Direction</Text>
+              <View style={styles.segmentedRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.segmentBtn,
+                    paymentType === 'sent' && styles.segmentBtnActive,
+                  ]}
+                  onPress={() => setPaymentType('sent')}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      paymentType === 'sent' && styles.segmentTextActive,
+                    ]}
+                  >
+                    Payment Sent
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.segmentBtn,
+                    paymentType === 'received' && styles.segmentBtnActive,
+                  ]}
+                  onPress={() => setPaymentType('received')}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      paymentType === 'received' && styles.segmentTextActive,
+                    ]}
+                  >
+                    Payment Received
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Amount Input */}
+              <Text style={styles.inputLabel}>Amount (₹) *</Text>
+              <View style={styles.amountInputRow}>
+                <Text style={styles.currencyPrefix}>₹</Text>
                 <TextInput
-                  style={styles.modalTextInput}
-                  placeholder="Enter amount (e.g. 50000)"
-                  placeholderTextColor="#94A3B8"
+                  style={styles.amountInput}
+                  placeholder="0.00"
+                  placeholderTextColor={COLORS.textMuted}
                   keyboardType="numeric"
                   value={paymentAmount}
                   onChangeText={setPaymentAmount}
                 />
               </View>
 
-              {/* Payment Type Selection */}
-              <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Payment Type*</Text>
-                <View style={styles.modalSelectorRow}>
+              {/* Method Selection */}
+              <Text style={styles.inputLabel}>Payment Method</Text>
+              <View style={styles.methodPillRow}>
+                {['UPI', 'Bank Transfer', 'Cash', 'Cheque'].map((m) => (
                   <TouchableOpacity
-                    style={[styles.modalSelectorBtn, paymentType === 'sent' && styles.modalSelectorBtnActive]}
-                    onPress={() => setPaymentType('sent')}
+                    key={m}
+                    style={[
+                      styles.methodPill,
+                      paymentMethod === m && styles.methodPillActive,
+                    ]}
+                    onPress={() => setPaymentMethod(m)}
                   >
-                    <Text style={[styles.modalSelectorBtnText, paymentType === 'sent' && styles.modalSelectorBtnTextActive]}>
-                      Sent (Paid)
+                    <Text
+                      style={[
+                        styles.methodPillText,
+                        paymentMethod === m && styles.methodPillTextActive,
+                      ]}
+                    >
+                      {m}
                     </Text>
                   </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.modalSelectorBtn, paymentType === 'received' && styles.modalSelectorBtnActive]}
-                    onPress={() => setPaymentType('received')}
-                  >
-                    <Text style={[styles.modalSelectorBtnText, paymentType === 'received' && styles.modalSelectorBtnTextActive]}>
-                      Received
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                ))}
               </View>
 
-              {/* Payment Method Grid Selector */}
-              <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Payment Method*</Text>
-                <View style={styles.methodGrid}>
-                  {['UPI', 'Bank Transfer', 'Cash', 'Cheque', 'RTGS', 'NEFT', 'IMPS'].map(method => {
-                    const isActive = paymentMethod === method;
-                    return (
-                      <TouchableOpacity
-                        key={method}
-                        style={[styles.methodGridItem, isActive && styles.methodGridItemActive]}
-                        onPress={() => setPaymentMethod(method)}
-                      >
-                        <Text style={[styles.methodGridText, isActive && styles.methodGridTextActive]}>
-                          {method}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
+              {/* Notes */}
+              <Text style={styles.inputLabel}>Notes / Reference (Optional)</Text>
+              <TextInput
+                style={styles.notesInput}
+                placeholder="Transaction Ref / Bank Ref Number"
+                placeholderTextColor={COLORS.textMuted}
+                value={paymentNotes}
+                onChangeText={setPaymentNotes}
+              />
 
-              {/* Notes Input */}
-              <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Transaction Notes (Optional)</Text>
-                <TextInput
-                  style={[styles.modalTextInput, { height: 80, textAlignVertical: 'top', paddingTop: 8 }]}
-                  placeholder="e.g. Advance payment / Milestone 1"
-                  placeholderTextColor="#94A3B8"
-                  multiline={true}
-                  numberOfLines={3}
-                  value={paymentNotes}
-                  onChangeText={setPaymentNotes}
-                />
-              </View>
-
-              {/* Action Buttons */}
-              <View style={styles.modalButtonsRow}>
-                <TouchableOpacity
-                  style={[styles.modalActionBtn, styles.modalCancelBtn]}
-                  onPress={() => setIsPaymentModalVisible(false)}
-                  disabled={isLoggingPayment}
-                >
-                  <Text style={styles.modalCancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.modalActionBtn, styles.modalSubmitBtn]}
-                  onPress={handleLogPayment}
-                  disabled={isLoggingPayment}
-                >
-                  {isLoggingPayment ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.modalSubmitBtnText}>Log Payment</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={styles.primaryActionBtn}
+                onPress={handleLogPayment}
+                disabled={isLoggingPayment}
+                accessibilityRole="button"
+              >
+                {isLoggingPayment ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.primaryActionBtnText}>Submit Payment Entry</Text>
+                )}
+              </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
-      {/* 🧾 GST BREAKDOWN MODAL */}
+      {/* ─── GST BREAKDOWN MODAL ─── */}
       <Modal
         visible={isGstModalVisible}
-        animationType="slide"
         transparent={true}
+        animationType="fade"
         onRequestClose={() => setIsGstModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Percent size={18} color="#E11D48" />
-                <Text style={styles.modalTitle}>GST Invoice Breakdown</Text>
-              </View>
+              <Text style={styles.modalTitle}>GST Breakdown</Text>
               <TouchableOpacity onPress={() => setIsGstModalVisible(false)}>
-                <X size={20} color="#64748B" />
+                <X size={20} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
-              {(() => {
-                const breakdown = getGstBreakdown();
-                return (
-                  <View style={{ gap: 16 }}>
-                    {/* Itemized Table */}
-                    <Text style={[styles.modalInputLabel, { marginBottom: 4 }]}>Itemized Commercials</Text>
-                    {breakdown.items.map((item, index) => (
-                      <View key={index} style={styles.gstItemCard}>
-                        <Text style={styles.gstItemName}>{item.name}</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {getGstBreakdown().items.map((item, idx) => (
+                <View key={idx} style={styles.gstItemCard}>
+                  <Text style={styles.gstItemName}>{item.name}</Text>
+                  <InfoRow label="Base Value" value={`₹${(item.qty * item.price).toLocaleString('en-IN')}`} />
+                  <InfoRow label={`GST Rate (${item.gstPercent}%)`} value={`₹${item.gstAmount.toLocaleString('en-IN')}`} />
+                </View>
+              ))}
 
-                        <View style={styles.gstGridRow}>
-                          <View style={styles.gstGridCol}>
-                            <Text style={styles.gstGridLabel}>Qty</Text>
-                            <Text style={styles.gstGridValue}>{item.qty} MT</Text>
-                          </View>
-                          <View style={styles.gstGridCol}>
-                            <Text style={styles.gstGridLabel}>Price/MT</Text>
-                            <Text style={styles.gstGridValue}>₹{item.price.toLocaleString('en-IN')}</Text>
-                          </View>
-                          <View style={styles.gstGridCol}>
-                            <Text style={styles.gstGridLabel}>GST Rate</Text>
-                            <Text style={styles.gstGridValue}>{item.gstPercent}%</Text>
-                          </View>
-                        </View>
-
-                        <View style={[styles.gstGridRow, { marginTop: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 8 }]}>
-                          <View style={styles.gstGridCol}>
-                            <Text style={styles.gstGridLabel}>Discount</Text>
-                            <Text style={[styles.gstGridValue, { color: item.discount > 0 ? '#10B981' : '#64748B' }]}>
-                              -₹{item.discount.toLocaleString('en-IN')}
-                            </Text>
-                          </View>
-                          <View style={styles.gstGridCol}>
-                            <Text style={styles.gstGridLabel}>GST Tax</Text>
-                            <Text style={[styles.gstGridValue, { color: '#E11D48' }]}>
-                              +₹{Math.round(item.gstAmount).toLocaleString('en-IN')}
-                            </Text>
-                          </View>
-                          <View style={styles.gstGridCol}>
-                            <Text style={styles.gstGridLabel}>Net Amount</Text>
-                            <Text style={[styles.gstGridValue, { fontWeight: '800', color: '#0F172A' }]}>
-                              ₹{Math.round(item.total).toLocaleString('en-IN')}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                    ))}
-
-                    {/* Tax Division Box (CGST/SGST/IGST breakdown) */}
-                    <View style={styles.taxDivisionCard}>
-                      <Text style={styles.taxDivisionTitle}>Tax Liability Split</Text>
-
-                      <View style={styles.taxSplitRow}>
-                        <Text style={styles.taxSplitLabel}>Central GST (CGST) - 50%</Text>
-                        <Text style={styles.taxSplitValue}>₹{Math.round(breakdown.gstTotal / 2).toLocaleString('en-IN')}</Text>
-                      </View>
-
-                      <View style={styles.taxSplitRow}>
-                        <Text style={styles.taxSplitLabel}>State GST (SGST) - 50%</Text>
-                        <Text style={styles.taxSplitValue}>₹{Math.round(breakdown.gstTotal / 2).toLocaleString('en-IN')}</Text>
-                      </View>
-
-                      <View style={[styles.taxSplitRow, { borderTopWidth: 1, borderTopColor: '#FFE4E6', paddingTop: 8, marginTop: 4 }]}>
-                        <Text style={[styles.taxSplitLabel, { fontWeight: '700', color: '#E11D48' }]}>Total Tax Value (GST)</Text>
-                        <Text style={[styles.taxSplitValue, { fontWeight: '800', color: '#E11D48' }]}>₹{Math.round(breakdown.gstTotal).toLocaleString('en-IN')}</Text>
-                      </View>
-                    </View>
-
-                    {/* Financial Summary */}
-                    <View style={styles.financialSummaryCard}>
-                      <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>Total Base Value</Text>
-                        <Text style={styles.summaryValue}>₹{breakdown.baseTotal.toLocaleString('en-IN')}</Text>
-                      </View>
-
-                      <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>Deducted Discounts</Text>
-                        <Text style={[styles.summaryValue, { color: '#10B981' }]}>
-                          -₹{breakdown.discountTotal.toLocaleString('en-IN')}
-                        </Text>
-                      </View>
-
-                      <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>Taxable Value</Text>
-                        <Text style={styles.summaryValue}>₹{(breakdown.baseTotal - breakdown.discountTotal).toLocaleString('en-IN')}</Text>
-                      </View>
-
-                      <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>Applied GST Tax</Text>
-                        <Text style={[styles.summaryValue, { color: '#E11D48' }]}>
-                          +₹{Math.round(breakdown.gstTotal).toLocaleString('en-IN')}
-                        </Text>
-                      </View>
-
-                      <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 12, marginTop: 4 }]}>
-                        <Text style={[styles.summaryLabel, { fontSize: 14, fontWeight: '900', color: '#0F172A' }]}>Grand Gross Total</Text>
-                        <Text style={{ fontSize: 16, fontWeight: '900', color: '#4F46E5' }}>
-                          ₹{Math.round(breakdown.grandTotal).toLocaleString('en-IN')}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Disclaimer Banner */}
-                    <View style={styles.disclaimerBanner}>
-                      <Text style={styles.disclaimerText}>
-                        * These figures are computed dynamically based on the verified quantity, rates, and active discount/GST policies signed in this Sauda.
-                      </Text>
-                    </View>
-
-                    {/* Close Action */}
-                    <TouchableOpacity
-                      style={[styles.modalActionBtn, styles.modalSubmitBtn, { backgroundColor: '#E11D48', marginTop: 8 }]}
-                      onPress={() => setIsGstModalVisible(false)}
-                    >
-                      <Text style={styles.modalSubmitBtnText}>Got it</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })()}
+              <View style={styles.gstTotalBox}>
+                <Text style={styles.gstTotalLabel}>Grand Total (Incl. GST)</Text>
+                <Text style={styles.gstTotalVal}>
+                  ₹{Math.round(getGstBreakdown().grandTotal).toLocaleString('en-IN')}
+                </Text>
+              </View>
             </ScrollView>
           </View>
         </View>
       </Modal>
-    </SafeAreaView >
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F6F8FB',
+    backgroundColor: COLORS.bg,
   },
-  scrollContent: {
-    paddingBottom: 48,
+  centerBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   loadingText: {
     marginTop: 12,
-    color: '#64748B',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  errorText: {
     fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  emptyStateBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#64748B',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  emptyStateMsg: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
     marginBottom: 16,
   },
-  backBtn: {
-    backgroundColor: '#4F46E5',
+  emptyStateBtn: {
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 10,
   },
-  backBtnText: {
+  emptyStateBtnText: {
     color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 12,
+    fontSize: 14,
+    fontWeight: '600',
   },
-
-  /* COMPACT HEADER BAR */
   header: {
-    marginTop: 10,
+    height: 56,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 4,
   },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
+  iconBtn: {
+    width: 40,
+    height: 40,
     justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
   },
-  backIcon: {
-    fontSize: 16,
-    color: '#0F172A',
-    fontWeight: '800',
+  headerTitleBox: {
+    flex: 1,
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 16,
-    fontWeight: '900',
-    color: '#0F172A',
-    flex: 1,
-    textAlign: 'center',
-    marginHorizontal: 12,
-    letterSpacing: -0.2,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
   },
-  headerTitleText: {
-    fontSize: 15,
-    fontWeight: '805',
-    color: '#0F172A',
-  },
-  headerSubtitleText: {
+  headerSub: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 2,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
   },
-  headerRightActions: {
+  headerRightRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
   },
-  headerChatButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F8FAFC',
+  scrollContent: {
+    padding: 16,
+    gap: 16,
+  },
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: COLORS.border,
+    padding: 16,
   },
-  premiumHeaderChatButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1.5,
-    borderColor: '#C7D2FE',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  chatNotificationDot: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#EF4444',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-  },
-  headerChatIcon: {
-    fontSize: 15,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-  },
-
-  /* TRADE PASSPORT CARD */
-  passportCard: {
-    marginTop: 16,
-    marginHorizontal: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.06,
-    shadowRadius: 20,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: '#ECEEF2',
-  },
-  passportHeader: {
+  summaryTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  passportTag: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#4F46E5',
-    letterSpacing: 1.2,
-  },
-  statusBadgeInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 4,
-    gap: 4,
-  },
-  statusBadgeTextInline: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  passportId: {
-    fontSize: 10.5,
+  productTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#475569',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: 'hidden',
+    color: COLORS.textPrimary,
+    flex: 1,
+    marginRight: 8,
   },
-  passportTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0F172A',
-    lineHeight: 22,
+  badgeContainer: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dealAmount: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: COLORS.navy,
+    marginBottom: 12,
   },
   divider: {
     height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 14,
+    backgroundColor: COLORS.border,
+    marginVertical: 12,
   },
-  passportGrid: {
+  gridRow: {
     flexDirection: 'row',
-    gap: 16,
-    marginBottom: 12,
+    justifyContent: 'space-between',
   },
-  passportGridCol: {
+  gridCol: {
     flex: 1,
   },
-  passportLabel: {
-    fontSize: 8.5,
+  sectionHeading: {
+    fontSize: 16,
     fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 0.4,
+    color: COLORS.textPrimary,
   },
-  passportValue: {
-    fontSize: 12.5,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginTop: 4,
-  },
-  unifiedProductSection: {
-    marginTop: 8,
-  },
-  itemTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#334155',
-    marginBottom: 8,
-  },
-
-  /* STATS ROW */
-  statsRow: {
+  sectionHeaderRow: {
     flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 16,
-    gap: 10,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    padding: 12,
-    borderRadius: 16,
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
+    marginBottom: 12,
   },
-  statIconBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-  },
-  statValue: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#0F172A',
-    textAlign: 'center',
-  },
-  statValueSmall: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#0F172A',
-    textAlign: 'center',
-  },
-  statLabel: {
-    fontSize: 8,
-    color: '#94A3B8',
-    marginTop: 4,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-
-  /* SECTION & CARDS */
-  section: {
-    marginHorizontal: 16,
-    marginTop: 20,
-  },
-  sectionCard: {
-    marginHorizontal: 16,
-    marginTop: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#ECEEF2',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  sectionTitle: {
+  sectionActionText: {
     fontSize: 13,
-    fontWeight: '900',
-    color: '#0F172A',
-    marginBottom: 14,
-    letterSpacing: 0.2,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
-
-
-
-  /* COMMERCIAL LEDGER CARD */
-  ledgerCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 12,
-  },
-  ledgerHeader: {
+  infoRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 8,
+    paddingVertical: 2,
   },
-  ledgerIndexBadge: {
-    backgroundColor: '#E0F2FE',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+  infoRowLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
-  ledgerIndexText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#0284C7',
+  infoRowVal: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
   },
-  ledgerName: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#0F172A',
-    flex: 1,
-  },
-  ledgerGrid: {
+  quickActionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
-    marginBottom: 12,
-  },
-  ledgerCol: {
-    minWidth: 70,
-  },
-  ledgerColLabel: {
-    fontSize: 8,
-    fontWeight: '850',
-    color: '#94A3B8',
-    letterSpacing: 0.5,
-  },
-  ledgerColValue: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#334155',
-    marginTop: 2,
-  },
-  ledgerTermsBadge: {
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  ledgerTermsText: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  ledgerTotalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#EEF2FF',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-    marginTop: 12,
-  },
-  ledgerTotalLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#4F46E5',
-  },
-  ledgerTotalValue: {
-    fontSize: 14.5,
-    fontWeight: '900',
-    color: '#4F46E5',
-  },
-
-  /* DIGITAL STAMPS VALIDATION PANEL */
-  signatureSealsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 4,
-  },
-  compactSealCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderWidth: 1.5,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.02,
-    shadowRadius: 6,
-    elevation: 2,
     gap: 8,
   },
-  sealApproved: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#10B981',
-    borderStyle: 'solid',
+  quickActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
   },
-  sealPending: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#F59E0B',
-    borderStyle: 'dashed',
+  quickActionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
   },
-  sealRejected: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#EF4444',
-    borderStyle: 'solid',
+  actionCard: {
+    backgroundColor: COLORS.infoBg,
+    borderColor: '#BFDBFE',
   },
-  compactSealCircle: {
+  actionCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.navy,
+    marginBottom: 4,
+  },
+  actionCardSub: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 14,
+  },
+  actionBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  declineBtn: {
+    flex: 1,
+    height: 48,
+    backgroundColor: COLORS.errorBg,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  declineBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.error,
+  },
+  approveBtn: {
+    flex: 1,
+    height: 48,
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  approveBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  neutralNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.warningBg,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 12,
+    borderRadius: 12,
+  },
+  neutralNoticeText: {
+    fontSize: 13,
+    color: COLORS.warning,
+    flex: 1,
+  },
+  errorNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.errorBg,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    padding: 12,
+    borderRadius: 12,
+  },
+  errorNoticeText: {
+    fontSize: 13,
+    color: COLORS.error,
+    flex: 1,
+  },
+  partyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  partyIconBadge: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    alignItems: 'center',
+    backgroundColor: COLORS.bg,
     justifyContent: 'center',
-    borderWidth: 1.5,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  sealCircleApproved: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#10B981',
-    shadowColor: '#10B981',
-    shadowOpacity: 0.2,
-  },
-  sealCirclePending: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#F59E0B',
-    shadowColor: '#F59E0B',
-    shadowOpacity: 0.1,
-  },
-  sealCircleRejected: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#EF4444',
-    shadowColor: '#EF4444',
-    shadowOpacity: 0.15,
-  },
-  compactSealInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  compactSealRole: {
-    fontSize: 8,
-    fontWeight: '900',
-    color: '#64748B',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
-  compactSealCompany: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 2,
-  },
-  compactSealStatusText: {
-    fontSize: 9.5,
-    fontWeight: '700',
-  },
-
-  /* VALIDITY STATUS BANNER */
-  statusBanner: {
-    marginHorizontal: 16,
-    marginTop: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderLeftWidth: 4,
-    flexDirection: 'row',
     alignItems: 'center',
+    marginRight: 12,
   },
-  statusBannerActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.06)',
-    borderColor: 'rgba(16, 185, 129, 0.15)',
-    borderLeftColor: '#10B981',
-  },
-  statusBannerExpired: {
-    backgroundColor: 'rgba(239, 68, 68, 0.06)',
-    borderColor: 'rgba(239, 68, 68, 0.15)',
-    borderLeftColor: '#EF4444',
-  },
-  statusBannerText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  statusTextActive: {
-    color: '#059669',
-  },
-  statusTextExpired: {
-    color: '#DC2626',
-  },
-
-  /* ACTION PANELS Decision center */
-  actionPanelContainer: {
-    marginHorizontal: 16,
-    marginTop: 20,
-  },
-  actionDecisionCard: {
-    backgroundColor: '#FFFBEB',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#FDE68A',
-    shadowColor: '#D97706',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  decisionStatusBadgeRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-  counterpartyApprovedBadge: {
-    backgroundColor: '#D1FAE5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  counterpartyApprovedBadgeText: {
+  partyRoleLabel: {
     fontSize: 11,
-    fontWeight: '900',
-    color: '#065F46',
+    fontWeight: '500',
+    color: COLORS.textSecondary,
   },
-  decisionHeader: {
+  partyName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  progressHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
-  },
-  decisionTag: {
-    fontSize: 9,
-    fontWeight: '950',
-    color: '#B45309',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: 'hidden',
     marginBottom: 6,
-    letterSpacing: 0.5,
   },
-  decisionTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#78350F',
-    textAlign: 'center',
-  },
-  decisionDesc: {
-    fontSize: 11,
-    color: '#92400E',
-    textAlign: 'center',
-    lineHeight: 15,
+  progressLabel: {
+    fontSize: 13,
     fontWeight: '600',
-    marginTop: 4,
+    color: COLORS.textPrimary,
   },
-  decisionButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  decisionBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  approveBtn: {
-    backgroundColor: '#059669',
-    borderColor: '#047857',
-    borderWidth: 1,
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  approveBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
+  progressPercent: {
     fontSize: 13,
-    letterSpacing: 0.2,
-  },
-  declineBtn: {
-    backgroundColor: '#FFF5F5',
-    borderColor: '#FCA5A5',
-    borderWidth: 1.5,
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  declineBtnText: {
-    color: '#E11D48',
-    fontWeight: '900',
-    fontSize: 13,
-    letterSpacing: 0.2,
-  },
-
-  /* Waiting Card - Creator APPROVED */
-  waitingCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  waitingSingleText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  approvedHighlight: {
-    color: '#059669',
-  },
-  pendingHighlight: {
-    color: '#D97706',
-  },
-  myRoleIndicatorBadge: {
-    backgroundColor: '#F1F5F9',
-    borderColor: '#E2E8F0',
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  myRoleIndicatorText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#475569',
-  },
-
-  /* Broker Card read only */
-  brokerCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  brokerCardTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#475569',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  brokerCardDesc: {
-    fontSize: 11,
-    color: '#64748B',
     fontWeight: '700',
-    textAlign: 'center',
+    color: COLORS.primary,
   },
-
-  /* Celebrations APPROVED */
-  approvedCelebrationCard: {
-    backgroundColor: '#ECFDF5',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#A7F3D0',
-    marginHorizontal: 16,
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  approvedCelebrationTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#065F46',
-  },
-  approvedCelebrationDesc: {
-    fontSize: 11,
-    color: '#047857',
-    textAlign: 'center',
-    lineHeight: 15,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-
-
-  /* Rejected style */
-  rejectedCard: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1.5,
-    borderColor: '#FCA5A5',
-    borderRadius: 20,
-    padding: 16,
-    marginHorizontal: 16,
-    marginTop: 20,
-  },
-  rejectedCardTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#991B1B',
-    textAlign: 'center',
-  },
-  rejectedCardDesc: {
-    fontSize: 11,
-    color: '#B91C1C',
-    textAlign: 'center',
-    lineHeight: 15,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-
-  /* Primary Open chat button */
-  primaryActionBtn: {
-    backgroundColor: '#4F46E5',
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  primaryActionText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 13,
-    letterSpacing: 0.3,
-  },
-
-  /* Quick share row */
-  shareRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 16,
-    gap: 10,
-  },
-  shareCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  shareLabel: {
-    fontSize: 9,
-    color: '#475569',
-    fontWeight: '800',
-  },
-
-  /* DYNAMIC PROGRESS BAR */
   progressBarTrack: {
     height: 8,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: COLORS.border,
     borderRadius: 4,
     overflow: 'hidden',
-    width: '100%',
-    marginVertical: 4,
+    marginBottom: 12,
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#059669',
     borderRadius: 4,
   },
-
-  /* PAYMENT METRIC CARD */
-  paymentMetricCard: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    padding: 12,
-    alignItems: 'flex-start',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  paymentMetricLabel: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: '#94A3B8',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  paymentMetricValue: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-
-  /* LOG TRANSACTION BUTTON */
-  logPaymentActionBtn: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#4F46E5',
-    borderRadius: 12,
-    paddingVertical: 11,
+  historyRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 6,
+  },
+  historyIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  historyTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  historySub: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+  },
+  historyAmount: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  inlineVerifyRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
     marginTop: 6,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  logPaymentActionBtnText: {
-    color: '#4F46E5',
-    fontWeight: '900',
-    fontSize: 12,
-    letterSpacing: 0.2,
-  },
-
-  /* LEDGER TIMELINE STREAM */
-  timelineContainer: {
-    marginTop: 8,
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  timelineLeftColumn: {
-    alignItems: 'center',
-    marginRight: 12,
-    width: 36,
-  },
-  timelineNode: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2,
-    elevation: 2,
-  },
-  timelineNodeSent: {
-    backgroundColor: '#FEE2E2',
-    borderWidth: 1.5,
-    borderColor: '#FCA5A5',
-  },
-  timelineNodeReceived: {
-    backgroundColor: '#D1FAE5',
-    borderWidth: 1.5,
-    borderColor: '#A7F3D0',
-  },
-  timelineNodeIcon: {
-    fontSize: 12,
-  },
-  timelineConnectorLine: {
-    width: 2,
-    backgroundColor: '#E2E8F0',
-    position: 'absolute',
-    top: 32,
-    bottom: -16,
-    zIndex: 1,
-  },
-  timelineContentCard: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  timelineContentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 4,
   },
-  timelineMethodText: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: '#1E293B',
+  inlineDeclineBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: COLORS.errorBg,
+    borderRadius: 6,
   },
-  timelineAmountText: {
-    fontSize: 12.5,
-    fontWeight: '900',
-  },
-  timelineAmountSent: {
-    color: '#E11D48',
-  },
-  timelineAmountReceived: {
-    color: '#059669',
-  },
-  timelineNotesText: {
-    fontSize: 10,
-    color: '#64748B',
+  inlineDeclineText: {
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 4,
+    color: COLORS.error,
   },
-  timelineDateText: {
-    fontSize: 9,
-    color: '#94A3B8',
+  inlineApproveBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: COLORS.success,
+    borderRadius: 6,
+  },
+  inlineApproveText: {
+    fontSize: 12,
     fontWeight: '600',
+    color: '#FFFFFF',
   },
-
-  /* MODAL OVERLAY & CONTAINER */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    backgroundColor: 'rgba(17, 24, 39, 0.5)',
+    justifyContent: 'flex-end',
   },
-  modalContainer: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 8,
-    overflow: 'hidden',
+  modalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '85%',
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
-  modalCloseIcon: {
-    fontSize: 16,
-    color: '#64748B',
+    fontSize: 18,
     fontWeight: '700',
+    color: COLORS.textPrimary,
   },
-  modalScrollContent: {
-    padding: 20,
-    gap: 16,
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginTop: 12,
+    marginBottom: 6,
   },
-  modalInputGroup: {
-    gap: 6,
-  },
-  modalInputLabel: {
-    fontSize: 10,
-    fontWeight: '850',
-    color: '#475569',
-    letterSpacing: 0.2,
-  },
-  modalTextInput: {
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 12.5,
-    color: '#0F172A',
-    fontWeight: '700',
-  },
-  modalSelectorRow: {
+  segmentedRow: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  modalSelectorBtn: {
-    flex: 1,
-    paddingVertical: 10,
+    backgroundColor: COLORS.bg,
     borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    padding: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    height: 40,
+    justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 8,
   },
-  modalSelectorBtnActive: {
-    borderColor: '#4F46E5',
-    backgroundColor: '#EEF2FF',
+  segmentBtnActive: {
+    backgroundColor: COLORS.surface,
+    elevation: 1,
   },
-  modalSelectorBtnText: {
-    fontSize: 11,
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+  },
+  segmentTextActive: {
     fontWeight: '700',
-    color: '#64748B',
+    color: COLORS.primary,
   },
-  modalSelectorBtnTextActive: {
-    color: '#4F46E5',
-    fontWeight: '900',
+  amountInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 48,
+    backgroundColor: COLORS.surface,
   },
-  methodGrid: {
+  currencyPrefix: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginRight: 8,
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  methodPillRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  methodGridItem: {
-    paddingHorizontal: 12,
+  methodPill: {
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
   },
-  methodGridItemActive: {
-    borderColor: '#4F46E5',
-    backgroundColor: '#EEF2FF',
+  methodPillActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.infoBg,
   },
-  methodGridText: {
-    fontSize: 11,
+  methodPillText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+  },
+  methodPillTextActive: {
     fontWeight: '700',
-    color: '#64748B',
+    color: COLORS.primary,
   },
-  methodGridTextActive: {
-    color: '#4F46E5',
-    fontWeight: '900',
-  },
-  modalButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
-  },
-  modalActionBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCancelBtn: {
-    backgroundColor: '#F1F5F9',
-  },
-  modalCancelBtnText: {
-    color: '#475569',
-    fontWeight: '900',
-    fontSize: 12,
-  },
-  modalSubmitBtn: {
-    backgroundColor: '#4F46E5',
-  },
-  modalSubmitBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 12,
-  },
-  pmtDetailsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  pmtDetailText: {
-    fontSize: 10,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  pmtFooterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  pmtStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+  notesInput: {
     borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    backgroundColor: COLORS.surface,
   },
-  pmtStatusText: {
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  verifyButtonsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingTop: 8,
-  },
-  verifyBtn: {
-    flex: 1,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  declineVerifyBtn: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FCA5A5',
-  },
-  declineVerifyBtnText: {
-    color: '#B91C1C',
-    fontSize: 10.5,
-    fontWeight: '800',
-  },
-  approveVerifyBtn: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-  },
-  approveVerifyBtnText: {
-    color: '#047857',
-    fontSize: 10.5,
-    fontWeight: '800',
-  },
-  /* Delivery Progress Styles */
-  deliveryProgressCard: {
-    marginTop: 8,
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  deliveryProgressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  deliveryProgressTitle: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#64748B',
-    letterSpacing: 0.5,
-  },
-  deliveryProgressQty: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
-  deliveryProgressFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  deliveryProgressText: {
-    fontSize: 9.5,
-    fontWeight: '700',
-  },
-  emptyTimelineText: {
-    fontSize: 11,
-    color: '#94A3B8',
-    textAlign: 'center',
-    fontStyle: 'italic',
-    marginVertical: 20,
-  },
-  /* Timeline Node Sent/Received Custom Colors */
-  timelineNodeSentBlue: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1.5,
-    borderColor: '#BFDBFE',
-  },
-  timelineNodeReceivedGreen: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1.5,
-    borderColor: '#A7F3D0',
-  },
-  timelineAmountSentBlue: {
-    color: '#4F46E5',
-  },
-  timelineAmountReceivedGreen: {
-    color: '#059669',
-  },
-  /* FINTECH ACTIONS ROW */
-  fintechActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    marginVertical: 16,
-    marginHorizontal: 16,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ECEEF2',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  fintechActionItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fintechActionButton: {
-    width: 50,
+  primaryActionBtn: {
+    backgroundColor: COLORS.primary,
     height: 50,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    alignItems: 'center',
+    borderRadius: 10,
     justifyContent: 'center',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
+    alignItems: 'center',
+    marginTop: 20,
   },
-  fintechActionLabel: {
-    fontSize: 10.5,
-    color: '#64748B',
+  primaryActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '700',
-    marginTop: 6,
   },
-  /* GST BREAKDOWN MODAL STYLES */
   gstItemCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    backgroundColor: COLORS.bg,
+    borderRadius: 12,
+    padding: 12,
     marginBottom: 8,
   },
   gstItemName: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 10,
-  },
-  gstGridRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  gstGridCol: {
-    flex: 1,
-  },
-  gstGridLabel: {
-    fontSize: 10,
-    color: '#94A3B8',
-    fontWeight: '600',
-    marginBottom: 2,
-    textTransform: 'uppercase',
-  },
-  gstGridValue: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#334155',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
   },
-  taxDivisionCard: {
-    backgroundColor: '#FFF1F2',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#FFE4E6',
-  },
-  taxDivisionTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#E11D48',
-    marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  taxSplitRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: 4,
-  },
-  taxSplitLabel: {
-    fontSize: 11,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  taxSplitValue: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  financialSummaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: 6,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  summaryValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  disclaimerBanner: {
-    backgroundColor: '#F8FAFC',
+  gstTotalBox: {
+    backgroundColor: COLORS.infoBg,
     borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    padding: 14,
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  disclaimerText: {
-    fontSize: 9,
-    color: '#64748B',
-    lineHeight: 14,
-    fontStyle: 'italic',
+  gstTotalLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.navy,
+  },
+  gstTotalVal: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
 });
 

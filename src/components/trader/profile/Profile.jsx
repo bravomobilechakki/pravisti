@@ -125,7 +125,7 @@ const Profile = ({ onNavigate, routeData }) => {
   };
 
   const displayName = profileData?.name || routeData?.user?.name || 'Rahul Sharma';
-  const rawRole = profileData?.userType || (routeData?.user?.roles && routeData.user.roles[0]) || 'Broker';
+  const rawRole = profileData?.userType || (routeData?.user?.roles && routeData.user.roles[0]) || 'Trader';
   const displayRole = rawRole.charAt(0).toUpperCase() + rawRole.slice(1);
   const displayMobile = profileData?.mobileNumber || routeData?.user?.mobileNumber || '+91 98765 43210';
   const displayEmail = profileData?.email || routeData?.user?.email || '';

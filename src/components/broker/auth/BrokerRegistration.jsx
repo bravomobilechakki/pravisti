@@ -16,16 +16,17 @@ const BrokerRegistration = ({ onNavigate }) => {
   const [firmName, setFirmName] = useState('');
   const [licenseNo, setLicenseNo] = useState('');
   const [mandi, setMandi] = useState('');
-  const [commissionRate, setCommissionRate] = useState('1.0');
+  const [commissionRate, setCommissionRate] = useState('');
+
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleRegister = () => {
+    setErrorMsg('');
     if (!firmName.trim() || !licenseNo.trim()) {
-      Alert.alert('Validation Error', 'Firm Name & APMC License Number are required');
+      setErrorMsg('Firm Name & APMC License Number are required');
       return;
     }
-    Alert.alert('Firm Created', `Brokerage Firm "${firmName}" has been successfully created!`, [
-      { text: 'OK', onPress: () => onNavigate('BrokerDashboard') },
-    ]);
+    onNavigate('BrokerDashboard');
   };
 
   return (

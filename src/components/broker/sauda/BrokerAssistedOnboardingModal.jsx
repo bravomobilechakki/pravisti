@@ -23,7 +23,9 @@ import {
   Trash2,
   ShieldCheck,
   CheckCircle2,
+  CircleAlert as AlertCircle,
 } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { assistedCreatePartyAccount } from '../../../services/api';
 
 const BrokerAssistedOnboardingModal = ({
@@ -44,8 +46,17 @@ const BrokerAssistedOnboardingModal = ({
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (mobileNumber) setMobile(mobileNumber);
-  }, [mobileNumber]);
+    if (visible) {
+      setOwnerName('');
+      setMobile(mobileNumber || '');
+      setCompanyName('');
+      setAddress('');
+      setGstin('');
+      setProducts(partyType === 'Seller' ? ['Wheat', 'Desi Chana'] : []);
+      setNewProdName('');
+      setModalError('');
+    }
+  }, [visible, partyType, mobileNumber]);
 
   const handleAddProduct = () => {
     if (!newProdName.trim()) return;
@@ -57,59 +68,81 @@ const BrokerAssistedOnboardingModal = ({
     setProducts(prev => prev.filter((_, i) => i !== index));
   };
 
+  const [modalError, setModalError] = useState('');
+
   const handleSubmit = async () => {
+    setModalError('');
     if (!ownerName.trim()) {
-      Alert.alert('Validation Error', 'Please enter Business Owner / Contact Name');
+      setModalError('Please enter Business Owner / Contact Name');
       return;
     }
     if (mobile.length !== 10) {
-      Alert.alert('Validation Error', 'Please enter a valid 10-digit mobile number');
+      setModalError('Please enter a valid 10-digit mobile number');
       return;
     }
     if (!companyName.trim()) {
-      Alert.alert('Validation Error', 'Please enter Company / Business Name');
+      setModalError('Please enter Company / Business Name');
       return;
     }
 
     setIsLoading(true);
     try {
+      const formattedProducts = (partyType.toLowerCase() === 'seller' ? products : []).map(p => {
+        if (typeof p === 'object') return p;
+        return {
+          name: p,
+          unitId: '64d0a1b2c3d4e5f6a7b8c9df',
+          description: `${p} commodity`,
+          hsnCode: '7601',
+          gstCode: '18%',
+        };
+      });
+
+      const activeRole = (partyType || 'seller').toLowerCase();
+      const cleanGst = gstin.trim();
+
       const payload = {
-        partyType,
-        ownerName: ownerName.trim(),
+        role: activeRole === 'buyer' ? 'buyer' : 'seller', // Ensure role field is lowercased "seller" or "buyer"
+        name: ownerName.trim(), // Full name of business owner
         mobileNumber: mobile,
         companyName: companyName.trim(),
-        companyAddress: address.trim(),
-        gstin: gstin.trim(),
-        products: partyType === 'Seller' ? products : [],
-        // Audit Metadata
-        createdByBroker: true,
-        brokerUserId: brokerUser?._id || 'BROKER-CURR',
-        brokerName: brokerUser?.name || 'Ramesh Sharma',
-        brokerCompanyId: brokerUser?.companyId || 'FIRM-001',
-        brokerCompanyName: brokerUser?.company || 'Ganesha Commodity Brokers',
-        creationType: 'Broker Assisted Registration',
+        companyAddress: {
+          street: address.trim() || 'Mandi Road',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          zip: '400001',
+        },
+        ...(cleanGst ? { gst: cleanGst } : {}),
+        businessDetails: `Dealers in ${partyType === 'Seller' ? products.join(', ') || 'commodities' : 'agricultural products'}`,
+        products: formattedProducts,
       };
 
-      const res = await assistedCreatePartyAccount(payload);
+      const token = await AsyncStorage.getItem('userToken');
+      const res = await assistedCreatePartyAccount(payload, token);
       if (res && res.success) {
-        Alert.alert(
-          'Account Created',
-          `Temporary ${partyType} Business "${companyName}" created under Pending Owner Verification state.`,
-          [
-            {
-              text: 'Continue Deal',
-              onPress: () => {
-                if (onSuccess) onSuccess(res.data);
-                onClose();
-              },
-            },
-          ]
-        );
+        setOwnerName('');
+        setCompanyName('');
+        setAddress('');
+        setGstin('');
+        setProducts([]);
+        setModalError('');
+        if (onSuccess) onSuccess(res.data);
+        onClose();
       } else {
-        Alert.alert('Error', res?.message || 'Failed to create business account');
+        const msg = res?.message || '';
+        if (msg.includes('E11000') || msg.includes('duplicate key') || msg.includes('registrationNumber')) {
+          setModalError('A company with this GSTIN is already registered. Please enter a unique GSTIN or leave GST blank.');
+        } else {
+          setModalError(msg || 'Failed to create business account');
+        }
       }
     } catch (err) {
-      Alert.alert('Error', err.message || 'Assisted registration failed');
+      const errMsg = err.message || '';
+      if (errMsg.includes('E11000') || errMsg.includes('duplicate key') || errMsg.includes('registrationNumber')) {
+        setModalError('A company with this GSTIN is already registered. Please enter a unique GSTIN or leave GST blank.');
+      } else {
+        setModalError(errMsg || 'Assisted registration failed');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -125,16 +158,23 @@ const BrokerAssistedOnboardingModal = ({
           {/* Header */}
           <View style={styles.modalHeader}>
             <View style={styles.headerLeft}>
-              <ShieldCheck size={22} color="#4F46E5" style={{ marginRight: 8 }} />
+              <ShieldCheck size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
               <View>
                 <Text style={styles.modalTitle}>Create {partyType} Business</Text>
                 <Text style={styles.modalSub}>Broker Assisted Onboarding</Text>
               </View>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={20} color="#64748B" />
+              <X size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
+
+          {modalError ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF2F2', padding: 10, marginHorizontal: 20, borderRadius: 10, borderWidth: 1, borderColor: '#FCA5A5', marginBottom: 6 }}>
+              <AlertCircle size={16} color="#EF4444" style={{ marginRight: 6 }} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#DC2626', flex: 1 }}>{modalError}</Text>
+            </View>
+          ) : null}
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formScroll}>
             {/* Info Notice */}
@@ -151,7 +191,7 @@ const BrokerAssistedOnboardingModal = ({
                 <User size={18} color="#6366F1" style={{ marginRight: 8 }} />
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. Rajesh Kumar"
+                  placeholder="name"
                   placeholderTextColor="#94A3B8"
                   value={ownerName}
                   onChangeText={setOwnerName}
@@ -167,7 +207,7 @@ const BrokerAssistedOnboardingModal = ({
                 <Text style={styles.codePrefix}>+91</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="10-digit mobile"
+                  placeholder="no"
                   placeholderTextColor="#94A3B8"
                   keyboardType="number-pad"
                   maxLength={10}
@@ -184,7 +224,7 @@ const BrokerAssistedOnboardingModal = ({
                 <Building2 size={18} color="#6366F1" style={{ marginRight: 8 }} />
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. Shree Ram Agro Foods Pvt Ltd"
+                  placeholder="company name"
                   placeholderTextColor="#94A3B8"
                   value={companyName}
                   onChangeText={setCompanyName}
@@ -194,12 +234,12 @@ const BrokerAssistedOnboardingModal = ({
 
             {/* Address */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Mandi Address / Location</Text>
+              <Text style={styles.label}>Company Address / Location</Text>
               <View style={styles.inputContainer}>
                 <MapPin size={18} color="#6366F1" style={{ marginRight: 8 }} />
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. APMC Market Yard, Unjha, Gujarat"
+                  placeholder="company address"
                   placeholderTextColor="#94A3B8"
                   value={address}
                   onChangeText={setAddress}
@@ -214,7 +254,7 @@ const BrokerAssistedOnboardingModal = ({
                 <FileText size={18} color="#6366F1" style={{ marginRight: 8 }} />
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. 24AAAAA0000A1Z5"
+                  placeholder="no"
                   placeholderTextColor="#94A3B8"
                   value={gstin}
                   onChangeText={setGstin}
@@ -287,8 +327,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#3465EA',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -297,18 +338,18 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#FFFFFF',
   },
   modalSub: {
     fontSize: 11,
-    color: '#64748B',
+    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '600',
   },
   closeBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },

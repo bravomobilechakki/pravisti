@@ -25,73 +25,153 @@ import {
   RefreshCw,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import BrokerSuccessReceipt from '../../common/BrokerSuccessReceipt';
+import { getBrokerPendingQueue, resendWhatsAppInvite, cancelBrokerOnboard } from '../../../services/api';
 import { generateAssistedRegistrationLink } from '../../../utils/WhatsAppService';
 
 const MOCK_PENDING_QUEUE = [
   {
-    id: 'SAUDA-912',
-    commodity: 'Cotton Bales (Shankar 6)',
-    quantity: '100 Bales',
-    rate: '₹58,500 / candy',
-    sellerName: 'Surat Ginning & Pressing Mill',
-    sellerMobile: '9876543210',
-    sellerStatus: 'Approved', // 'Approved', 'Pending', 'Rejected'
-    buyerName: 'Nature Fresh Foods Pvt Ltd',
-    buyerMobile: '9800000002',
-    buyerStatus: 'Pending',
-    dealStatus: 'Pending Verification',
-    createdAt: 'Today, 11:20 AM',
+    registrationId: '6a672bea44958e688fcf56b2',
+    role: 'seller',
+    status: 'pending',
+    invitedMobile: '9876543210',
+    targetUserName: 'Rahul Sharma',
+    company: {
+      id: '6a672bea44958e688fcf56ad',
+      name: 'ABC Traders',
+      address: { street: '123 Metal Lane', city: 'Mumbai', state: 'Maharashtra' },
+      registrationNumber: '27ABCDE1234F1Z5',
+      description: 'Dealers in high-grade aluminium ingots',
+    },
+    deals: [],
+    createdAt: '2026-07-27T09:59:06.636Z',
   },
   {
-    id: 'SAUDA-910',
-    commodity: 'Desi Chana (Chickpeas)',
-    quantity: '25 MT',
-    rate: '₹6,420 / qtl',
-    sellerName: 'MP Farmers Corp',
-    sellerMobile: '9800000001',
-    sellerStatus: 'Rejected',
-    buyerName: 'Rajkot Agri Foods Pvt Ltd',
-    buyerMobile: '9123456789',
-    buyerStatus: 'Approved',
-    dealStatus: 'Rejected by Owner',
-    createdAt: 'Yesterday',
+    registrationId: '6a6459d1db25d9655acfeaca',
+    role: 'buyer',
+    status: 'approved',
+    invitedMobile: '8949056321',
+    targetUserName: 'Monu didi',
+    company: {
+      id: '6a6459d1db25d9655acfeac7',
+      name: 'Microsoft',
+      address: { street: 'Jaipur Rajasthan', city: 'Jaipur', state: 'Rajasthan' },
+      registrationNumber: 'GSRTY_355364564',
+    },
+    deals: [
+      {
+        _id: '6a645a5adb25d9655acfeb13',
+        dealNumber: 'DEAL-0001',
+        status: 'pending',
+        createdAt: '2026-07-25T06:40:26.227Z',
+      },
+    ],
+    createdAt: '2026-07-25T06:38:09.690Z',
   },
 ];
 
 const BrokerPendingQueue = ({ onNavigate }) => {
   const [activeTab, setActiveTab] = useState('ALL');
-  const [queue, setQueue] = useState(MOCK_PENDING_QUEUE);
+  const [queue, setQueue] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [successReceipt, setSuccessReceipt] = useState({ visible: false });
+
+  const fetchQueue = async () => {
+    setIsLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const res = await getBrokerPendingQueue(token);
+      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+        setQueue(res.data);
+      } else {
+        setQueue(MOCK_PENDING_QUEUE);
+      }
+    } catch (err) {
+      setQueue(MOCK_PENDING_QUEUE);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQueue();
+  }, []);
 
   const filteredQueue = queue.filter(item => {
-    if (activeTab === 'WAITING_SELLER') return item.sellerStatus === 'Pending';
-    if (activeTab === 'WAITING_BUYER') return item.buyerStatus === 'Pending';
-    if (activeTab === 'REJECTED') return item.sellerStatus === 'Rejected' || item.buyerStatus === 'Rejected';
-    if (activeTab === 'APPROVED') return item.sellerStatus === 'Approved' && item.buyerStatus === 'Approved';
+    if (activeTab === 'WAITING_SELLER') return item.role === 'seller' && item.status === 'pending';
+    if (activeTab === 'WAITING_BUYER') return item.role === 'buyer' && item.status === 'pending';
+    if (activeTab === 'REJECTED') return item.status === 'rejected';
+    if (activeTab === 'APPROVED') return item.status === 'approved';
     return true;
   });
 
-  const handleResendInvite = (item, partyType) => {
-    const isSeller = partyType === 'Seller';
+  const handleResendInvite = async (item) => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (item.registrationId) {
+        await resendWhatsAppInvite(item.registrationId, token);
+      }
+    } catch (e) {
+      console.warn('API resend failed, opening native link fallback:', e);
+    }
     const link = generateAssistedRegistrationLink({
-      partyType,
-      ownerName: isSeller ? item.sellerName : item.buyerName,
-      companyName: isSeller ? item.sellerName : item.buyerName,
+      partyType: item.role === 'seller' ? 'Seller' : 'Buyer',
+      ownerName: item.targetUserName,
+      companyName: item.company?.name || item.targetUserName,
       brokerName: 'Ramesh Sharma',
       brokerCompany: 'Ganesha Commodity Brokers',
-      mobileNumber: isSeller ? item.sellerMobile : item.buyerMobile,
-      dealRef: item.id,
+      mobileNumber: item.invitedMobile,
+      dealRef: item.deals && item.deals[0] ? item.deals[0].dealNumber : item.registrationId,
     });
     Linking.openURL(link);
   };
 
+  const handleCancelOnboard = async (item) => {
+    Alert.alert(
+      'Cancel Registration',
+      `Are you sure you want to cancel the registration for ${item.company?.name || item.targetUserName}?`,
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const token = await AsyncStorage.getItem('userToken');
+              const regId = item.registrationId || item._id;
+              if (regId) {
+                await cancelBrokerOnboard(regId, token);
+                setSuccessReceipt({
+                  visible: true,
+                  actionType: 'dealDeclined',
+                  title: 'Registration Cancelled',
+                  message: `Registration for ${item.company?.name || item.targetUserName} has been cancelled.`,
+                  referenceId: regId,
+                  details: [
+                    { label: 'Target Party', value: item.targetUserName || 'N/A' },
+                    { label: 'Firm Name', value: item.company?.name || 'N/A' },
+                    { label: 'Role', value: item.role ? item.role.toUpperCase() : 'N/A' },
+                  ],
+                });
+                fetchQueue();
+              }
+            } catch (err) {
+              Alert.alert('Error', err.message || 'Failed to cancel registration');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="light-content" backgroundColor="#3465EA" />
 
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => onNavigate('pop')} style={styles.backBtn}>
-          <ArrowLeft size={22} color="#0F172A" />
+          <ArrowLeft size={20} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Pending Owner Verification Queue</Text>
         <View style={{ width: 24 }} />
@@ -156,88 +236,102 @@ const BrokerPendingQueue = ({ onNavigate }) => {
             <Text style={styles.emptySub}>No pending owner verification deals match this filter.</Text>
           </View>
         ) : (
-          filteredQueue.map(item => (
-            <View key={item.id} style={styles.card}>
-              <View style={styles.cardTop}>
-                <View style={styles.dealIdBox}>
-                  <Handshake size={14} color="#4F46E5" style={{ marginRight: 4 }} />
-                  <Text style={styles.dealIdText}>{item.id}</Text>
+          filteredQueue.map(item => {
+            const regId = item.registrationId || item.id || 'REG-001';
+            const roleName = (item.role || 'seller').toUpperCase();
+            const partyName = item.company?.name || item.targetUserName || item.sellerName || 'Target Business';
+            const mobileNo = item.invitedMobile || item.sellerMobile || item.buyerMobile || 'Mobile';
+            const statusVal = (item.status || item.sellerStatus || 'pending').toLowerCase();
+
+            const isApproved = statusVal === 'approved';
+            const isRejected = statusVal === 'rejected';
+
+            const dealNumber = item.deals && item.deals[0] ? item.deals[0].dealNumber : (item.id || 'ONBOARD-QUEUE');
+
+            return (
+              <View key={regId} style={styles.card}>
+                <View style={styles.cardTop}>
+                  <View style={styles.dealIdBox}>
+                    <Handshake size={14} color="#4F46E5" style={{ marginRight: 4 }} />
+                    <Text style={styles.dealIdText}>{dealNumber}</Text>
+                  </View>
+                  <Text style={styles.dateText}>
+                    {item.createdAt ? new Date(item.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Recent'}
+                  </Text>
                 </View>
-                <Text style={styles.dateText}>{item.createdAt}</Text>
-              </View>
 
-              <Text style={styles.commodityText}>{item.commodity}</Text>
-              <Text style={styles.qtyRateText}>{item.quantity} • {item.rate}</Text>
+                <Text style={styles.commodityText}>{partyName}</Text>
+                <Text style={styles.qtyRateText}>
+                  Owner: {item.targetUserName || partyName} • +91 {mobileNo}
+                  {item.company?.registrationNumber ? ` • GST: ${item.company.registrationNumber}` : ''}
+                  {item.company?.address?.city ? ` • ${item.company.address.city}` : ''}
+                </Text>
 
-              {/* Dual Status Box */}
-              <View style={styles.dualStatusBox}>
-                <View style={styles.statusRowItem}>
-                  <Text style={styles.partyRoleLabel}>SELLER:</Text>
-                  <Text style={styles.partyNameText} numberOfLines={1}>{item.sellerName}</Text>
-                  <View style={[
-                    styles.badgePill,
-                    { backgroundColor: item.sellerStatus === 'Approved' ? '#DCFCE7' : item.sellerStatus === 'Pending' ? '#FEF3C7' : '#FEF2F2' }
-                  ]}>
-                    <Text style={[
-                      styles.badgePillText,
-                      { color: item.sellerStatus === 'Approved' ? '#15803D' : item.sellerStatus === 'Pending' ? '#D97706' : '#DC2626' }
+                {/* Dual Status Box */}
+                <View style={styles.dualStatusBox}>
+                  <View style={styles.statusRowItem}>
+                    <Text style={styles.partyRoleLabel}>{roleName}:</Text>
+                    <Text style={styles.partyNameText} numberOfLines={1}>{partyName}</Text>
+                    <View style={[
+                      styles.badgePill,
+                      { backgroundColor: isApproved ? '#DCFCE7' : isRejected ? '#FEF2F2' : '#FEF3C7' }
                     ]}>
-                      {item.sellerStatus === 'Approved' ? '🟢 Verified' : item.sellerStatus === 'Pending' ? '🟡 Pending' : '🔴 Rejected'}
-                    </Text>
+                      <Text style={[
+                        styles.badgePillText,
+                        { color: isApproved ? '#15803D' : isRejected ? '#DC2626' : '#D97706' }
+                      ]}>
+                        {isApproved ? '🟢 Approved' : isRejected ? '🔴 Rejected' : '🟡 Pending Owner Sign'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
-                <View style={styles.statusRowItem}>
-                  <Text style={styles.partyRoleLabel}>BUYER:</Text>
-                  <Text style={styles.partyNameText} numberOfLines={1}>{item.buyerName}</Text>
-                  <View style={[
-                    styles.badgePill,
-                    { backgroundColor: item.buyerStatus === 'Approved' ? '#DCFCE7' : item.buyerStatus === 'Pending' ? '#FEF3C7' : '#FEF2F2' }
-                  ]}>
-                    <Text style={[
-                      styles.badgePillText,
-                      { color: item.buyerStatus === 'Approved' ? '#15803D' : item.buyerStatus === 'Pending' ? '#D97706' : '#DC2626' }
-                    ]}>
-                      {item.buyerStatus === 'Approved' ? '🟢 Verified' : item.buyerStatus === 'Pending' ? '🟡 Pending' : '🔴 Rejected'}
-                    </Text>
-                  </View>
+                {/* Action Buttons */}
+                <View style={styles.actionRow}>
+                  {!isApproved && !isRejected && (
+                    <>
+                      <TouchableOpacity
+                        style={styles.resendBtn}
+                        onPress={() => handleResendInvite(item)}
+                      >
+                        <Share2 size={14} color="#4F46E5" style={{ marginRight: 4 }} />
+                        <Text style={styles.resendBtnText}>Resend Invite</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.resendBtn, { backgroundColor: '#FEF2F2' }]}
+                        onPress={() => handleCancelOnboard(item)}
+                      >
+                        <XCircle size={14} color="#DC2626" style={{ marginRight: 4 }} />
+                        <Text style={[styles.resendBtnText, { color: '#DC2626' }]}>Cancel</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+
+                  <TouchableOpacity
+                    style={styles.viewDealBtn}
+                    onPress={() => onNavigate('DealDetails', { deal: item })}
+                  >
+                    <Text style={styles.viewDealBtnText}>View Details</Text>
+                    <ChevronRight size={14} color="#475569" />
+                  </TouchableOpacity>
                 </View>
               </View>
-
-              {/* Action Buttons */}
-              <View style={styles.actionRow}>
-                {item.sellerStatus === 'Pending' && (
-                  <TouchableOpacity
-                    style={styles.resendBtn}
-                    onPress={() => handleResendInvite(item, 'Seller')}
-                  >
-                    <Share2 size={14} color="#4F46E5" style={{ marginRight: 4 }} />
-                    <Text style={styles.resendBtnText}>Resend Seller Invite</Text>
-                  </TouchableOpacity>
-                )}
-
-                {item.buyerStatus === 'Pending' && (
-                  <TouchableOpacity
-                    style={styles.resendBtn}
-                    onPress={() => handleResendInvite(item, 'Buyer')}
-                  >
-                    <Share2 size={14} color="#4F46E5" style={{ marginRight: 4 }} />
-                    <Text style={styles.resendBtnText}>Resend Buyer Invite</Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  style={styles.viewDealBtn}
-                  onPress={() => onNavigate('DealDetails', { deal: item })}
-                >
-                  <Text style={styles.viewDealBtnText}>View Details</Text>
-                  <ChevronRight size={14} color="#475569" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
+
+      <BrokerSuccessReceipt
+        visible={successReceipt.visible}
+        actionType={successReceipt.actionType || 'dealDeclined'}
+        title={successReceipt.title}
+        message={successReceipt.message}
+        referenceId={successReceipt.referenceId}
+        details={successReceipt.details}
+        onDone={() => setSuccessReceipt({ visible: false })}
+        onClose={() => setSuccessReceipt({ visible: false })}
+      />
     </SafeAreaView>
   );
 };
@@ -250,12 +344,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#3465EA',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#2554D7',
   },
-  backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
+  backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.15)', borderRadius: 18 },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
   tabsWrapper: { backgroundColor: '#FFFFFF', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   tabsScroll: { paddingHorizontal: 20, gap: 8 },
   tabChip: {
@@ -264,7 +358,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#F1F5F9',
   },
-  tabChipActive: { backgroundColor: '#4F46E5' },
+  tabChipActive: { backgroundColor: '#3465EA' },
   tabChipText: { fontSize: 12, fontWeight: '700', color: '#64748B' },
   tabChipTextActive: { color: '#FFFFFF' },
   scrollContent: { padding: 20, paddingBottom: 40 },

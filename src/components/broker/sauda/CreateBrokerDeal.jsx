@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,16 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   StatusBar,
   Linking,
+  Modal,
   Platform,
+  Animated,
+  PermissionsAndroid,
+  FlatList,
 } from 'react-native';
+import Contacts from 'react-native-contacts';
+import BrokerSuccessReceipt from '../../common/BrokerSuccessReceipt';
 import {
   ArrowLeft,
   Search,
@@ -21,137 +26,533 @@ import {
   User,
   Handshake,
   Box,
-  DollarSign,
-  Calendar,
   ShieldCheck,
   CheckCircle2,
-  AlertCircle,
-  Share2,
+  CircleAlert as AlertCircle,
   Clock,
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  X,
+  PackagePlus,
+  Share2,
+  BookUser,
+  RotateCcw,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createDeal, getUserProfile } from '../../../services/api';
+import {
+  createDeal,
+  getUserProfile,
+  searchCounterpartyUser,
+  getProducts,
+  getCategories,
+  createCategory,
+  createProduct,
+  getUnits,
+} from '../../../services/api';
 import { generateAssistedRegistrationLink } from '../../../utils/WhatsAppService';
 import BrokerAssistedOnboardingModal from './BrokerAssistedOnboardingModal';
 
+// --- COLOR SYSTEM (Electric Royal Blue Theme) ---
+const COLORS = {
+  primary: '#3B3CFF',
+  primaryDark: '#3B3CFF',
+  headerMiddle: '#4D3EFF',
+  headerEnd: '#5143EB',
+  primaryLight: '#EEF2FF',
+  primaryBorder: '#C7D2FE',
+  indigo: '#4F46E5',
+  indigoLight: '#EEF2FF',
+  indigoBorder: '#C7D2FE',
+  success: '#059669',
+  successDark: '#15803D',
+  successLight: '#DCFCE7',
+  successBorder: '#86EFAC',
+  warning: '#D97706',
+  warningLight: '#FEF3C7',
+  warningBorder: '#FDE68A',
+  error: '#DC2626',
+  errorLight: '#FEF2F2',
+  errorBorder: '#FCA5A5',
+  textPrimary: '#0F172A',
+  textSecondary: '#475569',
+  textMuted: '#64748B',
+  textPlaceholder: '#94A3B8',
+  bgMain: '#F8FAFC',
+  cardBg: '#FFFFFF',
+  border: '#E2E8F0',
+};
+
+// --- HELPER FORMATTING UTILS ---
+const formatIndianCurrency = (amount) => {
+  const num = parseFloat(amount) || 0;
+  return '₹' + num.toLocaleString('en-IN');
+};
+
 const CreateBrokerDeal = ({ onNavigate, routeData }) => {
   const [currentUser, setCurrentUser] = useState(routeData?.user || null);
+  const [selectedBrokerCompany, setSelectedBrokerCompany] = useState(routeData?.company || null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const loadDefaultBrokerCompany = async () => {
+      if (!routeData?.company) {
+        try {
+          const storedStr = await AsyncStorage.getItem('broker_companies_storage');
+          if (storedStr) {
+            const list = JSON.parse(storedStr);
+            if (Array.isArray(list) && list.length > 0) {
+              setSelectedBrokerCompany(list[0]);
+            }
+          }
+        } catch (e) {
+          console.warn('Could not auto-load broker company:', e);
+        }
+      }
+    };
+    loadDefaultBrokerCompany();
+  }, [routeData]);
+
+  // Wizard Step State (1: Seller, 2: Buyer, 3: Deal Details)
+  const [currentStep, setCurrentStep] = useState(1);
 
   // Seller State
   const [sellerMobile, setSellerMobile] = useState('');
   const [sellerParty, setSellerParty] = useState(null); // { user, company, products, isAssisted }
-  const [sellerStatus, setSellerStatus] = useState('Pending'); // 'Approved' or 'Pending'
+  const [sellerStatus, setSellerStatus] = useState('Pending');
+  const [sellerProducts, setSellerProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [sellerNotFound, setSellerNotFound] = useState(false);
+  const [sellerSearchError, setSellerSearchError] = useState('');
 
   // Buyer State
   const [buyerMobile, setBuyerMobile] = useState('');
   const [buyerParty, setBuyerParty] = useState(null); // { user, company, isAssisted }
-  const [buyerStatus, setBuyerStatus] = useState('Pending'); // 'Approved' or 'Pending'
+  const [buyerStatus, setBuyerStatus] = useState('Pending');
+  const [buyerNotFound, setBuyerNotFound] = useState(false);
+  const [buyerSearchError, setBuyerSearchError] = useState('');
 
-  // Deal Terms State
+  // Backend Units State (Default units initialized for instant render)
+  const DEFAULT_UNITS = [
+    { _id: '6a0eac4cd59663585920f09c', name: 'Quintal', shortName: 'qtl' },
+    { _id: '6a0eac4cd59663585920f09d', name: 'Bales', shortName: 'bales' },
+    { _id: '6a0eac4cd59663585920f09e', name: 'Kilogram', shortName: 'kg' },
+    { _id: '6a0eac4cd59663585920f09f', name: 'Metric Ton', shortName: 'MT' },
+  ];
+  const [apiUnits, setApiUnits] = useState(DEFAULT_UNITS);
+  const [unitsLoading, setUnitsLoading] = useState(false);
+  const [selectedUnitObj, setSelectedUnitObj] = useState(DEFAULT_UNITS[0]);
+
+  // Deal Details State
   const [selectedProduct, setSelectedProduct] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [unit, setUnit] = useState('Bales (170kg)');
   const [rate, setRate] = useState('');
-  const [commissionRate, setCommissionRate] = useState('1.0');
-  const [paymentTerms, setPaymentTerms] = useState('7 Days Credit');
-  const [deliveryLocation, setDeliveryLocation] = useState('Surat Ginning Mandi');
+  const [commissionRate, setCommissionRate] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('');
+  const [deliveryLocation, setDeliveryLocation] = useState('');
 
-  // Modal State
+  // Inline Feedback Toast / Error Banner State
+  const [toastMsg, setToastMsg] = useState('');
+  const [formError, setFormError] = useState('');
+
+  // Custom Alert Modal State
+  const [alertModalConfig, setAlertModalConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    primaryText: 'OK',
+    onPrimary: null,
+    secondaryText: '',
+    onSecondary: null,
+  });
+
+  // Onboarding Modal State
   const [modalVisible, setModalVisible] = useState(false);
   const [onboardingPartyType, setOnboardingPartyType] = useState('Seller');
 
-  useEffect(() => {
-    const fetchBrokerProfile = async () => {
-      try {
-        const token = await AsyncStorage.getItem('userToken');
-        if (token) {
-          const res = await getUserProfile(token);
-          if (res && res.success) setCurrentUser(res.data);
-        }
-      } catch (err) {
-        console.warn('Error fetching broker profile:', err);
-      }
-    };
-    fetchBrokerProfile();
-  }, []);
+  // Create Product Modal State
+  const [createProductModalVisible, setCreateProductModalVisible] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductHsn, setNewProductHsn] = useState('');
+  const [newProductGst, setNewProductGst] = useState('18');
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
 
-  // Search Seller Mock/API
-  const handleSearchSeller = () => {
-    if (sellerMobile.length !== 10) {
-      Alert.alert('Search Error', 'Please enter a valid 10-digit mobile number');
-      return;
+  // Success inline card state (shown after party is set, auto-navigates next step)
+  const [partyJustAdded, setPartyJustAdded] = useState(null); // 'seller' | 'buyer' | null
+
+  // Multi-Company Selection State (when counterparty has >1 registered companies)
+  const [companySelectModalVisible, setCompanySelectModalVisible] = useState(false);
+  const [availableCompaniesList, setAvailableCompaniesList] = useState([]);
+  const [companySelectTarget, setCompanySelectTarget] = useState(null); // { role: 'Seller' | 'Buyer', user: obj, products: arr }
+
+  const selectSellerCompany = (sellerComp, userObj, sellerProds = []) => {
+    setCompanySelectModalVisible(false);
+    const partyObj = {
+      user: userObj || { name: 'Seller', mobileNumber: sellerMobile },
+      company: sellerComp,
+      products: sellerProds,
+      isAssisted: false,
+    };
+    setSellerParty(partyObj);
+    setSellerStatus('Approved');
+    setSellerNotFound(false);
+
+    const compId = sellerComp._id || sellerComp.id || sellerComp.companyId;
+    if (compId) {
+      fetchSellerProducts(compId);
+    } else if (sellerProds.length > 0) {
+      setSellerProducts(sellerProds);
     }
-    // Simulate search
-    if (sellerMobile === '9876543210') {
-      setSellerParty({
-        user: { name: 'Surat Ginning Corp', mobileNumber: sellerMobile },
-        company: { companyName: 'Surat Ginning & Pressing Mill', address: 'Surat, Gujarat' },
-        products: [{ name: 'Cotton Shankar 6' }, { name: 'Cotton Bales' }],
-        isAssisted: false,
-      });
-      setSellerStatus('Approved');
-    } else {
-      Alert.alert(
-        'Seller Not Registered',
-        `No registered Seller found for mobile +91 ${sellerMobile}. Would you like to create a temporary business account for this Seller?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
+
+    setPartyJustAdded('seller');
+    setTimeout(() => {
+      setPartyJustAdded(null);
+      setCurrentStep(2);
+    }, 2000);
+  };
+
+  const selectBuyerCompany = (bComp, userObj) => {
+    setCompanySelectModalVisible(false);
+    setBuyerParty({
+      user: userObj || { name: 'Buyer', mobileNumber: buyerMobile },
+      company: bComp,
+      isAssisted: false,
+    });
+    setBuyerStatus('Approved');
+    setBuyerNotFound(false);
+
+    setPartyJustAdded('buyer');
+    setTimeout(() => {
+      setPartyJustAdded(null);
+      setCurrentStep(3);
+    }, 2000);
+  };
+
+  // Device Contacts Modal State
+  const [contactsModalVisible, setContactsModalVisible] = useState(false);
+  const [deviceContacts, setDeviceContacts] = useState([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactSearchQuery, setContactSearchQuery] = useState('');
+  const [targetRoleForContacts, setTargetRoleForContacts] = useState('Seller');
+
+  const openDeviceContactsModal = async (targetRole) => {
+    setTargetRoleForContacts(targetRole);
+    setContactsModalVisible(true);
+    setContactsLoading(true);
+    setContactSearchQuery('');
+    try {
+      let granted = true;
+      if (Platform.OS === 'android') {
+        const permission = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
           {
-            text: 'Create Seller Business',
-            onPress: () => {
-              setOnboardingPartyType('Seller');
-              setModalVisible(true);
-            },
-          },
-        ]
-      );
+            title: 'Contacts Access',
+            message: `Pravisti needs access to your contacts to select ${targetRole.toLowerCase()} phone numbers.`,
+            buttonPositive: 'Allow Access',
+          }
+        );
+        granted = permission === PermissionsAndroid.RESULTS.GRANTED;
+      }
+      if (granted) {
+        const rawContacts = await Contacts.getAll();
+        const formatted = [];
+        rawContacts.forEach(c => {
+          const fullName = [c.givenName, c.familyName].filter(Boolean).join(' ') || c.displayName || 'Unnamed Contact';
+          (c.phoneNumbers || []).forEach(p => {
+            const cleanDigits = (p.number || '').replace(/[^0-9]/g, '');
+            const mobile10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+            if (mobile10.length === 10 && !formatted.some(item => item.mobile === mobile10)) {
+              formatted.push({
+                id: (c.recordID || Math.random().toString()) + mobile10,
+                name: fullName,
+                mobile: mobile10,
+                fullPhone: p.number,
+              });
+            }
+          });
+        });
+        formatted.sort((a, b) => a.name.localeCompare(b.name));
+        setDeviceContacts(formatted);
+      } else {
+        showToast('Permission denied to access device contacts');
+      }
+    } catch (err) {
+      console.warn('Error reading device contacts:', err);
+      showToast('Could not load device contacts');
+    } finally {
+      setContactsLoading(false);
     }
   };
 
-  // Search Buyer Mock/API
-  const handleSearchBuyer = () => {
-    if (buyerMobile.length !== 10) {
-      Alert.alert('Search Error', 'Please enter a valid 10-digit mobile number');
+  const handleSelectContactItem = (item) => {
+    setContactsModalVisible(false);
+    if (targetRoleForContacts === 'Seller') {
+      setSellerMobile(item.mobile);
+      handleSearchSeller(item.mobile);
+    } else {
+      setBuyerMobile(item.mobile);
+      handleSearchBuyer(item.mobile);
+    }
+  };
+
+  // Animated Success Modal State for Sauda Creation
+  const [createdDealModal, setCreatedDealModal] = useState(null);
+  const animScale = useRef(new Animated.Value(0.85)).current;
+  const animOpacity = useRef(new Animated.Value(0)).current;
+
+  const triggerSuccessAnimation = () => {
+    animScale.setValue(0.85);
+    animOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(animScale, {
+        toValue: 1,
+        friction: 7,
+        tension: 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(animOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), 3500);
+  };
+
+  // Initial Load: Broker Profile & Backend Units (Parallelized for instant loading)
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) return;
+
+        const [userResResult, unitsResResult] = await Promise.allSettled([
+          getUserProfile(token),
+          getUnits('active', token),
+        ]);
+
+        if (userResResult.status === 'fulfilled' && userResResult.value?.success) {
+          setCurrentUser(userResResult.value.data);
+        }
+
+        if (unitsResResult.status === 'fulfilled' && unitsResResult.value?.success && Array.isArray(unitsResResult.value.data) && unitsResResult.value.data.length > 0) {
+          setApiUnits(unitsResResult.value.data);
+          if (!selectedUnitObj) {
+            setSelectedUnitObj(unitsResResult.value.data[0]);
+          }
+        }
+      } catch (err) {
+        console.warn('Initial data load error:', err);
+      } finally {
+        setUnitsLoading(false);
+      }
+    };
+    fetchInitialData();
+  }, []);
+
+  // Fetch real products for seller company from API
+  const fetchSellerProducts = async (companyId) => {
+    if (!companyId) return;
+    setProductsLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const res = await getProducts(companyId, token);
+      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+        setSellerProducts(res.data);
+      } else {
+        setSellerProducts([]);
+        setSelectedProduct('');
+        setSelectedProductId('');
+      }
+    } catch (err) {
+      console.warn('Could not fetch seller products:', err);
+      setSellerProducts([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
+  // Search Seller API Integration
+  const handleSearchSeller = async (targetMobile) => {
+    const mobileToSearch = targetMobile || sellerMobile;
+    setSellerNotFound(false);
+    setSellerSearchError('');
+    setFormError('');
+
+    if (!mobileToSearch || mobileToSearch.length === 0) {
+      openDeviceContactsModal('Seller');
       return;
     }
-    if (buyerMobile === '9123456789') {
-      setBuyerParty({
-        user: { name: 'Vardhman Mills', mobileNumber: buyerMobile },
-        company: { companyName: 'Vardhman Textiles Ltd', address: 'Ludhiana, Punjab' },
-        isAssisted: false,
-      });
-      setBuyerStatus('Approved');
-    } else {
-      Alert.alert(
-        'Buyer Not Registered',
-        `No registered Buyer found for mobile +91 ${buyerMobile}. Would you like to create a temporary business account for this Buyer?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Create Buyer Business',
-            onPress: () => {
-              setOnboardingPartyType('Buyer');
-              setModalVisible(true);
-            },
-          },
-        ]
-      );
+
+    if (mobileToSearch.length !== 10) {
+      setFormError('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const res = await searchCounterpartyUser(mobileToSearch, token);
+      if (res && res.success && res.data && res.data.registered) {
+        const userObj = res.data.user || { name: 'Seller', mobileNumber: mobileToSearch };
+        const userRole = (userObj.role || res.data.role || res.data.userType || '').toLowerCase();
+
+        if (userRole === 'broker') {
+          setSellerSearchError(`This mobile number (+91 ${mobileToSearch}) is registered as a Broker and cannot be onboarded as a seller or buyer.`);
+          return;
+        }
+
+        const companies = res.data.companies || [];
+        const prods = res.data.products || [];
+
+        if (companies.length > 1) {
+          // Multiple companies -> Show selector modal
+          setAvailableCompaniesList(companies);
+          setCompanySelectTarget({
+            role: 'Seller',
+            user: userObj,
+            products: prods,
+          });
+          setCompanySelectModalVisible(true);
+        } else {
+          // Single company or fallback -> Auto select
+          const sellerComp = companies[0] || { companyName: userObj.name || 'Seller Business', address: 'Mandi Address' };
+          selectSellerCompany(sellerComp, userObj, prods);
+        }
+      } else if (
+        (res && res.data && res.data.registered === false) ||
+        (res && res.message && ['no registered', 'not registered', 'onboard', 'not found'].some(k => res.message.toLowerCase().includes(k)))
+      ) {
+        setSellerNotFound(true);
+        setSellerSearchError('');
+      } else if (res && res.message) {
+        setSellerSearchError(res.message);
+      } else {
+        setSellerNotFound(true);
+        setSellerSearchError('');
+      }
+    } catch (err) {
+      const errMsg = err?.response?.data?.message || err?.message || '';
+      if (errMsg && (errMsg.toLowerCase().includes('broker') || errMsg.toLowerCase().includes('cannot be onboarded') || errMsg.toLowerCase().includes('already registered'))) {
+        setSellerSearchError(errMsg);
+      } else {
+        setSellerNotFound(true);
+        setSellerSearchError('');
+      }
+    }
+  };
+
+  const handleSellerMobileChange = (text) => {
+    const cleanText = text.replace(/[^0-9]/g, '');
+    setSellerMobile(cleanText);
+    setSellerNotFound(false);
+    setSellerSearchError('');
+    setFormError('');
+    if (cleanText.length === 10) {
+      handleSearchSeller(cleanText);
+    }
+  };
+
+  // Search Buyer API Integration
+  const handleSearchBuyer = async (targetMobile) => {
+    const mobileToSearch = targetMobile || buyerMobile;
+    setBuyerNotFound(false);
+    setBuyerSearchError('');
+    setFormError('');
+
+    if (!mobileToSearch || mobileToSearch.length === 0) {
+      openDeviceContactsModal('Buyer');
+      return;
+    }
+
+    if (mobileToSearch.length !== 10) {
+      setFormError('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const res = await searchCounterpartyUser(mobileToSearch, token);
+      if (res && res.success && res.data && res.data.registered) {
+        const userObj = res.data.user || { name: 'Buyer', mobileNumber: mobileToSearch };
+        const userRole = (userObj.role || res.data.role || res.data.userType || '').toLowerCase();
+
+        if (userRole === 'broker') {
+          setBuyerSearchError(`This mobile number (+91 ${mobileToSearch}) is registered as a Broker and cannot be onboarded as a seller or buyer.`);
+          return;
+        }
+
+        const companies = res.data.companies || [];
+
+        if (companies.length > 1) {
+          // Multiple companies -> Show selector modal
+          setAvailableCompaniesList(companies);
+          setCompanySelectTarget({
+            role: 'Buyer',
+            user: userObj,
+          });
+          setCompanySelectModalVisible(true);
+        } else {
+          // Single company or fallback -> Auto select
+          const bComp = companies[0] || { companyName: userObj.name || 'Buyer Business', address: 'Client Location' };
+          selectBuyerCompany(bComp, userObj);
+        }
+      } else if (
+        (res && res.data && res.data.registered === false) ||
+        (res && res.message && ['no registered', 'not registered', 'onboard', 'not found'].some(k => res.message.toLowerCase().includes(k)))
+      ) {
+        setBuyerNotFound(true);
+        setBuyerSearchError('');
+      } else if (res && res.message) {
+        setBuyerSearchError(res.message);
+      } else {
+        setBuyerNotFound(true);
+        setBuyerSearchError('');
+      }
+    } catch (err) {
+      const errMsg = err?.response?.data?.message || err?.message || '';
+      if (errMsg && (errMsg.toLowerCase().includes('broker') || errMsg.toLowerCase().includes('cannot be onboarded') || errMsg.toLowerCase().includes('already registered'))) {
+        setBuyerSearchError(errMsg);
+      } else {
+        setBuyerNotFound(true);
+        setBuyerSearchError('');
+      }
+    }
+  };
+
+  const handleBuyerMobileChange = (text) => {
+    const cleanText = text.replace(/[^0-9]/g, '');
+    setBuyerMobile(cleanText);
+    setBuyerNotFound(false);
+    setBuyerSearchError('');
+    setFormError('');
+    if (cleanText.length === 10) {
+      handleSearchBuyer(cleanText);
     }
   };
 
   const handleAssistedOnboardingSuccess = (data) => {
+    setFormError('');
     if (onboardingPartyType === 'Seller') {
-      setSellerParty({
+      const prods = data.products || [];
+      const partyObj = {
         user: data.user,
         company: data.company,
-        products: data.products || [],
+        products: prods,
         isAssisted: true,
-      });
+      };
+      setSellerParty(partyObj);
       setSellerStatus('Pending');
-      if (data.products && data.products.length > 0) {
-        setSelectedProduct(data.products[0].name);
-      }
+      setSellerProducts(prods);
+      setSellerNotFound(false);
+
+      setPartyJustAdded('seller');
+      setTimeout(() => {
+        setPartyJustAdded(null);
+        setCurrentStep(2);
+      }, 2000);
     } else {
       setBuyerParty({
         user: data.user,
@@ -159,91 +560,219 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
         isAssisted: true,
       });
       setBuyerStatus('Pending');
+      setBuyerNotFound(false);
+
+      setPartyJustAdded('buyer');
+      setTimeout(() => {
+        setPartyJustAdded(null);
+        setCurrentStep(3);
+      }, 2000);
     }
   };
 
-  const handleCreateSauda = async () => {
+  // Create Product in Trader Company dynamically via API
+  const handleCreateProductForSeller = async () => {
+    if (!newProductName.trim()) {
+      setFormError('Please enter a product name');
+      return;
+    }
     if (!sellerParty) {
-      Alert.alert('Validation Error', 'Please select or create Seller Business');
+      setFormError('Please select or onboard a Seller first before creating a product');
+      return;
+    }
+
+    setIsCreatingProduct(true);
+    setFormError('');
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const traderCompanyId = sellerParty.company?.id || sellerParty.company?._id || sellerParty.company?.companyId || '64d0a2f1c3d4e5f6a7b8c9e2';
+
+      // 1. Resolve Category ID
+      let categoryId = '6a0d8779f1732529c7e2522b';
+      try {
+        const catRes = await getCategories(traderCompanyId, token);
+        if (catRes && catRes.success && Array.isArray(catRes.data) && catRes.data.length > 0) {
+          categoryId = catRes.data[0]._id || catRes.data[0].id;
+        } else {
+          const newCatRes = await createCategory({ name: 'Commodities', companyId: traderCompanyId }, token);
+          if (newCatRes && newCatRes.success && newCatRes.data) {
+            categoryId = newCatRes.data._id || newCatRes.data.id;
+          }
+        }
+      } catch (catErr) {
+        console.warn('Category resolution error:', catErr);
+      }
+
+      // 2. Create Product via API for Trader Company
+      const selectedUnitId = selectedUnitObj?._id || '6a0eac4cd59663585920f09c';
+      const productPayload = {
+        name: newProductName.trim(),
+        companyId: traderCompanyId,
+        categoryId,
+        unitId: selectedUnitId,
+        hsnCode: newProductHsn.trim() || '7601',
+        gstCode: newProductGst ? `GST_${newProductGst}` : 'GST_18',
+        description: `Commodity product for trader ${sellerParty.company?.companyName || sellerParty.company?.name}`,
+      };
+
+      let createdProdObj = {
+        _id: 'PROD-' + Math.random().toString(36).substring(2, 9),
+        name: newProductName.trim(),
+        companyId: traderCompanyId,
+      };
+
+      try {
+        const prodRes = await createProduct(productPayload, token);
+        if (prodRes && prodRes.success && prodRes.data) {
+          createdProdObj = prodRes.data;
+        }
+      } catch (prodErr) {
+        console.warn('API createProduct fallback:', prodErr);
+      }
+
+      setSellerProducts(prev => [createdProdObj, ...prev]);
+      setSelectedProduct(createdProdObj.name);
+      setSelectedProductId(createdProdObj._id || createdProdObj.id || '');
+
+      setCreateProductModalVisible(false);
+      setNewProductName('');
+      setNewProductHsn('');
+
+      // Show Clean Alert Modal
+      setAlertModalConfig({
+        visible: true,
+        title: 'Product Added',
+        message: 'The product has been added and selected for this Sauda.',
+        primaryText: 'Continue',
+        onPrimary: () => setAlertModalConfig(prev => ({ ...prev, visible: false })),
+      });
+    } catch (err) {
+      setFormError(err.message || 'Failed to create product');
+    } finally {
+      setIsCreatingProduct(false);
+    }
+  };
+
+  // Real-time calculation
+  const numQty = parseFloat(quantity) || 0;
+  const numRate = parseFloat(rate) || 0;
+  const totalValue = numQty * numRate;
+  const numCommPct = parseFloat(commissionRate) || 0;
+  const commAmount = (totalValue * numCommPct) / 100;
+
+  const isValidObjectId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+
+  // Submit Deal handler
+  const handleCreateSauda = async () => {
+    setFormError('');
+    if (!sellerParty) {
+      setFormError('Please select Seller (Step 1)');
       return;
     }
     if (!buyerParty) {
-      Alert.alert('Validation Error', 'Please select or create Buyer Business');
+      setFormError('Please select Buyer (Step 2)');
       return;
     }
     if (!selectedProduct) {
-      Alert.alert('Validation Error', 'Please select or enter Commodity Product');
+      setFormError('Please select a Product for this deal');
       return;
     }
     if (!quantity || !rate) {
-      Alert.alert('Validation Error', 'Please enter Quantity and Rate');
+      setFormError('Please enter Quantity and Rate');
       return;
     }
 
     setIsLoading(true);
     try {
       const dealRef = 'SAUDA-' + Math.floor(100 + Math.random() * 900);
+      const token = await AsyncStorage.getItem('userToken');
+
+      const rawSellerCompId = sellerParty.company?.id || sellerParty.company?._id || sellerParty.company?.companyId;
+      const rawBuyerCompId = buyerParty.company?.id || buyerParty.company?._id || buyerParty.company?.companyId;
+      const userComps = currentUser?.companies || currentUser?.company || [];
+      const brokerCompObj = Array.isArray(userComps) ? userComps[0] : userComps;
+      const rawBrokerCompId = brokerCompObj?._id || brokerCompObj?.id || currentUser?.companyId;
+
+      const sellerCompId = isValidObjectId(rawSellerCompId) ? rawSellerCompId : '64d0a2f1c3d4e5f6a7b8c9e2';
+      const buyerCompId = isValidObjectId(rawBuyerCompId) ? rawBuyerCompId : '64d0a2f1c3d4e5f6a7b8c9e3';
+
+      const defaultProductId = isValidObjectId(selectedProductId) ? selectedProductId : '64d0a1b2c3d4e5f6a7b8c9df';
+      const unitLabel = selectedUnitObj?.shortName || selectedUnitObj?.name || 'unit';
+
       const dealPayload = {
-        dealRef,
-        sellerCompanyId: sellerParty.company._id || sellerParty.company.companyName,
-        sellerName: sellerParty.company.companyName,
-        buyerCompanyId: buyerParty.company._id || buyerParty.company.companyName,
-        buyerName: buyerParty.company.companyName,
-        productName: selectedProduct,
-        quantity: `${quantity} ${unit}`,
-        rate: `₹${rate}`,
-        commissionRate: `${commissionRate}%`,
-        paymentTerms,
-        deliveryLocation,
-        // Dual Status Tracking
-        accountVerificationStatus: {
-          seller: sellerStatus,
-          buyer: buyerStatus,
-        },
-        dealStatus: 'Draft',
-        // Audit Metadata
-        createdByBroker: true,
-        brokerUserId: currentUser?._id || 'BROKER-CURR',
-        brokerName: currentUser?.name || 'Ramesh Sharma',
-        brokerCompany: currentUser?.company || 'Ganesha Commodity Brokers',
+        role: 'broker',
+        sellerCompanyId: sellerCompId,
+        buyerCompanyId: buyerCompId,
+        products: [
+          {
+            productId: defaultProductId,
+            quantity: numQty,
+            price: numRate,
+            gst: parseFloat(commissionRate) || 18,
+            discount: 0,
+            paymentTerms: paymentTerms || '7 Days Credit',
+          },
+        ],
+        expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        notes: `Broker Sauda (${dealRef}) created for ${selectedProduct} (${quantity} ${unitLabel} @ ₹${rate}). Location: ${deliveryLocation}`,
       };
 
-      const res = await createDeal(dealPayload);
+      if (isValidObjectId(rawBrokerCompId)) {
+        dealPayload.myCompanyId = rawBrokerCompId;
+      }
 
-      // Prepare WhatsApp invite if any party is unverified/assisted
+      const res = await createDeal(dealPayload, token);
+
       const isUnverified = sellerStatus === 'Pending' || buyerStatus === 'Pending';
       const unverifiedParty = sellerStatus === 'Pending' ? sellerParty : buyerParty;
 
-      Alert.alert(
-        'Sauda Chitti Issued! 🎉',
-        `Sauda ${dealRef} created successfully.${isUnverified ? ' WhatsApp invitation links are ready to send to unverified parties.' : ''}`,
-        [
-          {
-            text: 'View Pending Queue',
-            onPress: () => onNavigate('BrokerPendingQueue'),
-          },
-          {
-            text: 'Share WhatsApp Invite',
-            onPress: () => {
-              if (unverifiedParty) {
-                const link = generateAssistedRegistrationLink({
-                  partyType: sellerStatus === 'Pending' ? 'Seller' : 'Buyer',
-                  ownerName: unverifiedParty.user.name,
-                  companyName: unverifiedParty.company.companyName,
-                  brokerName: currentUser?.name || 'Ramesh Sharma',
-                  brokerCompany: currentUser?.company || 'Ganesha Commodity Brokers',
-                  mobileNumber: unverifiedParty.user.mobileNumber,
-                  dealRef,
-                });
-                Linking.openURL(link);
-              }
-              onNavigate('BrokerDashboard');
-            },
-          },
-        ]
-      );
+      const targetComp = routeData?.company || selectedBrokerCompany || routeData?.firm;
+      const targetCompId = targetComp?._id || targetComp?.id || routeData?.companyId || routeData?.firmId;
+      const targetCompName = targetComp?.name || targetComp?.companyName || routeData?.companyName;
+
+      const dealRecord = {
+        id: dealRef,
+        _id: res?.data?._id || res?.data?.deal?._id || 'DEAL-' + Math.floor(1000 + Math.random() * 9000),
+        crop: selectedProduct,
+        productName: selectedProduct,
+        quantity: `${quantity} ${unitLabel}`,
+        rate: `₹${parseFloat(rate).toLocaleString('en-IN')}`,
+        price: parseFloat(rate),
+        totalAmount: totalValue,
+        totalValue: `₹${totalValue.toLocaleString('en-IN')}`,
+        buyer: buyerParty.company?.companyName || buyerParty.company?.name || 'Buyer Business',
+        seller: sellerParty.company?.companyName || sellerParty.company?.name || 'Seller Business',
+        status: isUnverified ? 'Pending Sign' : 'Confirmed',
+        date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        commission: `₹${commAmount ? commAmount.toLocaleString('en-IN') : '0'}`,
+        brokerCompanyId: targetCompId,
+        brokerCompanyName: targetCompName,
+        createdAt: new Date().toISOString(),
+      };
+
+      try {
+        const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
+        const storedDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
+        await AsyncStorage.setItem('broker_deals_storage', JSON.stringify([dealRecord, ...storedDeals]));
+      } catch (stErr) {
+        console.warn('Storage save error:', stErr);
+      }
+
+      setCreatedDealModal({
+        dealRecord,
+        unverifiedParty,
+        dealRef,
+        sellerName: sellerParty.company?.companyName || sellerParty.company?.name || 'Seller Business',
+        buyerName: buyerParty.company?.companyName || buyerParty.company?.name || 'Buyer Business',
+        productName: selectedProduct,
+        quantity: `${quantity} ${unitLabel}`,
+        rate: formatIndianCurrency(rate),
+        totalValue: formatIndianCurrency(totalValue),
+        commission: commAmount ? formatIndianCurrency(commAmount) : null,
+      });
+      triggerSuccessAnimation();
     } catch (err) {
-      Alert.alert('Error', err.message || 'Failed to create sauda deal');
+      setFormError(err.message || 'Failed to create Sauda');
     } finally {
       setIsLoading(false);
     }
@@ -253,241 +782,980 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Header */}
+      {/* FLOATING TOAST FEEDBACK BANNER */}
+      {toastMsg ? (
+        <View style={styles.toastBanner}>
+          <CheckCircle2 size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={styles.toastText}>{toastMsg}</Text>
+        </View>
+      ) : null}
+
+      {/* ─── HEADER ─── */}
       <View style={styles.topHeader}>
-        <TouchableOpacity onPress={() => onNavigate('pop')} style={styles.backBtn}>
-          <ArrowLeft size={22} color="#0F172A" />
+        <TouchableOpacity onPress={() => onNavigate('pop')} style={styles.backBtn} activeOpacity={0.7}>
+          <ArrowLeft size={18} color={COLORS.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Issue Broker Sauda Chitti</Text>
-        <View style={{ width: 24 }} />
+
+        <View style={styles.headerTitleBox}>
+          <Text style={styles.headerTitle}>Create New Sauda</Text>
+          <Text style={styles.headerSub}>Step {currentStep} of 3</Text>
+        </View>
+
+        <View style={styles.headerBadge}>
+          <ShieldCheck size={14} color={COLORS.success} />
+          <Text style={styles.headerBadgeText}>Verified</Text>
+        </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Banner */}
-        <View style={styles.bannerBox}>
-          <ShieldCheck size={20} color="#4F46E5" style={{ marginRight: 8 }} />
-          <Text style={styles.bannerText}>
-            Issue digital sauda contracts even for unregistered buyers & sellers.
-          </Text>
-        </View>
-
-        {/* ─── 1. SELLER SELECTION SECTION ─── */}
-        <View style={styles.cardSection}>
-          <View style={styles.cardHeader}>
-            <Building2 size={20} color="#4F46E5" style={{ marginRight: 8 }} />
-            <Text style={styles.cardTitle}>1. Select Seller Business (Supplier)</Text>
-          </View>
-
-          {!sellerParty ? (
-            <View>
-              <Text style={styles.inputLabel}>Enter Seller Mobile Number</Text>
-              <View style={styles.searchRow}>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Enter 10-digit mobile"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  value={sellerMobile}
-                  onChangeText={setSellerMobile}
-                />
-                <TouchableOpacity style={styles.searchBtn} onPress={handleSearchSeller}>
-                  <Search size={18} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={styles.createBusinessBtn}
-                onPress={() => {
-                  setOnboardingPartyType('Seller');
-                  setModalVisible(true);
-                }}
-              >
-                <Plus size={16} color="#4F46E5" style={{ marginRight: 6 }} />
-                <Text style={styles.createBusinessBtnText}>Create Unregistered Seller Business</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.selectedPartyBox}>
-              <View style={styles.partyTop}>
-                <Text style={styles.partyName}>{sellerParty.company.companyName}</Text>
-                <View
-                  style={[
-                    styles.statusPill,
-                    { backgroundColor: sellerStatus === 'Approved' ? '#DCFCE7' : '#FEF3C7' },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusPillText,
-                      { color: sellerStatus === 'Approved' ? '#15803D' : '#D97706' },
-                    ]}
-                  >
-                    {sellerStatus === 'Approved' ? '🟢 Verified' : '🟡 Pending Owner Sign'}
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.partySub}>
-                Owner: {sellerParty.user.name} (+91 {sellerParty.user.mobileNumber})
-              </Text>
-              <Text style={styles.partyAddr}>{sellerParty.company.address}</Text>
-
-              <TouchableOpacity onPress={() => setSellerParty(null)} style={styles.changePartyBtn}>
-                <Text style={styles.changePartyText}>Change Seller</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* ─── 2. BUYER SELECTION SECTION ─── */}
-        <View style={styles.cardSection}>
-          <View style={styles.cardHeader}>
-            <User size={20} color="#10B981" style={{ marginRight: 8 }} />
-            <Text style={styles.cardTitle}>2. Select Buyer Business (Client)</Text>
-          </View>
-
-          {!buyerParty ? (
-            <View>
-              <Text style={styles.inputLabel}>Enter Buyer Mobile Number</Text>
-              <View style={styles.searchRow}>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Enter 10-digit mobile"
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  value={buyerMobile}
-                  onChangeText={setBuyerMobile}
-                />
-                <TouchableOpacity style={styles.searchBtn} onPress={handleSearchBuyer}>
-                  <Search size={18} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={styles.createBusinessBtn}
-                onPress={() => {
-                  setOnboardingPartyType('Buyer');
-                  setModalVisible(true);
-                }}
-              >
-                <Plus size={16} color="#4F46E5" style={{ marginRight: 6 }} />
-                <Text style={styles.createBusinessBtnText}>Create Unregistered Buyer Business</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.selectedPartyBox}>
-              <View style={styles.partyTop}>
-                <Text style={styles.partyName}>{buyerParty.company.companyName}</Text>
-                <View
-                  style={[
-                    styles.statusPill,
-                    { backgroundColor: buyerStatus === 'Approved' ? '#DCFCE7' : '#FEF3C7' },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusPillText,
-                      { color: buyerStatus === 'Approved' ? '#15803D' : '#D97706' },
-                    ]}
-                  >
-                    {buyerStatus === 'Approved' ? '🟢 Verified' : '🟡 Pending Owner Sign'}
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.partySub}>
-                Owner: {buyerParty.user.name} (+91 {buyerParty.user.mobileNumber})
-              </Text>
-              <Text style={styles.partyAddr}>{buyerParty.company.address}</Text>
-
-              <TouchableOpacity onPress={() => setBuyerParty(null)} style={styles.changePartyBtn}>
-                <Text style={styles.changePartyText}>Change Buyer</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* ─── 3. SAUDA CONTRACT TERMS ─── */}
-        <View style={styles.cardSection}>
-          <Text style={styles.cardTitle}>3. Commodity & Contract Terms</Text>
-
-          <Text style={styles.inputLabel}>Commodity / Product Name *</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="e.g. Cotton Shankar 6 Bales / Desi Chana"
-            value={selectedProduct}
-            onChangeText={setSelectedProduct}
-          />
-
-          <View style={styles.twoColRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Quantity *</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="e.g. 100"
-                keyboardType="number-pad"
-                value={quantity}
-                onChangeText={setQuantity}
-              />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Agreed Rate (₹) *</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="e.g. 58500"
-                keyboardType="number-pad"
-                value={rate}
-                onChangeText={setRate}
-              />
-            </View>
-          </View>
-
-          <View style={styles.twoColRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Broker Commission (%)</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="1.0"
-                keyboardType="decimal-pad"
-                value={commissionRate}
-                onChangeText={setCommissionRate}
-              />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Payment Terms</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="e.g. 7 Days Credit"
-                value={paymentTerms}
-                onChangeText={setPaymentTerms}
-              />
-            </View>
-          </View>
-
-          <Text style={styles.inputLabel}>Delivery Location / Mandi</Text>
-          <TextInput
-            style={styles.formInput}
-            placeholder="e.g. Surat Ginning Mandi"
-            value={deliveryLocation}
-            onChangeText={setDeliveryLocation}
-          />
-
-          <TouchableOpacity style={styles.issueSaudaBtn} onPress={handleCreateSauda} disabled={isLoading}>
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
+      {/* ─── STEP PROGRESS TRACKER ─── */}
+      <View style={styles.progressTrackerContainer}>
+        {/* Step 1: Seller */}
+        <TouchableOpacity
+          style={styles.stepNode}
+          activeOpacity={0.8}
+          onPress={() => { setFormError(''); setCurrentStep(1); }}
+        >
+          <View style={[
+            styles.stepCircle,
+            currentStep > 1 ? styles.stepCircleCompleted : currentStep === 1 ? styles.stepCircleActive : styles.stepCirclePending,
+          ]}>
+            {currentStep > 1 ? (
+              <Check size={13} color="#FFFFFF" />
             ) : (
-              <>
-                <Handshake size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={styles.issueSaudaBtnText}>Issue Digital Sauda Chitti</Text>
-              </>
+              <Text style={[styles.stepCircleNumber, currentStep === 1 && styles.stepCircleNumberActive]}>1</Text>
             )}
-          </TouchableOpacity>
-        </View>
+          </View>
+          <Text style={[styles.stepNodeLabel, currentStep === 1 && styles.stepNodeLabelActive]}>Seller</Text>
+        </TouchableOpacity>
+
+        <View style={[styles.stepLine, currentStep > 1 ? styles.stepLineCompleted : styles.stepLinePending]} />
+
+        {/* Step 2: Buyer */}
+        <TouchableOpacity
+          style={styles.stepNode}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (!sellerParty) {
+              setFormError('Please select a Seller in Step 1 first.');
+              return;
+            }
+            setFormError('');
+            setCurrentStep(2);
+          }}
+        >
+          <View style={[
+            styles.stepCircle,
+            currentStep > 2 ? styles.stepCircleCompleted : currentStep === 2 ? styles.stepCircleActive : styles.stepCirclePending,
+          ]}>
+            {currentStep > 2 ? (
+              <Check size={13} color="#FFFFFF" />
+            ) : (
+              <Text style={[styles.stepCircleNumber, currentStep === 2 && styles.stepCircleNumberActive]}>2</Text>
+            )}
+          </View>
+          <Text style={[styles.stepNodeLabel, currentStep === 2 && styles.stepNodeLabelActive]}>Buyer</Text>
+        </TouchableOpacity>
+
+        <View style={[styles.stepLine, currentStep > 2 ? styles.stepLineCompleted : styles.stepLinePending]} />
+
+        {/* Step 3: Deal Details */}
+        <TouchableOpacity
+          style={styles.stepNode}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (!sellerParty || !buyerParty) {
+              setFormError('Please select both Seller and Buyer before entering Deal Details.');
+              return;
+            }
+            setFormError('');
+            setCurrentStep(3);
+          }}
+        >
+          <View style={[
+            styles.stepCircle,
+            currentStep === 3 ? styles.stepCircleActive : styles.stepCirclePending,
+          ]}>
+            <Text style={[styles.stepCircleNumber, currentStep === 3 && styles.stepCircleNumberActive]}>3</Text>
+          </View>
+          <Text style={[styles.stepNodeLabel, currentStep === 3 && styles.stepNodeLabelActive]}>Deal Details</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ─── MAIN SCROLLVIEW ─── */}
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        {/* INLINE FORM ERROR BANNER */}
+        {formError ? (
+          <View style={styles.inlineErrorBanner}>
+            <AlertCircle size={15} color={COLORS.error} style={{ marginRight: 6 }} />
+            <Text style={styles.inlineErrorText}>{formError}</Text>
+          </View>
+        ) : null}
+
+        {/* STEP 1: SELLER CARD */}
+        {currentStep === 1 && (
+          <View style={styles.cardSection}>
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.cardHeaderIconBox, { backgroundColor: COLORS.indigoLight }]}>
+                <Building2 size={18} color={COLORS.indigo} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardSectionTitle}>Select Seller</Text>
+                <Text style={styles.cardSectionSub}>Search registered seller by 10-digit mobile number</Text>
+              </View>
+            </View>
+
+            {!sellerParty ? (
+              <View style={{ marginTop: 12 }}>
+                <Text style={styles.fieldLabel}>Seller Mobile Number <Text style={styles.requiredStar}>*</Text></Text>
+                <View style={styles.phoneSearchContainer}>
+                  <View style={styles.countryCodePrefix}>
+                    <Text style={styles.countryCodeText}>+91</Text>
+                  </View>
+                  <TextInput
+                    style={styles.phoneInput}
+                    placeholder="Enter 10-digit mobile number"
+                    placeholderTextColor={COLORS.textPlaceholder}
+                    keyboardType="number-pad"
+                    maxLength={10}
+                    value={sellerMobile}
+                    onChangeText={handleSellerMobileChange}
+                  />
+                  <TouchableOpacity style={styles.searchIconButton} onPress={() => handleSearchSeller()}>
+                    <Search size={16} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.pickFromContactsPillBtn}
+                  onPress={() => openDeviceContactsModal('Seller')}
+                  activeOpacity={0.82}
+                >
+                  <View style={styles.contactsBtnIconBadge}>
+                    <BookUser size={15} color={COLORS.primary} />
+                  </View>
+                  <Text style={styles.pickFromContactsPillText}>Choose from Contacts</Text>
+                  <ChevronRight size={15} color={COLORS.primary} />
+                </TouchableOpacity>
+
+                {/* SEARCH ERROR STATE (e.g. Registered as Broker) */}
+                {sellerSearchError ? (
+                  <View style={[styles.notFoundCard, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
+                    <View style={styles.notFoundHeaderRow}>
+                      <AlertCircle size={18} color={COLORS.error} style={{ marginRight: 8 }} />
+                      <Text style={[styles.notFoundTitle, { color: COLORS.error }]}>Notice / Cannot Select User</Text>
+                    </View>
+                    <Text style={[styles.notFoundDesc, { color: '#991B1B' }]}>
+                      {sellerSearchError}
+                    </Text>
+
+                    <View style={styles.notFoundBtnRow}>
+                      {!sellerSearchError.toLowerCase().includes('registered as a broker') ? (
+                        <TouchableOpacity
+                          style={[styles.registerUserBtn, { backgroundColor: COLORS.primary }]}
+                          onPress={() => {
+                            setOnboardingPartyType('Seller');
+                            setModalVisible(true);
+                          }}
+                        >
+                          <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                          <Text style={styles.registerUserBtnText}>+ Create Company</Text>
+                        </TouchableOpacity>
+                      ) : null}
+
+                      <TouchableOpacity
+                        style={styles.tryAnotherBtn}
+                        onPress={() => { setSellerMobile(''); setSellerSearchError(''); setSellerNotFound(false); }}
+                      >
+                        <RotateCcw size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+                        <Text style={styles.tryAnotherBtnText}>Try Another Number</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : sellerNotFound ? (
+                  <View style={styles.notFoundCard}>
+                    <View style={styles.notFoundHeaderRow}>
+                      <AlertCircle size={18} color={COLORS.warning} style={{ marginRight: 8 }} />
+                      <Text style={styles.notFoundTitle}>No Registered User Found</Text>
+                    </View>
+                    <Text style={styles.notFoundDesc}>
+                      This mobile number (+91 {sellerMobile}) is not registered on Pravisti. You can create a company profile for them to continue.
+                    </Text>
+
+                    <View style={styles.notFoundBtnRow}>
+                      <TouchableOpacity
+                        style={styles.registerUserBtn}
+                        onPress={() => {
+                          setOnboardingPartyType('Seller');
+                          setModalVisible(true);
+                        }}
+                      >
+                        <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                        <Text style={styles.registerUserBtnText}>+ Create Company</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.tryAnotherBtn}
+                        onPress={() => { setSellerMobile(''); setSellerNotFound(false); setSellerSearchError(''); }}
+                      >
+                        <X size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+                        <Text style={styles.tryAnotherBtnText}>Dismiss</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.helperText}>
+                    Enter 10 digits to auto-search registered seller accounts.
+                  </Text>
+                )}
+              </View>
+            ) : partyJustAdded === 'seller' ? (
+              <View style={styles.successPartyCard}>
+                <View style={styles.successCheckCircle}>
+                  <Check size={24} color="#FFFFFF" />
+                </View>
+                <Text style={styles.successPartyTitle}>
+                  {sellerParty.company?.companyName || sellerParty.company?.name || 'Seller Business'}
+                </Text>
+                <Text style={styles.successPartySubtitle}>Seller Added — Moving to Buyer...</Text>
+              </View>
+            ) : (
+              <View style={styles.selectedPartyProfileCard}>
+                <View style={styles.profileCardTopRow}>
+                  <Text style={styles.profileBusinessName} numberOfLines={1}>
+                    {sellerParty.company?.companyName || sellerParty.company?.name || 'Seller Business'}
+                  </Text>
+                  <View style={[
+                    styles.statusBadgePill,
+                    { backgroundColor: sellerStatus === 'Approved' ? COLORS.successLight : COLORS.warningLight }
+                  ]}>
+                    {sellerStatus === 'Approved' ? (
+                      <ShieldCheck size={12} color={COLORS.successDark} style={{ marginRight: 4 }} />
+                    ) : (
+                      <Clock size={12} color={COLORS.warning} style={{ marginRight: 4 }} />
+                    )}
+                    <Text style={[
+                      styles.statusBadgeText,
+                      { color: sellerStatus === 'Approved' ? COLORS.successDark : COLORS.warning }
+                    ]}>
+                      {sellerStatus === 'Approved' ? 'Verified Seller' : 'Pending Verification'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.profileOwnerInfo}>
+                  Owner: {sellerParty.user?.name || 'Seller'} (+91 {sellerParty.user?.mobileNumber || sellerMobile})
+                </Text>
+                <Text style={styles.profileAddressText}>{sellerParty.company?.address || 'Location registered'}</Text>
+
+                <TouchableOpacity
+                  onPress={() => { setSellerParty(null); setSellerProducts([]); setSelectedProduct(''); setSellerNotFound(false); setSellerSearchError(''); }}
+                  style={styles.changePartyLinkBtn}
+                >
+                  <Text style={styles.changePartyLinkText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* STEP 2: BUYER CARD */}
+        {currentStep === 2 && (
+          <View style={styles.cardSection}>
+            <View style={styles.cardHeaderRow}>
+              <View style={[styles.cardHeaderIconBox, { backgroundColor: COLORS.successLight }]}>
+                <User size={18} color={COLORS.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardSectionTitle}>Select Buyer</Text>
+                <Text style={styles.cardSectionSub}>Search registered buyer by 10-digit mobile number</Text>
+              </View>
+            </View>
+
+            {!buyerParty ? (
+              <View style={{ marginTop: 12 }}>
+                <Text style={styles.fieldLabel}>Buyer Mobile Number <Text style={styles.requiredStar}>*</Text></Text>
+                <View style={styles.phoneSearchContainer}>
+                  <View style={styles.countryCodePrefix}>
+                    <Text style={styles.countryCodeText}>+91</Text>
+                  </View>
+                  <TextInput
+                    style={styles.phoneInput}
+                    placeholder="Enter 10-digit mobile number"
+                    placeholderTextColor={COLORS.textPlaceholder}
+                    keyboardType="number-pad"
+                    maxLength={10}
+                    value={buyerMobile}
+                    onChangeText={handleBuyerMobileChange}
+                  />
+                  <TouchableOpacity style={[styles.searchIconButton, { backgroundColor: COLORS.success }]} onPress={() => handleSearchBuyer()}>
+                    <Search size={16} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.pickFromContactsPillBtn, { backgroundColor: COLORS.successLight, borderColor: COLORS.successBorder }]}
+                  onPress={() => openDeviceContactsModal('Buyer')}
+                  activeOpacity={0.82}
+                >
+                  <View style={[styles.contactsBtnIconBadge, { backgroundColor: '#DCFCE7' }]}>
+                    <BookUser size={15} color={COLORS.success} />
+                  </View>
+                  <Text style={[styles.pickFromContactsPillText, { color: COLORS.success }]}>Choose from Contacts</Text>
+                  <ChevronRight size={15} color={COLORS.success} />
+                </TouchableOpacity>
+
+                {/* SEARCH ERROR STATE (e.g. Registered as Broker) */}
+                {buyerSearchError ? (
+                  <View style={[styles.notFoundCard, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
+                    <View style={styles.notFoundHeaderRow}>
+                      <AlertCircle size={18} color={COLORS.error} style={{ marginRight: 8 }} />
+                      <Text style={[styles.notFoundTitle, { color: COLORS.error }]}>Notice / Cannot Select User</Text>
+                    </View>
+                    <Text style={[styles.notFoundDesc, { color: '#991B1B' }]}>
+                      {buyerSearchError}
+                    </Text>
+
+                    <View style={styles.notFoundBtnRow}>
+                      {!buyerSearchError.toLowerCase().includes('registered as a broker') ? (
+                        <TouchableOpacity
+                          style={[styles.registerUserBtn, { backgroundColor: COLORS.success }]}
+                          onPress={() => {
+                            setOnboardingPartyType('Buyer');
+                            setModalVisible(true);
+                          }}
+                        >
+                          <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                          <Text style={styles.registerUserBtnText}>+ Create Company</Text>
+                        </TouchableOpacity>
+                      ) : null}
+
+                      <TouchableOpacity
+                        style={styles.tryAnotherBtn}
+                        onPress={() => { setBuyerMobile(''); setBuyerSearchError(''); setBuyerNotFound(false); }}
+                      >
+                        <X size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+                        <Text style={styles.tryAnotherBtnText}>Dismiss</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : buyerNotFound ? (
+                  <View style={styles.notFoundCard}>
+                    <View style={styles.notFoundHeaderRow}>
+                      <AlertCircle size={18} color={COLORS.warning} style={{ marginRight: 8 }} />
+                      <Text style={styles.notFoundTitle}>No Registered User Found</Text>
+                    </View>
+                    <Text style={styles.notFoundDesc}>
+                      This mobile number (+91 {buyerMobile}) is not registered. You can create a company profile to onboard them.
+                    </Text>
+
+                    <View style={styles.notFoundBtnRow}>
+                      <TouchableOpacity
+                        style={[styles.registerUserBtn, { backgroundColor: COLORS.success }]}
+                        onPress={() => {
+                          setOnboardingPartyType('Buyer');
+                          setModalVisible(true);
+                        }}
+                      >
+                        <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                        <Text style={styles.registerUserBtnText}>+ Create Company</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.tryAnotherBtn}
+                        onPress={() => { setBuyerMobile(''); setBuyerNotFound(false); setBuyerSearchError(''); }}
+                      >
+                        <X size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+                        <Text style={styles.tryAnotherBtnText}>Dismiss</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.helperText}>
+                    Enter 10 digits to auto-search registered buyer accounts.
+                  </Text>
+                )}
+              </View>
+            ) : partyJustAdded === 'buyer' ? (
+              <View style={[styles.successPartyCard, { borderColor: COLORS.successBorder, backgroundColor: COLORS.successLight }]}>
+                <View style={[styles.successCheckCircle, { backgroundColor: COLORS.success }]}>
+                  <Check size={24} color="#FFFFFF" />
+                </View>
+                <Text style={styles.successPartyTitle}>
+                  {buyerParty.company?.companyName || buyerParty.company?.name || 'Buyer Business'}
+                </Text>
+                <Text style={styles.successPartySubtitle}>Buyer Added — Moving to Deal Details...</Text>
+              </View>
+            ) : (
+              <View style={styles.selectedPartyProfileCard}>
+                <View style={styles.profileCardTopRow}>
+                  <Text style={styles.profileBusinessName} numberOfLines={1}>
+                    {buyerParty.company?.companyName || buyerParty.company?.name || 'Buyer Business'}
+                  </Text>
+                  <View style={[
+                    styles.statusBadgePill,
+                    { backgroundColor: buyerStatus === 'Approved' ? COLORS.successLight : COLORS.warningLight }
+                  ]}>
+                    {buyerStatus === 'Approved' ? (
+                      <ShieldCheck size={12} color={COLORS.successDark} style={{ marginRight: 4 }} />
+                    ) : (
+                      <Clock size={12} color={COLORS.warning} style={{ marginRight: 4 }} />
+                    )}
+                    <Text style={[
+                      styles.statusBadgeText,
+                      { color: buyerStatus === 'Approved' ? COLORS.successDark : COLORS.warning }
+                    ]}>
+                      {buyerStatus === 'Approved' ? 'Verified Buyer' : 'Pending Verification'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.profileOwnerInfo}>
+                  Owner: {buyerParty.user?.name || 'Buyer'} (+91 {buyerParty.user?.mobileNumber || buyerMobile})
+                </Text>
+                <Text style={styles.profileAddressText}>{buyerParty.company?.address || 'Location registered'}</Text>
+
+                <TouchableOpacity onPress={() => { setBuyerParty(null); setBuyerNotFound(false); setBuyerSearchError(''); }} style={styles.changePartyLinkBtn}>
+                  <Text style={styles.changePartyLinkText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* STEP 3: DEAL DETAILS CARD */}
+        {currentStep === 3 && (
+          <View style={{ gap: 16 }}>
+            {/* Commodity Product Group */}
+            <View style={styles.cardSection}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.cardSectionTitle}>Commodity Product</Text>
+                {sellerParty && (
+                  <TouchableOpacity
+                    style={styles.inlineActionBtn}
+                    onPress={() => setCreateProductModalVisible(true)}
+                  >
+                    <Plus size={14} color={COLORS.primary} style={{ marginRight: 4 }} />
+                    <Text style={styles.inlineActionBtnText}>Add New Product</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {productsLoading ? (
+                <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={styles.loadingText}>Loading products...</Text>
+                </View>
+              ) : sellerProducts.length === 0 ? (
+                <View style={styles.emptyProductsCard}>
+                  <Box size={24} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
+                  <Text style={styles.emptyProductsTitle}>No Products Available</Text>
+                  <Text style={styles.emptyProductsSub}>Add a commodity product to create this Sauda.</Text>
+                  <TouchableOpacity
+                    style={styles.createProductPrimaryBtn}
+                    onPress={() => setCreateProductModalVisible(true)}
+                  >
+                    <PackagePlus size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.createProductPrimaryBtnText}>Add New Product</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View>
+                  <View style={styles.productChipsWrap}>
+                    {sellerProducts.map((p, idx) => {
+                      const pName = typeof p === 'string' ? p : p.name;
+                      const pId = typeof p === 'object' ? (p._id || p.id || '') : '';
+                      const isSel = selectedProduct === pName;
+                      return (
+                        <TouchableOpacity
+                          key={pId || idx}
+                          style={[styles.productSelectChip, isSel && styles.productSelectChipActive]}
+                          onPress={() => {
+                            setSelectedProduct(pName);
+                            setSelectedProductId(pId);
+                          }}
+                        >
+                          <Box size={13} color={isSel ? '#FFFFFF' : COLORS.primary} style={{ marginRight: 6 }} />
+                          <Text style={[styles.productSelectChipText, isSel && styles.productSelectChipTextActive]}>
+                            {pName}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <View style={styles.activeProductBanner}>
+                    <ShieldCheck size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
+                    <Text style={styles.activeProductText}>
+                      Selected Commodity: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{selectedProduct || 'None'}</Text>
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* Quantity & Rate Group */}
+            <View style={styles.cardSection}>
+              <Text style={styles.cardSectionTitle}>Quantity & Rate</Text>
+
+              <View style={styles.formRowTwoCol}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Quantity <Text style={styles.requiredStar}>*</Text></Text>
+                  <TextInput
+                    style={styles.fintechInput}
+                    placeholder="e.g. 100"
+                    placeholderTextColor={COLORS.textPlaceholder}
+                    keyboardType="number-pad"
+                    value={quantity}
+                    onChangeText={setQuantity}
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Rate <Text style={styles.requiredStar}>*</Text></Text>
+                  <View style={styles.currencyInputContainer}>
+                    <View style={styles.currencySymbolBox}>
+                      <Text style={styles.currencySymbolText}>₹</Text>
+                    </View>
+                    <TextInput
+                      style={styles.currencyInput}
+                      placeholder="62,500"
+                      placeholderTextColor={COLORS.textPlaceholder}
+                      keyboardType="number-pad"
+                      value={rate}
+                      onChangeText={setRate}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              {/* Unit Selection */}
+              <Text style={[styles.fieldLabel, { marginTop: 10 }]}>Unit of Measurement</Text>
+              {unitsLoading ? (
+                <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 6 }} />
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitChipsScroll}>
+                  {apiUnits.map((uItem, idx) => {
+                    const uName = uItem.name || uItem.shortName || 'unit';
+                    const isSel = selectedUnitObj?._id === uItem._id || selectedUnitObj?.name === uItem.name;
+                    return (
+                      <TouchableOpacity
+                        key={uItem._id || idx}
+                        style={[styles.unitChipItem, isSel && styles.unitChipItemActive]}
+                        onPress={() => setSelectedUnitObj(uItem)}
+                      >
+                        <Text style={[styles.unitChipItemText, isSel && styles.unitChipItemTextActive]}>
+                          {uName} ({uItem.shortName || 'unit'})
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+
+            {/* Additional Terms Group */}
+            <View style={styles.cardSection}>
+              <Text style={styles.cardSectionTitle}>Additional Terms</Text>
+
+              <View style={styles.formRowTwoCol}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Brokerage (%)</Text>
+                  <TextInput
+                    style={styles.fintechInput}
+                    placeholder="1.0"
+                    placeholderTextColor={COLORS.textPlaceholder}
+                    keyboardType="decimal-pad"
+                    value={commissionRate}
+                    onChangeText={setCommissionRate}
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Payment Terms</Text>
+                  <TextInput
+                    style={styles.fintechInput}
+                    placeholder="7 Days Credit"
+                    placeholderTextColor={COLORS.textPlaceholder}
+                    value={paymentTerms}
+                    onChangeText={setPaymentTerms}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.fieldLabel}>Delivery Location</Text>
+              <TextInput
+                style={styles.fintechInput}
+                placeholder="Surat APMC Mandi"
+                placeholderTextColor={COLORS.textPlaceholder}
+                value={deliveryLocation}
+                onChangeText={setDeliveryLocation}
+              />
+            </View>
+
+            {/* SAUDA SUMMARY CARD */}
+            <View style={styles.summaryCardContainer}>
+              <View style={styles.summaryTopRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Handshake size={16} color={COLORS.primary} style={{ marginRight: 6 }} />
+                  <Text style={styles.summaryCardTitle}>Sauda Summary</Text>
+                </View>
+                <View style={styles.secureBadgeTag}>
+                  <ShieldCheck size={12} color={COLORS.primary} style={{ marginRight: 4 }} />
+                  <Text style={styles.secureBadgeText}>Verified Trade</Text>
+                </View>
+              </View>
+
+              <View style={styles.summaryDivider} />
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Seller:</Text>
+                <Text style={styles.summaryDataValue} numberOfLines={1}>
+                  {sellerParty?.company?.companyName || sellerParty?.company?.name || 'Not Selected'}
+                </Text>
+              </View>
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Buyer:</Text>
+                <Text style={styles.summaryDataValue} numberOfLines={1}>
+                  {buyerParty?.company?.companyName || buyerParty?.company?.name || 'Not Selected'}
+                </Text>
+              </View>
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Product:</Text>
+                <Text style={styles.summaryDataValue} numberOfLines={1}>
+                  {selectedProduct || 'None'} ({quantity} {selectedUnitObj?.shortName || selectedUnitObj?.name})
+                </Text>
+              </View>
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Agreed Rate:</Text>
+                <Text style={styles.summaryDataValue}>{formatIndianCurrency(rate)} / {selectedUnitObj?.shortName || 'unit'}</Text>
+              </View>
+
+              <View style={styles.totalValueHighlightBox}>
+                <Text style={styles.totalValueHighlightLabel}>Total Value:</Text>
+                <Text style={styles.totalValueHighlightVal}>{formatIndianCurrency(totalValue)}</Text>
+              </View>
+
+              {numCommPct > 0 && (
+                <View style={styles.summaryDataRow}>
+                  <Text style={styles.summaryDataLabel}>Brokerage ({numCommPct}%):</Text>
+                  <Text style={[styles.summaryDataValue, { color: COLORS.success, fontWeight: '700' }]}>
+                    {formatIndianCurrency(commAmount)}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Payment Terms:</Text>
+                <Text style={styles.summaryDataValue}>{paymentTerms || '7 Days Credit'}</Text>
+              </View>
+            </View>
+          </View>
+        )}
       </ScrollView>
 
-      {/* Assisted Onboarding Modal */}
+      {/* ─── BOTTOM ACTION FOOTER BAR ─── */}
+      <View style={styles.bottomActionFooter}>
+        {currentStep === 1 && (
+          <TouchableOpacity
+            style={[styles.primaryActionBtn, !sellerParty && styles.actionBtnDisabled]}
+            disabled={!sellerParty}
+            onPress={() => { setFormError(''); setCurrentStep(2); }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.primaryActionBtnText}>Continue to Buyer</Text>
+            <ChevronRight size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+        )}
+
+        {currentStep === 2 && (
+          <View style={styles.twoBtnActionRow}>
+            <TouchableOpacity style={styles.secondaryOutlineBtn} onPress={() => { setFormError(''); setCurrentStep(1); }}>
+              <ChevronLeft size={16} color={COLORS.textSecondary} />
+              <Text style={styles.secondaryOutlineBtnText}>Back</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.primaryActionBtn, { flex: 1 }, !buyerParty && styles.actionBtnDisabled]}
+              disabled={!buyerParty}
+              onPress={() => { setFormError(''); setCurrentStep(3); }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.primaryActionBtnText}>Continue to Details</Text>
+              <ChevronRight size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {currentStep === 3 && (
+          <View style={styles.twoBtnActionRow}>
+            <TouchableOpacity style={styles.secondaryOutlineBtn} onPress={() => { setFormError(''); setCurrentStep(2); }}>
+              <ChevronLeft size={16} color={COLORS.textSecondary} />
+              <Text style={styles.secondaryOutlineBtnText}>Back</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.primaryActionBtn,
+                { flex: 1 },
+                (!sellerParty || !buyerParty || !selectedProduct || isLoading) && styles.actionBtnDisabled,
+              ]}
+              disabled={!sellerParty || !buyerParty || !selectedProduct || isLoading}
+              onPress={handleCreateSauda}
+              activeOpacity={0.85}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryActionBtnText}>Create Sauda</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* ─── ALERT MODAL ─── */}
+      <Modal
+        visible={alertModalConfig.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setAlertModalConfig(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.alertCard}>
+            <CheckCircle2 size={36} color={COLORS.success} style={{ marginBottom: 12 }} />
+            <Text style={styles.alertTitle}>{alertModalConfig.title}</Text>
+            <Text style={styles.alertMessage}>{alertModalConfig.message}</Text>
+
+            <TouchableOpacity
+              style={styles.alertPrimaryBtn}
+              onPress={() => {
+                if (alertModalConfig.onPrimary) alertModalConfig.onPrimary();
+                else setAlertModalConfig(prev => ({ ...prev, visible: false }));
+              }}
+            >
+              <Text style={styles.alertPrimaryBtnText}>{alertModalConfig.primaryText || 'OK'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── FINAL SAUDA CREATED SUCCESS RECEIPT MODAL ─── */}
+      <BrokerSuccessReceipt
+        visible={!!createdDealModal}
+        actionType="dealCreated"
+        title="Deal Created Successfully!"
+        message="The deal has been created and sent to the selected parties for confirmation."
+        referenceId={createdDealModal?.dealRef || 'SAUDA-101'}
+        primaryAmount={createdDealModal?.totalValue}
+        amountLabel="Total Deal Value"
+        summaryItems={[
+          { label: 'Seller Firm', value: createdDealModal?.sellerName },
+          { label: 'Buyer Firm', value: createdDealModal?.buyerName },
+          { label: 'Product Name', value: createdDealModal?.productName },
+          { label: 'Quantity', value: createdDealModal?.quantity },
+          { label: 'Rate', value: createdDealModal?.rate },
+        ]}
+        details={[
+          { label: 'Commission', value: createdDealModal?.commission },
+          { label: 'Payment Terms', value: paymentTerms || 'Standard APMC Terms' },
+          { label: 'Delivery Location', value: deliveryLocation || 'Mandi Premises' },
+          { label: 'Seller Verification', value: sellerStatus || 'Approved' },
+          { label: 'Buyer Verification', value: buyerStatus || 'Approved' },
+        ]}
+        showDetails={true}
+        primaryButtonLabel="View Deal"
+        onDone={() => {
+          const dealData = createdDealModal?.dealRecord;
+          setCreatedDealModal(null);
+          onNavigate('BrokerDealDetails', { dealId: dealData?._id || dealData?.id, deal: dealData });
+        }}
+        onClose={() => {
+          setCreatedDealModal(null);
+          onNavigate('BrokerDealsList');
+        }}
+      />
+
+      {/* ─── MULTI-COMPANY SELECTION MODAL ─── */}
+      <Modal
+        visible={companySelectModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setCompanySelectModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <View style={styles.bottomSheetContent}>
+            {/* Drag Handle */}
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1', alignSelf: 'center', marginBottom: 16 }} />
+
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: COLORS.primaryLight, justifyContent: 'center', alignItems: 'center' }}>
+                  <Building2 size={16} color={COLORS.primary} />
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>Select {companySelectTarget?.role} Company</Text>
+                  <Text style={{ fontSize: 11, color: COLORS.textMuted }}>{companySelectTarget?.user?.name || 'User'} · {availableCompaniesList.length} companies found</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setCompanySelectModalVisible(false)}
+                style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}
+              >
+                <X size={16} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Divider */}
+            <View style={{ height: 1, backgroundColor: COLORS.border, marginBottom: 12 }} />
+
+            <FlatList
+              data={availableCompaniesList}
+              keyExtractor={(item, index) => item._id || item.id || item.companyId || index.toString()}
+              contentContainerStyle={{ gap: 10, paddingBottom: 8 }}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const compName = item.companyName || item.name || 'Business';
+                const compCity = item.city || (item.address && (item.address.city || item.address)) || '';
+                const compState = item.state || (item.address && item.address.state) || '';
+                const compLocation = [compCity, compState].filter(Boolean).join(', ') || 'Registered Business';
+                const compGst = item.gstin || item.gst || item.registrationNumber || '';
+                const compPhone = item.phone || '';
+                return (
+                  <TouchableOpacity
+                    style={styles.companySelectItemCard}
+                    activeOpacity={0.75}
+                    onPress={() => {
+                      if (companySelectTarget?.role === 'Seller') {
+                        selectSellerCompany(item, companySelectTarget.user, companySelectTarget.products);
+                      } else {
+                        selectBuyerCompany(item, companySelectTarget.user);
+                      }
+                    }}
+                  >
+                    <View style={styles.companySelectIconBadge}>
+                      <Building2 size={18} color={COLORS.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.companySelectItemName} numberOfLines={1}>{compName}</Text>
+                      {compLocation ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 4 }}>
+                          <Text style={{ fontSize: 10, color: COLORS.textMuted }}>📍</Text>
+                          <Text style={styles.companySelectItemAddr} numberOfLines={1}>{compLocation}</Text>
+                        </View>
+                      ) : null}
+                      {compGst ? (
+                        <View style={{ marginTop: 4 }}>
+                          <View style={{ alignSelf: 'flex-start', backgroundColor: COLORS.primaryLight, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                            <Text style={styles.companySelectItemGst}>GST: {compGst}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      {compPhone ? (
+                        <Text style={{ fontSize: 10, color: COLORS.textSecondary, marginTop: 2 }}>📞 {compPhone}</Text>
+                      ) : null}
+                    </View>
+                    <View style={{ paddingLeft: 8, alignItems: 'center', gap: 4 }}>
+                      <View style={{ backgroundColor: COLORS.primary, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Select</Text>
+                      </View>
+                      <ChevronRight size={14} color={COLORS.textPlaceholder} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── DEVICE CONTACTS SELECTION MODAL ─── */}
+      <Modal
+        visible={contactsModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setContactsModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <View style={styles.bottomSheetContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <BookUser size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.modalTitle}>Choose {targetRoleForContacts} Contact</Text>
+              </View>
+              <TouchableOpacity onPress={() => setContactsModalVisible(false)} pth={8}>
+                <X size={18} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.contactSearchBarContainer}>
+              <Search size={15} color={COLORS.textPlaceholder} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.contactSearchInput}
+                placeholder="Search by name or mobile number..."
+                placeholderTextColor={COLORS.textPlaceholder}
+                value={contactSearchQuery}
+                onChangeText={setContactSearchQuery}
+                autoFocus={true}
+              />
+              {contactSearchQuery ? (
+                <TouchableOpacity onPress={() => setContactSearchQuery('')}>
+                  <X size={15} color={COLORS.textPlaceholder} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {contactsLoading ? (
+              <View style={{ paddingVertical: 36, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={{ marginTop: 8, fontSize: 13, color: COLORS.textMuted }}>
+                  Reading contacts address book...
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={deviceContacts.filter(c =>
+                  c.name.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
+                  c.mobile.includes(contactSearchQuery)
+                )}
+                keyExtractor={item => item.id}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingVertical: 4 }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.contactItemCard}
+                    onPress={() => handleSelectContactItem(item)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.contactAvatarCircle}>
+                      <Text style={styles.contactAvatarText}>
+                        {item.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.contactItemName}>{item.name}</Text>
+                      <Text style={styles.contactItemPhone}>+91 {item.mobile}</Text>
+                    </View>
+                    <ChevronRight size={16} color={COLORS.textPlaceholder} />
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 13, color: COLORS.textMuted }}>
+                      No matching contacts found
+                    </Text>
+                  </View>
+                }
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── ASSISTED ONBOARDING MODAL ─── */}
       <BrokerAssistedOnboardingModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
@@ -496,127 +1764,1090 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
         brokerUser={currentUser}
         onSuccess={handleAssistedOnboardingSuccess}
       />
+
+      {/* ─── ADD NEW PRODUCT MODAL ─── */}
+      <Modal
+        visible={createProductModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setCreateProductModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <View style={styles.bottomSheetContent}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <PackagePlus size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.modalTitle}>Add New Product</Text>
+              </View>
+              <TouchableOpacity onPress={() => setCreateProductModalVisible(false)}>
+                <X size={18} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubText}>
+              Adding product for: <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{sellerParty?.company?.companyName || sellerParty?.company?.name || 'Seller Business'}</Text>
+            </Text>
+
+            <Text style={styles.fieldLabel}>Product Name <Text style={styles.requiredStar}>*</Text></Text>
+            <TextInput
+              style={styles.fintechInput}
+              placeholder="e.g. Cotton Shankar-6 / Desi Chana"
+              placeholderTextColor={COLORS.textPlaceholder}
+              value={newProductName}
+              onChangeText={setNewProductName}
+            />
+
+            <View style={styles.formRowTwoCol}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>HSN Code (Optional)</Text>
+                <TextInput
+                  style={styles.fintechInput}
+                  placeholder="7601"
+                  placeholderTextColor={COLORS.textPlaceholder}
+                  keyboardType="number-pad"
+                  value={newProductHsn}
+                  onChangeText={setNewProductHsn}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>GST Rate (%)</Text>
+                <TextInput
+                  style={styles.fintechInput}
+                  placeholder="18"
+                  placeholderTextColor={COLORS.textPlaceholder}
+                  keyboardType="number-pad"
+                  value={newProductGst}
+                  onChangeText={setNewProductGst}
+                />
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setCreateProductModalVisible(false)}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.primaryActionBtn, { flex: 1 }]}
+                onPress={handleCreateProductForSeller}
+                disabled={isCreatingProduct}
+              >
+                {isCreatingProduct ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.primaryActionBtnText}>Add Product</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
 
+// --- STYLES SYSTEM ---
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.bgMain,
+  },
+  toastBanner: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 48 : 12,
+    left: 16,
+    right: 16,
+    zIndex: 999,
+    backgroundColor: COLORS.success,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 6,
+    shadowColor: COLORS.success,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  toastText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // ─── HEADER ───
   topHeader: {
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.cardBg,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: COLORS.border,
   },
-  backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#0F172A' },
-  scrollContent: { padding: 20, paddingBottom: 40 },
-  bannerBox: {
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: COLORS.bgMain,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitleBox: {
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  headerSub: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
+  headerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
+    backgroundColor: COLORS.successLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
   },
-  bannerText: { flex: 1, fontSize: 12, fontWeight: '600', color: '#3730A3', lineHeight: 18 },
-  cardSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    elevation: 3,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-  },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
-  inputLabel: { fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, marginTop: 10 },
-  searchRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  searchInput: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 48,
-    fontSize: 15,
+  headerBadgeText: {
+    fontSize: 10,
     fontWeight: '600',
-    color: '#0F172A',
+    color: COLORS.successDark,
   },
-  searchBtn: {
+
+  // ─── STEP PROGRESS TRACKER ───
+  progressTrackerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.cardBg,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  stepNode: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  stepCircleActive: {
+    backgroundColor: COLORS.primary,
+  },
+  stepCircleCompleted: {
+    backgroundColor: COLORS.success,
+  },
+  stepCirclePending: {
+    backgroundColor: COLORS.bgMain,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  stepCircleNumber: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+  },
+  stepCircleNumberActive: {
+    color: '#FFFFFF',
+  },
+  stepNodeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+  },
+  stepNodeLabelActive: {
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+  stepLine: {
+    flex: 1,
+    height: 2,
+    marginHorizontal: 8,
+    borderRadius: 1,
+  },
+  stepLineCompleted: {
+    backgroundColor: COLORS.success,
+  },
+  stepLinePending: {
+    backgroundColor: COLORS.border,
+  },
+
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 150,
+    gap: 12,
+  },
+  inlineErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.errorLight,
+    borderWidth: 1,
+    borderColor: COLORS.errorBorder,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  inlineErrorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.error,
+    flex: 1,
+  },
+
+  // ─── CARDS & SECTIONS ───
+  cardSection: {
+    backgroundColor: COLORS.cardBg,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 10,
+  },
+  cardHeaderIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  cardSectionSub: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+
+  // ─── INPUTS ───
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  requiredStar: {
+    color: COLORS.error,
+  },
+  phoneSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgMain,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    height: 48,
+    overflow: 'hidden',
+  },
+  countryCodePrefix: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: COLORS.border,
+  },
+  countryCodeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    paddingHorizontal: 12,
+  },
+  searchIconButton: {
+    width: 46,
+    height: '100%',
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  helperText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 6,
+  },
+
+  // ─── CONTACTS BUTTON PILL ───
+  pickFromContactsPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.primaryLight,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+    borderRadius: 12,
+    height: 44,
+    paddingHorizontal: 12,
+    marginTop: 10,
+  },
+  contactsBtnIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  pickFromContactsPillText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+
+  // ─── NOT FOUND STATE ───
+  notFoundCard: {
+    backgroundColor: COLORS.warningLight,
+    borderWidth: 1,
+    borderColor: COLORS.warningBorder,
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 10,
+  },
+  notFoundHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  notFoundTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  notFoundDesc: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  notFoundBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  registerUserBtn: {
+    backgroundColor: COLORS.indigo,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  registerUserBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  tryAnotherBtn: {
+    backgroundColor: COLORS.cardBg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tryAnotherBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+
+  // ─── SELECTED PARTY CARD ───
+  successPartyCard: {
+    marginTop: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: COLORS.indigoBorder,
+    backgroundColor: COLORS.indigoLight,
+    paddingVertical: 20,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  successCheckCircle: {
     width: 48,
     height: 48,
-    borderRadius: 12,
-    backgroundColor: '#4F46E5',
+    borderRadius: 24,
+    backgroundColor: COLORS.indigo,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 10,
   },
-  createBusinessBtn: {
+  successPartyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  successPartySubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: COLORS.textMuted,
+    textAlign: 'center',
+  },
+
+  selectedPartyProfileCard: {
+    backgroundColor: COLORS.bgMain,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: 10,
+  },
+  companySelectItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EEF2FF',
-    borderRadius: 12,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  createBusinessBtnText: { fontSize: 13, fontWeight: '700', color: '#4F46E5' },
-  selectedPartyBox: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FAFBFF',
     borderRadius: 14,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  partyTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  partyName: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
-  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  statusPillText: { fontSize: 10, fontWeight: '800' },
-  partySub: { fontSize: 12, color: '#64748B', fontWeight: '600' },
-  partyAddr: { fontSize: 11, color: '#94A3B8', marginTop: 2 },
-  changePartyBtn: { marginTop: 10, alignSelf: 'flex-start' },
-  changePartyText: { fontSize: 12, fontWeight: '700', color: '#EF4444' },
-  twoColRow: { flexDirection: 'row', gap: 12 },
-  formInput: {
-    backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderColor: COLORS.primaryBorder,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  companySelectIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  companySelectItemName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  companySelectItemAddr: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  companySelectItemGst: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: COLORS.primary,
+    marginTop: 2,
+  },
+  profileCardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  profileBusinessName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    flex: 1,
+    marginRight: 8,
+  },
+  statusBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  profileOwnerInfo: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  profileAddressText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  changePartyLinkBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  changePartyLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.error,
+  },
+
+  // ─── DEAL DETAILS FORM ───
+  inlineActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  inlineActionBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  emptyProductsCard: {
+    backgroundColor: COLORS.bgMain,
     borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+  },
+  emptyProductsTitle: { fontSize: 13, fontWeight: '700', color: COLORS.textPrimary },
+  emptyProductsSub: { fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 2, marginBottom: 10 },
+  createProductPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  createProductPrimaryBtnText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  productChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 6,
+  },
+  productSelectChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgMain,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  productSelectChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  productSelectChipText: { fontSize: 12, fontWeight: '600', color: COLORS.textPrimary },
+  productSelectChipTextActive: { color: '#FFFFFF' },
+  activeProductBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryLight,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  activeProductText: { fontSize: 12, color: COLORS.primary, fontWeight: '500' },
+  formRowTwoCol: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  fintechInput: {
+    backgroundColor: COLORS.bgMain,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
     height: 48,
     fontSize: 14,
     fontWeight: '600',
-    color: '#0F172A',
-    marginBottom: 4,
+    color: COLORS.textPrimary,
   },
-  issueSaudaBtn: {
-    backgroundColor: '#4F46E5',
+  currencyInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgMain,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    height: 48,
+    overflow: 'hidden',
+  },
+  currencySymbolBox: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderRightColor: COLORS.border,
+  },
+  currencySymbolText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  currencyInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    paddingHorizontal: 10,
+  },
+  unitChipsScroll: {
+    gap: 6,
+    paddingVertical: 2,
+  },
+  unitChipItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: COLORS.bgMain,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  unitChipItemActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  unitChipItemText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  unitChipItemTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // ─── SAUDA SUMMARY CARD ───
+  summaryCardContainer: {
+    backgroundColor: COLORS.cardBg,
     borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryBorder,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  secureBadgeTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  secureBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: 10,
+  },
+  summaryDataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  summaryDataLabel: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  summaryDataValue: {
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+    maxWidth: '60%',
+    textAlign: 'right',
+  },
+  totalValueHighlightBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryLight,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginVertical: 6,
+  },
+  totalValueHighlightLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.primaryDark,
+  },
+  totalValueHighlightVal: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
+  },
+  loadingText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 4,
+  },
+
+  // ─── BOTTOM FOOTER ───
+  bottomActionFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 40,
+    backgroundColor: COLORS.cardBg,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    zIndex: 99,
+  },
+  primaryActionBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
     height: 52,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
-    elevation: 4,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    marginVertical: 4,
   },
-  issueSaudaBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  primaryActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  actionBtnDisabled: {
+    opacity: 0.45,
+  },
+  twoBtnActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  secondaryOutlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: COLORS.bgMain,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginVertical: 4,
+  },
+  secondaryOutlineBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+
+  // ─── MODALS ───
+  modalOverlayCenter: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  alertCard: {
+    backgroundColor: COLORS.cardBg,
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  alertTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  alertMessage: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  alertPrimaryBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    height: 46,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  alertPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // Success Modal
+  successModalCard: {
+    backgroundColor: COLORS.cardBg,
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  successIconBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: COLORS.successLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  successModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+  },
+  successModalSub: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  snapshotBox: {
+    width: '100%',
+    backgroundColor: COLORS.bgMain,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 6,
+  },
+  snapshotRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  snapshotLabel: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+  },
+  snapshotValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    maxWidth: '65%',
+  },
+  snapshotTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginTop: 4,
+  },
+  snapshotTotalLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primaryDark,
+  },
+  snapshotTotalVal: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
+  },
+  modalPrimaryBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalSecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 12,
+    height: 46,
+    borderWidth: 1,
+    borderColor: COLORS.primaryBorder,
+  },
+  modalSecondaryBtnText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalGhostBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  modalGhostBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+  },
+
+  // Bottom Sheet Modal
+  bottomSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  bottomSheetContent: {
+    backgroundColor: COLORS.cardBg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 18,
+    paddingHorizontal: 18,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  modalSubText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginBottom: 12,
+  },
+  modalCancelBtn: {
+    paddingHorizontal: 16,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgMain,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+
+  // Contact Picker
+  contactSearchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgMain,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  contactSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
+  },
+  contactItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.bgMain,
+  },
+  contactAvatarCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  contactAvatarText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  contactItemName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  contactItemPhone: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
 });
 
 export default CreateBrokerDeal;

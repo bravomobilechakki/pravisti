@@ -64,7 +64,7 @@ const RoleSelectionModal = ({ onSelectRole, onNavigate, currentRole = 'Broker' }
             </View>
             <Text style={styles.roleTitle}>Broker / Sauda Agent 💼</Text>
             <Text style={styles.roleDesc}>
-              Facilitate sauda deals between Buyers (Traders) & Sellers (Mill Owners). Track brokerage commission and generate digital sauda chitti.
+              Facilitate sauda deals between Buyers (Traders) & Sellers (Mill Owners). Track brokerage commission and generate digital sauda contracts.
             </Text>
             <View style={styles.tagRow}>
               <View style={styles.tag}><Text style={styles.tagText}>Deal Matchmaking</Text></View>

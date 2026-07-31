@@ -1271,7 +1271,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                               {prod.productName ? prod.productName : `Product #${idx + 1}`}
                             </Text>
                           </View>
-                          
+
                           {productsList.length > 1 && (
                             <TouchableOpacity
                               style={{
@@ -1768,7 +1768,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
   keyboardView: { flex: 1 },
-  scrollContent: { flexGrow: 1, padding: 14, gap: 12, paddingBottom: 40 },
+  scrollContent: { flexGrow: 1, padding: 14, gap: 12, paddingBottom: 140 },
 
   // HEADER
   header: {

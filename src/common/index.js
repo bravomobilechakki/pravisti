@@ -371,6 +371,67 @@ const SummaryApi = {
     url: `${backendDomain}/api/delivery/${id}/status`,
     method: "patch",
   }),
+
+  /* ================= BROKER ONBOARDING APIs ================= */
+  searchCounterpartyUser: (mobileNumber) => ({
+    url: `${backendDomain}/api/broker-onboard/search-user?mobileNumber=${encodeURIComponent(mobileNumber)}`,
+    method: "get",
+  }),
+
+  assistedCreateBusiness: {
+    url: `${backendDomain}/api/broker-onboard/create-business`,
+    method: "post",
+  },
+
+  getBrokerOnboardQueue: {
+    url: `${backendDomain}/api/broker-onboard/my-queue`,
+    method: "get",
+  },
+
+  getBrokerMyDeals: {
+    url: `${backendDomain}/api/broker-onboard/my-deal`,
+    method: "get",
+  },
+
+  editPendingBusiness: (id) => ({
+    url: `${backendDomain}/api/broker-onboard/edit-business/${id}`,
+    method: "put",
+  }),
+
+  resendWhatsAppInvite: (id) => ({
+    url: `${backendDomain}/api/broker-onboard/resend-invite/${id}`,
+    method: "post",
+  }),
+
+  cancelBrokerOnboard: (id) => ({
+    url: `${backendDomain}/api/broker-onboard/cancel-onboard/${id}`,
+    method: "post",
+  }),
+
+  getPendingVerificationStatus: {
+    url: `${backendDomain}/api/broker-onboard/pending-verification`,
+    method: "get",
+  },
+
+  verifyAccount: {
+    url: `${backendDomain}/api/broker-onboard/verify-account`,
+    method: "post",
+  },
+
+  completeCompanyProfile: {
+    url: `${backendDomain}/api/broker-onboard/complete-company`,
+    method: "patch",
+  },
+
+  verifyProducts: {
+    url: `${backendDomain}/api/broker-onboard/verify-products`,
+    method: "patch",
+  },
+
+  verifyOwnership: {
+    url: `${backendDomain}/api/broker-onboard/verify`,
+    method: "patch",
+  },
 };
 
 export default SummaryApi;

@@ -75,7 +75,7 @@ const Signup = ({ onNavigate, routeData }) => {
   const headerHeight = 200;
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState(routeData?.mobile || '');
-  const [role, setRole] = useState('Broker'); // 'Broker' or 'Trader'
+  const [role, setRole] = useState(routeData?.role || 'Trader'); // Default to Trader
   const [isLoading, setIsLoading] = useState(false);
 
   const [nameFocused, setNameFocused] = useState(false);
@@ -88,6 +88,7 @@ const Signup = ({ onNavigate, routeData }) => {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [timer, setTimer] = useState(60); // 60 seconds
   const [errorMessage, setErrorMessage] = useState('');
+  const isVerifyingRef = useRef(false);
 
   // Timer Effect
   useEffect(() => {
@@ -113,7 +114,7 @@ const Signup = ({ onNavigate, routeData }) => {
   // Auto-verify when OTP is full
   useEffect(() => {
     const otpCode = otp.join('');
-    if (otpCode.length === 4 && !isLoading) {
+    if (otpCode.length === 4 && !isLoading && !isVerifyingRef.current) {
       handleVerifyOtp();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,11 +150,13 @@ const Signup = ({ onNavigate, routeData }) => {
   };
 
   const handleSignup = async () => {
-    if (!name || !mobile) {
+    const cleanName = name.trim();
+    const cleanMobile = mobile.trim();
+    if (!cleanName || !cleanMobile) {
       setErrorMessage('Please fill in Name and Mobile Number.');
       return;
     }
-    if (mobile.length !== 10) {
+    if (cleanMobile.length !== 10) {
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
@@ -161,7 +164,7 @@ const Signup = ({ onNavigate, routeData }) => {
 
     setIsLoading(true);
     try {
-      const response = await signUpUser(name, role, mobile);
+      const response = await signUpUser(cleanName, role, cleanMobile);
       if (response && response.success) {
         setOtpSent(true);
         setTimer(60);
@@ -176,7 +179,7 @@ const Signup = ({ onNavigate, routeData }) => {
           msg.toLowerCase().includes('already')
         ) {
           if (onNavigate) {
-            onNavigate('Login', { mobile, autoSendOtp: true });
+            onNavigate('Login', { mobile: cleanMobile, autoSendOtp: true });
           }
         } else {
           setErrorMessage(msg || 'Failed to send OTP.');
@@ -193,7 +196,7 @@ const Signup = ({ onNavigate, routeData }) => {
         errMsg.toLowerCase().includes('already')
       ) {
         if (onNavigate) {
-          onNavigate('Login', { mobile, autoSendOtp: true });
+          onNavigate('Login', { mobile: cleanMobile, autoSendOtp: true });
         }
       } else {
         setErrorMessage(errMsg || 'An error occurred during signup.');
@@ -204,18 +207,22 @@ const Signup = ({ onNavigate, routeData }) => {
   };
 
   const handleVerifyOtp = async () => {
+    if (isVerifyingRef.current) return;
     const otpCode = otp.join('');
     if (otpCode.length !== 4) {
       Alert.alert('Error', 'Please enter the complete 4-digit OTP.');
       return;
     }
+    const cleanMobile = mobile.trim();
+    isVerifyingRef.current = true;
     setIsLoading(true);
     try {
-      const response = await verifyOtp(mobile, otpCode);
+      const response = await verifyOtp(cleanMobile, otpCode);
       if (response && response.success) {
         const { token, user } = response.data;
         try {
           await AsyncStorage.setItem('userToken', token);
+          await AsyncStorage.setItem('user_completed_profile', JSON.stringify(user));
         } catch (e) {
           console.error("AsyncStorage error", e);
         }
@@ -233,6 +240,7 @@ const Signup = ({ onNavigate, routeData }) => {
       Alert.alert('Error', 'An error occurred while verifying OTP.');
     } finally {
       setIsLoading(false);
+      isVerifyingRef.current = false;
     }
   };
 

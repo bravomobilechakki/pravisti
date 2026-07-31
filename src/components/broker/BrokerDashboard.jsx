@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { use } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,9 @@ import {
   ActivityIndicator,
   Platform,
   Image,
+  Modal,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import {
   Bell,
@@ -24,14 +27,42 @@ import {
   ShieldCheck,
   ChevronRight,
   Clock,
+  UserMinus,
 } from 'lucide-react-native';
-import { getCompanies, getUserProfile } from '../../services/api';
+import { getCompanies, getUserProfile, getBrokerMyDeals, getDeals, searchCounterpartyUser } from '../../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import BrokerProfile from './profile/BrokerProfile';
+
+const { width } = Dimensions.get('window');
 
 const BrokerDashboard = ({ onNavigate, routeData }) => {
   const [refreshing, setRefreshing] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
   const [companies, setCompanies] = React.useState([]);
   const [currentUser, setCurrentUser] = React.useState(routeData?.user || null);
+  const [brokerDeals, setBrokerDeals] = React.useState([]);
+  const [isProfileSliderOpen, setIsProfileSliderOpen] = React.useState(false);
+
+  const slideAnim = React.useRef(new Animated.Value(width)).current;
+
+  const openProfileDrawer = () => {
+    setIsProfileSliderOpen(true);
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 280,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeProfileDrawer = () => {
+    Animated.timing(slideAnim, {
+      toValue: width,
+      duration: 240,
+      useNativeDriver: true,
+    }).start(() => {
+      setIsProfileSliderOpen(false);
+    });
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -40,7 +71,6 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
         setCompanies(response.data.companies || []);
       }
 
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       const token = await AsyncStorage.getItem('userToken');
       if (token) {
         const userRes = await getUserProfile(token);
@@ -65,6 +95,71 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
           await AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedProfile));
         }
       }
+
+      // Fetch Live Broker Deals for dynamic stat counts (identical to BrokerCreatedDeals)
+      try {
+        const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
+        const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
+        let fetchedDeals = [];
+
+        const [brokerResResult, dealsResResult] = await Promise.allSettled([
+          getBrokerMyDeals(token),
+          getDeals(token),
+        ]);
+
+        if (brokerResResult.status === 'fulfilled' && brokerResResult.value?.success) {
+          const brokerRes = brokerResResult.value;
+          const rawList = Array.isArray(brokerRes.data)
+            ? brokerRes.data
+            : (brokerRes.data?.deals || brokerRes.data?.myDeals || []);
+
+          const mapped = rawList.map(d => ({
+            id: d.dealNumber || d._id,
+            crop: d.products?.[0]?.productName || d.cropName || d.crop || d.notes || 'Agricultural Commodity',
+            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity} units` : (d.quantity || '100 units'),
+            rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
+            buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
+            seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
+            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
+            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today',
+            commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : '₹10,000',
+          }));
+          fetchedDeals = [...mapped];
+        }
+
+        if (dealsResResult.status === 'fulfilled' && dealsResResult.value?.success) {
+          const res = dealsResResult.value;
+          const rawDeals = Array.isArray(res.data) ? res.data : (res.data?.deals || []);
+          const apiMapped = rawDeals.map(d => ({
+            id: d.dealNumber || d._id,
+            crop: d.products?.[0]?.productName || d.notes || 'Agricultural Commodity',
+            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity} units` : '100 units',
+            rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : '₹60,000',
+            buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || 'Buyer Business',
+            seller: d.sellerCompany?.name || d.sellerCompany?.companyName || 'Seller Business',
+            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
+            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today',
+            commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : '₹10,000',
+          }));
+
+          apiMapped.forEach(item => {
+            if (!fetchedDeals.some(f => f.id === item.id || f._id === item.id)) {
+              fetchedDeals.push(item);
+            }
+          });
+        }
+
+        const combined = [...localDeals];
+        fetchedDeals.forEach(fD => {
+          if (!combined.some(c => (c.id === fD.id || c._id === fD.id || c._id === fD._id))) {
+            combined.push(fD);
+          }
+        });
+
+        setBrokerDeals(combined);
+      } catch (dealErr) {
+        console.warn('Dashboard broker deals fetch warning:', dealErr);
+      }
     } catch (error) {
       console.error('Error fetching broker dashboard data:', error);
     } finally {
@@ -76,7 +171,6 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
   React.useEffect(() => {
     const loadCachedProfile = async () => {
       try {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
         const storedProfile = await AsyncStorage.getItem('user_completed_profile');
         if (storedProfile) {
           setCurrentUser(JSON.parse(storedProfile));
@@ -87,120 +181,136 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
     };
     loadCachedProfile();
     fetchDashboardData();
-  }, []);
+  }, [routeData]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     fetchDashboardData();
   }, []);
 
-  const recentDeals = currentUser?.recentDeals || routeData?.user?.recentDeals || [];
   const userName = currentUser?.name || routeData?.user?.name || 'Broker Partner';
 
+  const totalDealsList = brokerDeals;
+
+  const pendingSaudasCount = totalDealsList.filter(d => {
+    const st = String(d.status || '').toLowerCase();
+    return st.includes('pending');
+  }).length;
+
+  const totalSaudasCount = totalDealsList.length;
+  const activeSaudasCount = totalSaudasCount;
+
   const roleTheme = {
-    bg: 'rgba(99, 102, 241, 0.15)',
-    border: '#6366F1',
-    text: '#6366F1',
-    label: '⚡ BROKER ACCOUNT',
+    bg: 'rgba(6, 182, 212, 0.2)',
+    border: '#06B6D4',
+    text: '#38BDF8',
+    label: '⚡ LICENSED BROKER',
   };
 
-  // Modern styled quick actions
   const quickActions = [
     {
       id: 'deals',
-      label: 'Sauda',
+      label: 'Saudas',
       icon: <Handshake size={22} color="#FFFFFF" />,
-      circleBg: '#4F46E5', // Deep Indigo
-      onPress: () => onNavigate('DealsList', { user: routeData?.user }),
+      circleBg: '#0284C7',
+      onPress: () => onNavigate('BrokerCreatedDeals', { user: routeData?.user }),
     },
     {
       id: 'chat',
       label: 'Messages',
       icon: <Users size={22} color="#FFFFFF" />,
-      circleBg: '#10B981', // Emerald Green
+      circleBg: '#06B6D4',
       onPress: () => onNavigate('ChatList', { user: routeData?.user }),
     },
     {
       id: 'broker_company',
-      label: 'Add Firm',
+      label: 'Add Company',
       icon: <Building2 size={22} color="#FFFFFF" />,
-      circleBg: '#8B5CF6', // Purple
+      circleBg: '#2563EB',
       onPress: () => onNavigate('BrokerAddCompany', { user: routeData?.user }),
     },
     {
       id: 'profile',
       label: 'View Profile',
       icon: <User size={22} color="#FFFFFF" />,
-      circleBg: '#F59E0B', // Amber
-      onPress: () => onNavigate('Profile', { user: routeData?.user }),
+      circleBg: '#6366F1',
+      onPress: openProfileDrawer,
     },
   ];
 
-  // Stats data
   const statCards = [
     {
       label: 'Active Saudas',
-      value: recentDeals.filter(d => d.status === 'Active').length || '12',
-      icon: <TrendingUp size={16} color="#2FC25B" />,
-      trend: '+12%',
-      accent: '#2FC25B',
-      bg: '#E8F8EE',
+      value: activeSaudasCount.toString(),
+      icon: <TrendingUp size={16} color="#0284C7" />,
+      trend: `${totalSaudasCount} Total`,
+      accent: '#0284C7',
+      bg: '#E0F2FE',
     },
     {
-      label: 'Pending Signature',
-      value: recentDeals.filter(d => d.status === 'Pending').length || '3',
-      icon: <TrendingDown size={16} color="#FF9E00" />,
-      trend: '2 new',
-      accent: '#FF9E00',
-      bg: '#FFF5E6',
+      label: 'Pending Saudas',
+      value: pendingSaudasCount.toString(),
+      icon: <Clock size={16} color="#D97706" />,
+      trend: 'Queue',
+      accent: '#D97706',
+      bg: '#FEF3C7',
+    },
+    {
+      label: 'Linked Firms',
+      value: companies.length.toString(),
+      icon: <Building2 size={16} color="#2563EB" />,
+      trend: 'Verified',
+      accent: '#2563EB',
+      bg: '#EEF2FF',
     },
   ];
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1E1B4B" />
+      <StatusBar barStyle="light-content" backgroundColor="#3465EA" />
 
-      {/* ─── SCROLLABLE BODY ─── */}
       <ScrollView
         style={styles.scrollArea}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#4F46E5']}
-            tintColor="#4F46E5"
+            colors={['#3465EA']}
+            tintColor="#3465EA"
           />
         }>
 
-        {/* ─── HERO HEADER ─── */}
         <View style={styles.heroSection}>
-          {/* Top Bar */}
+          {/* Layered Gradient & Glow Orbs */}
+          <View style={styles.headerMiddleGradientLayer} />
+          <View style={styles.headerBottomGradientLayer} />
+          <View style={styles.glowOrbWhiteTop} />
+          <View style={styles.glowOrbIndigoBottom} />
+
           <View style={styles.topBar}>
-            {/* Left: Notification Bell */}
             <TouchableOpacity
-              style={styles.notifBtn}
+              style={styles.glassActionBtn}
               onPress={() => onNavigate('ChatList')}
-              activeOpacity={0.7}>
+              activeOpacity={0.75}>
               <Bell size={20} color="#FFFFFF" />
-              <View style={styles.notifDot} />
+              <View style={styles.notifRoseDot} />
             </TouchableOpacity>
 
-            {/* Center: Main Logo Image */}
             <View style={styles.brandContainer}>
               <Image
-                source={require('../../images/trader1.png')}
+                source={require('../../images/logo/new_logo.png')}
                 style={styles.brandLogo}
                 resizeMode="contain"
               />
             </View>
 
-            {/* Right: Profile Section (Avatar with initials) */}
             <View style={styles.profileSection}>
               <TouchableOpacity
-                style={styles.avatarBtn}
-                onPress={() => onNavigate('Profile')}
+                style={styles.avatarGlassBtn}
+                onPress={openProfileDrawer}
                 activeOpacity={0.75}>
                 <Text style={styles.avatarText}>
                   {userName.trim().charAt(0).toUpperCase()}
@@ -209,7 +319,6 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
             </View>
           </View>
 
-          {/* Welcome & Register Company Prompt */}
           <View style={styles.welcomeBanner}>
             <Text style={styles.welcomeHelloText}>Hello & Welcome,</Text>
 
@@ -223,19 +332,9 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
                 {userName}
               </Text>
 
-              <View style={[
-                styles.premiumRoleBadge,
-                {
-                  backgroundColor: roleTheme.bg,
-                  borderColor: roleTheme.border
-                }
-              ]}>
-                <Text style={[
-                  styles.premiumRoleText,
-                  { color: roleTheme.text }
-                ]}>
-                  {roleTheme.label}
-                </Text>
+              <View style={styles.emeraldSyncBadge}>
+                <ShieldCheck size={12} color="#34D399" style={{ marginRight: 4 }} />
+                <Text style={styles.emeraldSyncBadgeText}>BROKER PARTNER</Text>
               </View>
             </View>
 
@@ -244,74 +343,100 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
               onPress={() => onNavigate('BrokerAddCompany')}
               activeOpacity={0.8}
             >
-              <Plus size={14} color="#4F46E5" />
+              <Plus size={14} color="#3B3CFF" />
               <Text style={styles.registerPromptText}>Link Your Brokerage Company</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ─── QUICK ACTIONS GRID ─── */}
+        {/* ─── QUICK ACTION ─── */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.quickActionsGrid}>
-            {quickActions.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.quickActionItem}
-                onPress={item.onPress}
-                activeOpacity={0.8}>
-                <View style={[styles.actionIconCircle, { backgroundColor: item.circleBg }]}>
-                  {item.icon}
-                </View>
-                <Text style={styles.actionItemText}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Text style={styles.sectionTitle}>Quick Action</Text>
+          <TouchableOpacity
+            style={styles.addCompanyBannerCard}
+            onPress={() => onNavigate('BrokerAddCompany', { user: routeData?.user })}
+            activeOpacity={0.85}
+          >
+            <View style={styles.addCompanyBannerIconBox}>
+              <Plus size={22} color="#FFFFFF" />
+            </View>
+            <View style={styles.addCompanyBannerTextBox}>
+              <Text style={styles.addCompanyBannerTitle}>+ Add Brokerage Company</Text>
+              <Text style={styles.addCompanyBannerSub}>Register a new APMC company to issue official trade contracts</Text>
+            </View>
+            <ChevronRight size={20} color="#0284C7" />
+          </TouchableOpacity>
         </View>
 
-        {/* ─── STATS & OVERVIEW ─── */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Brokerage Overview</Text>
-          <View style={styles.statsGrid}>
-            {statCards.map((stat, idx) => (
-              <View key={idx} style={styles.statCardItem}>
-                <View style={styles.statTopRow}>
-                  <View style={[styles.statIconBadge, { backgroundColor: stat.bg }]}>
-                    {stat.icon}
-                  </View>
-                  <Text style={[styles.statTrendText, { color: stat.accent }]}>
-                    {stat.trend}
-                  </Text>
-                </View>
-                <Text style={styles.statValueText}>{stat.value}</Text>
-                <Text style={styles.statLabelText}>{stat.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* ─── RECENT SAUDAS & DEALS ─── */}
+        {/* ─── REGISTERED BROKERAGE COMPANIES ─── */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Recent Broker Deals</Text>
-            <TouchableOpacity onPress={() => onNavigate('DealsList')}>
-              <Text style={styles.seeAllText}>View All</Text>
+            <Text style={styles.sectionTitle}>Registered Brokerage Companies</Text>
+            <TouchableOpacity onPress={() => onNavigate('BrokerAddCompany')}>
+
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.createDealCard}
-            onPress={() => onNavigate('CreateDeal')}
-            activeOpacity={0.85}>
-            <View style={styles.createDealIconBox}>
-              <Plus size={22} color="#FFFFFF" />
-            </View>
-            <View style={styles.createDealTextBox}>
-              <Text style={styles.createDealTitle}>Create New Broker Sauda</Text>
-              <Text style={styles.createDealSub}>Match Buyer and Seller for instant sauda chitti</Text>
-            </View>
-            <ChevronRight size={20} color="#94A3B8" />
-          </TouchableOpacity>
+          {companies.length === 0 ? (
+            <TouchableOpacity
+              style={styles.emptyCompanyCard}
+              onPress={() => onNavigate('BrokerAddCompany')}
+              activeOpacity={0.85}
+            >
+              <Building2 size={24} color="#4F46E5" style={{ marginBottom: 6 }} />
+              <Text style={styles.emptyCompanyTitle}>Link Your Brokerage Company</Text>
+              <Text style={styles.emptyCompanySub}>
+                Add your APMC registered company to issue official trade contracts.
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            companies.map((firm, idx) => (
+              <TouchableOpacity
+                key={firm._id || firm.id || idx}
+                style={styles.firmCard}
+                activeOpacity={0.85}
+                onPress={() => onNavigate('BrokerCompanyDetails', { company: firm, companyId: firm._id || firm.id })}
+              >
+                <View style={styles.firmHeaderRow}>
+                  <View style={styles.firmIconCircle}>
+                    <Building2 size={18} color="#4F46E5" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.firmName}>{firm.name || firm.companyName}</Text>
+                    <Text style={styles.firmSubText}>
+                      {firm.firmType || firm.companyType || 'Registered Brokerage'} {firm.city ? `• ${firm.city}` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.verifiedFirmBadge}>
+                    <ShieldCheck size={12} color="#16A34A" style={{ marginRight: 4 }} />
+                    <Text style={styles.verifiedFirmText}>Verified APMC</Text>
+                  </View>
+                </View>
+
+                {(firm.apmcLicense || firm.commissionRate) && (
+                  <View style={styles.firmDetailsRow}>
+                    {firm.apmcLicense ? (
+                      <Text style={styles.firmDetailItem}>License: {firm.apmcLicense}</Text>
+                    ) : null}
+                    {firm.commissionRate ? (
+                      <Text style={styles.firmDetailItem}>Rate: {firm.commissionRate}% Commission</Text>
+                    ) : null}
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))
+          )}
+        </View>
+
+
+
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Recent Broker Deals</Text>
+            <TouchableOpacity onPress={() => onNavigate('BrokerCreatedDeals')}>
+              <Text style={styles.seeAllText}>View All</Text>
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity
             style={[styles.createDealCard, { marginTop: 12, backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}
@@ -329,6 +454,40 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
         </View>
 
       </ScrollView>
+
+      {/* ─── RIGHT-SIDE PROFILE SLIDER DRAWER ─── */}
+      <Modal
+        visible={isProfileSliderOpen}
+        animationType="none"
+        transparent={true}
+        onRequestClose={closeProfileDrawer}
+      >
+        <View style={styles.rightSliderOverlay}>
+          <TouchableOpacity
+            style={styles.rightSliderBackdrop}
+            activeOpacity={1}
+            onPress={closeProfileDrawer}
+          />
+          <Animated.View
+            style={[
+              styles.rightSliderContainer,
+              { transform: [{ translateX: slideAnim }] },
+            ]}
+          >
+            <BrokerProfile
+              onNavigate={(screen, data, options) => {
+                if (screen === 'pop' || screen === 'Back') {
+                  closeProfileDrawer();
+                } else {
+                  closeProfileDrawer();
+                  onNavigate(screen, data, options);
+                }
+              }}
+              routeData={routeData}
+            />
+          </Animated.View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -336,22 +495,89 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F0F9FF',
+  },
+  rightSliderOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  rightSliderBackdrop: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  rightSliderContainer: {
+    width: '90%',
+    height: '100%',
+    backgroundColor: '#F5F7FB',
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: -4, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
   },
   scrollArea: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 32,
+    flexGrow: 1,
+    paddingBottom: 110,
   },
   heroSection: {
-    backgroundColor: '#1E1B4B',
+    backgroundColor: '#3465EA',
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: Platform.OS === 'android' ? 32 : 20,
     paddingBottom: 24,
     marginBottom: 20,
+    marginTop: 6,
+    position: 'relative',
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#3465EA',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+  headerMiddleGradientLayer: {
+    position: 'absolute',
+    top: '30%',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#2554D7',
+    opacity: 0.7,
+  },
+  headerBottomGradientLayer: {
+    position: 'absolute',
+    top: '65%',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#1E46C6',
+  },
+  glowOrbWhiteTop: {
+    position: 'absolute',
+    top: -40,
+    right: -40,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  glowOrbIndigoBottom: {
+    position: 'absolute',
+    bottom: -40,
+    left: -40,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(129, 140, 248, 0.20)',
   },
   topBar: {
     flexDirection: 'row',
@@ -359,22 +585,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 20,
   },
-  notifBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  glassActionBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.20)',
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
   },
-  notifDot: {
+  notifRoseDot: {
     position: 'absolute',
-    top: 9,
-    right: 9,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#EF4444',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F43F5E',
+    borderWidth: 1.5,
+    borderColor: '#3B3CFF',
   },
   brandContainer: {
     alignItems: 'center',
@@ -387,27 +618,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  avatarBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EEF2FF',
+  avatarGlassBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.20)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#6366F1',
   },
   avatarText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#4F46E5',
+    color: '#FFFFFF',
+  },
+  emeraldSyncBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: 'rgba(52, 211, 153, 0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.35)',
+  },
+  emeraldSyncBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#34D399',
+    letterSpacing: 0.4,
   },
   welcomeBanner: {
     marginTop: 4,
   },
   welcomeHelloText: {
     fontSize: 13,
-    color: '#C7D2FE',
+    color: '#7DD3FC',
     fontWeight: '500',
     marginBottom: 2,
   },
@@ -419,7 +666,7 @@ const styles = StyleSheet.create({
   },
   userNameStylish: {
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '900',
     color: '#FFFFFF',
     flex: 1,
     marginRight: 8,
@@ -452,7 +699,7 @@ const styles = StyleSheet.create({
   registerPromptText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#4F46E5',
+    color: '#0284C7',
     marginLeft: 6,
   },
   sectionContainer: {
@@ -474,34 +721,44 @@ const styles = StyleSheet.create({
   seeAllText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#4F46E5',
+    color: '#0284C7',
   },
-  quickActionsGrid: {
+  addCompanyBannerCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  quickActionItem: {
     alignItems: 'center',
-    width: '22%',
-  },
-  actionIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#BAE6FD',
     elevation: 3,
-    shadowColor: '#0F172A',
+    shadowColor: '#0C4A6E',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 6,
   },
-  actionItemText: {
+  addCompanyBannerIconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: '#0284C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  addCompanyBannerTextBox: {
+    flex: 1,
+  },
+  addCompanyBannerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  addCompanyBannerSub: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
-    textAlign: 'center',
+    color: '#64748B',
+    lineHeight: 16,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -513,9 +770,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E0F2FE',
     elevation: 3,
-    shadowColor: '#0F172A',
+    shadowColor: '#0284C7',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -555,9 +812,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#E0F2FE',
     elevation: 3,
-    shadowColor: '#0F172A',
+    shadowColor: '#0284C7',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -566,7 +823,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: '#4F46E5',
+    backgroundColor: '#0284C7',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -583,6 +840,88 @@ const styles = StyleSheet.create({
   createDealSub: {
     fontSize: 12,
     color: '#64748B',
+  },
+  // ─── REGISTERED FIRM STYLES ───
+  firmCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+    elevation: 2,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  firmHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  firmIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#E0F2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  firmName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  firmSubText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  verifiedFirmBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  verifiedFirmText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+  firmDetailsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F8FAFC',
+  },
+  firmDetailItem: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  emptyCompanyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#7DD3FC',
+    borderStyle: 'dashed',
+  },
+  emptyCompanyTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0369A1',
+  },
+  emptyCompanySub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+    textAlign: 'center',
   },
 });
 

@@ -82,6 +82,8 @@ const Login = ({ onNavigate, routeData }) => {
   const [timer, setTimer] = useState(60);
   const [errorMessage, setErrorMessage] = useState('');
 
+  const isVerifyingRef = useRef(false);
+
   // Show "Taking longer than usual..." after 6 seconds of waiting
   useEffect(() => {
     let slowTimer;
@@ -96,15 +98,16 @@ const Login = ({ onNavigate, routeData }) => {
   }, [isLoading]);
 
   useEffect(() => {
-    if (routeData?.autoSendOtp && routeData?.mobile && routeData.mobile.length === 10) {
+    const rawMobile = routeData?.mobile ? routeData.mobile.trim() : '';
+    if (routeData?.autoSendOtp && rawMobile && rawMobile.length === 10) {
       const autoTriggerSend = async () => {
         setErrorMessage('');
         setIsLoading(true);
         try {
-          const response = await loginUser(routeData.mobile);
+          const response = await loginUser(rawMobile);
           if (response && response.success) {
             if (response.data && response.data.isNewUser) {
-              if (onNavigate) onNavigate('Signup', { mobile: routeData.mobile });
+              if (onNavigate) onNavigate('Signup', { mobile: rawMobile });
               return;
             }
             setOtpSent(true);
@@ -112,7 +115,7 @@ const Login = ({ onNavigate, routeData }) => {
           } else {
             const msg = response.message || '';
             if (['not found', 'not registered', 'not exist', 'new user', 'signup'].some(k => msg.toLowerCase().includes(k))) {
-              if (onNavigate) onNavigate('Signup', { mobile: routeData.mobile });
+              if (onNavigate) onNavigate('Signup', { mobile: rawMobile });
             } else {
               setErrorMessage(msg || 'Failed to send OTP.');
             }
@@ -120,7 +123,7 @@ const Login = ({ onNavigate, routeData }) => {
         } catch (error) {
           const errMsg = error.message || '';
           if (['not found', 'not registered', 'not exist', 'new user', 'signup'].some(k => errMsg.toLowerCase().includes(k))) {
-            if (onNavigate) onNavigate('Signup', { mobile: routeData.mobile });
+            if (onNavigate) onNavigate('Signup', { mobile: rawMobile });
           } else {
             setErrorMessage(errMsg || 'An error occurred. Please try again.');
           }
@@ -150,7 +153,9 @@ const Login = ({ onNavigate, routeData }) => {
 
   useEffect(() => {
     const otpCode = otp.join('');
-    if (otpCode.length === 4 && !isLoading) handleVerifyOtp();
+    if (otpCode.length === 4 && !isLoading && !isVerifyingRef.current) {
+      handleVerifyOtp();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otp]);
 
@@ -177,17 +182,18 @@ const Login = ({ onNavigate, routeData }) => {
   };
 
   const handleSendOtp = async () => {
-    if (mobile.length !== 10) {
+    const cleanMobile = mobile.trim();
+    if (cleanMobile.length !== 10) {
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
     setErrorMessage('');
     setIsLoading(true);
     try {
-      const response = await loginUser(mobile);
+      const response = await loginUser(cleanMobile);
       if (response && response.success) {
         if (response.data && response.data.isNewUser) {
-          if (onNavigate) onNavigate('Signup', { mobile });
+          if (onNavigate) onNavigate('Signup', { mobile: cleanMobile });
           return;
         }
         setOtpSent(true);
@@ -195,7 +201,7 @@ const Login = ({ onNavigate, routeData }) => {
       } else {
         const msg = response.message || '';
         if (['not found', 'not registered', 'not exist', 'new user', 'signup'].some(k => msg.toLowerCase().includes(k))) {
-          if (onNavigate) onNavigate('Signup', { mobile });
+          if (onNavigate) onNavigate('Signup', { mobile: cleanMobile });
         } else {
           setErrorMessage(msg || 'Failed to send OTP.');
         }
@@ -203,7 +209,7 @@ const Login = ({ onNavigate, routeData }) => {
     } catch (error) {
       const errMsg = error.message || '';
       if (['not found', 'not registered', 'not exist', 'new user', 'signup'].some(k => errMsg.toLowerCase().includes(k))) {
-        if (onNavigate) onNavigate('Signup', { mobile });
+        if (onNavigate) onNavigate('Signup', { mobile: cleanMobile });
       } else {
         setErrorMessage(errMsg || 'An error occurred. Please try again.');
       }
@@ -213,20 +219,28 @@ const Login = ({ onNavigate, routeData }) => {
   };
 
   const handleVerifyOtp = async () => {
+    if (isVerifyingRef.current) return;
     const otpCode = otp.join('');
     if (otpCode.length !== 4) {
       setErrorMessage('Please enter the complete 4-digit OTP.');
       return;
     }
+    const cleanMobile = mobile.trim();
+    isVerifyingRef.current = true;
     setErrorMessage('');
     setIsLoading(true);
     try {
-      const response = await verifyOtp(mobile, otpCode);
+      const response = await verifyOtp(cleanMobile, otpCode);
       if (response && response.success) {
         const { token, user } = response.data;
-        try { await AsyncStorage.setItem('userToken', token); } catch (e) { console.error('AsyncStorage error', e); }
+        try {
+          await AsyncStorage.setItem('userToken', token);
+          await AsyncStorage.setItem('user_completed_profile', JSON.stringify(user));
+        } catch (e) {
+          console.error('AsyncStorage error', e);
+        }
         if (onNavigate) {
-          const userRole = user && user.roles && user.roles[0] ? user.roles[0] : (user?.role || 'Broker');
+          const userRole = user && user.roles && user.roles[0] ? user.roles[0] : (user?.role || 'Trader');
           const isBroker = userRole.toString().toLowerCase().includes('broker');
           const targetScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
           onNavigate(targetScreen, { role: userRole, user });
@@ -245,6 +259,7 @@ const Login = ({ onNavigate, routeData }) => {
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
     } finally {
       setIsLoading(false);
+      isVerifyingRef.current = false;
     }
   };
 

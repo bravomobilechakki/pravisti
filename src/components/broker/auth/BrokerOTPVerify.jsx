@@ -17,8 +17,9 @@ const BrokerOTPVerify = ({ onNavigate, routeData }) => {
   const [otp, setOtp] = useState(['', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const mobile = routeData?.mobile || '';
+  const mobile = routeData?.mobile ? routeData.mobile.trim() : '';
   const inputRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
+  const isVerifyingRef = useRef(false);
 
   const handleOtpChange = (text, index) => {
     const newOtp = [...otp];
@@ -30,11 +31,13 @@ const BrokerOTPVerify = ({ onNavigate, routeData }) => {
   };
 
   const handleVerify = async () => {
+    if (isVerifyingRef.current) return;
     const code = otp.join('');
     if (code.length !== 4) {
       setErrorMessage('Please enter complete 4-digit OTP.');
       return;
     }
+    isVerifyingRef.current = true;
     setErrorMessage('');
     setIsLoading(true);
     try {
@@ -51,6 +54,7 @@ const BrokerOTPVerify = ({ onNavigate, routeData }) => {
       setErrorMessage(err.message || 'OTP verification failed.');
     } finally {
       setIsLoading(false);
+      isVerifyingRef.current = false;
     }
   };
 

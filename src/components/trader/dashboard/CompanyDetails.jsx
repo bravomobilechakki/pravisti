@@ -51,6 +51,11 @@ const formatVolume = (value) => {
   return `₹${num.toLocaleString('en-IN')}`;
 };
 
+
+
+
+
+
 const CompanyDetails = ({ onNavigate, routeData }) => {
   const [activeTab, setActiveTab] = React.useState('my_sauda');
   const [isLoading, setIsLoading] = React.useState(true);
@@ -501,39 +506,50 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           </View>
         </View>
 
-        {/* Paytm/PhonePe style Quick Services Container */}
+        {/* Modern Dashboard-style Quick Actions */}
         <View style={styles.quickServicesContainer}>
           <TouchableOpacity
             style={styles.serviceItem}
             onPress={() => onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name })}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <View style={[styles.serviceIconCircle, { backgroundColor: '#EBF5FF' }]}>
-              <Handshake size={22} color="#0052FF" />
+            <View style={[styles.serviceIconCircle, { backgroundColor: '#4F46E5' }]}>
+              <Handshake size={22} color="#FFFFFF" />
             </View>
-            <Text style={styles.serviceLabel}>My Sauda</Text>
+            <Text style={styles.serviceLabel} numberOfLines={1}>My Sauda</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.serviceItem}
+            onPress={() => onNavigate('CreateDeal', { company })}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.serviceIconCircle, { backgroundColor: '#2563EB' }]}>
+              <Plus size={22} color="#FFFFFF" />
+            </View>
+            <Text style={styles.serviceLabel} numberOfLines={1}>New Sauda</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.serviceItem}
             onPress={() => onNavigate('CategoryPage', { company })}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <View style={[styles.serviceIconCircle, { backgroundColor: '#F5F3FF' }]}>
-              <Tag size={20} color="#7C3AED" />
+            <View style={[styles.serviceIconCircle, { backgroundColor: '#8B5CF6' }]}>
+              <Tag size={20} color="#FFFFFF" />
             </View>
-            <Text style={styles.serviceLabel}>Categories</Text>
+            <Text style={styles.serviceLabel} numberOfLines={1}>Categories</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.serviceItem}
             onPress={() => onNavigate('AddProductPage', { company })}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
-            <View style={[styles.serviceIconCircle, { backgroundColor: '#E6F4EA' }]}>
-              <Box size={22} color="#137333" />
+            <View style={[styles.serviceIconCircle, { backgroundColor: '#10B981' }]}>
+              <Box size={22} color="#FFFFFF" />
             </View>
-            <Text style={styles.serviceLabel}>Products</Text>
+            <Text style={styles.serviceLabel} numberOfLines={1}>Products</Text>
           </TouchableOpacity>
         </View>
 
@@ -1314,19 +1330,19 @@ const styles = StyleSheet.create({
   quickServicesContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    paddingVertical: 18,
-    paddingHorizontal: 12,
-    borderWidth: 1.2,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
     marginBottom: 20,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
     elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
   },
   serviceItem: {
     alignItems: 'center',
@@ -1339,16 +1355,16 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
-    shadowColor: '#0F172A',
+    marginBottom: 6,
+    elevation: 3,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
-    elevation: 1,
   },
   serviceLabel: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#334155',
     textAlign: 'center',
   },

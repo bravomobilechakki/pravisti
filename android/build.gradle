@@ -26,4 +26,33 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    if (project.name != 'app' && project != rootProject) {
+        layout.buildDirectory.set(new File("/tmp/pravisti-android-build", project.name))
+    }
+
+    tasks.configureEach { task ->
+        task.doFirst {
+            try {
+                def bDir = layout.buildDirectory.get().asFile
+                if (bDir != null && bDir.exists()) {
+                    bDir.eachFileRecurse { f ->
+                        if (f.name.startsWith("._")) {
+                            f.delete()
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore if buildDir doesn't exist yet
+            }
+        }
+    }
 }
+
+
+
+
+
+
+
+

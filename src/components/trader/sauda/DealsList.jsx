@@ -189,6 +189,18 @@ const DealsList = ({ onNavigate, routeData }) => {
       const token = await AsyncStorage.getItem('userToken');
       if (!token) return;
 
+      const cacheKey = `trader_deals_cache_${filter}_${activeCompanyId || 'all'}`;
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setDeals(parsed);
+            setIsLoading(false);
+          }
+        } catch (e) {}
+      }
+
       let response;
       if (filter === 'Active') {
         response = await getDeals(token, 1, 50, activeCompanyId);
@@ -199,17 +211,14 @@ const DealsList = ({ onNavigate, routeData }) => {
       }
 
       if (response && response.success) {
-        if (filter === 'Invitations') {
-          setDeals(response.data || []);
-        } else {
-          setDeals(response.data.deals || response.data || []);
+        const dealList = filter === 'Invitations' ? (response.data || []) : (response.data.deals || response.data || []);
+        setDeals(dealList);
+        if (Array.isArray(dealList) && dealList.length > 0) {
+          AsyncStorage.setItem(cacheKey, JSON.stringify(dealList)).catch(() => {});
         }
-      } else {
-        setDeals([]);
       }
     } catch (error) {
       console.error('Error fetching deals:', error);
-      setDeals([]);
     } finally {
       setIsLoading(false);
       setRefreshing(false);

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, BackHandler, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getUserProfile } from './src/services/api';
+import { getUserProfile, getPendingVerificationStatus } from './src/services/api';
 
 import Login from './src/components/login/login';
 import Signup from './src/components/login/Signup';
@@ -31,8 +31,11 @@ import {
   BrokerRegistration,
   BrokerAuthGateway,
   BrokerAddCompany,
+  BrokerCompanyDetails,
+  BrokerDealDetails,
   BrokerProfile,
   CreateBrokerDeal,
+  BrokerCreatedDeals,
   BrokerPendingQueue,
   OwnershipConfirmationModal,
 } from './src/components/broker';
@@ -56,9 +59,28 @@ const AddProductPageScreen = AddProductPage as any;
 const TransactionHistoryScreen = TransactionHistory as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
 const BrokerAddCompanyScreen = BrokerAddCompany as any;
+const BrokerCompanyDetailsScreen = BrokerCompanyDetails as any;
 const BrokerProfileScreen = BrokerProfile as any;
 const CreateBrokerDealScreen = CreateBrokerDeal as any;
+const BrokerCreatedDealsScreen = BrokerCreatedDeals as any;
 const BrokerPendingQueueScreen = BrokerPendingQueue as any;
+const BrokerDealDetailsScreen = BrokerDealDetails as any;
+
+const checkIsUserBroker = (userObj: any, explicitRole?: string): boolean => {
+  if (explicitRole) {
+    const cleanExp = explicitRole.toString().toLowerCase();
+    if (cleanExp === 'trader' || cleanExp === 'seller' || cleanExp === 'buyer') return false;
+    if (cleanExp === 'broker') return true;
+  }
+  const uRole = (
+    userObj?.role ||
+    userObj?.userType ||
+    (userObj?.roles && userObj.roles[0]) ||
+    ''
+  ).toString().toLowerCase();
+
+  return uRole.includes('broker');
+};
 
 function App() {
   const [navigationStack, setNavigationStack] = useState([
@@ -67,6 +89,24 @@ function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
   const [pendingUserData, setPendingUserData] = useState<any>(null);
+
+  const checkPendingVerification = async (tokenToUse?: string) => {
+    try {
+      const token = tokenToUse || (await AsyncStorage.getItem('userToken'));
+      if (!token) return;
+      const response = await getPendingVerificationStatus(token);
+      if (response && response.success && response.data) {
+        const details = response.data.details || response.data;
+        const isPending = response.data.pending || details.accountStatus === 'pending';
+        if (isPending && details) {
+          setPendingUserData(details);
+          setShowOwnershipModal(true);
+        }
+      }
+    } catch (err) {
+      console.warn('Pending verification check notice:', err);
+    }
+  };
 
   // Auto-login logic
   useEffect(() => {
@@ -82,10 +122,13 @@ function App() {
             if (storedProfileStr) {
               mergedUser = { ...userData, ...JSON.parse(storedProfileStr) };
             }
-            const roleStr = (mergedUser?.role || (mergedUser?.roles && mergedUser.roles[0]) || '').toString().toLowerCase();
-            const isBroker = roleStr.includes('broker');
+            const isBroker = checkIsUserBroker(mergedUser);
             const initialScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
             setNavigationStack([{ screen: initialScreen, data: { user: mergedUser, role: isBroker ? 'Broker' : 'Trader' } }]);
+
+            if (!isBroker) {
+              checkPendingVerification(token);
+            }
           } else {
             // Token invalid or expired
             await AsyncStorage.removeItem('userToken');
@@ -119,9 +162,7 @@ function App() {
 
   const navigateTab = (screen: string) => {
     const userData = current?.data?.user || {};
-    const currentScreen = current?.screen || '';
-    const roleStr = (current?.data?.role || userData?.role || (userData?.roles && userData.roles[0]) || '').toString().toLowerCase();
-    const isBroker = roleStr.includes('broker') || ['BrokerDashboard', 'BrokerProfile', 'BrokerAddCompany', 'BrokerDealsList'].includes(currentScreen);
+    const isBroker = checkIsUserBroker(userData, current?.data?.role);
 
     let targetScreen = screen;
     if (screen === 'Dashboard' || screen === 'BrokerDashboard') {
@@ -133,13 +174,14 @@ function App() {
     }
 
     const homeScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
+    const activeData = { ...current?.data, user: userData, role: isBroker ? 'Broker' : 'Trader' };
 
     if (targetScreen === homeScreen) {
-      setNavigationStack([{ screen: homeScreen, data: { user: userData, role: isBroker ? 'Broker' : 'Trader' } }]);
+      setNavigationStack([{ screen: homeScreen, data: activeData }]);
     } else {
       setNavigationStack([
-        { screen: homeScreen, data: { user: userData, role: isBroker ? 'Broker' : 'Trader' } },
-        { screen: targetScreen, data: { user: userData, role: isBroker ? 'Broker' : 'Trader' } }
+        { screen: homeScreen, data: activeData },
+        { screen: targetScreen, data: activeData }
       ]);
     }
   };
@@ -181,12 +223,14 @@ function App() {
         if (response && response.success) {
           const storedProfileStr = await AsyncStorage.getItem('user_completed_profile');
           const storedProfile = storedProfileStr ? JSON.parse(storedProfileStr) : null;
-          const currentRole = (current?.data?.role || storedProfile?.role || response.data?.role || '').toString().toLowerCase();
-          const isBrokerRole = currentRole.includes('broker') || ['BrokerDashboard', 'BrokerProfile', 'BrokerAddCompany', 'BrokerDealsList'].includes(current?.screen || '');
-          const updatedUser = {
+          const mergedUser = {
             ...response.data,
             ...(storedProfile || {}),
-            ...(isBrokerRole ? { role: 'Broker' } : {}),
+          };
+          const isBrokerRole = checkIsUserBroker(mergedUser);
+          const updatedUser = {
+            ...mergedUser,
+            role: isBrokerRole ? 'Broker' : 'Trader',
           };
 
           setNavigationStack(prev => {
@@ -196,7 +240,7 @@ function App() {
               ...newStack[lastIdx],
               data: {
                 ...newStack[lastIdx].data,
-                role: isBrokerRole ? 'Broker' : (newStack[lastIdx].data?.role || 'Trader'),
+                role: isBrokerRole ? 'Broker' : 'Trader',
                 user: updatedUser
               }
             };
@@ -210,37 +254,35 @@ function App() {
     }
   };
 
-  const renderScreen = () => {
-    const { screen, data } = current || { screen: 'Login', data: {} as any };
-    const checkUser = data?.user || {};
-    const userRole = (data?.role || checkUser?.role || (checkUser?.roles && checkUser.roles[0]) || '').toString().toLowerCase();
-    const isBrokerUser = userRole.includes('broker') || ['BrokerDashboard', 'BrokerProfile', 'BrokerAddCompany', 'BrokerDealsList'].includes(screen);
+  const { screen, data } = current || { screen: 'Login', data: {} as any };
+  const checkUser = data?.user || {};
+  const isBrokerUser = checkIsUserBroker(checkUser, data?.role);
 
+  const renderScreen = () => {
     const onNavigate = async (target: string, targetData = {} as any, options = { replace: false, refresh: false }) => {
-      let finalData = targetData;
+      const targetUser = targetData?.user || checkUser;
+      const isTargetBroker = checkIsUserBroker(targetUser, targetData?.role);
+
+      let finalData = {
+        ...targetData,
+        role: isTargetBroker ? 'Broker' : 'Trader',
+        user: targetUser,
+      };
 
       if (options.refresh) {
         const freshUser = await refreshUserProfile();
         if (freshUser) {
-          finalData = { ...targetData, user: freshUser };
+          finalData = { ...finalData, user: freshUser, role: checkIsUserBroker(freshUser) ? 'Broker' : 'Trader' };
         }
       }
 
       let finalTarget = target;
-      const targetUser = finalData?.user || checkUser;
-      const targetRole = (finalData?.role || targetUser?.role || (targetUser?.roles && targetUser.roles[0]) || userRole).toString().toLowerCase();
-      const isTargetBroker = targetRole.includes('broker');
-
-      if (finalTarget === 'Dashboard' && isTargetBroker) {
-        finalTarget = 'BrokerDashboard';
-      }
-
-      if ((finalTarget === 'AddCompany' || finalTarget === 'BrokerAddCompany') && isTargetBroker) {
-        finalTarget = 'BrokerAddCompany';
-      }
-
-      if ((finalTarget === 'Profile' || finalTarget === 'BrokerProfile') && isTargetBroker) {
-        finalTarget = 'BrokerProfile';
+      if (finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard') {
+        finalTarget = isTargetBroker ? 'BrokerDashboard' : 'Dashboard';
+      } else if (finalTarget === 'AddCompany' || finalTarget === 'BrokerAddCompany') {
+        finalTarget = isTargetBroker ? 'BrokerAddCompany' : 'AddCompany';
+      } else if (finalTarget === 'Profile' || finalTarget === 'BrokerProfile') {
+        finalTarget = isTargetBroker ? 'BrokerProfile' : 'Profile';
       }
 
       if (finalTarget === 'pop') {
@@ -249,6 +291,10 @@ function App() {
           replaceScreen(isTargetBroker ? 'BrokerDashboard' : 'Dashboard', finalData);
         }
         return;
+      }
+
+      if (!isTargetBroker && (finalTarget === 'Dashboard' || finalTarget === 'Profile')) {
+        checkPendingVerification();
       }
 
       if (options.replace || finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'Login') {
@@ -278,9 +324,13 @@ function App() {
           <AddCompanyScreen onNavigate={onNavigate} routeData={data} />
         );
       case 'CompanyDetails':
-        return (
+        return isBrokerUser ? (
+          <BrokerCompanyDetailsScreen onNavigate={onNavigate} routeData={data} />
+        ) : (
           <CompanyDetailsScreen onNavigate={onNavigate} routeData={data} />
         );
+      case 'BrokerCompanyDetails':
+        return <BrokerCompanyDetailsScreen onNavigate={onNavigate} routeData={data} />;
       case 'DealsList':
         return <DealsListScreen onNavigate={onNavigate} routeData={data} />;
       case 'CreateDeal':
@@ -291,10 +341,19 @@ function App() {
         );
       case 'CreateBrokerDeal':
         return <CreateBrokerDealScreen onNavigate={onNavigate} routeData={data} />;
+      case 'BrokerCreatedDeals':
+      case 'BrokerDealsList':
+        return <BrokerCreatedDealsScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerPendingQueue':
         return <BrokerPendingQueueScreen onNavigate={onNavigate} routeData={data} />;
+      case 'BrokerDealDetails':
+        return <BrokerDealDetailsScreen onNavigate={onNavigate} routeData={data} />;
       case 'DealDetails':
-        return <DealDetailsScreen onNavigate={onNavigate} routeData={data} />;
+        return isBrokerUser ? (
+          <BrokerDealDetailsScreen onNavigate={onNavigate} routeData={data} />
+        ) : (
+          <DealDetailsScreen onNavigate={onNavigate} routeData={data} />
+        );
       case 'DealChat':
         return <DealChatScreen onNavigate={onNavigate} routeData={data} />;
       case 'ChatList':
@@ -326,14 +385,20 @@ function App() {
     }
   };
 
-  const showFooter = current ? ['Dashboard', 'BrokerDashboard', 'DealsList', 'ChatList', 'Profile'].includes(current.screen) : false;
+  const showFooter = current ? ![
+    'Login',
+    'Signup',
+    'ChooseIndustry',
+    'CreateDeal',
+    'CreateBrokerDeal',
+  ].includes(current.screen) : false;
 
   return (
     <SafeAreaProvider>
       <View style={styles.container}>
         {renderScreen()}
         {showFooter && current && (
-          <Footer onNavigate={navigateTab} activeScreen={current.screen} />
+          <Footer onNavigate={navigateTab} activeScreen={current.screen} isBroker={isBrokerUser} />
         )}
         <OwnershipConfirmationModal
           visible={showOwnershipModal}
@@ -341,6 +406,7 @@ function App() {
           userData={pendingUserData}
           onConfirmed={() => {
             setShowOwnershipModal(false);
+            refreshUserProfile();
           }}
           onRejected={() => {
             setShowOwnershipModal(false);

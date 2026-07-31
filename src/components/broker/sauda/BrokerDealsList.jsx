@@ -1,313 +1,681 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   SafeAreaView,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
+  Platform,
 } from 'react-native';
 import {
   Handshake,
   Plus,
   Search,
-  Filter,
-  ArrowRight,
-  TrendingUp,
+  ChevronRight,
   Clock,
   CheckCircle2,
-  AlertCircle,
+  CircleAlert as AlertCircle,
+  User,
+  Building2,
+  X,
+  RotateCcw,
+  TrendingUp,
+  ShieldCheck,
+  ArrowRight,
 } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Navbar from '../../navbar/navbar';
+import { getDeals, getBrokerMyDeals } from '../../../services/api';
 
-const DEMO_BROKER_DEALS = [
-  {
-    id: 'DEAL-901',
-    crop: 'Cotton Bales (Shankar 6)',
-    quantity: '100 Bales (170kg each)',
-    rate: '₹58,500 / candy',
-    buyer: 'Vardhman Textiles Ltd',
-    seller: 'Surat Ginning & Pressing Mill',
-    status: 'Confirmed',
-    date: '27 Jul 2026',
-    commission: '₹11,700',
-  },
-  {
-    id: 'DEAL-899',
-    crop: 'Desi Chana (Chickpeas)',
-    quantity: '25 Metric Tonnes',
-    rate: '₹6,400 / quintal',
-    buyer: 'Rajkot Agri Foods Pvt Ltd',
-    seller: 'Indore Processing Industries',
-    status: 'In Transit',
-    date: '26 Jul 2026',
-    commission: '₹16,000',
-  },
-  {
-    id: 'DEAL-894',
-    crop: 'Soya Doc / Meal',
-    quantity: '50 Metric Tonnes',
-    rate: '₹38,200 / MT',
-    buyer: 'National Feed Mills',
-    seller: 'Dewas Solvent Extraction',
-    status: 'Pending Buyer Sign',
-    date: '25 Jul 2026',
-    commission: '₹19,100',
-  },
-];
+// --- COLOR SYSTEM (Cobalt Royal Blue Theme) ---
+const COLORS = {
+  primary: '#3465EA',
+  primaryDark: '#3465EA',
+  headerMiddle: '#2554D7',
+  headerEnd: '#1E46C6',
+  primaryLight: '#EEF2FF',
+  primaryBorder: '#C7D2FE',
+  cyan: '#06B6D4',
+  buyerBlue: '#0284C7',
+  buyerBlueLight: '#E0F2FE',
+  sellerPurple: '#7C3AED',
+  sellerPurpleLight: '#F5F3FF',
+  success: '#059669',
+  successDark: '#15803D',
+  successLight: '#DCFCE7',
+  warning: '#D97706',
+  warningLight: '#FEF3C7',
+  error: '#DC2626',
+  errorLight: '#FEF2F2',
+  textPrimary: '#0F172A',
+  textSecondary: '#475569',
+  textMuted: '#64748B',
+  textPlaceholder: '#94A3B8',
+  bgMain: '#F0F9FF',
+  cardBg: '#FFFFFF',
+  border: '#E0F2FE',
+};
+
+const extractCompanyId = (d) => {
+  if (!d) return null;
+  const rawId = d.brokerCompanyId || d.companyId || d.brokerCompany?._id || d.brokerCompany?.id || d.company?._id || d.company?.id;
+  if (rawId && typeof rawId !== 'object') return String(rawId);
+  return null;
+};
+
+const extractCompanyName = (d) => {
+  if (!d) return null;
+  if (typeof d.brokerCompanyName === 'string' && d.brokerCompanyName && d.brokerCompanyName !== '[object Object]') return d.brokerCompanyName;
+  if (typeof d.companyName === 'string' && d.companyName && d.companyName !== '[object Object]') return d.companyName;
+  if (typeof d.company === 'string' && d.company && d.company !== '[object Object]') return d.company;
+  if (typeof d.brokerCompany === 'string' && d.brokerCompany && d.brokerCompany !== '[object Object]') return d.brokerCompany;
+
+  if (d.brokerCompany && typeof d.brokerCompany === 'object') {
+    if (d.brokerCompany.name) return d.brokerCompany.name;
+    if (d.brokerCompany.companyName) return d.brokerCompany.companyName;
+  }
+  if (d.company && typeof d.company === 'object') {
+    if (d.company.name) return d.company.name;
+    if (d.company.companyName) return d.company.companyName;
+  }
+  return null;
+};
 
 const BrokerDealsList = ({ onNavigate, routeData }) => {
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [deals, setDeals] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filteredDeals = DEMO_BROKER_DEALS.filter(deal => {
+  const targetCompany = routeData?.company;
+  const companyId = targetCompany?._id || targetCompany?.id || routeData?.companyId;
+  const companyName = targetCompany?.name || targetCompany?.companyName || routeData?.companyName;
+
+  const fetchBrokerDeals = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
+      const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
+
+      // 1. INSTANT LOCAL RENDER (0.01s) - Render stored/cached deals immediately
+      setDeals(localDeals);
+      setIsLoading(false);
+
+      // 2. PARALLEL BACKGROUND API FETCH for fast updates
+      const [brokerResResult, dealsResResult] = await Promise.allSettled([
+        getBrokerMyDeals(token),
+        getDeals(token, 1, 50, companyId || null),
+      ]);
+
+      let fetchedDeals = [];
+
+      if (brokerResResult.status === 'fulfilled' && brokerResResult.value?.success) {
+        const brokerRes = brokerResResult.value;
+        const rawList = Array.isArray(brokerRes.data)
+          ? brokerRes.data
+          : (brokerRes.data?.deals || brokerRes.data?.myDeals || []);
+
+        const mapped = rawList.map(d => {
+          const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : ' units';
+          return {
+            id: d.dealNumber || d._id || `SAUDA-${Math.floor(100 + Math.random() * 900)}`,
+            _id: d._id || d.id,
+            crop: d.products?.[0]?.productName || d.cropName || d.crop || d.notes || 'Agricultural Commodity',
+            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}${unitStr}` : (d.quantity || '100 units'),
+            rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
+            buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
+            seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
+            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
+            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (d.date || 'Today'),
+            commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : (d.commission || '₹10,000'),
+            brokerCompanyId: extractCompanyId(d),
+            brokerCompanyName: extractCompanyName(d),
+            rawDeal: d,
+          };
+        });
+        fetchedDeals = [...mapped];
+      }
+
+      if (dealsResResult.status === 'fulfilled' && dealsResResult.value?.success) {
+        const res = dealsResResult.value;
+        const rawDeals = Array.isArray(res.data) ? res.data : (res.data?.deals || []);
+        const apiMapped = rawDeals.map(d => {
+          const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : ' units';
+          return {
+            id: d.dealNumber || d._id,
+            _id: d._id || d.id,
+            crop: d.products?.[0]?.productName || d.cropName || d.crop || d.notes || 'Agricultural Commodity',
+            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}${unitStr}` : (d.quantity || '100 units'),
+            rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
+            buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
+            seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
+            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
+            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (d.date || 'Today'),
+            commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : (d.commission || '₹10,000'),
+            brokerCompanyId: extractCompanyId(d),
+            brokerCompanyName: extractCompanyName(d),
+            rawDeal: d,
+          };
+        });
+
+        apiMapped.forEach(item => {
+          if (!fetchedDeals.some(f => (f.id && f.id === item.id) || (f._id && f._id === item._id))) {
+            fetchedDeals.push(item);
+          }
+        });
+      }
+
+      // Merge local created deals + parallel API deals
+      const combined = [...localDeals];
+      fetchedDeals.forEach(fD => {
+        if (!combined.some(c => (c.id && (c.id === fD.id || c.id === fD._id)) || (c._id && (c._id === fD.id || c._id === fD._id)))) {
+          combined.push(fD);
+        }
+      });
+
+      setDeals(combined);
+      if (combined.length > 0) {
+        AsyncStorage.setItem('broker_deals_storage', JSON.stringify(combined)).catch(() => { });
+      }
+    } catch (err) {
+      console.warn('Error loading broker deals:', err);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBrokerDeals();
+  }, [routeData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchBrokerDeals();
+  };
+
+  const companyFilteredDeals = deals.filter(deal => {
+    if (companyId || companyName) {
+      const dCompId = extractCompanyId(deal);
+      const dCompName = extractCompanyName(deal);
+
+      const matchesId = Boolean(companyId && dCompId && String(dCompId) === String(companyId));
+      const matchesName = Boolean(companyName && dCompName && String(dCompName).trim().toLowerCase() === String(companyName).trim().toLowerCase());
+
+      if (matchesId || matchesName) {
+        return true;
+      } else if (!dCompId && !dCompName) {
+        return true; // Unassigned/local deal fallback
+      } else {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const filteredDeals = companyFilteredDeals.filter(deal => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      deal.crop.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deal.buyer.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deal.seller.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deal.id.toLowerCase().includes(searchQuery.toLowerCase());
+      (deal.crop && deal.crop.toLowerCase().includes(q)) ||
+      (deal.buyer && deal.buyer.toLowerCase().includes(q)) ||
+      (deal.seller && deal.seller.toLowerCase().includes(q)) ||
+      (deal.id && deal.id.toLowerCase().includes(q)) ||
+      (deal._id && deal._id.toLowerCase().includes(q));
 
-    if (activeTab === 'Confirmed') return matchesSearch && deal.status === 'Confirmed';
-    if (activeTab === 'Pending') return matchesSearch && deal.status.toLowerCase().includes('pending');
+    const statusLower = (deal.status || '').toLowerCase();
+    if (activeTab === 'Confirmed') return matchesSearch && (statusLower === 'confirmed' || statusLower === 'approved');
+    if (activeTab === 'Pending') return matchesSearch && statusLower.includes('pending');
     return matchesSearch;
   });
+
+  // Calculate Stat Counts
+  const totalCount = companyFilteredDeals.length;
+  const confirmedCount = companyFilteredDeals.filter(d => {
+    const s = (d.status || '').toLowerCase();
+    return s === 'confirmed' || s === 'approved';
+  }).length;
+  const pendingCount = companyFilteredDeals.filter(d => (d.status || '').toLowerCase().includes('pending')).length;
+
+  // Render Header Section for FlatList
+  const renderListHeader = () => (
+    <View style={styles.headerContainer}>
+      {/* Hero Header Banner */}
+      <View style={styles.topHeader}>
+        <View style={{ flex: 1, marginRight: 12 }}>
+          <Text style={styles.pageTitle}>My Sauda Ledger</Text>
+          <Text style={styles.pageSubtitle}>Manage active contracts & mandi trades</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.newSaudaBtn}
+          activeOpacity={0.85}
+          onPress={() => onNavigate('CreateBrokerDeal')}
+        >
+          <Plus size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+          <Text style={styles.newSaudaBtnText}>New Sauda</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Summary Statistics Strip */}
+      <View style={styles.statsStripRow}>
+        <View style={[styles.statCardBox, { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primaryBorder }]}>
+          <View style={styles.statIconCircle}>
+            <TrendingUp size={14} color={COLORS.primary} />
+          </View>
+          <View>
+            <Text style={[styles.statCountText, { color: COLORS.primaryDark }]}>{totalCount}</Text>
+            <Text style={styles.statLabelText}>Total Sauda</Text>
+          </View>
+        </View>
+
+        <View style={[styles.statCardBox, { backgroundColor: COLORS.successLight, borderColor: '#A7F3D0' }]}>
+          <View style={[styles.statIconCircle, { backgroundColor: '#DCFCE7' }]}>
+            <CheckCircle2 size={14} color={COLORS.success} />
+          </View>
+          <View>
+            <Text style={[styles.statCountText, { color: COLORS.successDark }]}>{confirmedCount}</Text>
+            <Text style={styles.statLabelText}>Confirmed</Text>
+          </View>
+        </View>
+
+        <View style={[styles.statCardBox, { backgroundColor: COLORS.warningLight, borderColor: '#FDE68A' }]}>
+          <View style={[styles.statIconCircle, { backgroundColor: '#FEF3C7' }]}>
+            <Clock size={14} color={COLORS.warning} />
+          </View>
+          <View>
+            <Text style={[styles.statCountText, { color: COLORS.warning }]}>{pendingCount}</Text>
+            <Text style={styles.statLabelText}>Pending</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Search Bar */}
+      <View style={styles.searchSection}>
+        <View style={styles.searchBox}>
+          <Search size={16} color={COLORS.textPlaceholder} style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search crop, buyer, seller or Sauda ID"
+            placeholderTextColor={COLORS.textPlaceholder}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <X size={16} color={COLORS.textPlaceholder} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+
+      {/* Filter Tabs */}
+      <View style={styles.tabsContainer}>
+        {[
+          { key: 'All', label: `All (${totalCount})` },
+          { key: 'Confirmed', label: `Confirmed (${confirmedCount})` },
+          { key: 'Pending', label: `Pending (${pendingCount})` },
+        ].map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tabItem, isActive && styles.tabItemActive]}
+              onPress={() => setActiveTab(tab.key)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  // Render Each Premium Modern Card
+  const renderDealItem = ({ item }) => {
+    const statusLower = (item.status || '').toLowerCase();
+    const isPending = statusLower.includes('pending');
+
+    return (
+      <TouchableOpacity
+        style={styles.dealCard}
+        activeOpacity={0.88}
+        onPress={() => onNavigate('BrokerDealDetails', { dealId: item._id || item.id, deal: item })}
+      >
+        {/* Card Header Row: Commodity Name & Status Badge */}
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.commodityNameBadge}>
+            <View style={styles.commodityIconBox}>
+              <Handshake size={14} color={COLORS.primary} />
+            </View>
+            <Text style={styles.commodityNameText} numberOfLines={1}>
+              {item.crop || item.productName || 'Agricultural Commodity'}
+            </Text>
+          </View>
+
+          <View style={[styles.statusBadge, { backgroundColor: isPending ? COLORS.warningLight : COLORS.successLight }]}>
+            {isPending ? (
+              <Clock size={11} color={COLORS.warning} style={{ marginRight: 4 }} />
+            ) : (
+              <ShieldCheck size={11} color={COLORS.successDark} style={{ marginRight: 4 }} />
+            )}
+            <Text style={[styles.statusText, { color: isPending ? COLORS.warning : COLORS.successDark }]}>
+              {isPending ? 'Pending Sign' : 'Confirmed'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Counterparty Buyer & Seller Info Box */}
+        <View style={styles.partiesContainerBox}>
+          <View style={styles.partyColumn}>
+            <View style={styles.partyRoleLabelRow}>
+              <View style={[styles.partyAvatarCircle, { backgroundColor: COLORS.buyerBlueLight }]}>
+                <User size={10} color={COLORS.buyerBlue} />
+              </View>
+              <Text style={styles.partyRoleText}>BUYER</Text>
+            </View>
+            <Text style={styles.buyerNameText} numberOfLines={1}>
+              {item.buyer || 'Buyer Business'}
+            </Text>
+          </View>
+
+          <View style={styles.partyDividerLine} />
+
+          <View style={styles.partyColumn}>
+            <View style={styles.partyRoleLabelRow}>
+              <View style={[styles.partyAvatarCircle, { backgroundColor: COLORS.sellerPurpleLight }]}>
+                <Building2 size={10} color={COLORS.sellerPurple} />
+              </View>
+              <Text style={styles.partyRoleText}>SELLER</Text>
+            </View>
+            <Text style={styles.sellerNameText} numberOfLines={1}>
+              {item.seller || 'Seller Business'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Deal Values Grid: Quantity, Rate, Brokerage */}
+        <View style={styles.detailsGridBox}>
+          <View style={styles.detailCol}>
+            <Text style={styles.detailLabel}>Quantity</Text>
+            <Text style={styles.detailValue}>{item.quantity || '100 units'}</Text>
+          </View>
+
+          <View style={styles.detailCol}>
+            <Text style={styles.detailLabel}>Agreed Rate</Text>
+            <Text style={styles.rateValueText}>{item.rate || '₹0'}</Text>
+          </View>
+
+          <View style={[styles.detailCol, { alignItems: 'flex-end' }]}>
+            <Text style={styles.detailLabel}>Brokerage</Text>
+            <Text style={styles.brokerageValText}>
+              {item.commission || '₹0'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Card Footer Row: Reference ID, Date & Action Button */}
+        <View style={styles.cardFooterRow}>
+          <Text style={styles.referenceDateText}>
+            Ref: {item.id || 'SAUDA'} • {item.date || 'Today'}
+          </Text>
+
+          <View style={styles.viewDetailBtnRow}>
+            <Text style={styles.viewDetailBtnText}>View Contract</Text>
+            <ArrowRight size={13} color={COLORS.primary} style={{ marginLeft: 4 }} />
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // Render Empty State
+  const renderEmptyState = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading your Sauda...</Text>
+        </View>
+      );
+    }
+
+    if (deals.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconBadge}>
+            <Handshake size={26} color={COLORS.primary} />
+          </View>
+          <Text style={styles.emptyTitle}>No Sauda yet</Text>
+          <Text style={styles.emptyDesc}>
+            Create your first Sauda to start managing buyer and seller transactions.
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyCreateBtn}
+            onPress={() => onNavigate('CreateBrokerDeal')}
+            activeOpacity={0.85}
+          >
+            <Plus size={15} color="#FFFFFF" style={{ marginRight: 4 }} />
+            <Text style={styles.emptyCreateBtnText}>Create New Sauda</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconBadge}>
+          <Search size={24} color={COLORS.textMuted} />
+        </View>
+        <Text style={styles.emptyTitle}>No matching Sauda</Text>
+        <Text style={styles.emptyDesc}>
+          Try changing your search query or status filter.
+        </Text>
+        <TouchableOpacity
+          style={styles.emptyResetBtn}
+          onPress={() => { setSearchQuery(''); setActiveTab('All'); }}
+          activeOpacity={0.8}
+        >
+          <RotateCcw size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+          <Text style={styles.emptyResetBtnText}>Clear Search & Filters</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <Navbar onNavigate={onNavigate} user={routeData?.user} />
 
-      {/* Action Header Bar */}
-      <View style={styles.topHeader}>
-        <View>
-          <Text style={styles.pageTitle}>Broker Sauda Ledger 🤝</Text>
-          <Text style={styles.pageSubtitle}>Manage and issue sauda chitti contracts</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.createBtn}
-          activeOpacity={0.85}
-          onPress={() => onNavigate('CreateBrokerDeal')}
-        >
-          <Plus size={18} color="#FFFFFF" style={{ marginRight: 4 }} />
-          <Text style={styles.createBtnText}>New Sauda</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search & Filter Bar */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchBox}>
-          <Search size={18} color="#94A3B8" style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search crop, buyer or seller..."
-            placeholderTextColor="#94A3B8"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      </View>
-
-      {/* Filter Tabs */}
-      <View style={styles.tabsContainer}>
-        {['All', 'Confirmed', 'Pending'].map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-              {tab} Saudas
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Deals List */}
-      <ScrollView
-        contentContainerStyle={styles.scrollList}
+      <FlatList
+        data={filteredDeals}
+        keyExtractor={(item, index) => (item.id || item._id || index).toString()}
+        ListHeaderComponent={renderListHeader}
+        renderItem={renderDealItem}
+        contentContainerStyle={styles.listContentContainer}
         showsVerticalScrollIndicator={false}
-      >
-        {filteredDeals.map((deal) => {
-          const isPending = deal.status.toLowerCase().includes('pending');
-          return (
-            <TouchableOpacity
-              key={deal.id}
-              style={styles.dealCard}
-              activeOpacity={0.85}
-              onPress={() => onNavigate('DealDetails', { dealId: deal.id, deal })}
-            >
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.cropBadge}>
-                  <Handshake size={14} color="#4F46E5" style={{ marginRight: 6 }} />
-                  <Text style={styles.cropName}>{deal.crop}</Text>
-                </View>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: isPending ? '#FEF3C7' : '#DCFCE7' },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: isPending ? '#D97706' : '#15803D' },
-                    ]}
-                  >
-                    {deal.status}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Counterparty Information */}
-              <View style={styles.partyContainer}>
-                <View style={styles.partyBox}>
-                  <Text style={styles.partyRole}>BUYER</Text>
-                  <Text style={styles.partyName} numberOfLines={1}>
-                    {deal.buyer}
-                  </Text>
-                </View>
-                <View style={styles.partyDivider} />
-                <View style={styles.partyBox}>
-                  <Text style={styles.partyRole}>SELLER</Text>
-                  <Text style={styles.partyName} numberOfLines={1}>
-                    {deal.seller}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Deal Details Row */}
-              <View style={styles.detailsGrid}>
-                <View>
-                  <Text style={styles.detailLabel}>Quantity</Text>
-                  <Text style={styles.detailVal}>{deal.quantity}</Text>
-                </View>
-                <View>
-                  <Text style={styles.detailLabel}>Rate</Text>
-                  <Text style={styles.detailVal}>{deal.rate}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.detailLabel}>Brokerage</Text>
-                  <Text style={[styles.detailVal, { color: '#4F46E5', fontWeight: '800' }]}>
-                    {deal.commission}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Footer Row */}
-              <View style={styles.cardFooter}>
-                <Text style={styles.dateText}>Dated: {deal.date}</Text>
-                <View style={styles.viewDetailRow}>
-                  <Text style={styles.viewDetailText}>View Chitti</Text>
-                  <ArrowRight size={14} color="#4F46E5" />
-                </View>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+          />
+        }
+      />
     </SafeAreaView>
   );
 };
 
+// --- STYLES SYSTEM (Premium Modern Cards) ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: COLORS.bgMain,
   },
+  listContentContainer: {
+    paddingBottom: 40,
+  },
+  headerContainer: {
+    backgroundColor: COLORS.bgMain,
+    paddingBottom: 4,
+  },
+
+  // ─── HEADER ───
   topHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 14,
+    backgroundColor: COLORS.cardBg,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: COLORS.border,
   },
   pageTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
+    color: COLORS.textPrimary,
   },
   pageSubtitle: {
     fontSize: 12,
-    color: '#64748B',
+    fontWeight: '500',
+    color: COLORS.textMuted,
+    marginTop: 2,
   },
-  createBtn: {
+  newSaudaBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#4F46E5',
+    backgroundColor: COLORS.primary,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    height: 42,
     borderRadius: 12,
-    elevation: 2,
+    elevation: 3,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
-  createBtnText: {
+  newSaudaBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
+
+  // ─── STATS STRIP CARDS ───
+  statsStripRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginTop: 14,
+    gap: 10,
+  },
+  statCardBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    gap: 10,
+  },
+  statIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statCountText: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  statLabelText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
+
+  // ─── SEARCH SECTION ───
   searchSection: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingHorizontal: 16,
+    marginTop: 12,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
+    backgroundColor: COLORS.cardBg,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 14,
     paddingHorizontal: 12,
-    height: 44,
+    height: 46,
+    elevation: 2,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
   },
+
+  // ─── TABS ───
   tabsContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
     gap: 8,
   },
   tabItem: {
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: COLORS.cardBg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   tabItemActive: {
-    backgroundColor: '#4F46E5',
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   tabText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
+    fontWeight: '700',
+    color: COLORS.textSecondary,
   },
   tabTextActive: {
     color: '#FFFFFF',
   },
-  scrollList: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    gap: 14,
-  },
+
+  // ─── ELEVATED MODERN CARDS ───
   dealCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: COLORS.cardBg,
+    borderRadius: 18,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
     elevation: 3,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
     shadowRadius: 6,
   },
   cardHeaderRow: {
@@ -316,92 +684,209 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  cropBadge: {
+  commodityNameBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    flex: 1,
+    marginRight: 8,
   },
-  cropName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#312E81',
+  commodityIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  commodityNameText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    flex: 1,
   },
   statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   statusText: {
     fontSize: 11,
     fontWeight: '700',
   },
-  partyContainer: {
+
+  // Parties Box
+  partiesContainerBox: {
     flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F8FAFF',
     borderRadius: 12,
     padding: 10,
     marginBottom: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E8EFFE',
   },
-  partyBox: {
+  partyColumn: {
     flex: 1,
   },
-  partyRole: {
+  partyRoleLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  partyAvatarCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 4,
+  },
+  partyRoleText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#94A3B8',
-    marginBottom: 2,
+    color: COLORS.textMuted,
   },
-  partyName: {
+  buyerNameText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#1E293B',
+    color: COLORS.buyerBlue,
   },
-  partyDivider: {
+  sellerNameText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.sellerPurple,
+  },
+  partyDividerLine: {
     width: 1,
-    height: 24,
-    backgroundColor: '#CBD5E1',
+    height: 26,
+    backgroundColor: COLORS.border,
     marginHorizontal: 8,
   },
-  detailsGrid: {
+
+  // Details Grid Box
+  detailsGridBox: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    backgroundColor: '#FAFBFF',
+    borderRadius: 12,
+    padding: 10,
     marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E8EFFE',
+  },
+  detailCol: {
+    flex: 1,
   },
   detailLabel: {
-    fontSize: 11,
-    color: '#64748B',
+    fontSize: 10,
+    fontWeight: '600',
+    color: COLORS.textMuted,
     marginBottom: 2,
   },
-  detailVal: {
+  detailValue: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#0F172A',
+    color: COLORS.textPrimary,
   },
-  cardFooter: {
+  rateValueText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+  },
+  brokerageValText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+
+  // Card Footer Row
+  cardFooterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: 4,
   },
-  dateText: {
+  referenceDateText: {
     fontSize: 11,
-    color: '#94A3B8',
+    fontWeight: '600',
+    color: COLORS.textMuted,
   },
-  viewDetailRow: {
+  viewDetailBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  viewDetailText: {
+  viewDetailBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+
+  // ─── EMPTY & LOADING STATES ───
+  emptyContainer: {
+    paddingVertical: 50,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginTop: 10,
+  },
+  emptyIconBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginBottom: 4,
+  },
+  emptyDesc: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 18,
+    maxWidth: 280,
+  },
+  emptyCreateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 18,
+    height: 44,
+    borderRadius: 12,
+    elevation: 3,
+  },
+  emptyCreateBtnText: {
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
-    color: '#4F46E5',
-    marginRight: 4,
+  },
+  emptyResetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.cardBg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 14,
+    height: 40,
+    borderRadius: 10,
+  },
+  emptyResetBtnText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

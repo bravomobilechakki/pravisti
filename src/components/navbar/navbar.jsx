@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { Bell, User } from 'lucide-react-native';
 
+import { fontSize, moderateScale, scale } from '../../utils/responsive';
+
 const Navbar = ({ onNavigate, user }) => {
   return (
     <View style={styles.header}>
@@ -53,8 +55,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: scale(16),
+    paddingVertical: moderateScale(10),
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
@@ -75,18 +77,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    width: 110,
-    height: 36,
+    width: moderateScale(110),
+    height: moderateScale(36),
   },
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: scale(10),
   },
   iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(19),
     backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
@@ -103,9 +105,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   profileAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(19),
     backgroundColor: '#EEF2FF',
     justifyContent: 'center',
     alignItems: 'center',
@@ -113,7 +115,7 @@ const styles = StyleSheet.create({
     borderColor: '#4F46E5',
   },
   avatarText: {
-    fontSize: 15,
+    fontSize: fontSize(15),
     fontWeight: '700',
     color: '#4F46E5',
   },

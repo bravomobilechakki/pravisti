@@ -1,4 +1,4 @@
-import React, { use } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -32,8 +32,9 @@ import {
 import { getCompanies, getUserProfile, getBrokerMyDeals, getDeals, searchCounterpartyUser } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BrokerProfile from './profile/BrokerProfile';
+import { fontSize, moderateScale, scale, SCREEN_WIDTH } from '../../utils/responsive';
 
-const { width } = Dimensions.get('window');
+const width = SCREEN_WIDTH;
 
 const BrokerDashboard = ({ onNavigate, routeData }) => {
   const [refreshing, setRefreshing] = React.useState(false);
@@ -66,100 +67,116 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await getCompanies(1, 20);
-      if (response && response.success) {
-        setCompanies(response.data.companies || []);
+      // 1. INSTANT LOCAL HYDRATION (0.001s)
+      const storedCompStr = await AsyncStorage.getItem('broker_companies_cache');
+      if (storedCompStr) {
+        try {
+          const cachedComps = JSON.parse(storedCompStr);
+          if (Array.isArray(cachedComps) && cachedComps.length > 0) {
+            setCompanies(cachedComps);
+          }
+        } catch (e) { }
+      }
+
+      const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
+      const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
+      if (localDeals.length > 0) {
+        setBrokerDeals(localDeals);
       }
 
       const token = await AsyncStorage.getItem('userToken');
-      if (token) {
-        const userRes = await getUserProfile(token);
-        if (userRes && userRes.success) {
-          const storedProfile = await AsyncStorage.getItem('user_completed_profile');
-          let mergedProfile = { ...userRes.data };
-          if (storedProfile) {
+
+      // 2. PARALLEL BACKGROUND API FETCH
+      const [compRes, userRes, brokerDealsRes, dealsRes] = await Promise.allSettled([
+        getCompanies(1, 20),
+        token ? getUserProfile(token) : Promise.resolve(null),
+        token ? getBrokerMyDeals(token) : Promise.resolve(null),
+        token ? getDeals(token, 1, 20) : Promise.resolve(null),
+      ]);
+
+      if (compRes.status === 'fulfilled' && compRes.value?.success) {
+        const freshCompanies = compRes.value.data?.companies || [];
+        setCompanies(freshCompanies);
+        await AsyncStorage.setItem('broker_companies_cache', JSON.stringify(freshCompanies));
+      }
+
+      if (userRes.status === 'fulfilled' && userRes.value?.success) {
+        const storedProfile = await AsyncStorage.getItem('user_completed_profile');
+        let mergedProfile = { ...userRes.value.data };
+        if (storedProfile) {
+          try {
             const parsed = JSON.parse(storedProfile);
             mergedProfile = {
-              ...userRes.data,
-              name: parsed.name !== undefined ? parsed.name : userRes.data.name,
-              email: parsed.email !== undefined ? parsed.email : userRes.data.email,
-              company: parsed.company !== undefined ? parsed.company : userRes.data.company,
-              gstin: parsed.gstin !== undefined ? parsed.gstin : userRes.data.gstin,
-              address: parsed.address !== undefined ? parsed.address : userRes.data.address,
+              ...userRes.value.data,
+              name: parsed.name !== undefined ? parsed.name : userRes.value.data.name,
+              email: parsed.email !== undefined ? parsed.email : userRes.value.data.email,
+              company: parsed.company !== undefined ? parsed.company : userRes.value.data.company,
+              gstin: parsed.gstin !== undefined ? parsed.gstin : userRes.value.data.gstin,
+              address: parsed.address !== undefined ? parsed.address : userRes.value.data.address,
               role: 'Broker',
             };
-          } else {
-            mergedProfile = { ...userRes.data, role: 'Broker' };
+          } catch (e) {
+            mergedProfile = { ...userRes.value.data, role: 'Broker' };
           }
-          setCurrentUser(mergedProfile);
-          await AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedProfile));
+        } else {
+          mergedProfile = { ...userRes.value.data, role: 'Broker' };
         }
+        setCurrentUser(mergedProfile);
+        await AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedProfile));
       }
 
-      // Fetch Live Broker Deals for dynamic stat counts (identical to BrokerCreatedDeals)
-      try {
-        const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
-        const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
-        let fetchedDeals = [];
+      let fetchedDeals = [];
 
-        const [brokerResResult, dealsResResult] = await Promise.allSettled([
-          getBrokerMyDeals(token),
-          getDeals(token),
-        ]);
+      if (brokerDealsRes.status === 'fulfilled' && brokerDealsRes.value?.success) {
+        const brokerRes = brokerDealsRes.value;
+        const rawList = Array.isArray(brokerRes.data)
+          ? brokerRes.data
+          : (brokerRes.data?.deals || brokerRes.data?.myDeals || []);
 
-        if (brokerResResult.status === 'fulfilled' && brokerResResult.value?.success) {
-          const brokerRes = brokerResResult.value;
-          const rawList = Array.isArray(brokerRes.data)
-            ? brokerRes.data
-            : (brokerRes.data?.deals || brokerRes.data?.myDeals || []);
+        const mapped = rawList.map(d => ({
+          id: d.dealNumber || d._id,
+          crop: d.products?.[0]?.productName || d.cropName || d.crop || 'Agricultural Commodity',
+          quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}` : (d.quantity ? String(d.quantity).replace(/ units/gi, '') : '100'),
+          rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
+          buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
+          seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
+          status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
+          date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today',
+          commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : '₹10,000',
+        }));
+        fetchedDeals = [...mapped];
+      }
 
-          const mapped = rawList.map(d => ({
-            id: d.dealNumber || d._id,
-            crop: d.products?.[0]?.productName || d.cropName || d.crop || d.notes || 'Agricultural Commodity',
-            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity} units` : (d.quantity || '100 units'),
-            rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
-            buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
-            seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
-            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
-            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today',
-            commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : '₹10,000',
-          }));
-          fetchedDeals = [...mapped];
-        }
+      if (dealsRes.status === 'fulfilled' && dealsRes.value?.success) {
+        const res = dealsRes.value;
+        const rawDeals = Array.isArray(res.data) ? res.data : (res.data?.deals || []);
+        const apiMapped = rawDeals.map(d => ({
+          id: d.dealNumber || d._id,
+          crop: d.products?.[0]?.productName || d.cropName || d.crop || 'Agricultural Commodity',
+          quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}` : (d.quantity ? String(d.quantity).replace(/ units/gi, '') : '100'),
+          rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : '₹60,000',
+          buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || 'Buyer Business',
+          seller: d.sellerCompany?.name || d.sellerCompany?.companyName || 'Seller Business',
+          status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
+          date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today',
+          commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : '₹10,000',
+        }));
 
-        if (dealsResResult.status === 'fulfilled' && dealsResResult.value?.success) {
-          const res = dealsResResult.value;
-          const rawDeals = Array.isArray(res.data) ? res.data : (res.data?.deals || []);
-          const apiMapped = rawDeals.map(d => ({
-            id: d.dealNumber || d._id,
-            crop: d.products?.[0]?.productName || d.notes || 'Agricultural Commodity',
-            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity} units` : '100 units',
-            rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : '₹60,000',
-            buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || 'Buyer Business',
-            seller: d.sellerCompany?.name || d.sellerCompany?.companyName || 'Seller Business',
-            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
-            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today',
-            commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : '₹10,000',
-          }));
-
-          apiMapped.forEach(item => {
-            if (!fetchedDeals.some(f => f.id === item.id || f._id === item.id)) {
-              fetchedDeals.push(item);
-            }
-          });
-        }
-
-        const combined = [...localDeals];
-        fetchedDeals.forEach(fD => {
-          if (!combined.some(c => (c.id === fD.id || c._id === fD.id || c._id === fD._id))) {
-            combined.push(fD);
+        apiMapped.forEach(item => {
+          if (!fetchedDeals.some(f => f.id === item.id || f._id === item.id)) {
+            fetchedDeals.push(item);
           }
         });
-
-        setBrokerDeals(combined);
-      } catch (dealErr) {
-        console.warn('Dashboard broker deals fetch warning:', dealErr);
       }
+
+      const combined = [...localDeals];
+      fetchedDeals.forEach(fD => {
+        if (!combined.some(c => (c.id === fD.id || c._id === fD.id || c._id === fD._id))) {
+          combined.push(fD);
+        }
+      });
+
+      setBrokerDeals(combined);
     } catch (error) {
       console.error('Error fetching broker dashboard data:', error);
     } finally {
@@ -267,7 +284,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#3465EA" />
+      <StatusBar barStyle="light-content" backgroundColor="#0284C7" />
 
       <ScrollView
         style={styles.scrollArea}
@@ -278,8 +295,8 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#3465EA']}
-            tintColor="#3465EA"
+            colors={['#0284C7']}
+            tintColor="#0284C7"
           />
         }>
 
@@ -528,7 +545,7 @@ const styles = StyleSheet.create({
     paddingBottom: 110,
   },
   heroSection: {
-    backgroundColor: '#3465EA',
+    backgroundColor: '#0284C7',
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     paddingHorizontal: 20,
@@ -539,7 +556,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
     elevation: 8,
-    shadowColor: '#3465EA',
+    shadowColor: '#0284C7',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
@@ -550,7 +567,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#2554D7',
+    backgroundColor: '#0369A1',
     opacity: 0.7,
   },
   headerBottomGradientLayer: {
@@ -559,7 +576,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#1E46C6',
+    backgroundColor: '#075985',
   },
   glowOrbWhiteTop: {
     position: 'absolute',

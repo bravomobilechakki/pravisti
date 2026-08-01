@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LayoutDashboard, Handshake, Plus, MessageSquare, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { fontSize, moderateScale, scale, isTablet } from '../../utils/responsive';
+
 const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) => {
   const insets = useSafeAreaInsets();
   const [cachedRole, setCachedRole] = React.useState(null);
@@ -63,8 +65,8 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) =>
   ];
 
   return (
-    <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, 6) }]}>
-      <View style={styles.tabBarContainer}>
+    <View style={[styles.tabBarWrapper, { paddingBottom: Math.max(insets.bottom, scale(6)) }]}>
+      <View style={[styles.tabBarContainer, isTablet && styles.tabBarContainerTablet]}>
         {tabs.map((tab, index) => {
           if (tab.isCenter) {
             const Icon = tab.Icon;
@@ -77,7 +79,7 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) =>
               >
                 <View style={styles.centerButtonOuterRing}>
                   <View style={[styles.centerButtonInner, { backgroundColor: tab.color }]}>
-                    <Icon size={24} color="#FFFFFF" strokeWidth={2.6} />
+                    <Icon size={isTablet ? 28 : 24} color="#FFFFFF" strokeWidth={2.6} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -102,7 +104,7 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) =>
                 isActive && { backgroundColor: tab.activeBg }
               ]}>
                 <Icon
-                  size={20}
+                  size={isTablet ? 24 : 20}
                   color={iconColor}
                   strokeWidth={isActive ? 2.4 : 2.0}
                 />
@@ -141,20 +143,25 @@ const styles = StyleSheet.create({
   },
   tabBarContainer: {
     flexDirection: 'row',
-    height: 60,
+    height: moderateScale(60),
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingHorizontal: 4,
+    paddingHorizontal: scale(4),
+  },
+  tabBarContainerTablet: {
+    maxWidth: 600,
+    alignSelf: 'center',
+    width: '100%',
   },
   centerTabWrapper: {
-    top: -16,
+    top: -moderateScale(16),
     justifyContent: 'center',
     alignItems: 'center',
   },
   centerButtonOuterRing: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: moderateScale(56),
+    height: moderateScale(56),
+    borderRadius: moderateScale(28),
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
@@ -168,7 +175,7 @@ const styles = StyleSheet.create({
   centerButtonInner: {
     width: '100%',
     height: '100%',
-    borderRadius: 25,
+    borderRadius: moderateScale(25),
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -180,12 +187,12 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   iconContainer: {
-    paddingHorizontal: 10,
+    paddingHorizontal: scale(10),
     paddingVertical: 3,
     borderRadius: 14,
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: fontSize(10),
     fontWeight: '600',
     color: '#64748B',
     marginTop: 2,

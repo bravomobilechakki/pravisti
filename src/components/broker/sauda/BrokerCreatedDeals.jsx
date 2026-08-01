@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -69,14 +69,14 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
       const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
       const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
 
-      // 1. INSTANT LOCAL RENDER (0.01s) - Render stored/cached deals immediately
+      // 1. INSTANT LOCAL RENDER (0.001s) - Render stored/cached deals immediately
       setDeals(localDeals);
       setIsLoading(false);
 
       // 2. PARALLEL BACKGROUND API FETCH for fast updates
       const [brokerResResult, dealsResResult] = await Promise.allSettled([
         getBrokerMyDeals(token),
-        getDeals(token, 1, 50, companyId || null),
+        getDeals(token, 1, 1000, companyId || null),
       ]);
 
       let fetchedDeals = [];
@@ -87,13 +87,19 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
           ? brokerRes.data
           : (brokerRes.data?.deals || brokerRes.data?.myDeals || []);
 
-        const mapped = rawList.map(d => {
-          const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : ' units';
+        fetchedDeals = rawList.map(d => {
+          const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : '';
+          const p0 = d.products?.[0];
+          const pid0 = p0?.productId;
+          const cropName0 = d.crop || d.productName || d.cropName
+            || (pid0 && typeof pid0 === 'object' ? (pid0.name || pid0.productName || pid0.title || pid0.cropName) : null)
+            || p0?.productName || p0?.name || p0?.crop || p0?.cropName || p0?.title
+            || 'Agricultural Commodity';
           return {
             id: d.dealNumber || d._id || `SAUDA-${Math.floor(100 + Math.random() * 900)}`,
             _id: d._id || d.id,
-            crop: d.products?.[0]?.productName || d.cropName || d.crop || d.notes || 'Agricultural Commodity',
-            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}${unitStr}` : (d.quantity || '100 units'),
+            crop: cropName0,
+            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}${unitStr}` : (d.quantity ? String(d.quantity).replace(/ units/gi, '') : '100'),
             rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
             buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
             seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
@@ -105,19 +111,24 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
             rawDeal: d,
           };
         });
-        fetchedDeals = [...mapped];
       }
 
       if (dealsResResult.status === 'fulfilled' && dealsResResult.value?.success) {
         const res = dealsResResult.value;
         const rawDeals = Array.isArray(res.data) ? res.data : (res.data?.deals || []);
         const apiMapped = rawDeals.map(d => {
-          const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : ' units';
+          const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : '';
+          const p0 = d.products?.[0];
+          const pid0 = p0?.productId;
+          const cropName0 = d.crop || d.productName || d.cropName
+            || (pid0 && typeof pid0 === 'object' ? (pid0.name || pid0.productName || pid0.title || pid0.cropName) : null)
+            || p0?.productName || p0?.name || p0?.crop || p0?.cropName || p0?.title
+            || 'Agricultural Commodity';
           return {
             id: d.dealNumber || d._id,
             _id: d._id || d.id,
-            crop: d.products?.[0]?.productName || d.cropName || d.crop || d.notes || 'Agricultural Commodity',
-            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}${unitStr}` : (d.quantity || '100 units'),
+            crop: cropName0,
+            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}${unitStr}` : (d.quantity ? String(d.quantity).replace(/ units/gi, '') : '100'),
             rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
             buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
             seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
@@ -129,22 +140,21 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
             rawDeal: d,
           };
         });
-
-        apiMapped.forEach(item => {
-          if (!fetchedDeals.some(f => (f.id && f.id === item.id) || (f._id && f._id === item._id))) {
-            fetchedDeals.push(item);
-          }
-        });
+        fetchedDeals.push(...apiMapped);
       }
 
-      // Merge local created broker deals + parallel API deals
-      const combined = [...localDeals];
+      // Fast O(N) deduplication using Map
+      const dealMap = new Map();
+      localDeals.forEach(d => {
+        const key = d._id || d.id || d.dealNumber;
+        if (key) dealMap.set(String(key), d);
+      });
       fetchedDeals.forEach(fD => {
-        if (!combined.some(c => (c.id && (c.id === fD.id || c.id === fD._id)) || (c._id && (c._id === fD.id || c._id === fD._id)))) {
-          combined.push(fD);
-        }
+        const key = fD._id || fD.id || fD.dealNumber;
+        if (key) dealMap.set(String(key), fD);
       });
 
+      const combined = Array.from(dealMap.values());
       setDeals(combined);
       if (combined.length > 0) {
         AsyncStorage.setItem('broker_deals_storage', JSON.stringify(combined)).catch(() => { });
@@ -166,40 +176,46 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
     fetchBrokerCreatedDeals();
   };
 
-  const companyFilteredDeals = deals.filter(deal => {
-    // 1. Company Filter (If opened from a specific Broker Company)
-    if (companyId || companyName) {
-      const dCompId = extractCompanyId(deal);
-      const dCompName = extractCompanyName(deal);
+  const companyFilteredDeals = useMemo(() => {
+    const compIdStr = companyId ? String(companyId) : null;
+    const compNameClean = companyName ? String(companyName).trim().toLowerCase() : null;
 
-      const matchesId = Boolean(companyId && dCompId && String(dCompId) === String(companyId));
-      const matchesName = Boolean(companyName && dCompName && String(dCompName).trim().toLowerCase() === String(companyName).trim().toLowerCase());
+    return deals.filter(deal => {
+      if (compIdStr || compNameClean) {
+        const dCompId = deal.brokerCompanyId || extractCompanyId(deal);
+        const dCompName = deal.brokerCompanyName || extractCompanyName(deal);
 
-      if (matchesId || matchesName) {
-        return true;
-      } else if (!dCompId && !dCompName) {
-        return true; // Unassigned/local deal fallback
-      } else {
-        return false;
+        const matchesId = Boolean(compIdStr && dCompId && String(dCompId) === compIdStr);
+        const matchesName = Boolean(compNameClean && dCompName && String(dCompName).trim().toLowerCase() === compNameClean);
+
+        if (matchesId || matchesName) {
+          return true;
+        } else if (!dCompId && !dCompName) {
+          return true;
+        } else {
+          return false;
+        }
       }
-    }
-    return true;
-  });
+      return true;
+    });
+  }, [deals, companyId, companyName]);
 
-  const filteredDeals = companyFilteredDeals.filter(deal => {
-    // 2. Search query filter
-    const matchesSearch =
-      (deal.crop && deal.crop.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (deal.buyer && deal.buyer.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (deal.seller && deal.seller.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (deal.id && deal.id.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (deal._id && deal._id.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredDeals = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return companyFilteredDeals.filter(deal => {
+      const matchesSearch = !query ||
+        (deal.crop && deal.crop.toLowerCase().includes(query)) ||
+        (deal.buyer && deal.buyer.toLowerCase().includes(query)) ||
+        (deal.seller && deal.seller.toLowerCase().includes(query)) ||
+        (deal.id && deal.id.toLowerCase().includes(query)) ||
+        (deal._id && deal._id.toLowerCase().includes(query));
 
-    const statusLower = (deal.status || '').toLowerCase();
-    if (activeTab === 'Confirmed') return matchesSearch && (statusLower === 'confirmed' || statusLower === 'approved');
-    if (activeTab === 'Pending') return matchesSearch && statusLower.includes('pending');
-    return matchesSearch;
-  });
+      const statusLower = (deal.status || '').toLowerCase();
+      if (activeTab === 'Confirmed') return matchesSearch && (statusLower === 'confirmed' || statusLower === 'approved');
+      if (activeTab === 'Pending') return matchesSearch && statusLower.includes('pending');
+      return matchesSearch;
+    });
+  }, [companyFilteredDeals, searchQuery, activeTab]);
 
   return (
     <SafeAreaView style={styles.container}>

@@ -32,6 +32,7 @@ import {
   BrokerAuthGateway,
   BrokerAddCompany,
   BrokerCompanyDetails,
+  BrokerOnboardUser,
   BrokerDealDetails,
   BrokerProfile,
   CreateBrokerDeal,
@@ -60,6 +61,7 @@ const TransactionHistoryScreen = TransactionHistory as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
 const BrokerAddCompanyScreen = BrokerAddCompany as any;
 const BrokerCompanyDetailsScreen = BrokerCompanyDetails as any;
+const BrokerOnboardUserScreen = BrokerOnboardUser as any;
 const BrokerProfileScreen = BrokerProfile as any;
 const CreateBrokerDealScreen = CreateBrokerDeal as any;
 const BrokerCreatedDealsScreen = BrokerCreatedDeals as any;
@@ -378,6 +380,8 @@ function App() {
         return <BrokerDashboardScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerAddCompany':
         return <BrokerAddCompanyScreen onNavigate={onNavigate} routeData={data} />;
+      case 'BrokerOnboardUser':
+        return <BrokerOnboardUserScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerProfile':
         return <BrokerProfileScreen onNavigate={onNavigate} routeData={data} />;
       default:
@@ -385,13 +389,7 @@ function App() {
     }
   };
 
-  const showFooter = current ? ![
-    'Login',
-    'Signup',
-    'ChooseIndustry',
-    'CreateDeal',
-    'CreateBrokerDeal',
-  ].includes(current.screen) : false;
+  const showFooter = current ? ['Dashboard', 'BrokerDashboard'].includes(current.screen) : false;
 
   return (
     <SafeAreaProvider>

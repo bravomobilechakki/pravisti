@@ -42,15 +42,15 @@ const DealsList = ({ onNavigate, routeData }) => {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [activeCompanyId, setActiveCompanyId] = useState(
-    routeData?.companyId || 
-    routeData?.company?._id || 
-    routeData?.company?.id || 
+    routeData?.companyId ||
+    routeData?.company?._id ||
+    routeData?.company?.id ||
     null
   );
   const [activeCompanyName, setActiveCompanyName] = useState(
-    routeData?.companyName || 
-    routeData?.company?.name || 
-    routeData?.company?.companyName || 
+    routeData?.companyName ||
+    routeData?.company?.name ||
+    routeData?.company?.companyName ||
     null
   );
   const [currentUserCompanyIds, setCurrentUserCompanyIds] = useState([]);
@@ -80,7 +80,7 @@ const DealsList = ({ onNavigate, routeData }) => {
         deals.forEach(deal => {
           const bId = deal.buyerCompanyId?._id || deal.buyerCompanyId;
           const sId = deal.sellerCompanyId?._id || deal.sellerCompanyId;
-          
+
           if (typeof bId === 'string' && bId.match(/^[0-9a-fA-F]{24}$/) && !companyNames[bId]) {
             missingIds.add(bId);
           }
@@ -93,7 +93,7 @@ const DealsList = ({ onNavigate, routeData }) => {
             const dbId = draft.buyerCompanyId?._id || draft.buyerCompanyId;
             const dsId = draft.sellerCompanyId?._id || draft.sellerCompanyId;
             const senderId = deal.senderCompanyId?._id || deal.senderCompanyId;
-            
+
             if (typeof dbId === 'string' && dbId.match(/^[0-9a-fA-F]{24}$/) && !companyNames[dbId]) {
               missingIds.add(dbId);
             }
@@ -198,7 +198,7 @@ const DealsList = ({ onNavigate, routeData }) => {
             setDeals(parsed);
             setIsLoading(false);
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       let response;
@@ -214,7 +214,7 @@ const DealsList = ({ onNavigate, routeData }) => {
         const dealList = filter === 'Invitations' ? (response.data || []) : (response.data.deals || response.data || []);
         setDeals(dealList);
         if (Array.isArray(dealList) && dealList.length > 0) {
-          AsyncStorage.setItem(cacheKey, JSON.stringify(dealList)).catch(() => {});
+          AsyncStorage.setItem(cacheKey, JSON.stringify(dealList)).catch(() => { });
         }
       }
     } catch (error) {
@@ -278,7 +278,7 @@ const DealsList = ({ onNavigate, routeData }) => {
       const sellerCompanyId = deal.sellerCompany?._id || deal.sellerCompany?.id || deal.sellerCompanyId?._id || deal.sellerCompanyId?.id || deal.sellerCompanyId;
       const buyerCompanyId = deal.buyerCompany?._id || deal.buyerCompany?.id || deal.buyerCompanyId?._id || deal.buyerCompanyId?.id || deal.buyerCompanyId;
       const brokerCompanyId = deal.brokerCompanyId?._id || deal.brokerCompanyId?.id || deal.brokerCompanyId || deal.broker?._id || deal.broker?.id || deal.broker;
-      
+
       const isAssociated =
         (p1CompanyId && String(p1CompanyId).toLowerCase() === String(activeCompanyId).toLowerCase()) ||
         (p2CompanyId && String(p2CompanyId).toLowerCase() === String(activeCompanyId).toLowerCase()) ||
@@ -355,7 +355,7 @@ const DealsList = ({ onNavigate, routeData }) => {
       const buyerName = resolveName(draft.buyerCompanyId, draftRole === 'buyer' ? senderCompanyName : item.receiverName || 'Pending Invite');
 
       const isSender = currentUserCompanyIds.some(cid => cid && String(cid).toLowerCase() === String(item.senderCompanyId?._id || item.senderCompanyId?.id || item.senderCompanyId || '').toLowerCase());
-      
+
       let myRole = 'Viewer';
       let myCompanyName = 'N/A';
 
@@ -375,7 +375,7 @@ const DealsList = ({ onNavigate, routeData }) => {
         <View style={[styles.dealCard, { borderColor: '#EADFC9' }]}>
           {/* Visual left accent bar in gold */}
           <View style={[styles.cardLeftAccent, { backgroundColor: '#D4AF37' }]} />
-          
+
           <View style={styles.cardTop}>
             {hasImage ? (
               <Image source={{ uri: productImage }} style={styles.dealProductImage} resizeMode="cover" />
@@ -410,7 +410,7 @@ const DealsList = ({ onNavigate, routeData }) => {
                   </View>
                 </View>
               </View>
-              
+
               <View style={{ marginTop: 4, gap: 4 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Building2 size={12} color="#8C7A5B" />

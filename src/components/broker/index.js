@@ -12,6 +12,7 @@ import BrokerAssistedOnboardingModal from './sauda/BrokerAssistedOnboardingModal
 import BrokerPendingQueue from './sauda/BrokerPendingQueue';
 import BrokerAddCompany from './company/BrokerAddCompany';
 import BrokerCompanyDetails from './company/BrokerCompanyDetails';
+import BrokerOnboardUser from './company/BrokerOnboardUser';
 import BrokerDealDetails from './sauda/BrokerDealDetails';
 import BrokerProfile from './profile/BrokerProfile';
 
@@ -30,6 +31,7 @@ export {
   BrokerPendingQueue,
   BrokerAddCompany,
   BrokerCompanyDetails,
+  BrokerOnboardUser,
   BrokerDealDetails,
   BrokerProfile,
 };

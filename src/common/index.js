@@ -388,9 +388,15 @@ const SummaryApi = {
     method: "get",
   },
 
-  getBrokerMyDeals: {
-    url: `${backendDomain}/api/broker-onboard/my-deal`,
-    method: "get",
+  getBrokerMyDeals: (companyId = null) => {
+    let url = `${backendDomain}/api/broker-onboard/my-deal`;
+    if (companyId) {
+      url += `?companyId=${encodeURIComponent(companyId)}`;
+    }
+    return {
+      url,
+      method: "get",
+    };
   },
 
   editPendingBusiness: (id) => ({

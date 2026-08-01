@@ -265,10 +265,10 @@ const DealDetails = ({ onNavigate, routeData }) => {
       const myCompanyId = isS
         ? sCid
         : isB
-        ? bCid
-        : isBr
-        ? brCid
-        : currentUserCompanyIds[0] || '';
+          ? bCid
+          : isBr
+            ? brCid
+            : currentUserCompanyIds[0] || '';
 
       setIsDashboardLoading(true);
       setIsHistoryLoading(true);
@@ -295,15 +295,15 @@ const DealDetails = ({ onNavigate, routeData }) => {
       if (histRes && histRes.success) {
         setPaymentsHistory(
           histRes.data?.data ||
-            histRes.data?.payments ||
-            (Array.isArray(histRes.data) ? histRes.data : [])
+          histRes.data?.payments ||
+          (Array.isArray(histRes.data) ? histRes.data : [])
         );
       }
       if (delivRes && delivRes.success) {
         setDeliveriesHistory(
           delivRes.data?.data ||
-            delivRes.data?.deliveries ||
-            (Array.isArray(delivRes.data) ? delivRes.data : [])
+          delivRes.data?.deliveries ||
+          (Array.isArray(delivRes.data) ? delivRes.data : [])
         );
       }
     } catch (e) {
@@ -493,8 +493,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
   const confirmPaymentStatusChange = (pmt, status) => {
     Alert.alert(
       `${status === 'approved' ? 'Approve' : 'Reject'} Payment`,
-      `Are you sure you want to ${
-        status === 'approved' ? 'approve' : 'reject'
+      `Are you sure you want to ${status === 'approved' ? 'approve' : 'reject'
       } this payment entry of ₹${Number(pmt.amount).toLocaleString('en-IN')}?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -546,8 +545,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
   const confirmDeliveryStatusChange = (deliv, status) => {
     Alert.alert(
       `${status === 'approved' ? 'Approve' : 'Reject'} Delivery`,
-      `Are you sure you want to ${
-        status === 'approved' ? 'approve' : 'reject'
+      `Are you sure you want to ${status === 'approved' ? 'approve' : 'reject'
       } this delivery entry of ${deliv.quantity} MT?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -680,8 +678,8 @@ const DealDetails = ({ onNavigate, routeData }) => {
     (isCreatorCompany
       ? 'approved'
       : (isSeller && sellerApproved) || (isBuyer && buyerApproved)
-      ? 'approved'
-      : 'pending');
+        ? 'approved'
+        : 'pending');
 
   const pendingApprovalFor =
     deal.pendingApprovalFor ||
@@ -689,8 +687,8 @@ const DealDetails = ({ onNavigate, routeData }) => {
       ? creatorRole === 'seller'
         ? 'buyer'
         : creatorRole === 'buyer'
-        ? 'seller'
-        : ''
+          ? 'seller'
+          : ''
       : '');
 
   let showApproveButton = false;
@@ -761,18 +759,18 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
   const dealDateDisplay = deal.dealDate
     ? new Date(deal.dealDate).toLocaleDateString([], {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
     : 'N/A';
   const expiryDateRaw = deal.expiryDate || deal.validityDate;
   const validityDateDisplay = expiryDateRaw
     ? new Date(expiryDateRaw).toLocaleDateString([], {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
     : 'N/A';
 
   const sellerName =
@@ -1198,11 +1196,11 @@ const DealDetails = ({ onNavigate, routeData }) => {
               const isLast = idx === combinedHistory.length - 1;
               const itemDate = item.createdAt
                 ? new Date(item.createdAt).toLocaleDateString([], {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
                 : '';
 
               const isPmt = item.timelineType === 'payment';
@@ -1592,10 +1590,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   dealAmount: {
-    fontSize: 26,
+    fontSize: 20,
     fontWeight: '700',
     color: COLORS.navy,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   divider: {
     height: 1,

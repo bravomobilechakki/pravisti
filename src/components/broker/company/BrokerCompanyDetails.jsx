@@ -10,6 +10,7 @@ import {
   Share,
   Linking,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -24,9 +25,11 @@ import {
   Award,
   CheckCircle2,
   MessageSquare,
+  Clock,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getCompanyDetails, getBrokerMkyDeals, getDeals } from '../../../services/api';
+import { getCompanyDetails, getBrokerMyDeals, getDeals } from '../../../services/api';
+import { fontSize, moderateScale, scale, isTablet } from '../../../utils/responsive';
 
 const COLORS = {
   primaryDark: '#3465EA', // Cobalt Royal Blue Header
@@ -52,114 +55,239 @@ const COLORS = {
   border: '#E0F2FE',
 };
 
-const extractCompanyId = (d) => {
-  if (!d) return null;
-  const rawId = d.brokerCompanyId || d.companyId || d.brokerCompany?._id || d.brokerCompany?.id || d.company?._id || d.company?.id;
-  if (rawId && typeof rawId !== 'object') return String(rawId);
-  return null;
+const toSafeStr = (val, fallback = '') => {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (typeof val === 'object') {
+    if (typeof val.name === 'string') return val.name;
+    if (typeof val.companyName === 'string') return val.companyName;
+    if (typeof val.title === 'string') return val.title;
+    if (typeof val.label === 'string') return val.label;
+    if (typeof val.city === 'string') return val.city;
+    if (typeof val.state === 'string') return val.state;
+  }
+  return fallback;
 };
 
-const extractCompanyName = (d) => {
-  if (!d) return null;
-  if (typeof d.brokerCompanyName === 'string' && d.brokerCompanyName && d.brokerCompanyName !== '[object Object]') return d.brokerCompanyName;
-  if (typeof d.companyName === 'string' && d.companyName && d.companyName !== '[object Object]') return d.companyName;
-  if (typeof d.company === 'string' && d.company && d.company !== '[object Object]') return d.company;
-  if (typeof d.brokerCompany === 'string' && d.brokerCompany && d.brokerCompany !== '[object Object]') return d.brokerCompany;
+const extractCompanyIdsFromDeal = (d) => {
+  if (!d) return [];
+  const ids = [];
+  const add = (val) => {
+    if (!val) return;
+    if (typeof val === 'string' || typeof val === 'number') {
+      ids.push(String(val));
+    } else if (typeof val === 'object') {
+      if (val._id) ids.push(String(val._id));
+      if (val.id) ids.push(String(val.id));
+    }
+  };
 
-  if (d.brokerCompany && typeof d.brokerCompany === 'object') {
-    if (d.brokerCompany.name) return d.brokerCompany.name;
-    if (d.brokerCompany.companyName) return d.brokerCompany.companyName;
-  }
-  if (d.company && typeof d.company === 'object') {
-    if (d.company.name) return d.company.name;
-    if (d.company.companyName) return d.company.companyName;
-  }
-  return null;
+  add(d.brokerCompanyId);
+  add(d.brokerCompany);
+  add(d.companyId);
+  add(d.company);
+  add(d.buyerCompanyId);
+  add(d.buyerCompany);
+  add(d.sellerCompanyId);
+  add(d.sellerCompany);
+  add(d.creatorCompanyId);
+  add(d.createdByCompany);
+
+  return ids;
+};
+
+const extractCompanyNamesFromDeal = (d) => {
+  if (!d) return [];
+  const names = [];
+  const add = (val) => {
+    if (!val) return;
+    if (typeof val === 'string' && val !== '[object Object]') {
+      names.push(val.trim().toLowerCase());
+    } else if (typeof val === 'object') {
+      if (val.name) names.push(String(val.name).trim().toLowerCase());
+      if (val.companyName) names.push(String(val.companyName).trim().toLowerCase());
+    }
+  };
+
+  add(d.brokerCompanyName);
+  add(d.brokerCompany);
+  add(d.companyName);
+  add(d.company);
+  add(d.buyerCompanyName);
+  add(d.buyerCompany);
+  add(d.buyer);
+  add(d.buyerName);
+  add(d.sellerCompanyName);
+  add(d.sellerCompany);
+  add(d.seller);
+  add(d.sellerName);
+
+  return names;
 };
 
 const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
-  const passedCompany = routeData?.company || {};
-  const companyId = routeData?.companyId || passedCompany._id || passedCompany.id;
+  const passedCompany = routeData?.company || routeData?.firm || routeData?.data?.company || {};
+  const companyId = routeData?.companyId || routeData?.firmId || routeData?.id || routeData?._id || passedCompany._id || passedCompany.id || passedCompany.companyId || passedCompany.brokerCompanyId;
 
   const [company, setCompany] = useState(passedCompany);
   const [firmDeals, setFirmDeals] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadCompanyData = async () => {
-    const currentCompId = passedCompany._id || passedCompany.id || company._id || company.id || companyId;
-    const currentCompName = passedCompany.name || passedCompany.companyName || company.name || company.companyName;
+  const formatDeal = (d) => {
+    let cropName = 'Agricultural Commodity';
+    if (typeof d.crop === 'string' && d.crop) cropName = d.crop;
+    else if (typeof d.productName === 'string' && d.productName) cropName = d.productName;
+    else if (typeof d.cropName === 'string' && d.cropName) cropName = d.cropName;
+    else if (d.products && d.products.length > 0) {
+      const p = d.products[0];
+      if (typeof p === 'string') {
+        cropName = p;
+      } else if (p) {
+        // productId can be a populated object from MongoDB
+        const pid = p.productId;
+        if (pid && typeof pid === 'object') {
+          cropName = pid.name || pid.productName || pid.title || pid.cropName || cropName;
+        } else if (typeof pid === 'string' && pid) {
+          // Not populated — fall through to other fields
+        }
+        // Check direct fields on the product item
+        if (cropName === 'Agricultural Commodity') {
+          cropName = p.name || p.productName || p.crop || p.cropName || p.title || cropName;
+        }
+      }
+    }
 
-    const filterDealsForFirm = (dealList) => {
-      return dealList.map(d => ({
-        id: d.dealNumber || d.id || d._id || `SAUDA-${Math.floor(100 + Math.random() * 900)}`,
-        _id: d._id || d.id,
-        crop: d.crop || d.productName || d.products?.[0]?.productName || d.notes || 'Agricultural Commodity',
-        quantity: d.quantity || (d.products?.[0]?.quantity ? `${d.products[0].quantity} units` : '100 units'),
-        rate: d.rate || (d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : '₹60,000'),
-        buyer: d.buyer || d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || 'Buyer Business',
-        seller: d.seller || d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || 'Seller Business',
-        status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
-        date: d.date || (d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today'),
-        brokerCompanyId: extractCompanyId(d),
-        brokerCompanyName: extractCompanyName(d),
-      })).filter(d => {
-        if (!currentCompId && !currentCompName) return true;
-        const dId = d.brokerCompanyId;
-        const dName = d.brokerCompanyName;
-        const mId = currentCompId && dId && String(dId) === String(currentCompId);
-        const mName = currentCompName && dName && String(dName).trim().toLowerCase() === String(currentCompName).trim().toLowerCase();
-        if (mId || mName) return true;
-        if (!dId && !dName) return true;
-        return false;
-      });
+    let sellerName = 'Seller Business';
+    if (typeof d.seller === 'string' && d.seller) sellerName = d.seller;
+    else if (d.sellerCompany) {
+      if (typeof d.sellerCompany === 'string') sellerName = d.sellerCompany;
+      else if (d.sellerCompany.name) sellerName = d.sellerCompany.name;
+      else if (d.sellerCompany.companyName) sellerName = d.sellerCompany.companyName;
+    } else if (d.sellerName) sellerName = d.sellerName;
+
+    let buyerName = 'Buyer Business';
+    if (typeof d.buyer === 'string' && d.buyer) buyerName = d.buyer;
+    else if (d.buyerCompany) {
+      if (typeof d.buyerCompany === 'string') buyerName = d.buyerCompany;
+      else if (d.buyerCompany.name) buyerName = d.buyerCompany.name;
+      else if (d.buyerCompany.companyName) buyerName = d.buyerCompany.companyName;
+    } else if (d.buyerName) buyerName = d.buyerName;
+
+    let rateStr = '₹60,000';
+    if (d.rate) rateStr = String(d.rate);
+    else if (d.totalAmount) rateStr = `₹${parseFloat(d.totalAmount).toLocaleString('en-IN')}`;
+    else if (d.grandTotal) rateStr = `₹${parseFloat(d.grandTotal).toLocaleString('en-IN')}`;
+    else if (d.products?.[0]?.price) rateStr = `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}`;
+
+    let statusStr = 'Confirmed';
+    if (typeof d.status === 'string' && d.status) {
+      statusStr = d.status.charAt(0).toUpperCase() + d.status.slice(1);
+    }
+
+    let dateStr = 'Today';
+    if (d.date) dateStr = String(d.date);
+    else if (d.createdAt) {
+      try {
+        dateStr = new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      } catch (e) {
+        dateStr = 'Today';
+      }
+    }
+
+    return {
+      id: toSafeStr(d.dealNumber || d.id || d._id, `SAUDA-${Math.floor(100 + Math.random() * 900)}`),
+      _id: String(d._id || d.id || ''),
+      crop: toSafeStr(cropName, 'Agricultural Commodity'),
+      quantity: d.quantity ? String(d.quantity).replace(/\s*units?/gi, '').trim() : (d.products?.[0]?.quantity ? `${d.products[0].quantity}` : '100'),
+      rate: toSafeStr(rateStr, '₹60,000'),
+      buyer: toSafeStr(buyerName, 'Buyer Business'),
+      seller: toSafeStr(sellerName, 'Seller Business'),
+      status: toSafeStr(statusStr, 'Confirmed'),
+      date: toSafeStr(dateStr, 'Today'),
+      rawDeal: d,
     };
+  };
+
+  const filterDealsForFirm = (dealList, targetId, targetName) => {
+    const targetIdStr = targetId ? String(targetId) : null;
+    const targetNameClean = targetName ? String(targetName).trim().toLowerCase() : null;
+
+    return dealList
+      .filter(d => {
+        if (!d) return false;
+        if (!targetIdStr && !targetNameClean) return true;
+
+        const dealIds = extractCompanyIdsFromDeal(d);
+        const matchesId = Boolean(targetIdStr && dealIds.includes(targetIdStr));
+
+        const dealNames = extractCompanyNamesFromDeal(d);
+        const matchesName = Boolean(
+          targetNameClean &&
+          dealNames.some(n => n === targetNameClean || n.includes(targetNameClean) || targetNameClean.includes(n))
+        );
+
+        return matchesId || matchesName;
+      })
+      .map(formatDeal);
+  };
+
+  const loadCompanyData = async () => {
+    const passedComp = routeData?.company || routeData?.firm || routeData?.data?.company || {};
+    const effectiveCompId = companyId || routeData?.companyId || routeData?.firmId || routeData?.id || routeData?._id || passedComp._id || passedComp.id || passedComp.companyId || passedComp.brokerCompanyId || company._id || company.id;
+    const effectiveCompName = passedComp.name || passedComp.companyName || company.name || company.companyName;
 
     try {
-      // 1. INSTANT LOCAL HYDRATION (0.01s)
+      // 1. INSTANT LOCAL HYDRATION
       const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
       const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
-      setFirmDeals(filterDealsForFirm(localDeals));
-      setIsLoading(false);
+      setFirmDeals(filterDealsForFirm(localDeals, effectiveCompId, effectiveCompName));
 
       // 2. PARALLEL BACKGROUND API SYNC
       const token = await AsyncStorage.getItem('userToken');
-      const isValidObjectId = typeof companyId === 'string' && /^[0-9a-fA-F]{24}$/.test(companyId);
 
-      const [compResResult, brokerDealsRes, userDealsRes] = await Promise.allSettled([
-        isValidObjectId ? getCompanyDetails(companyId) : Promise.resolve(null),
-        token ? getBrokerMyDeals(token) : Promise.resolve(null),
-        token ? getDeals(token, 1, 50, companyId || null) : Promise.resolve(null),
+      const [compResResult, brokerDealsRes, allDealsRes] = await Promise.allSettled([
+        effectiveCompId ? getCompanyDetails(effectiveCompId) : Promise.resolve(null),
+        token ? getBrokerMyDeals(effectiveCompId, token) : Promise.resolve(null),
+        token ? getDeals(token, 1, 100, effectiveCompId) : Promise.resolve(null),
       ]);
 
+      let updatedComp = { ...passedComp, ...company };
       if (compResResult.status === 'fulfilled' && compResResult.value?.success && compResResult.value?.data) {
-        setCompany(compResResult.value.data);
+        updatedComp = { ...updatedComp, ...compResResult.value.data };
+        setCompany(updatedComp);
       }
 
       let apiDeals = [];
       if (brokerDealsRes.status === 'fulfilled' && brokerDealsRes.value?.success) {
         const bRes = brokerDealsRes.value;
-        const bDeals = Array.isArray(bRes.data) ? bRes.data : (bRes.data?.deals || bRes.data?.myDeals || []);
-        apiDeals = [...bDeals];
+        const list = Array.isArray(bRes.data) ? bRes.data : (bRes.data?.deals || bRes.data?.myDeals || []);
+        apiDeals = [...apiDeals, ...list];
       }
 
-      if (userDealsRes.status === 'fulfilled' && userDealsRes.value?.success) {
-        const uRes = userDealsRes.value;
-        const uDeals = Array.isArray(uRes.data) ? uRes.data : (uRes.data?.deals || []);
-        uDeals.forEach(uD => {
-          if (!apiDeals.some(a => (a._id && (a._id === uD._id || a._id === uD.id)) || (a.id && (a.id === uD.id || a.id === uD.dealNumber)))) {
-            apiDeals.push(uD);
-          }
-        });
+      if (allDealsRes.status === 'fulfilled' && allDealsRes.value?.success) {
+        const aRes = allDealsRes.value;
+        const list = Array.isArray(aRes.data) ? aRes.data : (aRes.data?.deals || aRes.data?.myDeals || []);
+        apiDeals = [...apiDeals, ...list];
       }
 
-      const combined = [...localDeals];
-      apiDeals.forEach(aD => {
-        if (!combined.some(c => (c._id && (c._id === aD._id || c._id === aD.id)) || (c.id && (c.id === aD.dealNumber || c.id === aD.id)))) {
-          combined.push(aD);
-        }
+      // Fast O(N) deduplication using Map
+      const dealMap = new Map();
+      localDeals.forEach(d => {
+        if (!d) return;
+        const key = d._id || d.id || d.dealNumber;
+        if (key) dealMap.set(String(key), d);
+      });
+      apiDeals.forEach(d => {
+        if (!d) return;
+        const key = d._id || d.id || d.dealNumber;
+        if (key) dealMap.set(String(key), d);
       });
 
-      setFirmDeals(filterDealsForFirm(combined));
+      const combined = Array.from(dealMap.values());
+      const finalCompId = effectiveCompId || updatedComp._id || updatedComp.id;
+      const finalCompName = updatedComp.name || updatedComp.companyName || effectiveCompName;
+      setFirmDeals(filterDealsForFirm(combined, finalCompId, finalCompName));
     } catch (err) {
       console.warn('Error loading broker company details:', err);
     } finally {
@@ -169,12 +297,40 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
 
   useEffect(() => {
     loadCompanyData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, routeData]);
+
+  const rawFirmName = company.name || company.companyName || company.brokerCompanyName || passedCompany.name || passedCompany.companyName;
+  const firmName = toSafeStr(rawFirmName, 'Brokerage Firm');
+
+  const rawFirmType = company.firmType || company.companyType || company.entityType || passedCompany.firmType;
+  const firmType = toSafeStr(rawFirmType, 'Registered APMC Brokerage');
+
+  const rawCity = company.city || company.address?.city || company.mandiCity || passedCompany.city || passedCompany.address?.city;
+  const city = toSafeStr(rawCity, 'Surat APMC Mandi');
+
+  const rawState = company.state || company.address?.state || passedCompany.state;
+  const state = toSafeStr(rawState, 'Gujarat');
+
+  const rawApmc = company.apmcLicense || company.registrationNumber || company.gstin || company.licenseNumber || passedCompany.apmcLicense;
+  const apmcLicense = toSafeStr(rawApmc, 'APMC/REG/2026/89');
+
+  const commVal = company.commissionRate !== undefined && company.commissionRate !== null ? company.commissionRate : (company.commission !== undefined && company.commission !== null ? company.commission : passedCompany.commissionRate);
+  const commRate = commVal !== undefined && commVal !== null ? (typeof commVal === 'object' ? `${toSafeStr(commVal, 'N/A')}%` : `${commVal}%`) : 'N/A';
+
+  const rawIndustry = company.industryName || (typeof company.industry === 'string' ? company.industry : company.industry?.name) || company.primaryMarket || passedCompany.industryName;
+  const industry = toSafeStr(rawIndustry, 'Agro & Commodities');
+
+  const rawPhone = company.phone || company.ownerMobile || company.mobileNumber || company.contactNumber || passedCompany.phone;
+  const phone = toSafeStr(rawPhone, '+91 98765 43210');
+
+  const rawStreet = company.street || company.address?.street || company.address?.line1 || company.addressLine || passedCompany.street;
+  const street = toSafeStr(rawStreet, 'Shop No. 12, APMC Market Yard');
 
   const handleShareFirm = async () => {
     try {
       await Share.share({
-        message: `🏢 *${company.name || company.companyName || 'Brokerage Firm'}*\nAPMC License: ${company.apmcLicense || company.registrationNumber || 'N/A'}\nCity: ${company.city || company.address?.city || 'N/A'}\nCommission Rate: ${commRate}\nRegistered on Pravisti B2B Platform.`,
+        message: `🏢 *${firmName}*\nAPMC License: ${apmcLicense}\nCity: ${city}\nCommission Rate: ${commRate}\nRegistered on Pravisti B2B Platform.`,
       });
     } catch (e) {
       console.warn('Share error:', e);
@@ -182,19 +338,9 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
   };
 
   const handleCallMandi = () => {
-    const mobile = company.phone || company.ownerMobile || '9876543210';
+    const mobile = company.phone || company.ownerMobile || company.mobileNumber || company.contactNumber || '9876543210';
     Linking.openURL(`tel:${mobile}`);
   };
-
-  const firmName = company.name || company.companyName || 'Brokerage Firm';
-  const firmType = company.firmType || company.companyType || 'Registered APMC Brokerage';
-  const city = company.city || company.address?.city || 'Surat APMC Mandi';
-  const state = company.state || company.address?.state || 'Gujarat';
-  const apmcLicense = company.apmcLicense || company.registrationNumber || 'APMC/REG/2026/89';
-  const commRate = company.commissionRate ? `${company.commissionRate}%` : 'N/A';
-  const industry = company.industryName || 'Agro & Commodities';
-  const phone = company.phone || company.ownerMobile || '+91 98765 43210';
-  const street = company.street || company.address?.street || 'Shop No. 12, APMC Market Yard';
 
   const quickActions = [
     {
@@ -202,21 +348,21 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
       label: 'New Sauda',
       icon: <Plus size={20} color="#FFFFFF" />,
       circleBg: COLORS.primary,
-      onPress: () => onNavigate('CreateBrokerDeal', { company }),
+      onPress: () => onNavigate('CreateBrokerDeal', { company, companyId: company._id || company.id || companyId }),
     },
     {
       id: 'view_saudas',
       label: 'All Saudas',
       icon: <Handshake size={20} color="#FFFFFF" />,
       circleBg: COLORS.cyan,
-      onPress: () => onNavigate('BrokerCreatedDeals', { company }),
+      onPress: () => onNavigate('BrokerCreatedDeals', { company, companyId: company._id || company.id || companyId, companyName: firmName }),
     },
     {
       id: 'chat',
       label: 'Chat',
       icon: <MessageSquare size={20} color="#FFFFFF" />,
       circleBg: COLORS.indigo,
-      onPress: () => onNavigate('ChatList', { company }),
+      onPress: () => onNavigate('ChatList', { company, companyId: company._id || company.id || companyId }),
     },
     {
       id: 'share_firm',
@@ -229,7 +375,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0C4A6E" />
+      <StatusBar barStyle="light-content" backgroundColor="#0284C7" />
 
       {/* ─── HERO HEADER SECTION (Unified Identity + Integrated Stats Strip) ─── */}
       <View style={styles.heroSection}>
@@ -279,7 +425,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
             <View style={styles.heroMetricDivider} />
             <TouchableOpacity
               style={styles.heroMetricItem}
-              onPress={() => onNavigate('BrokerCreatedDeals', { company })}
+              onPress={() => onNavigate('BrokerCreatedDeals', { company, companyId: company._id || company.id || companyId, companyName: firmName })}
             >
               <Text style={styles.heroMetricVal}>{firmDeals.length}</Text>
               <Text style={styles.heroMetricLabel}>view Saudas →</Text>
@@ -302,7 +448,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
         <View style={styles.quickServicesContainer}>
           <TouchableOpacity
             style={styles.serviceItem}
-            onPress={() => onNavigate('CreateBrokerDeal', { company })}
+            onPress={() => onNavigate('CreateBrokerDeal', { company, companyId: company._id || company.id || companyId })}
             activeOpacity={0.8}
           >
             <View style={[styles.serviceIconCircle, { backgroundColor: '#2563EB' }]}>
@@ -313,7 +459,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
 
           <TouchableOpacity
             style={styles.serviceItem}
-            onPress={() => onNavigate('BrokerCreatedDeals', { company })}
+            onPress={() => onNavigate('BrokerCreatedDeals', { company, companyId: company._id || company.id || companyId, companyName: firmName })}
             activeOpacity={0.8}
           >
             <View style={[styles.serviceIconCircle, { backgroundColor: '#4F46E5' }]}>
@@ -324,24 +470,24 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
 
           <TouchableOpacity
             style={styles.serviceItem}
-            onPress={() => onNavigate('ChatList', { company })}
+            onPress={() => onNavigate('BrokerDashboard', { company, companyId: company._id || company.id || companyId })}
             activeOpacity={0.8}
           >
             <View style={[styles.serviceIconCircle, { backgroundColor: '#10B981' }]}>
               <MessageSquare size={22} color="#FFFFFF" />
             </View>
-            <Text style={styles.serviceLabel} numberOfLines={1}>Messages</Text>
+            <Text style={styles.serviceLabel} numberOfLines={1}>Dashboard</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.serviceItem}
-            onPress={handleShareFirm}
+            onPress={() => onNavigate('BrokerPendingQueue', { company, companyId: company._id || company.id || companyId })}
             activeOpacity={0.8}
           >
             <View style={[styles.serviceIconCircle, { backgroundColor: '#06B6D4' }]}>
-              <Share2 size={22} color="#FFFFFF" />
+              <Clock size={22} color="#FFFFFF" />
             </View>
-            <Text style={styles.serviceLabel} numberOfLines={1}>Share Firm</Text>
+            <Text style={styles.serviceLabel} numberOfLines={1}>Onboard Deals</Text>
           </TouchableOpacity>
         </View>
 
@@ -352,13 +498,18 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
               Company Saudas ({firmDeals.length})
             </Text>
             {firmDeals.length > 0 && (
-              <TouchableOpacity onPress={() => onNavigate('BrokerCreatedDeals', { company })}>
+              <TouchableOpacity onPress={() => onNavigate('BrokerCreatedDeals', { company, companyId: company._id || company.id || companyId, companyName: firmName })}>
                 <Text style={styles.seeAllText}>View All →</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {firmDeals.length === 0 ? (
+          {isLoading && firmDeals.length === 0 ? (
+            <View style={[styles.emptySaudaCard, { paddingVertical: 24 }]}>
+              <ActivityIndicator size="small" color="#2563EB" style={{ marginBottom: 8 }} />
+              <Text style={styles.emptySaudaSub}>Loading company saudas...</Text>
+            </View>
+          ) : firmDeals.length === 0 ? (
             <View style={styles.emptySaudaCard}>
               <Handshake size={32} color="#0284C7" style={{ marginBottom: 8 }} />
               <Text style={styles.emptySaudaTitle}>No Saudas Issued Yet</Text>
@@ -367,7 +518,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
               </Text>
               <TouchableOpacity
                 style={styles.emptySaudaBtn}
-                onPress={() => onNavigate('CreateBrokerDeal', { company })}
+                onPress={() => onNavigate('CreateBrokerDeal', { company, companyId: company._id || company.id || companyId })}
                 activeOpacity={0.85}
               >
                 <Plus size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
@@ -395,15 +546,17 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
                   key={deal.id || deal._id || idx}
                   style={[styles.compactDealCard, { backgroundColor: cardBg, borderColor: cardBorder }]}
                   activeOpacity={0.85}
-                  onPress={() => onNavigate('BrokerDealDetails', { dealId: deal._id || deal.id, deal })}
+                  onPress={() => onNavigate('BrokerDealDetails', { dealId: deal._id || deal.id, deal, company })}
                 >
                   {/* Top Row: Crop Badge + Rate + Status Pill */}
                   <View style={styles.compactHeaderRow}>
-                    <View style={[styles.cropBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
-                      <Text style={[styles.cropBadgeText, { color: badgeText }]}>{deal.crop}</Text>
+                    <View style={[styles.cropBadge, { backgroundColor: badgeBg, borderColor: badgeBorder, flexShrink: 1, maxWidth: '55%' }]}>
+                      <Text style={[styles.cropBadgeText, { color: badgeText }]} numberOfLines={1}>
+                        {deal.crop}
+                      </Text>
                     </View>
-                    <Text style={[styles.compactRateText, { color: rateColor }]}>
-                      {deal.rate} <Text style={styles.compactQtyText}>({deal.quantity})</Text>
+                    <Text style={[styles.compactRateText, { color: rateColor }]} numberOfLines={1}>
+                      {deal.rate}
                     </Text>
                     <View style={[styles.statusPill, { backgroundColor: badgeBg }]}>
                       <Text style={[styles.statusPillText, { color: badgeText }]}>
@@ -497,7 +650,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
       <View style={styles.bottomFooter}>
         <TouchableOpacity
           style={styles.secondaryBtn}
-          onPress={() => onNavigate('BrokerCreatedDeals', { company })}
+          onPress={() => onNavigate('BrokerCreatedDeals', { company, companyId: company._id || company.id || companyId, companyName: firmName })}
           activeOpacity={0.82}
         >
           <Handshake size={18} color={COLORS.primary} style={{ marginRight: 6 }} />
@@ -506,7 +659,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
 
         <TouchableOpacity
           style={styles.primaryBtn}
-          onPress={() => onNavigate('CreateBrokerDeal', { company })}
+          onPress={() => onNavigate('CreateBrokerDeal', { company, companyId: company._id || company.id || companyId })}
           activeOpacity={0.85}
         >
           <Plus size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
@@ -523,7 +676,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bgMain,
   },
   heroSection: {
-    backgroundColor: COLORS.primaryDark,
+    backgroundColor: '#0284C7',
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? 12 : 6,
     paddingBottom: 20,
@@ -1095,7 +1248,7 @@ const styles = StyleSheet.create({
   // Bottom Footer
   bottomFooter: {
     position: 'absolute',
-    bottom: 60,
+    bottom: 35,
     left: 0,
     right: 0,
     flexDirection: 'row',

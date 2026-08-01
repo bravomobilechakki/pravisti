@@ -20,6 +20,7 @@ import Contacts from 'react-native-contacts';
 import BrokerSuccessReceipt from '../../common/BrokerSuccessReceipt';
 import {
   ArrowLeft,
+  Bell,
   Search,
   Plus,
   Building2,
@@ -208,8 +209,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
     setPartyJustAdded('seller');
     setTimeout(() => {
       setPartyJustAdded(null);
-      setCurrentStep(2);
-    }, 2000);
+    }, 1200);
   };
 
   const selectBuyerCompany = (bComp, userObj) => {
@@ -225,8 +225,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
     setPartyJustAdded('buyer');
     setTimeout(() => {
       setPartyJustAdded(null);
-      setCurrentStep(3);
-    }, 2000);
+    }, 1200);
   };
 
   // Device Contacts Modal State
@@ -342,9 +341,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
 
         if (unitsResResult.status === 'fulfilled' && unitsResResult.value?.success && Array.isArray(unitsResResult.value.data) && unitsResResult.value.data.length > 0) {
           setApiUnits(unitsResResult.value.data);
-          if (!selectedUnitObj) {
-            setSelectedUnitObj(unitsResResult.value.data[0]);
-          }
+          setSelectedUnitObj(prev => prev || unitsResResult.value.data[0]);
         }
       } catch (err) {
         console.warn('Initial data load error:', err);
@@ -551,8 +548,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
       setPartyJustAdded('seller');
       setTimeout(() => {
         setPartyJustAdded(null);
-        setCurrentStep(2);
-      }, 2000);
+      }, 1200);
     } else {
       setBuyerParty({
         user: data.user,
@@ -565,8 +561,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
       setPartyJustAdded('buyer');
       setTimeout(() => {
         setPartyJustAdded(null);
-        setCurrentStep(3);
-      }, 2000);
+      }, 1200);
     }
   };
 
@@ -790,26 +785,33 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
         </View>
       ) : null}
 
-      {/* ─── HEADER ─── */}
-      <View style={styles.topHeader}>
-        <TouchableOpacity onPress={() => onNavigate('pop')} style={styles.backBtn} activeOpacity={0.7}>
-          <ArrowLeft size={18} color={COLORS.textPrimary} />
+      {/* ─── SKY BLUE TOP HEADER (#0284C7) ─── */}
+      <View style={styles.topHeaderBlue}>
+        <StatusBar barStyle="light-content" backgroundColor="#0284C7" />
+        <TouchableOpacity onPress={() => onNavigate('pop')} style={styles.backBtnBlue} activeOpacity={0.7}>
+          <ArrowLeft size={18} color="#FFFFFF" />
         </TouchableOpacity>
 
-        <View style={styles.headerTitleBox}>
-          <Text style={styles.headerTitle}>Create New Sauda</Text>
-          <Text style={styles.headerSub}>Step {currentStep} of 3</Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={styles.headerTitleBlue}>Issue Sauda</Text>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: '#E0F2FE', letterSpacing: 0.4, marginTop: 1 }}>
+            STEP {currentStep} OF 3
+          </Text>
         </View>
 
-        <View style={styles.headerBadge}>
-          <ShieldCheck size={14} color={COLORS.success} />
-          <Text style={styles.headerBadgeText}>Verified</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity style={styles.headerIconBtnBlue} activeOpacity={0.7}>
+            <Bell size={16} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.userAvatarCircleBlue}>
+            <User size={13} color="#0284C7" />
+          </View>
         </View>
       </View>
 
-      {/* ─── STEP PROGRESS TRACKER ─── */}
-      <View style={styles.progressTrackerContainer}>
-        {/* Step 1: Seller */}
+      {/* ─── 3-STEP PROGRESS TRACKER HEADER ─── */}
+      <View style={styles.progressTrackerContainerBlue}>
+        {/* Step 1: Parties */}
         <TouchableOpacity
           style={styles.stepNode}
           activeOpacity={0.8}
@@ -817,7 +819,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
         >
           <View style={[
             styles.stepCircle,
-            currentStep > 1 ? styles.stepCircleCompleted : currentStep === 1 ? styles.stepCircleActive : styles.stepCirclePending,
+            currentStep > 1 ? styles.stepCircleCompleted : currentStep === 1 ? styles.stepCircleActiveBlue : styles.stepCirclePending,
           ]}>
             {currentStep > 1 ? (
               <Check size={13} color="#FFFFFF" />
@@ -825,18 +827,18 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
               <Text style={[styles.stepCircleNumber, currentStep === 1 && styles.stepCircleNumberActive]}>1</Text>
             )}
           </View>
-          <Text style={[styles.stepNodeLabel, currentStep === 1 && styles.stepNodeLabelActive]}>Seller</Text>
+          <Text style={[styles.stepNodeLabel, currentStep === 1 && styles.stepNodeLabelActiveBlue]}>Parties</Text>
         </TouchableOpacity>
 
         <View style={[styles.stepLine, currentStep > 1 ? styles.stepLineCompleted : styles.stepLinePending]} />
 
-        {/* Step 2: Buyer */}
+        {/* Step 2: Commodity */}
         <TouchableOpacity
           style={styles.stepNode}
           activeOpacity={0.8}
           onPress={() => {
-            if (!sellerParty) {
-              setFormError('Please select a Seller in Step 1 first.');
+            if (!sellerParty || !buyerParty) {
+              setFormError('Please select both Seller and Buyer in Step 1 first.');
               return;
             }
             setFormError('');
@@ -845,7 +847,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
         >
           <View style={[
             styles.stepCircle,
-            currentStep > 2 ? styles.stepCircleCompleted : currentStep === 2 ? styles.stepCircleActive : styles.stepCirclePending,
+            currentStep > 2 ? styles.stepCircleCompleted : currentStep === 2 ? styles.stepCircleActiveBlue : styles.stepCirclePending,
           ]}>
             {currentStep > 2 ? (
               <Check size={13} color="#FFFFFF" />
@@ -853,18 +855,18 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
               <Text style={[styles.stepCircleNumber, currentStep === 2 && styles.stepCircleNumberActive]}>2</Text>
             )}
           </View>
-          <Text style={[styles.stepNodeLabel, currentStep === 2 && styles.stepNodeLabelActive]}>Buyer</Text>
+          <Text style={[styles.stepNodeLabel, currentStep === 2 && styles.stepNodeLabelActiveBlue]}>Commodity</Text>
         </TouchableOpacity>
 
         <View style={[styles.stepLine, currentStep > 2 ? styles.stepLineCompleted : styles.stepLinePending]} />
 
-        {/* Step 3: Deal Details */}
+        {/* Step 3: Review */}
         <TouchableOpacity
           style={styles.stepNode}
           activeOpacity={0.8}
           onPress={() => {
             if (!sellerParty || !buyerParty) {
-              setFormError('Please select both Seller and Buyer before entering Deal Details.');
+              setFormError('Please select both Seller and Buyer before reviewing.');
               return;
             }
             setFormError('');
@@ -873,11 +875,11 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
         >
           <View style={[
             styles.stepCircle,
-            currentStep === 3 ? styles.stepCircleActive : styles.stepCirclePending,
+            currentStep === 3 ? styles.stepCircleActiveBlue : styles.stepCirclePending,
           ]}>
             <Text style={[styles.stepCircleNumber, currentStep === 3 && styles.stepCircleNumberActive]}>3</Text>
           </View>
-          <Text style={[styles.stepNodeLabel, currentStep === 3 && styles.stepNodeLabelActive]}>Deal Details</Text>
+          <Text style={[styles.stepNodeLabel, currentStep === 3 && styles.stepNodeLabelActiveBlue]}>Review</Text>
         </TouchableOpacity>
       </View>
 
@@ -891,339 +893,216 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
           </View>
         ) : null}
 
-        {/* STEP 1: SELLER CARD */}
+        {/* STEP 1: SELECT PARTIES (BOTH SELLER & BUYER IN ONE STEP) */}
         {currentStep === 1 && (
-          <View style={styles.cardSection}>
-            <View style={styles.cardHeaderRow}>
-              <View style={[styles.cardHeaderIconBox, { backgroundColor: COLORS.indigoLight }]}>
-                <Building2 size={18} color={COLORS.indigo} />
+          <View style={{ gap: 14 }}>
+            {/* ORIGINATING BROKER CARD */}
+            <View style={styles.originatingBrokerCard}>
+              <View style={styles.brokerIconCircle}>
+                <Building2 size={20} color="#0284C7" />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardSectionTitle}>Select Seller</Text>
-                <Text style={styles.cardSectionSub}>Search registered seller by 10-digit mobile number</Text>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.originatingBrokerSub}>ORIGINATING BROKER</Text>
+                <Text style={styles.originatingBrokerName}>
+                  {selectedBrokerCompany?.companyName || selectedBrokerCompany?.name || 'MNC'}
+                </Text>
+              </View>
+              <View style={styles.verifiedBlueBadge}>
+                <CheckCircle2 size={12} color="#0284C7" style={{ marginRight: 4 }} />
+                <Text style={styles.verifiedBlueBadgeText}>Verified</Text>
               </View>
             </View>
 
-            {!sellerParty ? (
-              <View style={{ marginTop: 12 }}>
-                <Text style={styles.fieldLabel}>Seller Mobile Number <Text style={styles.requiredStar}>*</Text></Text>
-                <View style={styles.phoneSearchContainer}>
-                  <View style={styles.countryCodePrefix}>
-                    <Text style={styles.countryCodeText}>+91</Text>
-                  </View>
-                  <TextInput
-                    style={styles.phoneInput}
-                    placeholder="Enter 10-digit mobile number"
-                    placeholderTextColor={COLORS.textPlaceholder}
-                    keyboardType="number-pad"
-                    maxLength={10}
-                    value={sellerMobile}
-                    onChangeText={handleSellerMobileChange}
-                  />
-                  <TouchableOpacity style={styles.searchIconButton} onPress={() => handleSearchSeller()}>
-                    <Search size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
+            {/* CARD 1: SELECT SELLER */}
+            <View style={styles.cardSection}>
+              <View style={styles.cardHeaderRow}>
+                <View style={[styles.cardHeaderIconBox, { backgroundColor: '#EEF2FF' }]}>
+                  <Building2 size={18} color="#2563EB" />
                 </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardSectionTitle}>Select Seller</Text>
+                </View>
+                <View style={styles.requiredBadge}>
+                  <Text style={styles.requiredBadgeText}>* Required</Text>
+                </View>
+              </View>
 
-                <TouchableOpacity
-                  style={styles.pickFromContactsPillBtn}
-                  onPress={() => openDeviceContactsModal('Seller')}
-                  activeOpacity={0.82}
-                >
-                  <View style={styles.contactsBtnIconBadge}>
-                    <BookUser size={15} color={COLORS.primary} />
+              {!sellerParty ? (
+                <View style={{ marginTop: 12 }}>
+                  <View style={styles.searchInputBoxContainer}>
+                    <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={styles.searchInputBoxText}
+                      placeholder="Search by name, ID or phone..."
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="number-pad"
+                      maxLength={10}
+                      value={sellerMobile}
+                      onChangeText={handleSellerMobileChange}
+                    />
                   </View>
-                  <Text style={styles.pickFromContactsPillText}>Choose from Contacts</Text>
-                  <ChevronRight size={15} color={COLORS.primary} />
-                </TouchableOpacity>
 
-                {/* SEARCH ERROR STATE (e.g. Registered as Broker) */}
-                {sellerSearchError ? (
-                  <View style={[styles.notFoundCard, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
-                    <View style={styles.notFoundHeaderRow}>
-                      <AlertCircle size={18} color={COLORS.error} style={{ marginRight: 8 }} />
-                      <Text style={[styles.notFoundTitle, { color: COLORS.error }]}>Notice / Cannot Select User</Text>
+                  <TouchableOpacity
+                    style={styles.pickFromContactsPillBtn}
+                    onPress={() => openDeviceContactsModal('Seller')}
+                    activeOpacity={0.82}
+                  >
+                    <BookUser size={15} color="#2563EB" style={{ marginRight: 6 }} />
+                    <Text style={styles.pickFromContactsPillText}>Choose from Contacts</Text>
+                    <ChevronRight size={15} color="#2563EB" />
+                  </TouchableOpacity>
+
+                  {/* SEARCH ERROR STATE */}
+                  {sellerSearchError ? (
+                    <View style={[styles.notFoundCard, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
+                      <View style={styles.notFoundHeaderRow}>
+                        <AlertCircle size={18} color={COLORS.error} style={{ marginRight: 8 }} />
+                        <Text style={[styles.notFoundTitle, { color: COLORS.error }]}>Notice / Cannot Select User</Text>
+                      </View>
+                      <Text style={[styles.notFoundDesc, { color: '#991B1B' }]}>
+                        {sellerSearchError}
+                      </Text>
                     </View>
-                    <Text style={[styles.notFoundDesc, { color: '#991B1B' }]}>
-                      {sellerSearchError}
-                    </Text>
-
-                    <View style={styles.notFoundBtnRow}>
-                      {!sellerSearchError.toLowerCase().includes('registered as a broker') ? (
-                        <TouchableOpacity
-                          style={[styles.registerUserBtn, { backgroundColor: COLORS.primary }]}
-                          onPress={() => {
-                            setOnboardingPartyType('Seller');
-                            setModalVisible(true);
-                          }}
-                        >
-                          <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.registerUserBtnText}>+ Create Company</Text>
-                        </TouchableOpacity>
-                      ) : null}
-
-                      <TouchableOpacity
-                        style={styles.tryAnotherBtn}
-                        onPress={() => { setSellerMobile(''); setSellerSearchError(''); setSellerNotFound(false); }}
-                      >
-                        <RotateCcw size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
-                        <Text style={styles.tryAnotherBtnText}>Try Another Number</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ) : sellerNotFound ? (
-                  <View style={styles.notFoundCard}>
-                    <View style={styles.notFoundHeaderRow}>
-                      <AlertCircle size={18} color={COLORS.warning} style={{ marginRight: 8 }} />
-                      <Text style={styles.notFoundTitle}>No Registered User Found</Text>
-                    </View>
-                    <Text style={styles.notFoundDesc}>
-                      This mobile number (+91 {sellerMobile}) is not registered on Pravisti. You can create a company profile for them to continue.
-                    </Text>
-
-                    <View style={styles.notFoundBtnRow}>
+                  ) : sellerNotFound ? (
+                    <View style={styles.notFoundCard}>
+                      <View style={styles.notFoundHeaderRow}>
+                        <AlertCircle size={18} color={COLORS.warning} style={{ marginRight: 8 }} />
+                        <Text style={styles.notFoundTitle}>No Registered User Found</Text>
+                      </View>
+                      <Text style={styles.notFoundDesc}>
+                        This mobile number (+91 {sellerMobile}) is not registered. Create a profile to continue.
+                      </Text>
                       <TouchableOpacity
                         style={styles.registerUserBtn}
-                        onPress={() => {
-                          setOnboardingPartyType('Seller');
-                          setModalVisible(true);
-                        }}
+                        onPress={() => { setOnboardingPartyType('Seller'); setModalVisible(true); }}
                       >
                         <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
                         <Text style={styles.registerUserBtnText}>+ Create Company</Text>
                       </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.tryAnotherBtn}
-                        onPress={() => { setSellerMobile(''); setSellerNotFound(false); setSellerSearchError(''); }}
-                      >
-                        <X size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
-                        <Text style={styles.tryAnotherBtnText}>Dismiss</Text>
-                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </View>
+              ) : (
+                <View style={styles.selectedPartyProfileCard}>
+                  <View style={styles.profileCardTopRow}>
+                    <Text style={styles.profileBusinessName} numberOfLines={1}>
+                      {sellerParty.company?.companyName || sellerParty.company?.name || 'Seller Business'}
+                    </Text>
+                    <View style={styles.statusBadgePillGreen}>
+                      <ShieldCheck size={12} color="#15803D" style={{ marginRight: 4 }} />
+                      <Text style={styles.statusBadgeTextGreen}>Selected Seller</Text>
                     </View>
                   </View>
-                ) : (
-                  <Text style={styles.helperText}>
-                    Enter 10 digits to auto-search registered seller accounts.
+                  <Text style={styles.profileOwnerInfo}>
+                    Owner: {sellerParty.user?.name || 'Seller'} (+91 {sellerParty.user?.mobileNumber || sellerMobile})
                   </Text>
-                )}
-              </View>
-            ) : partyJustAdded === 'seller' ? (
-              <View style={styles.successPartyCard}>
-                <View style={styles.successCheckCircle}>
-                  <Check size={24} color="#FFFFFF" />
-                </View>
-                <Text style={styles.successPartyTitle}>
-                  {sellerParty.company?.companyName || sellerParty.company?.name || 'Seller Business'}
-                </Text>
-                <Text style={styles.successPartySubtitle}>Seller Added — Moving to Buyer...</Text>
-              </View>
-            ) : (
-              <View style={styles.selectedPartyProfileCard}>
-                <View style={styles.profileCardTopRow}>
-                  <Text style={styles.profileBusinessName} numberOfLines={1}>
-                    {sellerParty.company?.companyName || sellerParty.company?.name || 'Seller Business'}
-                  </Text>
-                  <View style={[
-                    styles.statusBadgePill,
-                    { backgroundColor: sellerStatus === 'Approved' ? COLORS.successLight : COLORS.warningLight }
-                  ]}>
-                    {sellerStatus === 'Approved' ? (
-                      <ShieldCheck size={12} color={COLORS.successDark} style={{ marginRight: 4 }} />
-                    ) : (
-                      <Clock size={12} color={COLORS.warning} style={{ marginRight: 4 }} />
-                    )}
-                    <Text style={[
-                      styles.statusBadgeText,
-                      { color: sellerStatus === 'Approved' ? COLORS.successDark : COLORS.warning }
-                    ]}>
-                      {sellerStatus === 'Approved' ? 'Verified Seller' : 'Pending Verification'}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.profileOwnerInfo}>
-                  Owner: {sellerParty.user?.name || 'Seller'} (+91 {sellerParty.user?.mobileNumber || sellerMobile})
-                </Text>
-                <Text style={styles.profileAddressText}>{sellerParty.company?.address || 'Location registered'}</Text>
-
-                <TouchableOpacity
-                  onPress={() => { setSellerParty(null); setSellerProducts([]); setSelectedProduct(''); setSellerNotFound(false); setSellerSearchError(''); }}
-                  style={styles.changePartyLinkBtn}
-                >
-                  <Text style={styles.changePartyLinkText}>Change</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* STEP 2: BUYER CARD */}
-        {currentStep === 2 && (
-          <View style={styles.cardSection}>
-            <View style={styles.cardHeaderRow}>
-              <View style={[styles.cardHeaderIconBox, { backgroundColor: COLORS.successLight }]}>
-                <User size={18} color={COLORS.success} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardSectionTitle}>Select Buyer</Text>
-                <Text style={styles.cardSectionSub}>Search registered buyer by 10-digit mobile number</Text>
-              </View>
-            </View>
-
-            {!buyerParty ? (
-              <View style={{ marginTop: 12 }}>
-                <Text style={styles.fieldLabel}>Buyer Mobile Number <Text style={styles.requiredStar}>*</Text></Text>
-                <View style={styles.phoneSearchContainer}>
-                  <View style={styles.countryCodePrefix}>
-                    <Text style={styles.countryCodeText}>+91</Text>
-                  </View>
-                  <TextInput
-                    style={styles.phoneInput}
-                    placeholder="Enter 10-digit mobile number"
-                    placeholderTextColor={COLORS.textPlaceholder}
-                    keyboardType="number-pad"
-                    maxLength={10}
-                    value={buyerMobile}
-                    onChangeText={handleBuyerMobileChange}
-                  />
-                  <TouchableOpacity style={[styles.searchIconButton, { backgroundColor: COLORS.success }]} onPress={() => handleSearchBuyer()}>
-                    <Search size={16} color="#FFFFFF" />
+                  <TouchableOpacity
+                    onPress={() => { setSellerParty(null); setSellerProducts([]); setSelectedProduct(''); }}
+                    style={styles.changePartyLinkBtn}
+                  >
+                    <Text style={styles.changePartyLinkText}>Change Seller</Text>
                   </TouchableOpacity>
                 </View>
+              )}
+            </View>
 
-                <TouchableOpacity
-                  style={[styles.pickFromContactsPillBtn, { backgroundColor: COLORS.successLight, borderColor: COLORS.successBorder }]}
-                  onPress={() => openDeviceContactsModal('Buyer')}
-                  activeOpacity={0.82}
-                >
-                  <View style={[styles.contactsBtnIconBadge, { backgroundColor: '#DCFCE7' }]}>
-                    <BookUser size={15} color={COLORS.success} />
+            {/* CARD 2: SELECT BUYER */}
+            <View style={styles.cardSection}>
+              <View style={styles.cardHeaderRow}>
+                <View style={[styles.cardHeaderIconBox, { backgroundColor: '#ECFDF5' }]}>
+                  <User size={18} color="#059669" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardSectionTitle}>Select Buyer</Text>
+                </View>
+                <View style={styles.requiredBadge}>
+                  <Text style={styles.requiredBadgeText}>* Required</Text>
+                </View>
+              </View>
+
+              {!buyerParty ? (
+                <View style={{ marginTop: 12 }}>
+                  <View style={styles.searchInputBoxContainer}>
+                    <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={styles.searchInputBoxText}
+                      placeholder="Search for purchasing entity..."
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="number-pad"
+                      maxLength={10}
+                      value={buyerMobile}
+                      onChangeText={handleBuyerMobileChange}
+                    />
                   </View>
-                  <Text style={[styles.pickFromContactsPillText, { color: COLORS.success }]}>Choose from Contacts</Text>
-                  <ChevronRight size={15} color={COLORS.success} />
-                </TouchableOpacity>
 
-                {/* SEARCH ERROR STATE (e.g. Registered as Broker) */}
-                {buyerSearchError ? (
-                  <View style={[styles.notFoundCard, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
-                    <View style={styles.notFoundHeaderRow}>
-                      <AlertCircle size={18} color={COLORS.error} style={{ marginRight: 8 }} />
-                      <Text style={[styles.notFoundTitle, { color: COLORS.error }]}>Notice / Cannot Select User</Text>
+                  <TouchableOpacity
+                    style={styles.pickFromContactsPillBtn}
+                    onPress={() => openDeviceContactsModal('Buyer')}
+                    activeOpacity={0.82}
+                  >
+                    <BookUser size={15} color="#059669" style={{ marginRight: 6 }} />
+                    <Text style={styles.pickFromContactsPillText}>Choose from Contacts</Text>
+                    <ChevronRight size={15} color="#059669" />
+                  </TouchableOpacity>
+
+                  {/* SEARCH ERROR STATE */}
+                  {buyerSearchError ? (
+                    <View style={[styles.notFoundCard, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
+                      <View style={styles.notFoundHeaderRow}>
+                        <AlertCircle size={18} color={COLORS.error} style={{ marginRight: 8 }} />
+                        <Text style={[styles.notFoundTitle, { color: COLORS.error }]}>Notice / Cannot Select User</Text>
+                      </View>
+                      <Text style={[styles.notFoundDesc, { color: '#991B1B' }]}>
+                        {buyerSearchError}
+                      </Text>
                     </View>
-                    <Text style={[styles.notFoundDesc, { color: '#991B1B' }]}>
-                      {buyerSearchError}
-                    </Text>
-
-                    <View style={styles.notFoundBtnRow}>
-                      {!buyerSearchError.toLowerCase().includes('registered as a broker') ? (
-                        <TouchableOpacity
-                          style={[styles.registerUserBtn, { backgroundColor: COLORS.success }]}
-                          onPress={() => {
-                            setOnboardingPartyType('Buyer');
-                            setModalVisible(true);
-                          }}
-                        >
-                          <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.registerUserBtnText}>+ Create Company</Text>
-                        </TouchableOpacity>
-                      ) : null}
-
+                  ) : buyerNotFound ? (
+                    <View style={styles.notFoundCard}>
+                      <View style={styles.notFoundHeaderRow}>
+                        <AlertCircle size={18} color={COLORS.warning} style={{ marginRight: 8 }} />
+                        <Text style={styles.notFoundTitle}>No Registered User Found</Text>
+                      </View>
+                      <Text style={styles.notFoundDesc}>
+                        This mobile number (+91 {buyerMobile}) is not registered. Create a profile to continue.
+                      </Text>
                       <TouchableOpacity
-                        style={styles.tryAnotherBtn}
-                        onPress={() => { setBuyerMobile(''); setBuyerSearchError(''); setBuyerNotFound(false); }}
-                      >
-                        <X size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
-                        <Text style={styles.tryAnotherBtnText}>Dismiss</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ) : buyerNotFound ? (
-                  <View style={styles.notFoundCard}>
-                    <View style={styles.notFoundHeaderRow}>
-                      <AlertCircle size={18} color={COLORS.warning} style={{ marginRight: 8 }} />
-                      <Text style={styles.notFoundTitle}>No Registered User Found</Text>
-                    </View>
-                    <Text style={styles.notFoundDesc}>
-                      This mobile number (+91 {buyerMobile}) is not registered. You can create a company profile to onboard them.
-                    </Text>
-
-                    <View style={styles.notFoundBtnRow}>
-                      <TouchableOpacity
-                        style={[styles.registerUserBtn, { backgroundColor: COLORS.success }]}
-                        onPress={() => {
-                          setOnboardingPartyType('Buyer');
-                          setModalVisible(true);
-                        }}
+                        style={styles.registerUserBtn}
+                        onPress={() => { setOnboardingPartyType('Buyer'); setModalVisible(true); }}
                       >
                         <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
                         <Text style={styles.registerUserBtnText}>+ Create Company</Text>
                       </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.tryAnotherBtn}
-                        onPress={() => { setBuyerMobile(''); setBuyerNotFound(false); setBuyerSearchError(''); }}
-                      >
-                        <X size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
-                        <Text style={styles.tryAnotherBtnText}>Dismiss</Text>
-                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </View>
+              ) : (
+                <View style={styles.selectedPartyProfileCard}>
+                  <View style={styles.profileCardTopRow}>
+                    <Text style={styles.profileBusinessName} numberOfLines={1}>
+                      {buyerParty.company?.companyName || buyerParty.company?.name || 'Buyer Business'}
+                    </Text>
+                    <View style={styles.statusBadgePillGreen}>
+                      <ShieldCheck size={12} color="#15803D" style={{ marginRight: 4 }} />
+                      <Text style={styles.statusBadgeTextGreen}>Selected Buyer</Text>
                     </View>
                   </View>
-                ) : (
-                  <Text style={styles.helperText}>
-                    Enter 10 digits to auto-search registered buyer accounts.
+                  <Text style={styles.profileOwnerInfo}>
+                    Owner: {buyerParty.user?.name || 'Buyer'} (+91 {buyerParty.user?.mobileNumber || buyerMobile})
                   </Text>
-                )}
-              </View>
-            ) : partyJustAdded === 'buyer' ? (
-              <View style={[styles.successPartyCard, { borderColor: COLORS.successBorder, backgroundColor: COLORS.successLight }]}>
-                <View style={[styles.successCheckCircle, { backgroundColor: COLORS.success }]}>
-                  <Check size={24} color="#FFFFFF" />
+                  <TouchableOpacity
+                    onPress={() => setBuyerParty(null)}
+                    style={styles.changePartyLinkBtn}
+                  >
+                    <Text style={styles.changePartyLinkText}>Change Buyer</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.successPartyTitle}>
-                  {buyerParty.company?.companyName || buyerParty.company?.name || 'Buyer Business'}
-                </Text>
-                <Text style={styles.successPartySubtitle}>Buyer Added — Moving to Deal Details...</Text>
-              </View>
-            ) : (
-              <View style={styles.selectedPartyProfileCard}>
-                <View style={styles.profileCardTopRow}>
-                  <Text style={styles.profileBusinessName} numberOfLines={1}>
-                    {buyerParty.company?.companyName || buyerParty.company?.name || 'Buyer Business'}
-                  </Text>
-                  <View style={[
-                    styles.statusBadgePill,
-                    { backgroundColor: buyerStatus === 'Approved' ? COLORS.successLight : COLORS.warningLight }
-                  ]}>
-                    {buyerStatus === 'Approved' ? (
-                      <ShieldCheck size={12} color={COLORS.successDark} style={{ marginRight: 4 }} />
-                    ) : (
-                      <Clock size={12} color={COLORS.warning} style={{ marginRight: 4 }} />
-                    )}
-                    <Text style={[
-                      styles.statusBadgeText,
-                      { color: buyerStatus === 'Approved' ? COLORS.successDark : COLORS.warning }
-                    ]}>
-                      {buyerStatus === 'Approved' ? 'Verified Buyer' : 'Pending Verification'}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.profileOwnerInfo}>
-                  Owner: {buyerParty.user?.name || 'Buyer'} (+91 {buyerParty.user?.mobileNumber || buyerMobile})
-                </Text>
-                <Text style={styles.profileAddressText}>{buyerParty.company?.address || 'Location registered'}</Text>
-
-                <TouchableOpacity onPress={() => { setBuyerParty(null); setBuyerNotFound(false); setBuyerSearchError(''); }} style={styles.changePartyLinkBtn}>
-                  <Text style={styles.changePartyLinkText}>Change</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+              )}
+            </View>
           </View>
         )}
 
-        {/* STEP 3: DEAL DETAILS CARD */}
-        {currentStep === 3 && (
+        {/* STEP 2: COMMODITY DETAILS */}
+        {currentStep === 2 && (
           <View style={{ gap: 16 }}>
             {/* Commodity Product Group */}
             <View style={styles.cardSection}>
@@ -1454,20 +1333,125 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
             </View>
           </View>
         )}
+
+        {/* STEP 3: REVIEW & ISSUE SAUDA */}
+        {currentStep === 3 && (
+          <View style={{ gap: 16 }}>
+            {/* SAUDA SUMMARY CARD */}
+            <View style={styles.summaryCardContainer}>
+              <View style={styles.summaryTopRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Handshake size={16} color={COLORS.primary} style={{ marginRight: 6 }} />
+                  <Text style={styles.summaryCardTitle}>Contract Summary</Text>
+                </View>
+                <View style={styles.secureBadgeTag}>
+                  <ShieldCheck size={12} color={COLORS.primary} style={{ marginRight: 4 }} />
+                  <Text style={styles.secureBadgeText}>Verified Trade</Text>
+                </View>
+              </View>
+
+              <View style={styles.summaryDivider} />
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Broker:</Text>
+                <Text style={styles.summaryDataValue} numberOfLines={1}>
+                  {selectedBrokerCompany?.companyName || selectedBrokerCompany?.name || 'MNC'}
+                </Text>
+              </View>
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Seller:</Text>
+                <Text style={styles.summaryDataValue} numberOfLines={1}>
+                  {sellerParty?.company?.companyName || sellerParty?.company?.name || 'Not Selected'}
+                </Text>
+              </View>
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Buyer:</Text>
+                <Text style={styles.summaryDataValue} numberOfLines={1}>
+                  {buyerParty?.company?.companyName || buyerParty?.company?.name || 'Not Selected'}
+                </Text>
+              </View>
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Product:</Text>
+                <Text style={styles.summaryDataValue} numberOfLines={1}>
+                  {selectedProduct || 'None'} ({quantity} {selectedUnitObj?.shortName || selectedUnitObj?.name})
+                </Text>
+              </View>
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Agreed Rate:</Text>
+                <Text style={styles.summaryDataValue}>{formatIndianCurrency(rate)} / {selectedUnitObj?.shortName || 'unit'}</Text>
+              </View>
+
+              <View style={styles.totalValueHighlightBox}>
+                <Text style={styles.totalValueHighlightLabel}>Total Value:</Text>
+                <Text style={styles.totalValueHighlightVal}>{formatIndianCurrency(totalValue)}</Text>
+              </View>
+
+              {numCommPct > 0 && (
+                <View style={styles.summaryDataRow}>
+                  <Text style={styles.summaryDataLabel}>Brokerage ({numCommPct}%):</Text>
+                  <Text style={[styles.summaryDataValue, { color: COLORS.success, fontWeight: '700' }]}>
+                    {formatIndianCurrency(commAmount)}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.summaryDataRow}>
+                <Text style={styles.summaryDataLabel}>Payment Terms:</Text>
+                <Text style={styles.summaryDataValue}>{paymentTerms || '7 Days Credit'}</Text>
+              </View>
+
+              {deliveryLocation ? (
+                <View style={styles.summaryDataRow}>
+                  <Text style={styles.summaryDataLabel}>Delivery Location:</Text>
+                  <Text style={styles.summaryDataValue}>{deliveryLocation}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       {/* ─── BOTTOM ACTION FOOTER BAR ─── */}
       <View style={styles.bottomActionFooter}>
         {currentStep === 1 && (
-          <TouchableOpacity
-            style={[styles.primaryActionBtn, !sellerParty && styles.actionBtnDisabled]}
-            disabled={!sellerParty}
-            onPress={() => { setFormError(''); setCurrentStep(2); }}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.primaryActionBtnText}>Continue to Buyer</Text>
-            <ChevronRight size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
-          </TouchableOpacity>
+          <View style={styles.twoBtnActionRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748B', letterSpacing: 0.3 }}>
+                Selected Parties
+              </Text>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: '#0F172A' }}>
+                {(sellerParty ? 1 : 0) + (buyerParty ? 1 : 0)} / 2
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.primaryActionBtn,
+                { flex: 1.5, backgroundColor: '#0284C7' },
+                (!sellerParty || !buyerParty) && styles.actionBtnDisabled
+              ]}
+              onPress={() => {
+                if (!sellerParty) {
+                  setFormError('Please select a Seller (*Required)');
+                  return;
+                }
+                if (!buyerParty) {
+                  setFormError('Please select a Buyer (*Required)');
+                  return;
+                }
+                setFormError('');
+                setCurrentStep(2);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.primaryActionBtnText}>Next Step</Text>
+              <ChevronRight size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
+          </View>
         )}
 
         {currentStep === 2 && (
@@ -1478,12 +1462,22 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.primaryActionBtn, { flex: 1 }, !buyerParty && styles.actionBtnDisabled]}
-              disabled={!buyerParty}
-              onPress={() => { setFormError(''); setCurrentStep(3); }}
+              style={[styles.primaryActionBtn, { flex: 1, backgroundColor: '#0284C7' }]}
+              onPress={() => {
+                if (!selectedProduct) {
+                  setFormError('Please select a Commodity/Product');
+                  return;
+                }
+                if (!quantity || !rate) {
+                  setFormError('Please enter Quantity and Rate');
+                  return;
+                }
+                setFormError('');
+                setCurrentStep(3);
+              }}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryActionBtnText}>Continue to Details</Text>
+              <Text style={styles.primaryActionBtnText}>Next Step</Text>
               <ChevronRight size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
             </TouchableOpacity>
           </View>
@@ -1499,7 +1493,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
             <TouchableOpacity
               style={[
                 styles.primaryActionBtn,
-                { flex: 1 },
+                { flex: 1, backgroundColor: '#0284C7' },
                 (!sellerParty || !buyerParty || !selectedProduct || isLoading) && styles.actionBtnDisabled,
               ]}
               disabled={!sellerParty || !buyerParty || !selectedProduct || isLoading}
@@ -1509,7 +1503,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.primaryActionBtnText}>Create Sauda</Text>
+                <Text style={styles.primaryActionBtnText}>Issue Sauda Now</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1854,6 +1848,230 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bgMain,
+  },
+  // ─── ROYAL BLUE HEADER & STEPPER STYLES (Matching Screenshot) ───
+  topHeaderBlue: {
+    height: 60,
+    backgroundColor: '#0D52ED',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  backBtnBlue: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleBlue: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  headerIconBtnBlue: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userAvatarCircleBlue: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#93C5FD',
+  },
+
+  progressTrackerContainerBlue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0D52ED',
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+    paddingTop: 6,
+  },
+  stepCircleActiveBlue: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  stepNodeLabelActiveBlue: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+
+  stepBannerCardBlue: {
+    backgroundColor: '#0D52ED',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    marginTop: -12,
+    marginHorizontal: -16,
+    elevation: 4,
+    shadowColor: '#0D52ED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  stepBannerTitleBlue: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  stepBannerSubBlue: {
+    fontSize: 12,
+    color: '#DBEAFE',
+    marginTop: 4,
+    fontWeight: '600',
+  },
+
+  /* ORIGINATING BROKER CARD */
+  originatingBrokerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#DBEAFE',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginTop: -8,
+  },
+  brokerIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  originatingBrokerSub: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  originatingBrokerName: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginTop: 1,
+  },
+  verifiedBlueBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  verifiedBlueBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#0D52ED',
+  },
+
+  /* REQUIRED BADGE */
+  requiredBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  requiredBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+
+  /* SEARCH INPUT BOX */
+  searchInputBoxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 46,
+    marginBottom: 10,
+  },
+  searchInputBoxText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+
+  /* QUICK CHIPS */
+  quickChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  quickChipPill: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#DBEAFE',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  quickChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
+  },
+
+  statusBadgePillGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeTextGreen: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+
+  /* REGISTER NEW PARTY DASHED BTN */
+  registerNewPartyDashedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#93C5FD',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  registerNewPartyDashedBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0D52ED',
   },
   toastBanner: {
     position: 'absolute',

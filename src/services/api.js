@@ -307,6 +307,8 @@ export const createDeal = async (dealData, token) => {
   }
 };
 
+// Get deals of user's company only.................................................................................................................................................................
+
 export const getDeals = async (token, page = 1, limit = 10, companyId = null) => {
   try {
     return await getRequest(SummaryApi.getDeals(page, limit, companyId), token);
@@ -899,9 +901,12 @@ export const confirmOwnerVerification = async (payload, token) => {
   }
 };
 
-export const getBrokerMyDeals = async (token = null) => {
+export const getBrokerMyDeals = async (companyId = null, token = null) => {
   try {
-    return await getRequest(SummaryApi.getBrokerMyDeals, token);
+    const config = typeof SummaryApi.getBrokerMyDeals === 'function'
+      ? SummaryApi.getBrokerMyDeals(companyId)
+      : SummaryApi.getBrokerMyDeals;
+    return await getRequest(config, token);
   } catch (error) {
     console.warn('getBrokerMyDeals notice:', error.message || error);
     return { success: false, data: [] };

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LayoutDashboard, Handshake, Plus, MessageSquare, User } from 'lucide-react-native';
+import { LayoutDashboard, Building2, Plus, Bell, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { fontSize, moderateScale, scale, isTablet } from '../../utils/responsive';
@@ -9,6 +9,7 @@ import { fontSize, moderateScale, scale, isTablet } from '../../utils/responsive
 const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) => {
   const insets = useSafeAreaInsets();
   const [cachedRole, setCachedRole] = React.useState(null);
+  const [unreadNotifCount, setUnreadNotifCount] = React.useState(0);
 
   React.useEffect(() => {
     const checkRole = async () => {
@@ -17,7 +18,20 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) =>
         if (role) setCachedRole(role);
       } catch (e) { }
     };
+    const fetchUnread = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (token) {
+          const { getPendingInvitations } = require('../../services/api');
+          const res = await getPendingInvitations(token);
+          if (res && res.success && Array.isArray(res.data)) {
+            setUnreadNotifCount(res.data.length);
+          }
+        }
+      } catch (e) { }
+    };
     checkRole();
+    fetchUnread();
   }, [activeScreen]);
 
   const isBrokerRole = isBroker || cachedRole === 'Broker' || String(activeScreen || '').startsWith('Broker');
@@ -32,10 +46,10 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) =>
       activeBg: 'rgba(52, 101, 234, 0.12)',
     },
     {
-      screen: isBrokerRole ? 'BrokerCreatedDeals' : 'DealsList',
-      Icon: Handshake,
-      label: 'Saudas',
-      activeScreens: ['DealsList', 'BrokerDealsList', 'BrokerCreatedDeals'],
+      screen: 'MyCompanies',
+      Icon: Building2,
+      label: 'Companies',
+      activeScreens: ['MyCompanies', 'CompanyDetails', 'BrokerCompanyDetails'],
       color: '#10B981', // Emerald Green
       activeBg: 'rgba(16, 185, 129, 0.12)',
     },
@@ -47,12 +61,13 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) =>
       color: '#3465EA',
     },
     {
-      screen: 'ChatList',
-      Icon: MessageSquare,
-      label: 'Chat',
-      activeScreens: ['ChatList', 'DealChat'],
+      screen: 'Notifications',
+      Icon: Bell,
+      label: 'Notifications',
+      activeScreens: ['Notifications', 'ChatList', 'DealChat'],
       color: '#8B5CF6', // Indigo Violet
       activeBg: 'rgba(139, 92, 246, 0.12)',
+      badge: unreadNotifCount > 0 ? unreadNotifCount : null,
     },
     {
       screen: isBrokerRole ? 'Profile' : 'Profile',
@@ -108,6 +123,13 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) =>
                   color={iconColor}
                   strokeWidth={isActive ? 2.4 : 2.0}
                 />
+                {tab.badge ? (
+                  <View style={styles.footerBadgePill}>
+                    <Text style={styles.footerBadgeText}>
+                      {tab.badge > 9 ? '9+' : tab.badge}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <Text style={[
                 styles.tabLabel,
@@ -127,26 +149,27 @@ const Footer = ({ onNavigate, activeScreen = 'Dashboard', isBroker = false }) =>
 const styles = StyleSheet.create({
   tabBarWrapper: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    elevation: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    bottom: Platform.OS === 'ios' ? 12 : 10,
+    left: 12,
+    right: 12,
+    backgroundColor: 'transparent',
+    zIndex: 99,
   },
   tabBarContainer: {
     flexDirection: 'row',
-    height: moderateScale(60),
+    height: 64,
+    backgroundColor: '#EFF6FF', // Light bluish royal pastel shade
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingHorizontal: scale(4),
+    paddingHorizontal: 8,
+    elevation: 16,
+    shadowColor: '#1A56DB',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#DBEAFE',
   },
   tabBarContainerTablet: {
     maxWidth: 600,
@@ -154,28 +177,30 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   centerTabWrapper: {
-    top: -moderateScale(16),
+    top: -22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   centerButtonOuterRing: {
-    width: moderateScale(56),
-    height: moderateScale(56),
-    borderRadius: moderateScale(28),
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 10,
-    shadowColor: '#3465EA',
+    elevation: 14,
+    shadowColor: '#1A56DB',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    borderWidth: 3.5,
+    borderColor: '#EFF6FF',
     padding: 3,
   },
   centerButtonInner: {
     width: '100%',
     height: '100%',
-    borderRadius: moderateScale(25),
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -183,16 +208,38 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 2,
+    paddingVertical: 4,
     position: 'relative',
   },
   iconContainer: {
-    paddingHorizontal: scale(10),
-    paddingVertical: 3,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 16,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  footerBadgePill: {
+    position: 'absolute',
+    top: -2,
+    right: 2,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 8,
+    minWidth: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  footerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
   },
   tabLabel: {
-    fontSize: fontSize(10),
+    fontSize: 10,
     fontWeight: '600',
     color: '#64748B',
     marginTop: 2,

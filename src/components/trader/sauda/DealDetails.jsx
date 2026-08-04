@@ -87,6 +87,15 @@ const SectionHeader = ({ title, actionText, onAction }) => (
   </View>
 );
 
+const InfoTile = ({ label, value, valueColor = COLORS.textPrimary }) => (
+  <View style={styles.infoTile}>
+    <Text style={styles.infoTileLabel}>{label}</Text>
+    <Text style={[styles.infoTileVal, { color: valueColor }]} numberOfLines={1}>
+      {value}
+    </Text>
+  </View>
+);
+
 const InfoRow = ({ label, value, valueColor = COLORS.textPrimary, numberOfLines = 1 }) => (
   <View style={styles.infoRow}>
     <Text style={styles.infoRowLabel}>{label}</Text>
@@ -956,22 +965,24 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
           <View style={styles.gridRow}>
             <View style={styles.gridCol}>
-              <InfoRow label="Quantity" value={`${qty} MT`} />
+              <InfoTile label="Quantity" value={`${qty} MT`} />
             </View>
+            <View style={{ width: 10 }} />
             <View style={styles.gridCol}>
-              <InfoRow
+              <InfoTile
                 label="Price / Rate"
                 value={`₹${Number(deal.price || deal.product?.price || 0).toLocaleString('en-IN')}`}
               />
             </View>
           </View>
 
-          <View style={[styles.gridRow, { marginTop: 12 }]}>
+          <View style={[styles.gridRow, { marginTop: 10 }]}>
             <View style={styles.gridCol}>
-              <InfoRow label="Agreement Date" value={dealDateDisplay} />
+              <InfoTile label="Agreement Date" value={dealDateDisplay} />
             </View>
+            <View style={{ width: 10 }} />
             <View style={styles.gridCol}>
-              <InfoRow label="Broker Facilitator" value={brokerNameDisplay} />
+              <InfoTile label="Broker Facilitator" value={brokerNameDisplay} />
             </View>
           </View>
         </View>
@@ -1622,6 +1633,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: COLORS.primary,
+  },
+  infoTile: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  infoTileLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 3,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  infoTileVal: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
   },
   infoRow: {
     flexDirection: 'row',

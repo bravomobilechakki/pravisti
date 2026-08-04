@@ -34,7 +34,8 @@ import {
   ArrowUpRight,
   ChevronRight,
 } from 'lucide-react-native';
-import { getCompanyDetails, updateCompany, deleteCompany, getDeals, getExpiredDeals, getUserProfile } from '../../../services/api';
+import { getCompanyDetails, updateCompany, deleteCompany, getDeals, getExpiredDeals, getUserProfile, getBrokerProductAccessRequests } from '../../../services/api';
+import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
 
 const formatVolume = (value) => {
   const num = Number(value);
@@ -85,7 +86,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
   const [editErrors, setEditErrors] = React.useState({ name: '', phone: '', registrationNumber: '' });
 
-  const themeColor = '#4F46E5';
+  const themeColor = '#1A56DB';
 
   const getUserRoleInCompany = () => {
     if (!currentUser || !company) return 'Member';
@@ -237,6 +238,28 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     }
   }, [company, routeData]);
 
+  const [accessRequests, setAccessRequests] = React.useState([]);
+  const [isAccessModalVisible, setIsAccessModalVisible] = React.useState(false);
+
+  const checkProductAccessRequests = React.useCallback(async () => {
+    const companyId = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
+    if (!companyId) return;
+    try {
+      const res = await getBrokerProductAccessRequests(companyId);
+      if (res && res.success && Array.isArray(res.data)) {
+        const pending = res.data.filter(r => r.status === 'pending');
+        setAccessRequests(res.data);
+        if (pending.length > 0) {
+          setIsAccessModalVisible(true);
+        } else {
+          setIsAccessModalVisible(false);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch product access requests:', err);
+    }
+  }, [company, routeData]);
+
   React.useEffect(() => {
     fetchDetails();
   }, [fetchDetails]);
@@ -244,8 +267,9 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   React.useEffect(() => {
     if (company) {
       fetchDealsList();
+      checkProductAccessRequests();
     }
-  }, [company, fetchDealsList]);
+  }, [company, fetchDealsList, checkProductAccessRequests]);
 
   const handleUpdate = async () => {
     if (!editData.name || !editData.phone || !editData.registrationNumber) {
@@ -364,6 +388,18 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     }
     return Array.from(productMap.values());
   }, [deals, company]);
+
+  const categoriesCount = React.useMemo(() => {
+    const cats = new Set();
+    if (company?.industry) {
+      const indName = typeof company.industry === 'object' ? company.industry.name : company.industry;
+      if (indName) cats.add(indName);
+    }
+    products.forEach(p => {
+      if (p.category) cats.add(p.category);
+    });
+    return cats.size;
+  }, [company, products]);
 
   if (isLoading) {
     return (
@@ -506,50 +542,50 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           </View>
         </View>
 
-        {/* Modern Dashboard-style Quick Actions */}
-        <View style={styles.quickServicesContainer}>
+        {/* Modern 1 Row (4 Small Square Tiles) for Quick Actions */}
+        <View style={styles.quickServicesGrid}>
           <TouchableOpacity
-            style={styles.serviceItem}
+            style={styles.squareServiceCard}
             onPress={() => onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name })}
             activeOpacity={0.8}
           >
-            <View style={[styles.serviceIconCircle, { backgroundColor: '#4F46E5' }]}>
-              <Handshake size={22} color="#FFFFFF" />
+            <View style={styles.squareIconBox}>
+              <Handshake size={20} color="#1A56DB" />
             </View>
-            <Text style={styles.serviceLabel} numberOfLines={1}>My Sauda</Text>
+            <Text style={styles.squareServiceLabel} numberOfLines={1}>My Sauda</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.serviceItem}
+            style={styles.squareServiceCard}
             onPress={() => onNavigate('CreateDeal', { company })}
             activeOpacity={0.8}
           >
-            <View style={[styles.serviceIconCircle, { backgroundColor: '#2563EB' }]}>
-              <Plus size={22} color="#FFFFFF" />
+            <View style={styles.squareIconBox}>
+              <Plus size={20} color="#1A56DB" />
             </View>
-            <Text style={styles.serviceLabel} numberOfLines={1}>New Sauda</Text>
+            <Text style={styles.squareServiceLabel} numberOfLines={1}>New Sauda</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.serviceItem}
+            style={styles.squareServiceCard}
             onPress={() => onNavigate('CategoryPage', { company })}
             activeOpacity={0.8}
           >
-            <View style={[styles.serviceIconCircle, { backgroundColor: '#8B5CF6' }]}>
-              <Tag size={20} color="#FFFFFF" />
+            <View style={styles.squareIconBox}>
+              <Tag size={19} color="#1A56DB" />
             </View>
-            <Text style={styles.serviceLabel} numberOfLines={1}>Categories</Text>
+            <Text style={styles.squareServiceLabel} numberOfLines={1}>Categories</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.serviceItem}
+            style={styles.squareServiceCard}
             onPress={() => onNavigate('AddProductPage', { company })}
             activeOpacity={0.8}
           >
-            <View style={[styles.serviceIconCircle, { backgroundColor: '#10B981' }]}>
-              <Box size={22} color="#FFFFFF" />
+            <View style={styles.squareIconBox}>
+              <Box size={20} color="#1A56DB" />
             </View>
-            <Text style={styles.serviceLabel} numberOfLines={1}>Products</Text>
+            <Text style={styles.squareServiceLabel} numberOfLines={1}>Products</Text>
           </TouchableOpacity>
         </View>
 
@@ -673,7 +709,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                   >
                     <View style={styles.emptyTabLeft}>
                       <View style={styles.emptyTabIconBox}>
-                        <Handshake size={20} color="#4F46E5" />
+                        <Handshake size={20} color="#1A56DB" />
                       </View>
                       <View style={styles.emptyTabContent}>
                         <Text style={styles.emptyTabTitle}>Initiate First Sauda</Text>
@@ -728,7 +764,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <FileText size={18} color="#4F46E5" />
+                <FileText size={18} color="#1A56DB" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Registration / GSTIN</Text>
@@ -740,7 +776,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Building2 size={18} color="#4F46E5" />
+                <Building2 size={18} color="#1A56DB" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Company Type</Text>
@@ -752,7 +788,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <User size={18} color="#4F46E5" />
+                <User size={18} color="#1A56DB" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Your Role in Company</Text>
@@ -764,7 +800,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Tag size={18} color="#4F46E5" />
+                <Tag size={18} color="#1A56DB" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Industry Sector</Text>
@@ -780,7 +816,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Phone size={18} color="#4F46E5" />
+                <Phone size={18} color="#1A56DB" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Phone Number</Text>
@@ -792,7 +828,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <Mail size={18} color="#4F46E5" />
+                <Mail size={18} color="#1A56DB" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Email Address</Text>
@@ -804,7 +840,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}>
-                <MapPin size={18} color="#4F46E5" />
+                <MapPin size={18} color="#1A56DB" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>Address</Text>
@@ -821,7 +857,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 <View style={styles.divider} />
                 <View style={styles.infoRow}>
                   <View style={styles.infoIconBox}>
-                    <Globe size={18} color="#4F46E5" />
+                    <Globe size={18} color="#1A56DB" />
                   </View>
                   <View style={styles.infoContent}>
                     <Text style={styles.infoLabel}>Website</Text>
@@ -838,7 +874,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 <View style={styles.divider} />
                 <View style={styles.infoRow}>
                   <View style={styles.infoIconBox}>
-                    <FileText size={18} color="#4F46E5" />
+                    <FileText size={18} color="#1A56DB" />
                   </View>
                   <View style={styles.infoContent}>
                     <Text style={styles.infoLabel}>Business Description</Text>
@@ -1065,6 +1101,12 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <ProductAccessRequestModal
+        visible={isAccessModalVisible}
+        requests={accessRequests}
+        onClose={() => setIsAccessModalVisible(false)}
+        onResponseSuccess={checkProductAccessRequests}
+      />
     </SafeAreaView>
   );
 };
@@ -1117,7 +1159,7 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
   softHeroContainer: {
-    backgroundColor: '#1E1B4B',
+    backgroundColor: '#1A56DB',
     borderTopLeftRadius: 36,
     borderBottomRightRadius: 36,
     borderTopRightRadius: 12,
@@ -1126,8 +1168,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     marginBottom: 16,
     borderWidth: 1.5,
-    borderColor: '#4F46E5',
-    shadowColor: '#1E1B4B',
+    borderColor: '#2563EB',
+    shadowColor: '#1A56DB',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
@@ -1140,7 +1182,7 @@ const styles = StyleSheet.create({
     width: 240,
     height: 240,
     borderRadius: 120,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     top: -100,
     right: -80,
   },
@@ -1149,7 +1191,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     bottom: -80,
     left: -60,
   },
@@ -1327,46 +1369,72 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     marginVertical: 4,
   },
-  quickServicesContainer: {
+  quickServicesGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderWidth: 1,
+    paddingHorizontal: 6,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
     marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-  },
-  serviceItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-  },
-  serviceIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
     elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
   },
-  serviceLabel: {
+  squareServiceCard: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+  },
+  squareIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    position: 'relative',
+  },
+  tileBadgePill: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#1A56DB',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 8,
+    minWidth: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  tileBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  squareServiceLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#334155',
+    color: '#1E293B',
     textAlign: 'center',
+  },
+  squareTileCountVal: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    marginTop: 1,
   },
   tabPanelContainer: {
     flex: 1,
@@ -1392,7 +1460,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   inlineCreateText: {
-    color: '#4F46E5',
+    color: '#1A56DB',
     fontWeight: '800',
     fontSize: 12,
   },
@@ -1479,7 +1547,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     width: '100%',
-    shadowColor: '#4F46E5',
+    shadowColor: '#1A56DB',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 10,
@@ -1775,7 +1843,7 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     marginTop: 12,
-    backgroundColor: '#4F46E5',
+    backgroundColor: '#1A56DB',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -1805,7 +1873,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
-    shadowColor: '#4F46E5',
+    shadowColor: '#1A56DB',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.02,
     shadowRadius: 4,
@@ -1814,7 +1882,7 @@ const styles = StyleSheet.create({
   viewMoreButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#4F46E5',
+    color: '#1A56DB',
   },
   userRoleBadge: {
     paddingHorizontal: 8,

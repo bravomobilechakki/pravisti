@@ -8,6 +8,8 @@ import {
   ScrollView,
   StatusBar,
   ActivityIndicator,
+  RefreshControl,
+  Image,
 } from 'react-native';
 import { getCompanies, getUserProfile } from '../../../services/api';
 import {
@@ -18,11 +20,18 @@ import {
   User,
   Handshake,
   ChevronRight,
+  ShieldCheck,
+  CheckCircle2,
+  Phone,
+  FileText,
+  TrendingUp,
+  Award,
 } from 'lucide-react-native';
 
 const MyCompanies = ({ onNavigate }) => {
   const [companies, setCompanies] = React.useState([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [currentUser, setCurrentUser] = React.useState(null);
 
   React.useEffect(() => {
@@ -31,7 +40,6 @@ const MyCompanies = ({ onNavigate }) => {
         const AsyncStorage = require('@react-native-async-storage/async-storage').default;
         const token = await AsyncStorage.getItem('userToken');
         if (token) {
-          const { getUserProfile } = require('../../../services/api');
           const response = await getUserProfile(token);
           if (response && response.success) {
             setCurrentUser(response.data);
@@ -54,7 +62,7 @@ const MyCompanies = ({ onNavigate }) => {
     const ownerId = typeof company.owner === 'object' && company.owner !== null
       ? (company.owner._id || company.owner.id || company.owner.userId)
       : company.owner;
-      
+
     const ownerMobile = typeof company.owner === 'object' && company.owner !== null
       ? company.owner.mobileNumber
       : null;
@@ -89,7 +97,6 @@ const MyCompanies = ({ onNavigate }) => {
 
   const fetchUserCompanies = React.useCallback(async () => {
     try {
-      setIsLoading(true);
       const response = await getCompanies(1, 100);
       if (response && response.success) {
         setCompanies(response.data.companies || []);
@@ -98,6 +105,7 @@ const MyCompanies = ({ onNavigate }) => {
       console.warn('Failed to fetch user companies:', error);
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -105,149 +113,237 @@ const MyCompanies = ({ onNavigate }) => {
     fetchUserCompanies();
   }, [fetchUserCompanies]);
 
-  // Compute stats dynamically
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchUserCompanies();
+  };
+
+  // Dynamic stats
   const activeCount = companies.filter(c => c.status === 'active' || c.isVerified).length;
   const totalDeals = companies.reduce((sum, c) => sum + (c.recentDeals?.length || c.deals || 0), 0);
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" backgroundColor="#1A56DB" />
 
-      {/* Header */}
+      {/* ── Top Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => onNavigate('pop')} activeOpacity={0.7}>
-          <ArrowLeft size={22} color="#0F172A" />
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => onNavigate('pop')}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={18} color="#FFFFFF" />
         </TouchableOpacity>
 
         <View style={{ alignItems: 'center' }}>
-          <Text style={styles.title}>My Companies</Text>
-          <Text style={styles.subtitle}>{companies.length} {companies.length === 1 ? 'Business' : 'Businesses'}</Text>
+          <Text style={styles.title}>My Business Network</Text>
+          <Text style={styles.subtitle}>{companies.length} {companies.length === 1 ? 'Company Listed' : 'Companies Listed'}</Text>
         </View>
 
-        <TouchableOpacity onPress={() => onNavigate('AddCompany')} activeOpacity={0.7}>
-          <Plus size={22} color="#3B82F6" />
+        <TouchableOpacity
+          style={styles.addBtnHeader}
+          onPress={() => onNavigate('AddCompany')}
+          activeOpacity={0.8}
+        >
+          <Plus size={16} color="#1A56DB" />
+          <Text style={styles.addBtnHeaderText}>Add</Text>
         </TouchableOpacity>
       </View>
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="large" color="#1A56DB" />
+          <Text style={styles.loadingText}>Loading your companies...</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#1A56DB']}
+              tintColor="#1A56DB"
+            />
+          }
+        >
+          {/* ── Royal Blue Hero Banner ── */}
+          <View style={styles.heroBanner}>
+            <View style={styles.heroBgCircle1} />
+            <View style={styles.heroBgCircle2} />
 
-          {/* Stats */}
+            <View style={styles.heroTopRow}>
+              <View style={styles.heroBadge}>
+                <Award size={12} color="#F59E0B" />
+                <Text style={styles.heroBadgeText}>VERIFIED TRADER PROFILE</Text>
+              </View>
+            </View>
+
+            <Text style={styles.heroTitle}>Manage Your Companies</Text>
+            {/* <Text style={styles.heroSubtitle}>
+              Create Saudais, link trade accounts & track real-time mandi operations across all registered companies.
+            </Text> */}
+          </View>
+
+          {/* ── Dynamic Stats Cards Strip ── */}
           <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>{companies.length}</Text>
-              <Text style={styles.statText}>Total</Text>
+            <View style={[styles.statCard, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+              <View style={[styles.statIconBadge, { backgroundColor: '#DBEAFE' }]}>
+                <Building2 size={16} color="#1A56DB" />
+              </View>
+              <View>
+                <Text style={[styles.statNumber, { color: '#1A56DB' }]}>{companies.length}</Text>
+                <Text style={styles.statLabel}>Total Firms</Text>
+              </View>
             </View>
 
-            <View style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: '#22C55E' }]}>{activeCount}</Text>
-              <Text style={styles.statText}>Active</Text>
+            <View style={[styles.statCard, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+              <View style={[styles.statIconBadge, { backgroundColor: '#D1FAE5' }]}>
+                <ShieldCheck size={16} color="#059669" />
+              </View>
+              <View>
+                <Text style={[styles.statNumber, { color: '#059669' }]}>{activeCount}</Text>
+                <Text style={styles.statLabel}>Verified</Text>
+              </View>
             </View>
 
-            <View style={styles.statCard}>
-              <Text style={[styles.statNumber, { color: '#3B82F6' }]}>{totalDeals}</Text>
-              <Text style={styles.statText}>Deals</Text>
+            <View style={[styles.statCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+              <View style={[styles.statIconBadge, { backgroundColor: '#FDE68A' }]}>
+                <TrendingUp size={16} color="#D97706" />
+              </View>
+              <View>
+                <Text style={[styles.statNumber, { color: '#D97706' }]}>{totalDeals}</Text>
+                <Text style={styles.statLabel}>Saudas</Text>
+              </View>
             </View>
           </View>
 
+          {/* ── Company List Section ── */}
           {companies.length === 0 ? (
             /* Empty State */
             <View style={styles.emptyStateContainer}>
-              <View style={{ marginBottom: 16 }}>
-                <Building2 size={48} color="#94A3B8" />
+              <View style={styles.emptyIconCircle}>
+                <Building2 size={36} color="#1A56DB" />
               </View>
               <Text style={styles.emptyStateTitle}>No Registered Companies</Text>
               <Text style={styles.emptyStateSubtext}>
-                You haven't registered any companies under your profile yet. Add your first business now!
+                You haven't registered any companies under your profile yet. Add your first business to start trading!
               </Text>
               <TouchableOpacity
                 style={styles.emptyStateButton}
                 onPress={() => onNavigate('AddCompany')}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
               >
-                <Text style={styles.emptyStateButtonText}>Register Company</Text>
+                <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.emptyStateButtonText}>Register First Business</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            /* Company Cards */
+            /* Premium Company Cards */
             companies.map(item => {
-              const displayColor = item.color || '#3B82F6';
-              const gstNumber = item.registrationNumber || item.gstin || 'Not Registered';
-              const contactInfo = item.phone || item.email || 'No contact';
+              const gstNumber = item.registrationNumber || item.gstin || 'NOT REGISTERED';
+              const contactInfo = item.phone || item.email || 'No contact specified';
               const dealsCount = item.recentDeals?.length || item.deals || 0;
+              const userRole = getUserRoleInCompany(item);
+              const isOwner = userRole === 'Owner';
+              const isVerified = item.isVerified || item.status === 'active';
 
               return (
                 <TouchableOpacity
                   key={item._id || item.id}
                   style={styles.card}
-                  activeOpacity={0.85}
+                  activeOpacity={0.88}
                   onPress={() => onNavigate('CompanyDetails', { company: item, user: currentUser })}
                 >
-                  <View style={[styles.iconBox, { backgroundColor: displayColor + '15' }]}>
-                    {item.type === 'trader' ? (
-                      <Briefcase size={22} color={displayColor} />
-                    ) : (
-                      <Building2 size={22} color={displayColor} />
-                    )}
+                  {/* Left Company Initial Circle */}
+                  <View style={styles.companyInitialsBox}>
+                    <Text style={styles.companyInitialsText}>
+                      {item.name ? item.name.trim().charAt(0).toUpperCase() : 'B'}
+                    </Text>
                   </View>
 
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <Text style={styles.company} numberOfLines={1}>{item.name}</Text>
+                  {/* Middle Info */}
+                  <View style={styles.cardMainInfo}>
+                    <View style={styles.companyTitleRow}>
+                      <Text style={styles.companyName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+
+                      {/* Owner / Employee Badge */}
                       <View style={[
-                        styles.roleBadgeCompact,
+                        styles.roleBadge,
                         {
-                          backgroundColor: getUserRoleInCompany(item) === 'Owner' ? '#EEF2FF' : '#F1F5F9',
-                          borderColor: getUserRoleInCompany(item) === 'Owner' ? '#C7D2FE' : '#E2E8F0',
+                          backgroundColor: isOwner ? '#FEF3C7' : '#F1F5F9',
+                          borderColor: isOwner ? '#FDE68A' : '#E2E8F0',
                         }
                       ]}>
                         <Text style={[
-                          styles.roleBadgeCompactText,
-                          { color: getUserRoleInCompany(item) === 'Owner' ? '#4F46E5' : '#475569' }
+                          styles.roleBadgeText,
+                          { color: isOwner ? '#D97706' : '#475569' }
                         ]}>
-                          {getUserRoleInCompany(item)}
+                          {userRole}
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.gst} numberOfLines={1}>GST: {gstNumber}</Text>
 
-                    <View style={styles.row}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <User size={11} color="#475569" />
-                        <Text style={styles.meta} numberOfLines={1}>{contactInfo}</Text>
+                    {/* GST / Registration */}
+                    <View style={styles.gstRow}>
+                      <FileText size={11} color="#64748B" />
+                      <Text style={styles.gstText} numberOfLines={1}>
+                        GST/REG: {gstNumber}
+                      </Text>
+                    </View>
+
+                    {/* Meta Row: Contact info + Deals count */}
+                    <View style={styles.metaRow}>
+                      <View style={styles.metaCol}>
+                        <Phone size={10} color="#64748B" />
+                        <Text style={styles.metaText} numberOfLines={1}>{contactInfo}</Text>
                       </View>
-                      <Text style={styles.dot}>•</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Handshake size={11} color="#475569" />
-                        <Text style={styles.meta}>{dealsCount}</Text>
+
+                      <View style={styles.metaDot} />
+
+                      <View style={styles.metaCol}>
+                        <Handshake size={10} color="#1A56DB" />
+                        <Text style={[styles.metaText, { color: '#1A56DB', fontWeight: '700' }]}>
+                          {dealsCount} {dealsCount === 1 ? 'Sauda' : 'Saudas'}
+                        </Text>
                       </View>
                     </View>
                   </View>
 
-                  <ChevronRight size={20} color="#94A3B8" />
+                  {/* Right Status Dot & Arrow */}
+                  <View style={styles.cardRightCol}>
+                    <View style={[
+                      styles.statusPill,
+                      { backgroundColor: isVerified ? '#ECFDF5' : '#FEF3C7', borderColor: isVerified ? '#A7F3D0' : '#FDE68A' }
+                    ]}>
+                      <View style={[styles.statusDot, { backgroundColor: isVerified ? '#10B981' : '#F59E0B' }]} />
+                      <Text style={[styles.statusPillText, { color: isVerified ? '#059669' : '#D97706' }]}>
+                        {isVerified ? 'VERIFIED' : 'PENDING'}
+                      </Text>
+                    </View>
+
+                    <ChevronRight size={18} color="#94A3B8" style={{ marginTop: 6 }} />
+                  </View>
                 </TouchableOpacity>
               );
             })
           )}
 
-          {/* CTA (Only if they already have companies) */}
+          {/* Bottom Action CTA */}
           {companies.length > 0 && (
             <TouchableOpacity
-              style={styles.cta}
+              style={styles.bottomCta}
               onPress={() => onNavigate('AddCompany')}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <Plus size={16} color="#FFFFFF" />
-                <Text style={styles.ctaText}>Add New Company</Text>
-              </View>
+              <Plus size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.bottomCtaText}>Register New Business Company</Text>
             </TouchableOpacity>
           )}
-
         </ScrollView>
       )}
     </SafeAreaView>
@@ -261,213 +357,357 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
 
+  // ── HEADER ──
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#1A56DB',
   },
-
-  back: {
-    fontSize: 26,
-    color: '#0F172A',
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-
   title: {
-    color: '#0F172A',
-    fontSize: 18,
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  addBtnHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  addBtnHeaderText: {
+    color: '#1A56DB',
+    fontSize: 12,
     fontWeight: '800',
   },
 
-  subtitle: {
-    color: '#64748B',
-    fontSize: 12,
-  },
-
-  add: {
-    fontSize: 26,
-    color: '#3B82F6',
-  },
-
+  // ── CONTENT ──
   content: {
     padding: 16,
+    paddingBottom: 90,
   },
 
+  // ── HERO BANNER ──
+  heroBanner: {
+    backgroundColor: '#1A56DB',
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroBgCircle1: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    top: -60,
+    right: -40,
+  },
+  heroBgCircle2: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    bottom: -30,
+    left: -20,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  heroBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  heroSubtitle: {
+    color: 'rgba(255, 255, 255, 0.82)',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+
+  // ── STATS STRIP ──
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    gap: 10,
+    marginBottom: 16,
   },
-
   statCard: {
-    backgroundColor: '#FFFFFF',
     flex: 1,
-    marginHorizontal: 4,
-    padding: 14,
-    borderRadius: 14,
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1.2,
+    gap: 8,
   },
-
+  statIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   statNumber: {
-    color: '#0F172A',
     fontSize: 16,
     fontWeight: '800',
   },
-
-  statText: {
+  statLabel: {
+    fontSize: 10,
+    fontWeight: '600',
     color: '#64748B',
-    fontSize: 11,
-    marginTop: 4,
   },
 
+  // ── COMPANY CARD ──
   card: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    padding: 16,
+    padding: 14,
     borderRadius: 18,
-    marginBottom: 14,
+    marginBottom: 12,
     alignItems: 'center',
-    shadowColor: '#000',
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    shadowColor: '#1A56DB',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 3,
   },
-
-  iconBox: {
-    width: 50,
-    height: 50,
+  companyInitialsBox: {
+    width: 46,
+    height: 46,
     borderRadius: 14,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
   },
-
-  icon: {
-    fontSize: 24,
+  companyInitialsText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#1A56DB',
   },
-
-  company: {
-    color: '#0F172A',
-    fontSize: 15,
-    fontWeight: '700',
+  cardMainInfo: {
+    flex: 1,
   },
-
-  gst: {
-    color: '#64748B',
-    fontSize: 11,
-    marginTop: 3,
-  },
-
-  row: {
+  companyTitleRow: {
     flexDirection: 'row',
-    marginTop: 6,
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 3,
+  },
+  companyName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    flexShrink: 1,
+  },
+  roleBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  roleBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  gstRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  gstText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  metaRow: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-
-  meta: {
-    color: '#475569',
-    fontSize: 12,
+  metaCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
-
-  dot: {
-    color: '#CBD5E1',
+  metaText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  metaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#CBD5E1',
     marginHorizontal: 6,
   },
-
-  arrow: {
-    color: '#94A3B8',
-    fontSize: 22,
+  cardRightCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 4,
+  },
+  statusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  statusPillText: {
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 
-  cta: {
-    marginTop: 20,
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 16,
+  // ── BOTTOM CTA ──
+  bottomCta: {
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#3B82F6',
-    shadowOpacity: 0.3,
+    justifyContent: 'center',
+    backgroundColor: '#1A56DB',
+    paddingVertical: 14,
+    borderRadius: 16,
+    marginTop: 8,
+    shadowColor: '#1A56DB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 4,
-    marginBottom: 30,
   },
-
-  ctaText: {
+  bottomCtaText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
   },
 
+  // ── EMPTY STATE ──
   emptyStateContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 50,
     paddingHorizontal: 20,
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     marginTop: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     elevation: 2,
   },
-
-  emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: 16,
+  emptyIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
   },
-
   emptyStateTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 8,
+    marginBottom: 6,
   },
-
   emptyStateSubtext: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
     marginBottom: 20,
+    maxWidth: 280,
   },
-
   emptyStateButton: {
-    backgroundColor: '#3B82F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1A56DB',
     paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    shadowColor: '#1A56DB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
-
   emptyStateButtonText: {
     color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  roleBadgeCompact: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 0.5,
-    marginLeft: 6,
-  },
-  roleBadgeCompactText: {
-    fontSize: 9,
     fontWeight: '800',
+    fontSize: 13,
   },
 });

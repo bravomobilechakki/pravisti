@@ -13,6 +13,8 @@ import {
   ScrollView,
   Platform,
   StatusBar,
+  Animated,
+  Easing,
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { loginUser, verifyOtp } from '../../services/api';
@@ -21,46 +23,123 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const THEME = '#4F46E5';
 
-// Screen dimensions calculated statically to avoid keyboard buffer updates
+// Sleek Modern Mesh Top Header (Cute Bouncy Animated Photo)
+const ModernHeader = React.memo(({ width, height }) => {
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const wobbleAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-// Memoized Wavy Header to prevent expensive SVG redraws during text entry/keyboard toggle
-const WaveHeader = React.memo(({ width, height }) => {
+  useEffect(() => {
+    // Cute Up & Down Floating Ease
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: -7,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Cute Playful Pendulum Wobble Swing (-8deg to +8deg)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(wobbleAnim, {
+          toValue: 1,
+          duration: 1300,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(wobbleAnim, {
+          toValue: -1,
+          duration: 1300,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Cute Breathing Scale Pulse
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.08,
+          duration: 1400,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1400,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [floatAnim, wobbleAnim, pulseAnim]);
+
+  const wobble = wobbleAnim.interpolate({
+    inputRange: [-1, 1],
+    outputRange: ['-8deg', '8deg'],
+  });
+
   return (
-    <View style={{ width, height, backgroundColor: '#F8FAFC', overflow: 'hidden', position: 'relative' }}>
+    <View style={{ width, height, backgroundColor: '#0F172A', overflow: 'hidden', position: 'relative' }}>
+      {/* Deep Royal Gradient Background */}
       <Svg height="100%" width="100%" viewBox="0 0 1440 320" preserveAspectRatio="none">
         <Defs>
-          <LinearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#6366F1" />
-            <Stop offset="50%" stopColor="#4F46E5" />
-            <Stop offset="100%" stopColor="#312E81" />
-          </LinearGradient>
-          <LinearGradient id="waveGradBack" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#818CF8" stopOpacity="0.35" />
-            <Stop offset="100%" stopColor="#4F46E5" stopOpacity="0.05" />
+          <LinearGradient id="meshGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <Stop offset="0%" stopColor="#0F172A" />
+            <Stop offset="45%" stopColor="#1E1B4B" />
+            <Stop offset="85%" stopColor="#312E81" />
+            <Stop offset="100%" stopColor="#4F46E5" />
           </LinearGradient>
         </Defs>
-        {/* Background Wave */}
-        <Path
-          fill="url(#waveGradBack)"
-          d="M0,0 L0,270 C360,330 720,200 1080,280 L1440,220 L1440,0 Z"
-        />
-        {/* Foreground Wave */}
-        <Path
-          fill="url(#waveGrad)"
-          d="M0,0 L0,220 C360,280 720,150 1080,230 L1440,170 L1440,0 Z"
-        />
+        <Path fill="url(#meshGrad)" d="M0,0 L1440,0 L1440,320 L0,320 Z" />
       </Svg>
 
-      {/* Floating Logo Badge Container */}
+      {/* Soft Ambient Light Glows */}
+      <View style={styles.ambientGlowTopRight} />
+      <View style={styles.ambientGlowBottomLeft} />
+
+      {/* Portal Badge Pill */}
+      <View style={styles.topPillBadgeContainer}>
+        <View style={styles.topPillBadge}>
+          <ShieldCheck size={13} color="#A5B4FC" style={{ marginRight: 6 }} />
+          <Text style={styles.topPillBadgeText}>PRAVISTI COMMODITY PORTAL</Text>
+        </View>
+      </View>
+
+      {/* Logo Container: Stationary Pravisti Logo + Cute Bouncy Photo on Right */}
       <View style={styles.logoBadgeContainer}>
-        <View style={styles.logoBadgeShadow}>
-          <View style={styles.logoBadge}>
+        <View style={styles.logoRowContainer}>
+          <Image
+            source={require('../../images/logo/new_logo.png')}
+            style={{ width: width * 0.50, height: 60 }}
+            resizeMode="contain"
+          />
+          <Animated.View
+            style={{
+              transform: [
+                { translateY: floatAnim },
+                { rotate: wobble },
+                { scale: pulseAnim },
+              ],
+            }}
+          >
             <Image
-              source={require('../../images/trader1.png')}
-              style={{ width: width * 0.42, height: (width * 0.42) / 2.5 }}
+              source={require('../../images/logo/photo22.png')}
+              style={styles.miniPhoto22Icon}
               resizeMode="contain"
             />
-          </View>
+          </Animated.View>
         </View>
       </View>
     </View>
@@ -69,7 +148,7 @@ const WaveHeader = React.memo(({ width, height }) => {
 
 const Login = ({ onNavigate, routeData }) => {
   const { width } = useWindowDimensions();
-  const headerHeight = 210;
+  const headerHeight = 220;
   const [mobile, setMobile] = useState(routeData?.mobile || '');
   const [otp, setOtp] = useState(['', '', '', '']);
   const otpRefs = useRef([]);
@@ -84,13 +163,12 @@ const Login = ({ onNavigate, routeData }) => {
 
   const isVerifyingRef = useRef(false);
 
-  // Show "Taking longer than usual..." after 6 seconds of waiting
   useEffect(() => {
     let slowTimer;
     if (isLoading) {
       slowTimer = setTimeout(() => {
-        setLoadingMsg('Server is waking up, please wait…');
-      }, 6000);
+        setLoadingMsg('Connecting to server…');
+      }, 5000);
     } else {
       setLoadingMsg('');
     }
@@ -265,7 +343,7 @@ const Login = ({ onNavigate, routeData }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#312E81" />
+      <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
@@ -277,8 +355,8 @@ const Login = ({ onNavigate, routeData }) => {
         >
           <View style={{ flex: 1 }}>
 
-            {/* Wavy Header */}
-            <WaveHeader width={width} height={headerHeight} />
+            {/* Modern Mesh Top Bar Header */}
+            <ModernHeader width={width} height={headerHeight} />
 
             {/* Form Card */}
             <View style={styles.formCard}>
@@ -410,32 +488,66 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
+  topPillBadgeContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 12 : 16,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 12,
+  },
+  topPillBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  topPillBadgeText: {
+    color: '#E0E7FF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  ambientGlowTopRight: {
+    position: 'absolute',
+    top: -60,
+    right: -40,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(99, 102, 241, 0.22)',
+  },
+  ambientGlowBottomLeft: {
+    position: 'absolute',
+    bottom: -40,
+    left: -30,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(129, 140, 248, 0.18)',
+  },
   logoBadgeContainer: {
     position: 'absolute',
-    top: '30%',
+    top: '34%',
     left: 0,
     right: 0,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
   },
-  logoBadgeShadow: {
-    borderRadius: 20,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 8,
-    backgroundColor: 'transparent',
-  },
-  logoBadge: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 22,
-    paddingVertical: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+  logoRowContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniPhoto22Icon: {
+    width: 68,
+    height: 68,
+    marginLeft: 6,
   },
   formCard: {
     flex: 1,

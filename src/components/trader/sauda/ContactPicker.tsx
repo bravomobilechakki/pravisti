@@ -25,6 +25,9 @@ import {
   Search,
   Mail,
   ChevronRight,
+  UserPlus,
+  X,
+  PlusCircle,
 } from 'lucide-react-native';
 
 interface CompanyInfo {
@@ -317,6 +320,12 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
         originCompany: routeData?.originCompany,
         company: routeData?.company,
         prefill: routeData?.prefill,
+        existingParty2: routeData?.existingParty2,
+        existingParty2Name: routeData?.existingParty2Name,
+        existingSellerCompany: routeData?.existingSellerCompany,
+        existingSellerCompanyName: routeData?.existingSellerCompanyName,
+        existingBrokerCompany: routeData?.existingBrokerCompany,
+        existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
       });
     }
   };
@@ -338,15 +347,39 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       originCompany: routeData?.originCompany,
       company: routeData?.company,
       prefill: routeData?.prefill,
+      existingParty2: routeData?.existingParty2,
+      existingParty2Name: routeData?.existingParty2Name,
+      existingSellerCompany: routeData?.existingSellerCompany,
+      existingSellerCompanyName: routeData?.existingSellerCompanyName,
+      existingBrokerCompany: routeData?.existingBrokerCompany,
+      existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
     });
   };
 
+  const [manualInputError, setManualInputError] = useState('');
+
   const handleAddManualNumber = () => {
     if (!searchQuery.trim()) return;
+    const cleanDigits = searchQuery.replace(/\D/g, '');
+
+    // If digits are entered, enforce 10-digit mobile validation
+    if (cleanDigits.length > 0) {
+      if (cleanDigits.length !== 10) {
+        setManualInputError(`Please enter full 10-digit mobile number (${cleanDigits.length}/10 digits)`);
+        return;
+      }
+      if (!/^[6-9]\d{9}$/.test(cleanDigits)) {
+        setManualInputError('Mobile number must start with 6, 7, 8, or 9');
+        return;
+      }
+    }
+
+    setManualInputError('');
+    const formattedMobile = cleanDigits.length === 10 ? `+91${cleanDigits}` : searchQuery.trim();
     const manualContact: Contact = {
       id: `manual_${Date.now()}`,
-      name: searchQuery,
-      mobile: searchQuery,
+      name: searchQuery.trim(),
+      mobile: formattedMobile,
       isRegistered: false,
     };
     onNavigate('CreateDeal', {
@@ -358,6 +391,12 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       originCompany: routeData?.originCompany,
       company: routeData?.company,
       prefill: routeData?.prefill,
+      existingParty2: routeData?.existingParty2,
+      existingParty2Name: routeData?.existingParty2Name,
+      existingSellerCompany: routeData?.existingSellerCompany,
+      existingSellerCompanyName: routeData?.existingSellerCompanyName,
+      existingBrokerCompany: routeData?.existingBrokerCompany,
+      existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
     });
   };
 
@@ -530,6 +569,12 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           originCompany: routeData?.originCompany,
           company: routeData?.company,
           prefill: routeData?.prefill,
+          existingParty2: routeData?.existingParty2,
+          existingParty2Name: routeData?.existingParty2Name,
+          existingSellerCompany: routeData?.existingSellerCompany,
+          existingSellerCompanyName: routeData?.existingSellerCompanyName,
+          existingBrokerCompany: routeData?.existingBrokerCompany,
+          existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
         })}>
           <ArrowLeft size={18} color="#0F172A" />
         </TouchableOpacity>
@@ -568,7 +613,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
         </View>
       ) : (
         <>
-          {/* Search */}
+          {/* Search Bar & Direct Search Button */}
           <View style={styles.searchContainer}>
             <View style={[
               styles.searchInputWrapper,
@@ -580,16 +625,67 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                 placeholder="Search name or mobile number..."
                 placeholderTextColor="#94A3B8"
                 value={searchQuery}
-                onChangeText={setSearchQuery}
+                onChangeText={(text) => {
+                  setSearchQuery(text);
+                  if (manualInputError) setManualInputError('');
+                }}
                 keyboardType="phone-pad"
                 onFocus={() => setIsSearchFocused(true)}
                 onBlur={() => setIsSearchFocused(false)}
               />
-              {searchingNumber && (
+              {searchQuery.trim().length > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setSearchQuery('');
+                    setManualInputError('');
+                  }}
+                  style={styles.clearSearchBtn}
+                  activeOpacity={0.7}
+                >
+                  <X size={14} color="#64748B" />
+                </TouchableOpacity>
+              )}
+              {searchingNumber ? (
                 <ActivityIndicator size="small" color={rTheme.color} style={{ marginLeft: 6 }} />
+              ) : (
+                <TouchableOpacity
+                  style={[styles.searchActionButton, { backgroundColor: rTheme.color }]}
+                  onPress={handleAddManualNumber}
+                  activeOpacity={0.8}
+                >
+                  <Search size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                  <Text style={styles.searchActionButtonText}>Search</Text>
+                </TouchableOpacity>
               )}
             </View>
           </View>
+
+          {/* Quick Add Banner for Trader / Broker Manual Number */}
+          {searchQuery.trim().length > 0 && (
+            <View style={styles.quickAddBanner}>
+              <TouchableOpacity
+                style={[styles.quickAddCard, { borderColor: manualInputError ? '#EF4444' : rTheme.color, backgroundColor: manualInputError ? '#FEF2F2' : rTheme.bg }]}
+                onPress={handleAddManualNumber}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.quickAddIconCircle, { backgroundColor: manualInputError ? '#EF4444' : rTheme.color }]}>
+                  <UserPlus size={18} color="#FFFFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.quickAddTitle}>
+                    Use "{searchQuery.trim()}" directly
+                  </Text>
+                  <Text style={[styles.quickAddSubtitle, manualInputError && { color: '#EF4444', fontWeight: '700' }]}>
+                    {manualInputError ? `⚠ ${manualInputError}` : 'Add as new contact number for deal'}
+                  </Text>
+                </View>
+                <View style={[styles.quickAddBadge, { backgroundColor: manualInputError ? '#EF4444' : rTheme.color }]}>
+                  <PlusCircle size={12} color="#FFFFFF" style={{ marginRight: 3 }} />
+                  <Text style={styles.quickAddBadgeText}>+ Add New</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Category Tabs Selector Bar */}
           <View style={styles.tabsContainer}>
@@ -788,8 +884,74 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 13,
-    height: 44,
+    paddingHorizontal: 10,
+    height: 46,
+  },
+  clearSearchBtn: {
+    padding: 5,
+    marginRight: 2,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  searchActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginLeft: 6,
+  },
+  searchActionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  quickAddBanner: {
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+  },
+  quickAddCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+  },
+  quickAddIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  quickAddTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  quickAddSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  quickAddBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  quickAddBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
   searchIcon: {
     fontSize: 16,

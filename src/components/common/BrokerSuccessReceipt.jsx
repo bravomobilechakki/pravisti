@@ -244,10 +244,8 @@ const BrokerSuccessReceipt = ({
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          {/* ─── PURPLE GRADIENT HERO HEADER ─── */}
+          {/* ─── HERO HEADER ─── */}
           <View style={styles.header}>
-            <View style={styles.headerMiddleLayer} />
-            <View style={styles.headerBottomLayer} />
             <View style={styles.glowOrbTop} />
             <View style={styles.glowOrbBottom} />
 
@@ -494,23 +492,6 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 12) + 8 : 14,
     position: 'relative',
     overflow: 'hidden',
-  },
-  headerMiddleLayer: {
-    position: 'absolute',
-    top: '30%',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: COLORS.headerMiddle,
-    opacity: 0.7,
-  },
-  headerBottomLayer: {
-    position: 'absolute',
-    top: '65%',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: COLORS.headerEnd,
   },
   glowOrbTop: {
     position: 'absolute',

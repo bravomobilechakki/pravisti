@@ -1,4 +1,4 @@
-import Dashboard from './dashboard/Dashboard';
+import TraderDashboard from './dashboard/TraderDashboard';
 import AddCompany from './dashboard/AddCompany';
 import CompanyDetails from './dashboard/CompanyDetails';
 import CategoryPage from './dashboard/CategoryPage';
@@ -13,8 +13,11 @@ import ChatList from './sauda/ChatList';
 import ContactPicker from './sauda/ContactPicker';
 import TransactionHistory from './sauda/TransactionHistory';
 
+const Dashboard = TraderDashboard;
+
 export {
   Dashboard,
+  TraderDashboard,
   AddCompany,
   CompanyDetails,
   CategoryPage,

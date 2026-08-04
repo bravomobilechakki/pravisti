@@ -29,6 +29,11 @@ import {
   ChevronRight,
   Plus,
   Send,
+  Phone,
+  BookUser,
+  Search,
+  UserPlus,
+  X,
 } from 'lucide-react-native';
 import {
   createDeal,
@@ -40,6 +45,7 @@ import {
   createProduct,
   getCompanies,
   getCompanyDetails,
+  getCompaniesByNumber,
 } from '../../../services/api';
 import { Linking } from 'react-native';
 
@@ -93,6 +99,9 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         : null
   );
 
+
+
+
   // Broker-specific Prefill Mappings
   const prefillSeller = routeData?.prefill?.sellerCompany || routeData?.prefill?.sellerCompanyId || {};
   const prefillSellerName = prefillSeller.companyName || prefillSeller.name || '';
@@ -113,10 +122,157 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [activeUserCompany, setActiveUserCompany] = useState(initialCompany);
   const [activeUserId, setActiveUserId] = useState(routeData?.user?._id || routeData?.user?.id);
 
-  const [role, setRole] = useState(routeData?.prefill?.role || routeData?.role || 'seller');
+  const getInitialRole = () => {
+    const raw = String(routeData?.prefill?.role || routeData?.role || 'seller').toLowerCase();
+    if (raw === 'buyer') return 'buyer';
+    if (raw === 'broker') return 'broker';
+    return 'seller';
+  };
+  const [role, setRole] = useState(getInitialRole);
   const [brokerCompanyId, setBrokerCompanyId] = useState(routeData?.prefill?.brokerCompanyId || '');
   const [brokerCompany, setBrokerCompany] = useState('');
   const [brokerCompanyData, setBrokerCompanyData] = useState(null);
+
+  // Direct Mobile Search / Add States for Step 1
+  const [directInputParty2, setDirectInputParty2] = useState('');
+  const [directInputSeller, setDirectInputSeller] = useState('');
+  const [directInputBroker, setDirectInputBroker] = useState('');
+  const [directInputErrors, setDirectInputErrors] = useState({});
+  const [lookupResults, setLookupResults] = useState({});
+
+  // Auto live company lookup when a 10-digit mobile number is typed
+  React.useEffect(() => {
+    const checkNumber = async (field, rawVal) => {
+      const cleanDigits = rawVal.replace(/\D/g, '');
+      if (cleanDigits.length === 10) {
+        setLookupResults(prev => ({
+          ...prev,
+          [field]: { searching: true, companies: [], mobile: `+91${cleanDigits}` }
+        }));
+        try {
+          const token = await AsyncStorage.getItem('userToken');
+          const formattedNumber = `+91${cleanDigits}`;
+          const response = await getCompaniesByNumber(formattedNumber, token);
+          if (response && response.success && response.data && response.data.length > 0) {
+            setLookupResults(prev => ({
+              ...prev,
+              [field]: {
+                searching: false,
+                companies: response.data,
+                contactPersonName: response.data[0].contactPersonName || '',
+                mobile: formattedNumber,
+              }
+            }));
+          } else {
+            setLookupResults(prev => ({
+              ...prev,
+              [field]: { searching: false, companies: [], mobile: formattedNumber, notFound: true }
+            }));
+          }
+        } catch (e) {
+          console.warn('Step 1 number lookup error:', e);
+          setLookupResults(prev => ({ ...prev, [field]: null }));
+        }
+      } else {
+        setLookupResults(prev => ({ ...prev, [field]: null }));
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (directInputSeller) checkNumber('sellerCompany', directInputSeller);
+      if (directInputParty2) checkNumber('party2', directInputParty2);
+      if (directInputBroker) checkNumber('brokerCompany', directInputBroker);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [directInputSeller, directInputParty2, directInputBroker]);
+
+  const handleSelectFoundCompany = (pickingFor, coObj, mobileNum) => {
+    const companyId = coObj.companyId || coObj._id || coObj.id;
+    const companyName = coObj.companyName || coObj.name || 'Registered Company';
+    const personName = coObj.contactPersonName || coObj.name || companyName;
+
+    const contactObj = {
+      id: companyId || `reg_${Date.now()}`,
+      companyId: companyId,
+      name: personName,
+      company: companyName,
+      mobile: mobileNum,
+      isRegistered: true,
+    };
+
+    if (pickingFor === 'party2') {
+      setParty2(companyName);
+      setParty2Data(contactObj);
+      setDirectInputParty2('');
+      setLookupResults(prev => ({ ...prev, party2: null }));
+      setFieldErrors(prev => ({ ...prev, party2: undefined }));
+      setDirectInputErrors(prev => ({ ...prev, party2: undefined }));
+    } else if (pickingFor === 'sellerCompany') {
+      setSellerCompany(companyName);
+      setSellerCompanyData(contactObj);
+      setDirectInputSeller('');
+      setLookupResults(prev => ({ ...prev, sellerCompany: null }));
+      setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
+      setDirectInputErrors(prev => ({ ...prev, sellerCompany: undefined }));
+    } else if (pickingFor === 'brokerCompany') {
+      setBrokerCompany(companyName);
+      setBrokerCompanyData(contactObj);
+      setBrokerCompanyId(String(companyId || ''));
+      setDirectInputBroker('');
+      setLookupResults(prev => ({ ...prev, brokerCompany: null }));
+    }
+  };
+
+  const handleDirectAddContact = (pickingFor, rawInput) => {
+    if (!rawInput || !rawInput.trim()) return;
+    const trimmed = rawInput.trim();
+    const cleanDigits = trimmed.replace(/\D/g, '');
+
+    // If digits are present, enforce strict 10-digit mobile validation
+    if (cleanDigits.length > 0) {
+      if (cleanDigits.length !== 10) {
+        setDirectInputErrors(prev => ({
+          ...prev,
+          [pickingFor]: `Please enter full 10-digit mobile number (${cleanDigits.length}/10 digits)`
+        }));
+        return;
+      }
+      if (!/^[6-9]\d{9}$/.test(cleanDigits)) {
+        setDirectInputErrors(prev => ({
+          ...prev,
+          [pickingFor]: 'Mobile number must start with 6, 7, 8, or 9'
+        }));
+        return;
+      }
+    }
+
+    setDirectInputErrors(prev => ({ ...prev, [pickingFor]: undefined }));
+    const formattedMobile = cleanDigits.length === 10 ? `+91${cleanDigits}` : trimmed;
+    const contactObj = {
+      id: `manual_${Date.now()}`,
+      name: trimmed,
+      mobile: formattedMobile,
+      isRegistered: false,
+    };
+
+    if (pickingFor === 'party2') {
+      setParty2(trimmed);
+      setParty2Data(contactObj);
+      setDirectInputParty2('');
+      setFieldErrors(prev => ({ ...prev, party2: undefined }));
+    } else if (pickingFor === 'sellerCompany') {
+      setSellerCompany(trimmed);
+      setSellerCompanyData(contactObj);
+      setDirectInputSeller('');
+      setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
+    } else if (pickingFor === 'brokerCompany') {
+      setBrokerCompany(trimmed);
+      setBrokerCompanyData(contactObj);
+      setDirectInputBroker('');
+      setBrokerCompanyId('');
+    }
+  };
 
   // Multi-product state
   const prefillProducts = routeData?.prefill?.products || [];
@@ -227,25 +383,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     updateProductField(id, 'productName', value);
   };
 
-  React.useEffect(() => {
-    if (activeUserCompany && !routeData?.prefill?.role && !routeData?.role) {
-      const coType = String(activeUserCompany.companyType || activeUserCompany.type || '').toLowerCase();
-      setRole(coType === 'broker' ? 'broker' : coType === 'buyer' ? 'buyer' : 'seller');
-    }
-  }, [activeUserCompany, routeData]);
+  // Keep role stable as selected by user or initialized from routeData
 
-  React.useEffect(() => {
-    const hasPrefill = routeData?.selectedContact || routeData?.prefillParty2 || routeData?.prefill?.buyerCompany || routeData?.prefill?.buyerCompanyId || routeData?.prefill?.party2 || routeData?.prefill?.brokerCompanyId;
-    if (!hasPrefill) {
-      setParty2('');
-      setParty2Data(null);
-      setSellerCompany('');
-      setSellerCompanyData(null);
-      setBrokerCompany('');
-      setBrokerCompanyData(null);
-      setBrokerCompanyId('');
-    }
-  }, [role, activeUserCompany, routeData]);
 
   // Company Product Inventory Sync
   const [companyProducts, setCompanyProducts] = useState([]);
@@ -412,6 +551,26 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       setParty2(routeData.prefillParty2.name);
       setParty2Data({ ...routeData.prefillParty2, isRegistered: true });
     }
+    if (routeData?.existingParty2 && routeData?.pickingFor !== 'party2') {
+      const p2Data = routeData.existingParty2;
+      const p2Name = routeData.existingParty2Name || (p2Data?.isRegistered ? (p2Data?.company || p2Data?.name) : p2Data?.name);
+      setParty2(p2Name);
+      setParty2Data(p2Data);
+    }
+    if (routeData?.existingSellerCompany && routeData?.pickingFor !== 'sellerCompany') {
+      const sData = routeData.existingSellerCompany;
+      const sName = routeData.existingSellerCompanyName || (sData?.isRegistered ? (sData?.company || sData?.name) : sData?.name);
+      setSellerCompany(sName);
+      setSellerCompanyData(sData);
+    }
+    if (routeData?.existingBrokerCompany && routeData?.pickingFor !== 'brokerCompany') {
+      const bData = routeData.existingBrokerCompany;
+      const bName = routeData.existingBrokerCompanyName || (bData?.isRegistered ? (bData?.company || bData?.name) : bData?.name);
+      setBrokerCompany(bName);
+      setBrokerCompanyData(bData);
+      const cid = bData?.companyId || bData?._id || bData?.id;
+      if (cid) setBrokerCompanyId(String(cid));
+    }
     if (routeData?.selectedContact) {
       const contact = routeData.selectedContact;
       if (routeData.pickingFor === 'party2') {
@@ -456,6 +615,12 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       originCompany: routeData?.originCompany || (activeUserCompany?.name ? activeUserCompany : undefined),
       company: routeData?.company || (activeUserCompany?.name ? activeUserCompany : undefined),
       prefill: routeData?.prefill,
+      existingParty2: party2Data,
+      existingParty2Name: party2,
+      existingSellerCompany: sellerCompanyData,
+      existingSellerCompanyName: sellerCompany,
+      existingBrokerCompany: brokerCompanyData,
+      existingBrokerCompanyName: brokerCompany,
     });
   };
 
@@ -569,27 +734,43 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       }
 
       const getValidCompanyId = (data, fallback) => {
+        if (data && data.isRegistered === false) return undefined;
         if (data && (data.companyId || data._id || data.id)) {
           const cid = String(data.companyId || data._id || data.id);
-          if (cid.length === 24) return cid;
+          if (cid.length === 24 && !cid.startsWith('manual_')) return cid;
         }
-        if (fallback && fallback.length === 24) return fallback;
+        if (fallback && typeof fallback === 'string' && fallback.length === 24 && !fallback.startsWith('manual_')) return fallback;
         return undefined;
       };
 
-      const resolvedSellerId = role === 'seller'
+      const activeRole = String(role || 'seller').toLowerCase();
+      const validRole = (activeRole === 'buyer' || activeRole === 'broker') ? activeRole : 'seller';
+
+      const resolvedSellerId = validRole === 'seller'
         ? originCompanyId
-        : role === 'buyer'
+        : validRole === 'buyer'
           ? getValidCompanyId(party2Data, party2)
           : getValidCompanyId(sellerCompanyData, sellerCompany);
 
-      const resolvedBuyerId = role === 'seller'
+      const resolvedBuyerId = validRole === 'seller'
         ? getValidCompanyId(party2Data, party2)
-        : role === 'buyer'
+        : validRole === 'buyer'
           ? originCompanyId
           : getValidCompanyId(party2Data, party2);
 
-      const isInviteMode = party2Data?.isRegistered === false || (role === 'broker' && sellerCompanyData?.isRegistered === false);
+      const isSellerUnregistered = validRole === 'broker'
+        ? sellerCompanyData?.isRegistered === false || !resolvedSellerId
+        : validRole === 'buyer'
+          ? party2Data?.isRegistered === false || !resolvedSellerId
+          : false;
+
+      const isBuyerUnregistered = validRole === 'seller'
+        ? party2Data?.isRegistered === false || !resolvedBuyerId
+        : validRole === 'broker'
+          ? party2Data?.isRegistered === false || !resolvedBuyerId
+          : false;
+
+      const isInviteMode = !resolvedSellerId || !resolvedBuyerId || party2Data?.isRegistered === false || sellerCompanyData?.isRegistered === false;
 
       const sellerIdForProduct = resolvedSellerId || originCompanyId;
 
@@ -627,28 +808,26 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         let inviteContact = party2Data;
         if (party2Data?.isRegistered === false) {
           inviteContact = party2Data;
-        } else if (role === 'broker' && sellerCompanyData?.isRegistered === false) {
+        } else if (validRole === 'broker' && sellerCompanyData?.isRegistered === false) {
           inviteContact = sellerCompanyData;
         }
 
         const receiverMobileNumber = inviteContact?.mobile || inviteContact?.phone || inviteContact?.mobileNumber || party2;
         const receiverName = inviteContact?.name || party2;
 
+        const dealDraft = {
+          role: validRole,
+          products: resolvedProducts,
+          totalAmount: Number(totalAmountValue),
+          discount: Number(totalDiscountValue),
+          expiryDate: new Date(validityDate).toISOString(),
+          notes: description || 'Bulk trading Sauda ledger invitation.',
+        };
+
         const invitePayload = {
           receiverMobileNumber,
           receiverName,
-          dealDraft: {
-            role,
-            sellerCompanyId: resolvedSellerId,
-            buyerCompanyId: resolvedBuyerId,
-            myCompanyId: role === 'broker' ? String(originCompanyId) : undefined,
-            brokerCompanyId: (role !== 'broker' && brokerCompanyId) ? brokerCompanyId : undefined,
-            products: resolvedProducts,
-            totalAmount: Number(totalAmountValue),
-            discount: Number(totalDiscountValue),
-            expiryDate: new Date(validityDate).toISOString(),
-            notes: description || 'Bulk trading Sauda ledger invitation.',
-          },
+          dealDraft,
         };
         const response = await inviteDeal(invitePayload, token);
         if (response && response.success) {
@@ -677,11 +856,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           return;
         }
         const payload = {
-          role,
+          role: validRole,
           sellerCompanyId: resolvedSellerId,
           buyerCompanyId: resolvedBuyerId,
-          myCompanyId: role === 'broker' ? String(originCompanyId) : undefined,
-          brokerCompanyId: (role !== 'broker' && brokerCompanyId) ? brokerCompanyId : undefined,
+          myCompanyId: validRole === 'broker' ? String(originCompanyId) : undefined,
+          brokerCompanyId: (validRole !== 'broker' && brokerCompanyId) ? brokerCompanyId : undefined,
           products: resolvedProducts,
           expiryDate: new Date(validityDate).toISOString(),
           notes: description || undefined,
@@ -750,7 +929,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   const totals = getTotals();
   const showTicketStub = totals.isValid;
-  const isInviteMode = party2Data?.isRegistered === false || (role === 'broker' && sellerCompanyData?.isRegistered === false);
+  const isInviteMode = party2Data?.isRegistered === false || (role === 'broker' && sellerCompanyData?.isRegistered === false) || (party2Data && (!party2Data.companyId || String(party2Data.companyId).length !== 24));
 
   const getRoleTheme = () => {
     if (role === 'buyer') return { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', glow: '#D97706' };
@@ -832,7 +1011,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                 {/* Role Selector */}
                 <Text style={styles.fieldLabel}>Your Trade Role</Text>
                 <View style={styles.roleContainer}>
-                  {(activeUserCompany?.companyType?.toLowerCase() === 'broker' || activeUserCompany?.type?.toLowerCase() === 'broker' || role === 'broker'
+                  {(activeUserCompany?.companyType?.toLowerCase() === 'broker' || activeUserCompany?.type?.toLowerCase() === 'broker' || routeData?.prefill?.role === 'broker' || routeData?.role === 'broker'
                     ? ['seller', 'buyer', 'broker']
                     : ['seller', 'buyer']
                   ).map((r) => {
@@ -843,16 +1022,27 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       broker: { icon: <Briefcase size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
                     }[r];
 
-                    let activeBg = '#4F46E5';
-                    if (r === 'buyer') activeBg = '#D97706';
-                    if (r === 'broker') activeBg = '#475569';
+                    let activeBg = '#059669'; // Seller = Emerald
+                    if (r === 'buyer') activeBg = '#D97706'; // Buyer = Amber
+                    if (r === 'broker') activeBg = '#4F46E5'; // Broker = Indigo
 
                     return (
                       <TouchableOpacity
                         key={r}
                         style={[
                           styles.roleTab,
-                          isActive && [styles.roleTabActive, { backgroundColor: activeBg, shadowColor: activeBg }]
+                          isActive ? {
+                            backgroundColor: activeBg,
+                            shadowColor: activeBg,
+                            shadowOffset: { width: 0, height: 3 },
+                            shadowOpacity: 0.25,
+                            shadowRadius: 6,
+                            elevation: 4,
+                          } : {
+                            backgroundColor: '#FFFFFF',
+                            borderWidth: 1,
+                            borderColor: '#E2E8F0',
+                          }
                         ]}
                         onPress={() => {
                           setRole(r);
@@ -860,15 +1050,18 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         }}
                         activeOpacity={0.8}
                       >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                           {config.icon}
                           <Text style={[
                             styles.roleTabText,
-                            { color: isActive ? '#FFFFFF' : '#64748B' },
+                            { color: isActive ? '#FFFFFF' : '#475569' },
                             isActive && styles.roleTabTextActive
                           ]}>
                             {r.charAt(0).toUpperCase() + r.slice(1)}
                           </Text>
+                          {isActive && (
+                            <Text style={{ fontSize: 11, color: '#FFFFFF', fontWeight: '900', marginLeft: 2 }}>✓</Text>
+                          )}
                         </View>
                       </TouchableOpacity>
                     );
@@ -886,11 +1079,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
                 {/* Seller Company Selector (Only for Broker) */}
                 {role === 'broker' && (
-                  <View style={[styles.inputGroup, { marginBottom: 12 }]}>
+                  <View style={[styles.inputGroup, { marginBottom: 16 }]}>
                     <Text style={styles.fieldLabel}>Seller Company*</Text>
 
                     {sellerCompany && sellerCompanyData ? (
-                      <TouchableOpacity
+                      <View
                         style={[
                           styles.profileCard,
                           {
@@ -899,71 +1092,133 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                             shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669',
                           }
                         ]}
-                        onPress={() => {
-                          setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-                          navigateToContactPicker('sellerCompany');
-                        }}
-                        activeOpacity={0.8}
                       >
-                        <View style={[styles.profileAvatar, { backgroundColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669', shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669' }]}>
-                          <Text style={styles.profileAvatarText}>
-                            {(sellerCompanyData.company || sellerCompany).charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
-                        <View style={styles.profileCardInfo}>
-                          <Text style={styles.profileCardName}>
-                            {sellerCompanyData.company ? `${sellerCompanyData.company} (${sellerCompanyData.name || sellerCompany})` : (sellerCompanyData.name || sellerCompany)}
-                          </Text>
-                          <Text style={[
-                            styles.profileCardRole,
-                            { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#059669' }
-                          ]}>
-                            {sellerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                          </Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <View style={[
-                            styles.profileCardBadge,
-                            {
-                              backgroundColor: sellerCompanyData.isRegistered === false ? '#FEF3C7' : '#E0FDF4',
-                              borderColor: sellerCompanyData.isRegistered === false ? '#FCD34D' : '#BBF7D0',
-                              borderWidth: 1,
-                            }
-                          ]}>
-                            <Text style={[
-                              styles.profileCardBadgeText,
-                              { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#059669' }
-                            ]}>
-                              {sellerCompanyData.isRegistered === false ? 'Invite' : 'Active'}
+                        <TouchableOpacity
+                          style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                          onPress={() => {
+                            setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
+                            navigateToContactPicker('sellerCompany');
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.profileAvatar, { backgroundColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669', shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669' }]}>
+                            <Text style={styles.profileAvatarText}>
+                              {(sellerCompanyData.company || sellerCompany).charAt(0).toUpperCase()}
                             </Text>
                           </View>
+                          <View style={styles.profileCardInfo}>
+                            <Text style={styles.profileCardName}>
+                              {sellerCompanyData.company ? `${sellerCompanyData.company} (${sellerCompanyData.name || sellerCompany})` : (sellerCompanyData.name || sellerCompany)}
+                            </Text>
+                            <Text style={[
+                              styles.profileCardRole,
+                              { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#059669' }
+                            ]}>
+                              {sellerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <TouchableOpacity
+                            style={[
+                              styles.profileCardBadge,
+                              {
+                                backgroundColor: '#FEF2F2',
+                                borderColor: '#FCA5A5',
+                                borderWidth: 1,
+                              }
+                            ]}
+                            onPress={() => {
+                              setSellerCompany('');
+                              setSellerCompanyData(null);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
+                          </TouchableOpacity>
                           <Text style={[styles.changeText, { color: '#059669' }]}>Edit ›</Text>
                         </View>
-                      </TouchableOpacity>
+                      </View>
                     ) : (
-                      <TouchableOpacity
-                        style={[
-                          styles.counterpartySelector,
-                          fieldErrors.sellerCompany && styles.inputError
-                        ]}
-                        onPress={() => {
-                          setFocusedField('sellerCompany');
-                          setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-                          navigateToContactPicker('sellerCompany');
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.counterpartySelectorInner}>
-                          <View style={[styles.selectorAvatarPlaceholder, { backgroundColor: '#E0FDF4', borderColor: '#BBF7D0' }]}>
-                            <Building2 size={16} color="#059669" />
-                          </View>
-                          <View>
-                            <Text style={styles.counterpartySelectorLabel}>Select & Add Seller</Text>
-                            <Text style={styles.counterpartySelectorHint}>Tap to select from directory</Text>
-                          </View>
+                      <View style={styles.step1DirectBox}>
+                        <View style={[styles.step1SearchWrapper, (fieldErrors.sellerCompany || directInputErrors.sellerCompany) && styles.inputError]}>
+                          <Phone size={14} color="#059669" style={{ marginRight: 6 }} />
+                          <TextInput
+                            style={styles.step1SearchInput}
+                            placeholder="Type seller name or mobile..."
+                            placeholderTextColor="#94A3B8"
+                            value={directInputSeller}
+                            onChangeText={(text) => {
+                              setDirectInputSeller(text);
+                              if (directInputErrors.sellerCompany) setDirectInputErrors(prev => ({ ...prev, sellerCompany: undefined }));
+                            }}
+                            keyboardType="phone-pad"
+                          />
+                          <TouchableOpacity
+                            style={[styles.step1AddBtn, { backgroundColor: '#059669' }]}
+                            onPress={() => handleDirectAddContact('sellerCompany', directInputSeller)}
+                            disabled={!directInputSeller.trim()}
+                            activeOpacity={0.8}
+                          >
+                            <Plus size={13} color="#FFFFFF" style={{ marginRight: 2 }} />
+                            <Text style={styles.step1AddBtnText}>Add</Text>
+                          </TouchableOpacity>
                         </View>
-                        <Text style={styles.dropdownIcon}>›</Text>
-                      </TouchableOpacity>
+                        {directInputErrors.sellerCompany && (
+                          <Text style={styles.fieldErrorText}>⚠ {directInputErrors.sellerCompany}</Text>
+                        )}
+
+                        {/* Live Auto Search Loading / Results */}
+                        {lookupResults.sellerCompany?.searching && (
+                          <View style={styles.searchingRow}>
+                            <ActivityIndicator size="small" color="#059669" />
+                            <Text style={styles.searchingText}>Searching Pravisti registered exchange...</Text>
+                          </View>
+                        )}
+                        {lookupResults.sellerCompany?.companies && lookupResults.sellerCompany.companies.length > 0 && (
+                          <View style={styles.foundCompanyBox}>
+                            <Text style={styles.foundCompanyTitle}>🏢 Registered Company Found:</Text>
+                            {lookupResults.sellerCompany.companies.map((co, idx) => (
+                              <TouchableOpacity
+                                key={co.companyId || idx}
+                                style={styles.foundCompanyItem}
+                                onPress={() => handleSelectFoundCompany('sellerCompany', co, lookupResults.sellerCompany.mobile)}
+                                activeOpacity={0.8}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.foundCompanyName}>{co.companyName || co.name}</Text>
+                                  <Text style={styles.foundCompanySub}>
+                                    {(co.companyType || 'Trader').toUpperCase()} • Contact: {co.contactPersonName || lookupResults.sellerCompany.mobile}
+                                  </Text>
+                                </View>
+                                <View style={[styles.selectFoundBtn, { backgroundColor: '#059669' }]}>
+                                  <Text style={styles.selectFoundBtnText}>Select ›</Text>
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+
+                        <View style={styles.orDividerRow}>
+                          <View style={styles.orDividerLine} />
+                          <Text style={styles.orDividerText}>OR</Text>
+                          <View style={styles.orDividerLine} />
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.directorySelectBtn}
+                          onPress={() => {
+                            setFocusedField('sellerCompany');
+                            setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
+                            navigateToContactPicker('sellerCompany');
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <BookUser size={15} color="#059669" style={{ marginRight: 6 }} />
+                          <Text style={[styles.directorySelectBtnText, { color: '#059669' }]}>Select from Contacts Directory</Text>
+                          <ChevronRight size={15} color="#059669" style={{ marginLeft: 'auto' }} />
+                        </TouchableOpacity>
+                      </View>
                     )}
                     {fieldErrors.sellerCompany && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.sellerCompany}</Text>}
                   </View>
@@ -983,7 +1238,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       const cpBorder = isSellerCp ? '#BBF7D0' : '#BAE6FD';
 
                       return (
-                        <TouchableOpacity
+                        <View
                           style={[
                             styles.profileCard,
                             {
@@ -992,82 +1247,143 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                               shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor,
                             }
                           ]}
-                          onPress={() => {
-                            setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                            navigateToContactPicker('party2');
-                          }}
-                          activeOpacity={0.8}
                         >
-                          <View style={[styles.profileAvatar, { backgroundColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor, shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor }]}>
-                            <Text style={styles.profileAvatarText}>
-                              {(party2Data.company || party2).charAt(0).toUpperCase()}
-                            </Text>
-                          </View>
-                          <View style={styles.profileCardInfo}>
-                            <Text style={styles.profileCardName}>
-                              {party2Data.company ? `${party2Data.company} (${party2Data.name || party2})` : (party2Data.name || party2)}
-                            </Text>
-                            <Text style={[
-                              styles.profileCardRole,
-                              { color: party2Data.isRegistered === false ? '#D97706' : cpColor }
-                            ]}>
-                              {party2Data.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                            </Text>
-                          </View>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <View style={[
-                              styles.profileCardBadge,
-                              {
-                                backgroundColor: party2Data.isRegistered === false ? '#FEF3C7' : cpBg,
-                                borderColor: party2Data.isRegistered === false ? '#FCD34D' : cpBorder,
-                                borderWidth: 1,
-                              }
-                            ]}>
-                              <Text style={[
-                                styles.profileCardBadgeText,
-                                { color: party2Data.isRegistered === false ? '#D97706' : cpColor }
-                              ]}>
-                                {party2Data.isRegistered === false ? 'Invite' : 'Active'}
+                          <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                            onPress={() => {
+                              setFieldErrors(prev => ({ ...prev, party2: undefined }));
+                              navigateToContactPicker('party2');
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <View style={[styles.profileAvatar, { backgroundColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor, shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor }]}>
+                              <Text style={styles.profileAvatarText}>
+                                {(party2Data.company || party2).charAt(0).toUpperCase()}
                               </Text>
                             </View>
+                            <View style={styles.profileCardInfo}>
+                              <Text style={styles.profileCardName}>
+                                {party2Data.company ? `${party2Data.company} (${party2Data.name || party2})` : (party2Data.name || party2)}
+                              </Text>
+                              <Text style={[
+                                styles.profileCardRole,
+                                { color: party2Data.isRegistered === false ? '#D97706' : cpColor }
+                              ]}>
+                                {party2Data.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <TouchableOpacity
+                              style={[
+                                styles.profileCardBadge,
+                                {
+                                  backgroundColor: '#FEF2F2',
+                                  borderColor: '#FCA5A5',
+                                  borderWidth: 1,
+                                }
+                              ]}
+                              onPress={() => {
+                                setParty2('');
+                                setParty2Data(null);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
+                            </TouchableOpacity>
                             <Text style={[styles.changeText, { color: cpColor }]}>Edit ›</Text>
                           </View>
-                        </TouchableOpacity>
+                        </View>
                       );
                     })()
                   ) : (
-                    <TouchableOpacity
-                      style={[
-                        styles.counterpartySelector,
-                        fieldErrors.party2 && styles.inputError
-                      ]}
-                      onPress={() => {
-                        setFocusedField('party2');
-                        setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                        navigateToContactPicker('party2');
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.counterpartySelectorInner}>
-                        <View style={[styles.selectorAvatarPlaceholder, {
-                          backgroundColor: role === 'buyer' ? '#E0FDF4' : '#E0F2FE',
-                          borderColor: role === 'buyer' ? '#BBF7D0' : '#BAE6FD'
-                        }]}>
-                          {role === 'buyer' ? (
-                            <Building2 size={16} color="#059669" />
-                          ) : (
-                            <User size={16} color="#0284C7" />
+                    (() => {
+                      const isSellerCp = role === 'buyer';
+                      const cpColor = isSellerCp ? '#059669' : '#0284C7';
+                      const labelRole = role === 'broker' ? 'buyer' : role === 'buyer' ? 'seller' : 'buyer';
+
+                      return (
+                        <View style={styles.step1DirectBox}>
+                          <View style={[styles.step1SearchWrapper, (fieldErrors.party2 || directInputErrors.party2) && styles.inputError]}>
+                            <Phone size={14} color={cpColor} style={{ marginRight: 6 }} />
+                            <TextInput
+                              style={styles.step1SearchInput}
+                              placeholder={`Type ${labelRole} name or mobile...`}
+                              placeholderTextColor="#94A3B8"
+                              value={directInputParty2}
+                              onChangeText={(text) => {
+                                setDirectInputParty2(text);
+                                if (directInputErrors.party2) setDirectInputErrors(prev => ({ ...prev, party2: undefined }));
+                              }}
+                              keyboardType="phone-pad"
+                            />
+                            <TouchableOpacity
+                              style={[styles.step1AddBtn, { backgroundColor: cpColor }]}
+                              onPress={() => handleDirectAddContact('party2', directInputParty2)}
+                              disabled={!directInputParty2.trim()}
+                              activeOpacity={0.8}
+                            >
+                              <Plus size={13} color="#FFFFFF" style={{ marginRight: 2 }} />
+                              <Text style={styles.step1AddBtnText}>Add</Text>
+                            </TouchableOpacity>
+                          </View>
+                          {directInputErrors.party2 && (
+                            <Text style={styles.fieldErrorText}>⚠ {directInputErrors.party2}</Text>
                           )}
+
+                          {/* Live Auto Search Loading / Results */}
+                          {lookupResults.party2?.searching && (
+                            <View style={styles.searchingRow}>
+                              <ActivityIndicator size="small" color={cpColor} />
+                              <Text style={styles.searchingText}>Searching Pravisti registered exchange...</Text>
+                            </View>
+                          )}
+                          {lookupResults.party2?.companies && lookupResults.party2.companies.length > 0 && (
+                            <View style={[styles.foundCompanyBox, { borderColor: cpColor === '#059669' ? '#BBF7D0' : '#BAE6FD', backgroundColor: cpColor === '#059669' ? '#F0FDF4' : '#F0F9FF' }]}>
+                              <Text style={[styles.foundCompanyTitle, { color: cpColor }]}>🏢 Registered Company Found:</Text>
+                              {lookupResults.party2.companies.map((co, idx) => (
+                                <TouchableOpacity
+                                  key={co.companyId || idx}
+                                  style={styles.foundCompanyItem}
+                                  onPress={() => handleSelectFoundCompany('party2', co, lookupResults.party2.mobile)}
+                                  activeOpacity={0.8}
+                                >
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={styles.foundCompanyName}>{co.companyName || co.name}</Text>
+                                    <Text style={styles.foundCompanySub}>
+                                      {(co.companyType || 'Trader').toUpperCase()} • Contact: {co.contactPersonName || lookupResults.party2.mobile}
+                                    </Text>
+                                  </View>
+                                  <View style={[styles.selectFoundBtn, { backgroundColor: cpColor }]}>
+                                    <Text style={styles.selectFoundBtnText}>Select ›</Text>
+                                  </View>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+
+                          <View style={styles.orDividerRow}>
+                            <View style={styles.orDividerLine} />
+                            <Text style={styles.orDividerText}>OR</Text>
+                            <View style={styles.orDividerLine} />
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.directorySelectBtn}
+                            onPress={() => {
+                              setFocusedField('party2');
+                              setFieldErrors(prev => ({ ...prev, party2: undefined }));
+                              navigateToContactPicker('party2');
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <BookUser size={15} color={cpColor} style={{ marginRight: 6 }} />
+                            <Text style={[styles.directorySelectBtnText, { color: cpColor }]}>Select from Contacts Directory</Text>
+                            <ChevronRight size={15} color={cpColor} style={{ marginLeft: 'auto' }} />
+                          </TouchableOpacity>
                         </View>
-                        <View>
-                          <Text style={styles.counterpartySelectorLabel}>
-                            {role === 'broker' ? 'Select & Add Buyer' : `Select & Add ${role === 'buyer' ? 'Seller' : 'Buyer'}`}
-                          </Text>
-                          <Text style={styles.counterpartySelectorHint}>Tap to select from directory</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.dropdownIcon}>›</Text>
-                    </TouchableOpacity>
+                      );
+                    })()
                   )}
                   {fieldErrors.party2 && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.party2}</Text>}
                 </View>
@@ -1136,25 +1452,53 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         </View>
                       </View>
                     ) : (
-                      <TouchableOpacity
-                        style={styles.counterpartySelector}
-                        onPress={() => {
-                          setFocusedField('brokerCompany');
-                          navigateToContactPicker('brokerCompany');
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.counterpartySelectorInner}>
-                          <View style={[styles.selectorAvatarPlaceholder, { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }]}>
-                            <Briefcase size={16} color="#7C3AED" />
-                          </View>
-                          <View>
-                            <Text style={styles.counterpartySelectorLabel}>Select & Add Broker (Optional)</Text>
-                            <Text style={styles.counterpartySelectorHint}>Tap to select from directory</Text>
-                          </View>
+                      <View style={styles.step1DirectBox}>
+                        <View style={[styles.step1SearchWrapper, directInputErrors.brokerCompany && styles.inputError]}>
+                          <Phone size={14} color="#7C3AED" style={{ marginRight: 6 }} />
+                          <TextInput
+                            style={styles.step1SearchInput}
+                            placeholder="Type broker name or mobile..."
+                            placeholderTextColor="#94A3B8"
+                            value={directInputBroker}
+                            onChangeText={(text) => {
+                              setDirectInputBroker(text);
+                              if (directInputErrors.brokerCompany) setDirectInputErrors(prev => ({ ...prev, brokerCompany: undefined }));
+                            }}
+                            keyboardType="phone-pad"
+                          />
+                          <TouchableOpacity
+                            style={[styles.step1AddBtn, { backgroundColor: '#7C3AED' }]}
+                            onPress={() => handleDirectAddContact('brokerCompany', directInputBroker)}
+                            disabled={!directInputBroker.trim()}
+                            activeOpacity={0.8}
+                          >
+                            <Plus size={13} color="#FFFFFF" style={{ marginRight: 2 }} />
+                            <Text style={styles.step1AddBtnText}>Add</Text>
+                          </TouchableOpacity>
                         </View>
-                        <Text style={styles.dropdownIcon}>›</Text>
-                      </TouchableOpacity>
+                        {directInputErrors.brokerCompany && (
+                          <Text style={styles.fieldErrorText}>⚠ {directInputErrors.brokerCompany}</Text>
+                        )}
+
+                        <View style={styles.orDividerRow}>
+                          <View style={styles.orDividerLine} />
+                          <Text style={styles.orDividerText}>OR</Text>
+                          <View style={styles.orDividerLine} />
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.directorySelectBtn}
+                          onPress={() => {
+                            setFocusedField('brokerCompany');
+                            navigateToContactPicker('brokerCompany');
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <BookUser size={15} color="#7C3AED" style={{ marginRight: 6 }} />
+                          <Text style={[styles.directorySelectBtnText, { color: '#7C3AED' }]}>Select from Contacts Directory</Text>
+                          <ChevronRight size={15} color="#7C3AED" style={{ marginLeft: 'auto' }} />
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
                 )}
@@ -1738,24 +2082,61 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   </TouchableOpacity>
                 </View>
               </View>
+
             </View>
           </Modal>
         )}
 
-        {/* Success Modal */}
-        <Modal visible={showSuccessModal} transparent animationType="fade">
+        {/* Premium Success Modal */}
+        <Modal visible={showSuccessModal} transparent animationType="slide">
           <View style={styles.successOverlay}>
-            <View style={styles.successContent}>
-              <View style={styles.successRings}>
-                <View style={[styles.successRingOuter, { backgroundColor: rTheme.bg }]} />
-                <View style={[styles.successCheckCircle, { backgroundColor: rTheme.bg, borderColor: rTheme.border }]}>
-                  <Text style={[styles.successCheckIcon, { color: rTheme.color }]}>✓</Text>
+            <View style={styles.successCardContainer}>
+              <View style={[
+                styles.successBadgeCircle,
+                {
+                  backgroundColor: isInviteMode ? '#DCFCE7' : rTheme.bg,
+                  borderColor: isInviteMode ? '#A7F3D0' : rTheme.border,
+                }
+              ]}>
+                {isInviteMode ? (
+                  <Send size={32} color="#059669" />
+                ) : (
+                  <Handshake size={32} color={rTheme.color} />
+                )}
+              </View>
+
+              <Text style={styles.successCardTitle}>
+                {isInviteMode ? 'WhatsApp Invite Sent!' : 'Sauda Established!'}
+              </Text>
+
+              <Text style={styles.successCardSubtitle}>
+                {isInviteMode
+                  ? 'Your deal invitation has been created and shared via WhatsApp.'
+                  : 'Your trade deal has been successfully recorded in the Pravisti digital ledger.'}
+              </Text>
+
+              {/* Deal Brief Summary Box */}
+              <View style={styles.successSummaryBox}>
+                <View style={styles.successSummaryRow}>
+                  <Text style={styles.successSummaryLabel}>Parties</Text>
+                  <Text style={styles.successSummaryVal} numberOfLines={1}>
+                    {party1} ↔ {party2 || sellerCompany || 'Counterparty'}
+                  </Text>
+                </View>
+                <View style={styles.successSummaryDivider} />
+                <View style={styles.successSummaryRow}>
+                  <Text style={styles.successSummaryLabel}>Products</Text>
+                  <Text style={styles.successSummaryVal}>
+                    {productsList ? productsList.length : 1} Item(s)
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.successTitle}>Sauda Established!</Text>
-              <Text style={styles.successSubtext}>
-                Your deal has been successfully recorded in the digital ledger.
-              </Text>
+
+              {/* Live Progress Bar */}
+              <View style={styles.successProgressRow}>
+                <ActivityIndicator size="small" color={isInviteMode ? '#059669' : rTheme.color} style={{ marginRight: 8 }} />
+                <Text style={styles.successProgressText}>Opening Deals Ledger...</Text>
+              </View>
             </View>
           </View>
         </Modal>
@@ -2336,15 +2717,229 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // SUCCESS MODAL
-  successOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.65)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  successContent: { backgroundColor: '#FFFFFF', borderRadius: 28, padding: 32, alignItems: 'center', width: '100%', maxWidth: 320, shadowColor: '#4F46E5', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.15, shadowRadius: 24, elevation: 12 },
-  successRings: { position: 'relative', width: 80, height: 80, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  successRingOuter: { position: 'absolute', width: 80, height: 80, borderRadius: 40, backgroundColor: '#EEF2FF', opacity: 0.5 },
-  successCheckCircle: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#EEF2FF', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#C7D2FE' },
-  successCheckIcon: { fontSize: 30, color: '#4F46E5', fontWeight: '900' },
-  successTitle: { fontSize: 20, fontWeight: '800', color: '#0F172A', marginBottom: 8, textAlign: 'center' },
-  successSubtext: { fontSize: 13, color: '#64748B', textAlign: 'center', fontWeight: '600', lineHeight: 20 },
+  // STEP 1 DIRECT SEARCH & ADD
+  step1DirectBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  step1SearchWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    height: 44,
+  },
+  step1SearchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+    paddingVertical: 0,
+  },
+  step1AddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginLeft: 6,
+  },
+  step1AddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  orDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 6,
+    justifyContent: 'center',
+  },
+  orDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  orDividerText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94A3B8',
+    marginHorizontal: 8,
+  },
+  directorySelectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  directorySelectBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  searchingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    gap: 8,
+  },
+  searchingText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  foundCompanyBox: {
+    marginTop: 8,
+    padding: 10,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#BBF7D0',
+  },
+  foundCompanyTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#166534',
+    marginBottom: 6,
+  },
+  foundCompanyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginTop: 4,
+  },
+  foundCompanyName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  foundCompanySub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  selectFoundBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  selectFoundBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // PREMIUM SUCCESS MODAL STYLES
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  successCardContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successBadgeCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  successCardTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  successCardSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 18,
+  },
+  successSummaryBox: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 18,
+  },
+  successSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  successSummaryLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  successSummaryVal: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+    maxWidth: '65%',
+  },
+  successSummaryDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 6,
+  },
+  successProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successProgressText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
 });
 
 export default CreateDeal;

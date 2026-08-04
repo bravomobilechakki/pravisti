@@ -81,6 +81,26 @@ const SummaryApi = {
     method: "post",
   },
 
+  createBrokerDraftDeal: {
+    url: `${backendDomain}/api/deals/broker/draft`,
+    method: "post",
+  },
+
+  getBrokerProductAccessRequests: (companyId) => ({
+    url: `${backendDomain}/api/deals/broker/product-access?companyId=${encodeURIComponent(companyId)}`,
+    method: "get",
+  }),
+
+  respondToProductAccessRequest: (requestId) => ({
+    url: `${backendDomain}/api/deals/broker/product-access/${requestId}`,
+    method: "patch",
+  }),
+
+  completeBrokerDraftDeal: (dealId) => ({
+    url: `${backendDomain}/api/deals/broker/draft/${dealId}/complete`,
+    method: "put",
+  }),
+
   getDeals: (page = 1, limit = 10, companyId = null) => {
     let url = `${backendDomain}/api/deals?page=${page}&limit=${limit}`;
     if (companyId) {

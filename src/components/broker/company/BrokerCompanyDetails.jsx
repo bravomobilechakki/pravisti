@@ -28,7 +28,8 @@ import {
   Clock,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getCompanyDetails, getBrokerMyDeals, getDeals } from '../../../services/api';
+import { getCompanyDetails, getBrokerMyDeals, getDeals, getBrokerProductAccessRequests } from '../../../services/api';
+import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
 import { fontSize, moderateScale, scale, isTablet } from '../../../utils/responsive';
 
 const COLORS = {
@@ -133,6 +134,27 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
   const [company, setCompany] = useState(passedCompany);
   const [firmDeals, setFirmDeals] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [accessRequests, setAccessRequests] = useState([]);
+  const [isAccessModalVisible, setIsAccessModalVisible] = useState(false);
+
+  const checkProductAccessRequests = async (compTargetId) => {
+    if (!compTargetId) return;
+    try {
+      const res = await getBrokerProductAccessRequests(compTargetId);
+      if (res && res.success && Array.isArray(res.data)) {
+        const pending = res.data.filter(r => r.status === 'pending');
+        setAccessRequests(res.data);
+        if (pending.length > 0) {
+          setIsAccessModalVisible(true);
+        } else {
+          setIsAccessModalVisible(false);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch broker product access requests:', err);
+    }
+  };
 
   const formatDeal = (d) => {
     let cropName = 'Agricultural Commodity';
@@ -242,6 +264,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
       const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
       const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
       setFirmDeals(filterDealsForFirm(localDeals, effectiveCompId, effectiveCompName));
+      checkProductAccessRequests(effectiveCompId);
 
       // 2. PARALLEL BACKGROUND API SYNC
       const token = await AsyncStorage.getItem('userToken');

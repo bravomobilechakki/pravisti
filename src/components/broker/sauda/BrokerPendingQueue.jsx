@@ -552,8 +552,8 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
           )}
 
           <View style={styles.headerLeftCol}>
-            <Text style={styles.breadcrumbText}>BROKER WORKSPACE • ONBOARDING QUEUE</Text>
-            <Text style={styles.headerTitle}>Broker Onboarding Queue</Text>
+
+            <Text style={styles.headerTitle}>Broker Onboarding Deals</Text>
 
             {activeCompanyId ? (
               <View style={styles.companyFilterBadge}>
@@ -570,29 +570,7 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
           </View>
         </View>
 
-        <View style={styles.topActionsRow}>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            activeOpacity={0.85}
-            onPress={handleNewOnboarding}
-          >
-            <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.primaryBtnText}>+ New Onboarding</Text>
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.refreshIconButton}
-            activeOpacity={0.8}
-            onPress={onRefresh}
-            disabled={refreshing}
-          >
-            <RefreshCw
-              size={18}
-              color={COLORS.primary}
-              style={refreshing ? { transform: [{ rotate: '45deg' }] } : {}}
-            />
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Scrollable Main Area */}
@@ -1416,9 +1394,9 @@ const styles = StyleSheet.create({
   },
   headerBar: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 20,
     paddingBottom: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#3274d1ff',
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -1441,12 +1419,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.text500,
     letterSpacing: 0.8,
-    marginBottom: 4,
+
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: COLORS.text900,
+    marginTop: 10,
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#FFFFFF',
     letterSpacing: -0.4,
   },
   headerSubtitle: {
@@ -1550,15 +1529,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   metricLabel: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
     color: COLORS.text500,
     letterSpacing: 0.5,
     flex: 1,
   },
   metricIconBox: {
-    width: 28,
-    height: 28,
+    width: 20,
+    height: 20,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',

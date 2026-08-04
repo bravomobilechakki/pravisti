@@ -60,7 +60,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
           const res = await getDealDetails(dealId, token);
           if (res && res.success && res.data) {
             setDeal(res.data);
-            AsyncStorage.setItem(`deal_cache_${dealId}`, JSON.stringify(res.data)).catch(() => {});
+            AsyncStorage.setItem(`deal_cache_${dealId}`, JSON.stringify(res.data)).catch(() => { });
           }
         } catch (apiErr) {
           console.warn('API fetch fail, using fallback:', apiErr);
@@ -85,7 +85,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
             setDeal(cachedObj);
             setIsLoading(false);
           }
-        } catch (e) {}
+        } catch (e) { }
       }
       fetchDetails();
     };
@@ -286,282 +286,282 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
           </View>
         ) : (
           <>
-        {/* 2. TOP DEAL ID CARD (Soft Pastel Light Blue Container) */}
-        <View style={styles.dealIdCard}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.dealIdLabel}>DEAL ID</Text>
-            <Text style={styles.dealIdValue}>{saudaNo}</Text>
-          </View>
+            {/* 2. TOP DEAL ID CARD (Soft Pastel Light Blue Container) */}
+            <View style={styles.dealIdCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dealIdLabel}>DEAL ID</Text>
+                <Text style={styles.dealIdValue}>{saudaNo}</Text>
+              </View>
 
-          <View style={[
-            styles.statusPillBadge,
-            isFullyApproved ? styles.statusPillApproved : status.toLowerCase().includes('reject') ? styles.statusPillRejected : styles.statusPillPending
-          ]}>
-            {isFullyApproved ? (
-              <CheckCircle2 size={13} color="#16A34A" style={{ marginRight: 4 }} />
-            ) : status.toLowerCase().includes('reject') ? (
-              <XCircle size={13} color="#DC2626" style={{ marginRight: 4 }} />
-            ) : (
-              <Clock size={13} color="#C2410C" style={{ marginRight: 4 }} />
-            )}
-            <Text style={[
-              styles.statusPillBadgeText,
-              isFullyApproved ? styles.textApproved : status.toLowerCase().includes('reject') ? styles.textRejected : styles.textPending
-            ]}>
-              {isFullyApproved ? 'Approved' : status.toLowerCase().includes('reject') ? 'Rejected' : 'Pending Approval'}
-            </Text>
-          </View>
-        </View>
-
-        {/* 3. APPROVAL WORKFLOW CARD */}
-        <View style={styles.cardSection}>
-          <Text style={styles.cardSectionTitle}>APPROVAL WORKFLOW</Text>
-
-          <View style={styles.workflowGrid}>
-            {/* Seller Workflow Box */}
-            <View style={[
-              styles.workflowBox,
-              sellerAppStatus === 'approved' ? styles.wfBoxApproved : sellerAppStatus === 'rejected' ? styles.wfBoxRejected : styles.wfBoxPending
-            ]}>
               <View style={[
-                styles.wfIconCircle,
-                sellerAppStatus === 'approved' ? styles.wfIconCircleApproved : sellerAppStatus === 'rejected' ? styles.wfIconCircleRejected : styles.wfIconCirclePending
+                styles.statusPillBadge,
+                isFullyApproved ? styles.statusPillApproved : status.toLowerCase().includes('reject') ? styles.statusPillRejected : styles.statusPillPending
               ]}>
-                {sellerAppStatus === 'approved' ? (
-                  <CheckCircle size={18} color="#FFFFFF" />
-                ) : sellerAppStatus === 'rejected' ? (
-                  <XCircle size={18} color="#FFFFFF" />
+                {isFullyApproved ? (
+                  <CheckCircle2 size={13} color="#16A34A" style={{ marginRight: 4 }} />
+                ) : status.toLowerCase().includes('reject') ? (
+                  <XCircle size={13} color="#DC2626" style={{ marginRight: 4 }} />
                 ) : (
-                  <Clock size={18} color="#FFFFFF" />
+                  <Clock size={13} color="#C2410C" style={{ marginRight: 4 }} />
                 )}
-              </View>
-              <Text style={styles.wfPartyName} numberOfLines={1}>
-                {sellerName}
-              </Text>
-              <Text style={[styles.wfRoleSubText, { color: '#2563EB', fontWeight: '800' }]}>Seller</Text>
-              <Text style={[
-                styles.wfStatusText,
-                sellerAppStatus === 'approved' ? styles.textGreen : sellerAppStatus === 'rejected' ? styles.textRed : styles.textOrange
-              ]}>
-                {(sellerAppStatus || 'PENDING').toUpperCase()}
-              </Text>
-            </View>
-
-            {/* Buyer Workflow Box */}
-            <View style={[
-              styles.workflowBox,
-              buyerAppStatus === 'approved' ? styles.wfBoxApproved : buyerAppStatus === 'rejected' ? styles.wfBoxRejected : styles.wfBoxPending
-            ]}>
-              <View style={[
-                styles.wfIconCircle,
-                buyerAppStatus === 'approved' ? styles.wfIconCircleApproved : buyerAppStatus === 'rejected' ? styles.wfIconCircleRejected : styles.wfIconCirclePending
-              ]}>
-                {buyerAppStatus === 'approved' ? (
-                  <CheckCircle size={18} color="#FFFFFF" />
-                ) : buyerAppStatus === 'rejected' ? (
-                  <XCircle size={18} color="#FFFFFF" />
-                ) : (
-                  <Clock size={18} color="#FFFFFF" />
-                )}
-              </View>
-              <Text style={styles.wfPartyName} numberOfLines={1}>
-                {buyerName}
-              </Text>
-              <Text style={[styles.wfRoleSubText, { color: '#059669', fontWeight: '800' }]}>Buyer</Text>
-              <Text style={[
-                styles.wfStatusText,
-                buyerAppStatus === 'approved' ? styles.textGreen : buyerAppStatus === 'rejected' ? styles.textRed : styles.textOrange
-              ]}>
-                {(buyerAppStatus || 'PENDING').toUpperCase()}
-              </Text>
-            </View>
-
-            {/* Broker / MNC Workflow Box */}
-            <View style={[
-              styles.workflowBox,
-              brokerAppStatus === 'approved' ? styles.wfBoxApproved : brokerAppStatus === 'rejected' ? styles.wfBoxRejected : styles.wfBoxPending
-            ]}>
-              <View style={[
-                styles.wfIconCircle,
-                brokerAppStatus === 'approved' ? styles.wfIconCircleApproved : brokerAppStatus === 'rejected' ? styles.wfIconCircleRejected : styles.wfIconCirclePending
-              ]}>
-                {brokerAppStatus === 'approved' ? (
-                  <CheckCircle size={18} color="#FFFFFF" />
-                ) : brokerAppStatus === 'rejected' ? (
-                  <XCircle size={18} color="#FFFFFF" />
-                ) : (
-                  <Clock size={18} color="#FFFFFF" />
-                )}
-              </View>
-              <Text style={styles.wfPartyName} numberOfLines={1}>
-                {brokerName}
-              </Text>
-              <Text style={[styles.wfRoleSubText, { color: '#7C3AED', fontWeight: '800' }]}>Broker</Text>
-              <Text style={[
-                styles.wfStatusText,
-                brokerAppStatus === 'approved' ? styles.textGreen : brokerAppStatus === 'rejected' ? styles.textRed : styles.textOrange
-              ]}>
-                {(brokerAppStatus || 'PENDING').toUpperCase()}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* 4. PRODUCT / COMMODITY SUMMARY CARD */}
-        <View style={styles.cardSection}>
-          <View style={styles.productSummaryRow}>
-            {productImg ? (
-              <Image source={{ uri: productImg }} style={styles.productImageThumb} resizeMode="cover" />
-            ) : (
-              <View style={styles.productFallbackBox}>
-                <Package size={32} color="#0D52ED" />
-              </View>
-            )}
-
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <Text style={styles.productTitleText} numberOfLines={1}>{cropName}</Text>
-                <View style={styles.commodityCategoryPill}>
-                  <Text style={styles.commodityCategoryText}>COMMODITY</Text>
-                </View>
-              </View>
-
-              <View style={styles.productGridRow}>
-                <View>
-                  <Text style={styles.prodGridLabel}>QUANTITY</Text>
-                  <Text style={styles.prodGridVal}>{quantity}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.prodGridLabel}>PRICE</Text>
-                  <Text style={styles.prodPriceVal}>{rate}</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* 5. CREATOR & VERIFICATION BANNER */}
-        <View style={styles.creatorBannerCard}>
-          <View style={styles.creatorShieldIconBox}>
-            <ShieldCheck size={20} color="#0D52ED" />
-          </View>
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.creatorBannerTitle}>
-              Created by <Text style={{ fontWeight: '800', color: '#0F172A' }}>{creatorName}</Text>
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <CheckCircle2 size={11} color="#16A34A" />
-                <Text style={styles.verifiedTagText}>BUYER VERIFIED</Text>
-              </View>
-              <Text style={{ fontSize: 10, color: '#CBD5E1' }}>•</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <CheckCircle2 size={11} color="#16A34A" />
-                <Text style={styles.verifiedTagText}>SELLER VERIFIED</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* 6. FINANCIAL BREAKDOWN CARD */}
-        <View style={styles.cardSection}>
-          <Text style={styles.cardSectionTitle}>FINANCIAL BREAKDOWN</Text>
-
-          <View style={styles.finRow}>
-            <Text style={styles.finLabel}>Subtotal</Text>
-            <Text style={styles.finVal}>{subtotalDisplay}</Text>
-          </View>
-
-          <View style={styles.finRow}>
-            <Text style={styles.finLabel}>
-              Discount {discountVal > 0 && parseNum(rawSubtotal) > 0 ? `(${Math.round((discountVal / parseNum(rawSubtotal)) * 100)}%)` : ''}
-            </Text>
-            <Text style={[styles.finVal, { color: discountVal > 0 ? '#DC2626' : '#64748B' }]}>
-              {discountVal > 0 ? `-₹${discountVal.toLocaleString('en-IN')}` : '₹0'}
-            </Text>
-          </View>
-
-          <View style={styles.finRow}>
-            <Text style={styles.finLabel}>
-              GST {gstVal > 0 && parseNum(rawSubtotal) > 0 ? `(${Math.round((gstVal / parseNum(rawSubtotal)) * 100)}%)` : ''}
-            </Text>
-            <Text style={[styles.finVal, { color: gstVal > 0 ? '#16A34A' : '#64748B' }]}>
-              {gstVal > 0 ? `+₹${gstVal.toLocaleString('en-IN')}` : '₹0'}
-            </Text>
-          </View>
-
-          <View style={styles.dottedDivider} />
-
-          <View style={[styles.finRow, { marginTop: 6 }]}>
-            <Text style={styles.grandTotalLabel}>Grand Total</Text>
-            <Text style={styles.grandTotalVal}>{totalVal}</Text>
-          </View>
-        </View>
-
-        {/* 7. HISTORY & TIMELINE CARD */}
-        <View style={styles.cardSection}>
-          <Text style={styles.cardSectionTitle}>HISTORY & TIMELINE</Text>
-
-          <View style={styles.timelineWrapper}>
-            {/* Step 1: Created */}
-            <View style={styles.timelineRow}>
-              <View style={styles.timelineLeftCol}>
-                <View style={styles.blueDotNode} />
-                <View style={styles.timelineLine} />
-              </View>
-              <View style={styles.timelineContentBox}>
-                <Text style={styles.timelineNodeTitle}>Deal Created</Text>
-                <Text style={styles.timelineNodeTime}>{dateStr} • {timeStr}</Text>
-                <Text style={styles.timelineNodeSub}>Initiated by {createdByRole} ({creatorName})</Text>
-              </View>
-            </View>
-
-            {/* Step 2: Approval Status */}
-            <View style={styles.timelineRow}>
-              <View style={styles.timelineLeftCol}>
-                <View style={isFullyApproved ? styles.blueDotNode : styles.greyDotNode} />
-              </View>
-              <View style={styles.timelineContentBox}>
-                <Text style={styles.timelineNodeTitle}>
-                  {isFullyApproved ? 'Deal Fully Approved' : 'Awaiting Broker Approval'}
-                </Text>
-                <Text style={[styles.timelineNodeSub, { fontStyle: 'italic' }]}>
-                  {isFullyApproved ? 'Active trade contract finalized' : 'In progress...'}
+                <Text style={[
+                  styles.statusPillBadgeText,
+                  isFullyApproved ? styles.textApproved : status.toLowerCase().includes('reject') ? styles.textRejected : styles.textPending
+                ]}>
+                  {isFullyApproved ? 'Approved' : status.toLowerCase().includes('reject') ? 'Rejected' : 'Pending Approval'}
                 </Text>
               </View>
             </View>
-          </View>
-        </View>
 
-        {/* 8. BOTTOM ACTION BUTTONS BAR */}
-        <View style={styles.bottomActionBar}>
-          <TouchableOpacity
-            style={styles.rejectSaudaBtn}
-            onPress={handleReject}
-            disabled={isActionLoading}
-            activeOpacity={0.8}
-          >
-            <X size={18} color="#DC2626" style={{ marginRight: 6 }} />
-            <Text style={styles.rejectSaudaBtnText}>Reject Sauda</Text>
-          </TouchableOpacity>
+            {/* 3. APPROVAL WORKFLOW CARD */}
+            <View style={styles.cardSection}>
+              <Text style={styles.cardSectionTitle}>APPROVAL WORKFLOW</Text>
 
-          <TouchableOpacity
-            style={styles.approveSaudaBtn}
-            onPress={handleApprove}
-            disabled={isActionLoading}
-            activeOpacity={0.85}
-          >
-            {isActionLoading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Check size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.approveSaudaBtnText}>Approve Sauda</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-        </>
+              <View style={styles.workflowGrid}>
+                {/* Seller Workflow Box */}
+                <View style={[
+                  styles.workflowBox,
+                  sellerAppStatus === 'approved' ? styles.wfBoxApproved : sellerAppStatus === 'rejected' ? styles.wfBoxRejected : styles.wfBoxPending
+                ]}>
+                  <View style={[
+                    styles.wfIconCircle,
+                    sellerAppStatus === 'approved' ? styles.wfIconCircleApproved : sellerAppStatus === 'rejected' ? styles.wfIconCircleRejected : styles.wfIconCirclePending
+                  ]}>
+                    {sellerAppStatus === 'approved' ? (
+                      <CheckCircle size={18} color="#FFFFFF" />
+                    ) : sellerAppStatus === 'rejected' ? (
+                      <XCircle size={18} color="#FFFFFF" />
+                    ) : (
+                      <Clock size={18} color="#FFFFFF" />
+                    )}
+                  </View>
+                  <Text style={styles.wfPartyName} numberOfLines={1}>
+                    {sellerName}
+                  </Text>
+                  <Text style={[styles.wfRoleSubText, { color: '#2563EB', fontWeight: '800' }]}>Seller</Text>
+                  <Text style={[
+                    styles.wfStatusText,
+                    sellerAppStatus === 'approved' ? styles.textGreen : sellerAppStatus === 'rejected' ? styles.textRed : styles.textOrange
+                  ]}>
+                    {(sellerAppStatus || 'PENDING').toUpperCase()}
+                  </Text>
+                </View>
+
+                {/* Buyer Workflow Box */}
+                <View style={[
+                  styles.workflowBox,
+                  buyerAppStatus === 'approved' ? styles.wfBoxApproved : buyerAppStatus === 'rejected' ? styles.wfBoxRejected : styles.wfBoxPending
+                ]}>
+                  <View style={[
+                    styles.wfIconCircle,
+                    buyerAppStatus === 'approved' ? styles.wfIconCircleApproved : buyerAppStatus === 'rejected' ? styles.wfIconCircleRejected : styles.wfIconCirclePending
+                  ]}>
+                    {buyerAppStatus === 'approved' ? (
+                      <CheckCircle size={18} color="#FFFFFF" />
+                    ) : buyerAppStatus === 'rejected' ? (
+                      <XCircle size={18} color="#FFFFFF" />
+                    ) : (
+                      <Clock size={18} color="#FFFFFF" />
+                    )}
+                  </View>
+                  <Text style={styles.wfPartyName} numberOfLines={1}>
+                    {buyerName}
+                  </Text>
+                  <Text style={[styles.wfRoleSubText, { color: '#059669', fontWeight: '800' }]}>Buyer</Text>
+                  <Text style={[
+                    styles.wfStatusText,
+                    buyerAppStatus === 'approved' ? styles.textGreen : buyerAppStatus === 'rejected' ? styles.textRed : styles.textOrange
+                  ]}>
+                    {(buyerAppStatus || 'PENDING').toUpperCase()}
+                  </Text>
+                </View>
+
+                {/* Broker / MNC Workflow Box */}
+                <View style={[
+                  styles.workflowBox,
+                  brokerAppStatus === 'approved' ? styles.wfBoxApproved : brokerAppStatus === 'rejected' ? styles.wfBoxRejected : styles.wfBoxPending
+                ]}>
+                  <View style={[
+                    styles.wfIconCircle,
+                    brokerAppStatus === 'approved' ? styles.wfIconCircleApproved : brokerAppStatus === 'rejected' ? styles.wfIconCircleRejected : styles.wfIconCirclePending
+                  ]}>
+                    {brokerAppStatus === 'approved' ? (
+                      <CheckCircle size={18} color="#FFFFFF" />
+                    ) : brokerAppStatus === 'rejected' ? (
+                      <XCircle size={18} color="#FFFFFF" />
+                    ) : (
+                      <Clock size={18} color="#FFFFFF" />
+                    )}
+                  </View>
+                  <Text style={styles.wfPartyName} numberOfLines={1}>
+                    {brokerName}
+                  </Text>
+                  <Text style={[styles.wfRoleSubText, { color: '#7C3AED', fontWeight: '800' }]}>Broker</Text>
+                  <Text style={[
+                    styles.wfStatusText,
+                    brokerAppStatus === 'approved' ? styles.textGreen : brokerAppStatus === 'rejected' ? styles.textRed : styles.textOrange
+                  ]}>
+                    {(brokerAppStatus || 'PENDING').toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* 4. PRODUCT / COMMODITY SUMMARY CARD */}
+            <View style={styles.cardSection}>
+              <View style={styles.productSummaryRow}>
+                {productImg ? (
+                  <Image source={{ uri: productImg }} style={styles.productImageThumb} resizeMode="cover" />
+                ) : (
+                  <View style={styles.productFallbackBox}>
+                    <Package size={32} color="#0D52ED" />
+                  </View>
+                )}
+
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={styles.productTitleText} numberOfLines={1}>{cropName}</Text>
+                    <View style={styles.commodityCategoryPill}>
+                      <Text style={styles.commodityCategoryText}>COMMODITY</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.productGridRow}>
+                    <View>
+                      <Text style={styles.prodGridLabel}>QUANTITY</Text>
+                      <Text style={styles.prodGridVal}>{quantity}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.prodGridLabel}>PRICE</Text>
+                      <Text style={styles.prodPriceVal}>{rate}</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* 5. CREATOR & VERIFICATION BANNER */}
+            <View style={styles.creatorBannerCard}>
+              <View style={styles.creatorShieldIconBox}>
+                <ShieldCheck size={20} color="#0D52ED" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.creatorBannerTitle}>
+                  Created by <Text style={{ fontWeight: '800', color: '#0F172A' }}>{creatorName}</Text>
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <CheckCircle2 size={11} color="#16A34A" />
+                    <Text style={styles.verifiedTagText}>BUYER VERIFIED</Text>
+                  </View>
+                  <Text style={{ fontSize: 10, color: '#CBD5E1' }}>•</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <CheckCircle2 size={11} color="#16A34A" />
+                    <Text style={styles.verifiedTagText}>SELLER VERIFIED</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* 6. FINANCIAL BREAKDOWN CARD */}
+            <View style={styles.cardSection}>
+              <Text style={styles.cardSectionTitle}>FINANCIAL BREAKDOWN</Text>
+
+              <View style={styles.finRow}>
+                <Text style={styles.finLabel}>Subtotal</Text>
+                <Text style={styles.finVal}>{subtotalDisplay}</Text>
+              </View>
+
+              <View style={styles.finRow}>
+                <Text style={styles.finLabel}>
+                  Discount {discountVal > 0 && parseNum(rawSubtotal) > 0 ? `(${Math.round((discountVal / parseNum(rawSubtotal)) * 100)}%)` : ''}
+                </Text>
+                <Text style={[styles.finVal, { color: discountVal > 0 ? '#DC2626' : '#64748B' }]}>
+                  {discountVal > 0 ? `-₹${discountVal.toLocaleString('en-IN')}` : '₹0'}
+                </Text>
+              </View>
+
+              <View style={styles.finRow}>
+                <Text style={styles.finLabel}>
+                  GST {gstVal > 0 && parseNum(rawSubtotal) > 0 ? `(${Math.round((gstVal / parseNum(rawSubtotal)) * 100)}%)` : ''}
+                </Text>
+                <Text style={[styles.finVal, { color: gstVal > 0 ? '#16A34A' : '#64748B' }]}>
+                  {gstVal > 0 ? `+₹${gstVal.toLocaleString('en-IN')}` : '₹0'}
+                </Text>
+              </View>
+
+              <View style={styles.dottedDivider} />
+
+              <View style={[styles.finRow, { marginTop: 6 }]}>
+                <Text style={styles.grandTotalLabel}>Grand Total</Text>
+                <Text style={styles.grandTotalVal}>{totalVal}</Text>
+              </View>
+            </View>
+
+            {/* 7. HISTORY & TIMELINE CARD */}
+            <View style={styles.cardSection}>
+              <Text style={styles.cardSectionTitle}>HISTORY & TIMELINE</Text>
+
+              <View style={styles.timelineWrapper}>
+                {/* Step 1: Created */}
+                <View style={styles.timelineRow}>
+                  <View style={styles.timelineLeftCol}>
+                    <View style={styles.blueDotNode} />
+                    <View style={styles.timelineLine} />
+                  </View>
+                  <View style={styles.timelineContentBox}>
+                    <Text style={styles.timelineNodeTitle}>Deal Created</Text>
+                    <Text style={styles.timelineNodeTime}>{dateStr} • {timeStr}</Text>
+                    <Text style={styles.timelineNodeSub}>Initiated by {createdByRole} ({creatorName})</Text>
+                  </View>
+                </View>
+
+                {/* Step 2: Approval Status */}
+                <View style={styles.timelineRow}>
+                  <View style={styles.timelineLeftCol}>
+                    <View style={isFullyApproved ? styles.blueDotNode : styles.greyDotNode} />
+                  </View>
+                  <View style={styles.timelineContentBox}>
+                    <Text style={styles.timelineNodeTitle}>
+                      {isFullyApproved ? 'Deal Fully Approved' : 'Awaiting Broker Approval'}
+                    </Text>
+                    <Text style={[styles.timelineNodeSub, { fontStyle: 'italic' }]}>
+                      {isFullyApproved ? 'Active trade contract finalized' : 'In progress...'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* 8. BOTTOM ACTION BUTTONS BAR */}
+            <View style={styles.bottomActionBar}>
+              <TouchableOpacity
+                style={styles.rejectSaudaBtn}
+                onPress={handleReject}
+                disabled={isActionLoading}
+                activeOpacity={0.8}
+              >
+                <X size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                <Text style={styles.rejectSaudaBtnText}>Reject Sauda</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.approveSaudaBtn}
+                onPress={handleApprove}
+                disabled={isActionLoading}
+                activeOpacity={0.85}
+              >
+                {isActionLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Check size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.approveSaudaBtnText}>Approve Sauda</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </>
         )}
 
       </ScrollView>

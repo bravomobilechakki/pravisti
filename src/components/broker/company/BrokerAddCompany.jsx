@@ -228,7 +228,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
             </TouchableOpacity>
 
             <View style={{ alignItems: 'center' }}>
-              <Text style={styles.navTitleText}>Registerð Company</Text>
+              <Text style={styles.navTitleText}>Register Company</Text>
 
             </View>
 
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
   heroHeader: {
     backgroundColor: COLORS.primaryDark,
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 12 : 6,
+    paddingTop: Platform.OS === 'android' ? 18 : 6,
     paddingBottom: 20,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,

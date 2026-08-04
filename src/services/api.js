@@ -127,6 +127,36 @@ const patchRequest = async (apiConfig, body, token = null) => {
   return await handleResponse(response);
 };
 
+/**
+ * Standard PUT request helper
+ */
+const putRequest = async (apiConfig, body, token = null) => {
+  const headers = {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  };
+
+  let activeToken = token;
+  if (!activeToken) {
+    try {
+      activeToken = await AsyncStorage.getItem('userToken');
+    } catch (e) {
+      console.warn('Failed to retrieve userToken:', e);
+    }
+  }
+
+  if (activeToken) {
+    headers.Authorization = `Bearer ${activeToken}`;
+  }
+
+  const response = await fetchWithTimeout(apiConfig.url, {
+    method: apiConfig.method || 'PUT',
+    headers,
+    body: JSON.stringify(body),
+  });
+  return await handleResponse(response);
+};
+
 
 // --- AUTH APIs ---
 
@@ -276,6 +306,42 @@ export const addEmployeeToCompany = async (companyId, employeeId, token) => {
 };
 
 // --- DEAL APIs ---
+
+export const createBrokerDraftDeal = async (draftData, token) => {
+  try {
+    return await postRequest(SummaryApi.createBrokerDraftDeal, draftData, token);
+  } catch (error) {
+    console.error('Error creating broker draft deal:', error.message || error);
+    throw error;
+  }
+};
+
+export const getBrokerProductAccessRequests = async (sellerCompanyId, token) => {
+  try {
+    return await getRequest(SummaryApi.getBrokerProductAccessRequests(sellerCompanyId), token);
+  } catch (error) {
+    console.error('Error fetching broker product access requests:', error.message || error);
+    throw error;
+  }
+};
+
+export const respondToProductAccessRequest = async (requestId, status, token) => {
+  try {
+    return await patchRequest(SummaryApi.respondToProductAccessRequest(requestId), { status }, token);
+  } catch (error) {
+    console.error('Error responding to product access request:', error.message || error);
+    throw error;
+  }
+};
+
+export const completeBrokerDraftDeal = async (dealId, completeData, token) => {
+  try {
+    return await putRequest(SummaryApi.completeBrokerDraftDeal(dealId), completeData, token);
+  } catch (error) {
+    console.error('Error completing broker draft deal:', error.message || error);
+    throw error;
+  }
+};
 
 export const createDeal = async (dealData, token) => {
   try {
@@ -777,9 +843,28 @@ export const assistedCreatePartyAccount = async (payload, token) => {
   }
 };
 
-export const getBrokerPendingQueue = async (token) => {
+export const getBrokerPendingQueue = async (companyIdOrToken = null, tokenArg = null) => {
   try {
-    return await getRequest(SummaryApi.getBrokerOnboardQueue, token);
+    let companyId = null;
+    let token = null;
+
+    if (typeof companyIdOrToken === 'string' && companyIdOrToken.length > 30) {
+      token = companyIdOrToken;
+    } else {
+      companyId = companyIdOrToken;
+      token = tokenArg;
+    }
+
+    let activeToken = token;
+    if (!activeToken || typeof activeToken !== 'string' || activeToken.length < 30) {
+      activeToken = await AsyncStorage.getItem('userToken');
+    }
+
+    const config = typeof SummaryApi.getBrokerOnboardQueue === 'function'
+      ? SummaryApi.getBrokerOnboardQueue(companyId)
+      : SummaryApi.getBrokerOnboardQueue;
+
+    return await getRequest(config, activeToken);
   } catch (error) {
     console.error('Error fetching broker pending queue:', error.message || error);
     return { success: true, statusCode: 200, data: [] };
@@ -903,10 +988,14 @@ export const confirmOwnerVerification = async (payload, token) => {
 
 export const getBrokerMyDeals = async (companyId = null, token = null) => {
   try {
+    let activeToken = token;
+    if (!activeToken || typeof activeToken !== 'string' || activeToken.length < 30) {
+      activeToken = await AsyncStorage.getItem('userToken');
+    }
     const config = typeof SummaryApi.getBrokerMyDeals === 'function'
       ? SummaryApi.getBrokerMyDeals(companyId)
       : SummaryApi.getBrokerMyDeals;
-    return await getRequest(config, token);
+    return await getRequest(config, activeToken);
   } catch (error) {
     console.warn('getBrokerMyDeals notice:', error.message || error);
     return { success: false, data: [] };

@@ -15,6 +15,7 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
+import Svg, { Rect, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 import {
   Bell,
   Building2,
@@ -301,9 +302,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
         }>
 
         <View style={styles.heroSection}>
-          {/* Layered Gradient & Glow Orbs */}
-          <View style={styles.headerMiddleGradientLayer} />
-          <View style={styles.headerBottomGradientLayer} />
+          {/* Ambient Glow Orbs */}
           <View style={styles.glowOrbWhiteTop} />
           <View style={styles.glowOrbIndigoBottom} />
 
@@ -323,6 +322,13 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
                 resizeMode="contain"
               />
             </View>
+
+            {/* create broekr company  */}
+
+
+
+
+
 
             <View style={styles.profileSection}>
               <TouchableOpacity
@@ -366,22 +372,36 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
           </View>
         </View>
 
-        {/* ─── QUICK ACTION ─── */}
+        {/* ─── ULTRA-MODERN 3D GLOWING CARD BUTTON ─── */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Quick Action</Text>
           <TouchableOpacity
-            style={styles.addCompanyBannerCard}
+            style={styles.heroAddCompanyCard}
             onPress={() => onNavigate('BrokerAddCompany', { user: routeData?.user })}
             activeOpacity={0.85}
           >
-            <View style={styles.addCompanyBannerIconBox}>
-              <Plus size={22} color="#FFFFFF" />
+            {/* Left Dark Icon Circle */}
+            <View style={styles.heroAddIconDisk}>
+              <Building2 size={20} color="#38BDF8" />
+              <View style={styles.heroAddPlusDot}>
+                <Plus size={10} color="#FFFFFF" strokeWidth={3.5} />
+              </View>
             </View>
-            <View style={styles.addCompanyBannerTextBox}>
-              <Text style={styles.addCompanyBannerTitle}>+ Add Brokerage Company</Text>
-              <Text style={styles.addCompanyBannerSub}>Register a new APMC company to issue official trade contracts</Text>
+
+            {/* Middle Title & Subtitle */}
+            <View style={styles.heroAddTextBox}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.heroAddTitle}>Add Brokerage Company</Text>
+                <View style={styles.heroApmcTag}>
+                  <Text style={styles.heroApmcTagText}>APMC</Text>
+                </View>
+              </View>
+              <Text style={styles.heroAddSub}>Register your company</Text>
             </View>
-            <ChevronRight size={20} color="#0284C7" />
+
+            {/* Right Action Pill */}
+            <View style={styles.heroAddPillBtn}>
+              <Text style={styles.heroAddPillText}>+ Add</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -561,23 +581,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 10,
   },
-  headerMiddleGradientLayer: {
-    position: 'absolute',
-    top: '30%',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#0369A1',
-    opacity: 0.7,
-  },
-  headerBottomGradientLayer: {
-    position: 'absolute',
-    top: '65%',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#075985',
-  },
   glowOrbWhiteTop: {
     position: 'absolute',
     top: -40,
@@ -600,7 +603,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 24,
+    paddingTop: Platform.OS === 'android' ? 14 : 10,
   },
   glassActionBtn: {
     width: 42,
@@ -628,8 +632,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   brandLogo: {
-    width: 110,
-    height: 36,
+    width: 130,
+    height: 38,
   },
   profileSection: {
     flexDirection: 'row',
@@ -740,42 +744,88 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0284C7',
   },
-  addCompanyBannerCard: {
+  // ULTRA-MODERN 3D GLOWING CARD BUTTON
+  heroAddCompanyCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#BAE6FD',
-    elevation: 3,
-    shadowColor: '#0C4A6E',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-  },
-  addCompanyBannerIconBox: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
     backgroundColor: '#0284C7',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: '#38BDF8',
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  heroAddIconDisk: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#0F172A',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    position: 'relative',
+    borderWidth: 1.5,
+    borderColor: '#38BDF8',
   },
-  addCompanyBannerTextBox: {
+  heroAddPlusDot: {
+    position: 'absolute',
+    bottom: -3,
+    right: -3,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#059669',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#0284C7',
+  },
+  heroAddTextBox: {
     flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
   },
-  addCompanyBannerTitle: {
-    fontSize: 15,
+  heroAddTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  heroApmcTag: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  heroApmcTagText: {
+    fontSize: 9,
     fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 2,
+    color: '#FFFFFF',
   },
-  addCompanyBannerSub: {
+  heroAddSub: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.88)',
+    marginTop: 2,
+  },
+  heroAddPillBtn: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  heroAddPillText: {
     fontSize: 12,
-    color: '#64748B',
-    lineHeight: 16,
+    fontWeight: '900',
+    color: '#0284C7',
   },
   statsGrid: {
     flexDirection: 'row',

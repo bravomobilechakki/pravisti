@@ -24,6 +24,7 @@ import {
   AddProductPage,
   TransactionHistory,
 } from './src/components/trader';
+import Notifications from './src/components/common/Notifications';
 import {
   BrokerDashboard,
   BrokerLogin,
@@ -58,6 +59,7 @@ const ContactPickerScreen = ContactPicker as any;
 const CategoryPageScreen = CategoryPage as any;
 const AddProductPageScreen = AddProductPage as any;
 const TransactionHistoryScreen = TransactionHistory as any;
+const NotificationsScreen = Notifications as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
 const BrokerAddCompanyScreen = BrokerAddCompany as any;
 const BrokerCompanyDetailsScreen = BrokerCompanyDetails as any;
@@ -360,6 +362,8 @@ function App() {
         return <DealChatScreen onNavigate={onNavigate} routeData={data} />;
       case 'ChatList':
         return <ChatListScreen onNavigate={onNavigate} routeData={data} />;
+      case 'Notifications':
+        return <NotificationsScreen onNavigate={onNavigate} routeData={data} />;
       case 'Profile':
         return isBrokerUser ? (
           <BrokerProfileScreen onNavigate={onNavigate} routeData={data} />
@@ -389,7 +393,7 @@ function App() {
     }
   };
 
-  const showFooter = current ? ['Dashboard', 'BrokerDashboard'].includes(current.screen) : false;
+  const showFooter = current ? ['Dashboard', 'BrokerDashboard', 'MyCompanies', 'Notifications', 'Profile', 'BrokerProfile'].includes(current.screen) : false;
 
   return (
     <SafeAreaProvider>

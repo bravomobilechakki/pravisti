@@ -162,10 +162,11 @@ const OwnershipConfirmationModal = ({
   // Step 3 Products State (Seller Only)
   const [selectedProductIds, setSelectedProductIds] = useState([]);
 
-  const brokerName = userData?.brokerName || userData?.broker?.name || 'Assigned Broker';
-  const brokerCompany =
-    userData?.brokerCompanyName || userData?.broker?.companyName || 'Pravisti Broker Network';
   const rawRole = (userData?.role || 'trader').toLowerCase();
+  const isBrokerTargetRole = rawRole.includes('broker');
+  const creatorName = userData?.creatorName || userData?.onboardedByName || userData?.traderName || userData?.brokerName || userData?.broker?.name || (isBrokerTargetRole ? 'Counterparty Trader' : 'Assigned Broker');
+  const creatorCompany = userData?.creatorCompanyName || userData?.onboardedByCompany || userData?.brokerCompanyName || userData?.broker?.companyName || 'Pravisti Network';
+  
   const isSellerRole = rawRole.includes('seller');
 
   // Deals details if created by broker
@@ -202,7 +203,8 @@ const OwnershipConfirmationModal = ({
       setCompDesc(c.description || userData.businessDetails || '');
 
       // Pre-select Step 3 products
-      const pIds = productsArr.map((p) => p.id || p._id).filter(Boolean);
+      const pArr = Array.isArray(userData?.products) ? userData.products : [];
+      const pIds = pArr.map((p) => p.id || p._id).filter(Boolean);
       setSelectedProductIds(pIds);
     }
   }, [visible, userData]);
@@ -228,7 +230,7 @@ const OwnershipConfirmationModal = ({
         }
         Alert.alert(
           'Registration Rejected',
-          'The broker-assisted account request has been rejected.',
+          'The account verification request has been rejected.',
           [{ text: 'OK', onPress: () => { if (onRejected) onRejected(); onClose(); } }]
         );
         return;
@@ -269,7 +271,7 @@ const OwnershipConfirmationModal = ({
           state: compState.trim() || 'Maharashtra',
           postalCode: compZip.trim() || '400001',
         },
-        description: compDesc.trim() || 'Business account onboarded via broker',
+        description: compDesc.trim() || 'Business account onboarded',
       };
 
       const res = await completeCompanyProfile(payload, token);
@@ -278,54 +280,33 @@ const OwnershipConfirmationModal = ({
       const isCompleted = data.completed === true || (!isSellerRole && productsArr.length === 0);
 
       if (isCompleted || nextStep === 'dashboard' || !isSellerRole) {
-        Alert.alert(
-          'Account Confirmed',
-          'Your company profile has been saved. Welcome to Pravisti!',
-          [{ text: 'Go to Dashboard', onPress: () => { if (onConfirmed) onConfirmed(res); onClose(); } }]
-        );
+        if (onConfirmed) onConfirmed();
+        onClose();
       } else {
         setStep(3);
       }
     } catch (err) {
-      console.warn('Step 2 error:', err);
-      if (isSellerRole && productsArr.length > 0) {
-        setStep(3);
-      } else {
-        Alert.alert(
-          'Account Confirmed',
-          'Your profile has been verified.',
-          [{ text: 'OK', onPress: () => { if (onConfirmed) onConfirmed(); onClose(); } }]
-        );
-      }
+      console.warn('Step 2 company save error:', err);
+      if (onConfirmed) onConfirmed();
+      onClose();
     } finally {
       setIsLoading(false);
     }
   };
 
-  // STEP 3: VERIFY PRODUCTS (SELLER ONLY)
+  // STEP 3: CONFIRM PRODUCTS
   const handleStep3ProductsSave = async () => {
     setIsLoading(true);
     setErrorMsg('');
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const payload = {
-        status: 'approved',
-        products: selectedProductIds,
-      };
-
-      const res = await verifyProducts(payload, token);
-      Alert.alert(
-        'Setup Completed',
-        'Products and deals have been verified successfully.',
-        [{ text: 'Explore Dashboard', onPress: () => { if (onConfirmed) onConfirmed(res); onClose(); } }]
-      );
+      await verifyProducts({ productIds: selectedProductIds, status: 'approved' }, token);
+      if (onConfirmed) onConfirmed();
+      onClose();
     } catch (err) {
-      console.warn('Step 3 error:', err);
-      Alert.alert(
-        'Setup Completed',
-        'Your trader account setup is complete.',
-        [{ text: 'OK', onPress: () => { if (onConfirmed) onConfirmed(); onClose(); } }]
-      );
+      console.warn('Step 3 products save error:', err);
+      if (onConfirmed) onConfirmed();
+      onClose();
     } finally {
       setIsLoading(false);
     }
@@ -383,22 +364,26 @@ const OwnershipConfirmationModal = ({
             {step === 1 && (
               <View>
                 <Text style={styles.introInstructionText}>
-                  Your broker created this business account and deal on your behalf. Review the information below and confirm that it belongs to you.
+                  {isBrokerTargetRole
+                    ? 'A seller/buyer created or invited this broker account on your behalf. Review the details below and confirm to verify your account.'
+                    : 'Your broker created this business account and deal on your behalf. Review the information below and confirm that it belongs to you.'}
                 </Text>
 
                 {/* Grouped Information Card */}
                 <View style={styles.infoCard}>
-                  {/* Broker Information */}
-                  <Text style={styles.infoGroupHeader}>Broker Information</Text>
-                  <InfoRow label="Broker Name" value={brokerName} />
-                  <InfoRow label="Broker Company" value={brokerCompany} />
+                  {/* Creator / Onboarder Information */}
+                  <Text style={styles.infoGroupHeader}>
+                    {isBrokerTargetRole ? 'Trader / Onboarder Information' : 'Broker Information'}
+                  </Text>
+                  <InfoRow label={isBrokerTargetRole ? 'Onboarded By' : 'Broker Name'} value={creatorName} />
+                  {creatorCompany ? <InfoRow label="Company" value={creatorCompany} /> : null}
 
                   <View style={styles.divider} />
 
                   {/* Business Details */}
                   <Text style={styles.infoGroupHeader}>Business Profile</Text>
                   <InfoRow label="Company Name" value={compName || 'Registered Company'} />
-                  <InfoRow label="Onboarded Role" value={isSellerRole ? 'Seller' : 'Buyer'} />
+                  <InfoRow label="Onboarded Role" value={isBrokerTargetRole ? 'Broker' : (isSellerRole ? 'Seller' : 'Buyer')} />
                   {compGst ? <InfoRow label="GSTIN / Tax ID" value={compGst} /> : null}
 
                   {/* Trade Deal Details */}

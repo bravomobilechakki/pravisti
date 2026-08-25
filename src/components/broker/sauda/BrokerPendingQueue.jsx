@@ -44,10 +44,14 @@ import {
   getBrokerPendingQueue,
   getBrokerMyDeals,
   getDeals,
+  completeBrokerDraftDeal,
+  deleteDeal,
+  recreateExpiredDeal,
   resendWhatsAppInvite,
   cancelBrokerOnboard,
   editPendingBusiness,
 } from '../../../services/api';
+
 import { generateAssistedRegistrationLink } from '../../../utils/WhatsAppService';
 
 // Brand Design System Colors
@@ -220,7 +224,7 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
   // Success Receipt State
   const [successReceipt, setSuccessReceipt] = useState({ visible: false });
 
-  // Fetch Queue Data via GET /api/broker-onboard/my-deal & GET /api/broker-onboard/my-queue
+  // Fetch Queue Data via GET /api/onboarding/onboarded-users & GET /api/onboarding/queue
   const fetchQueue = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -234,29 +238,37 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
 
       let rawItems = [];
 
-      // 1. Primary endpoint: GET /api/broker-onboard/my-deal
-      try {
-        const myDealsRes = await getBrokerMyDeals(compId, token);
-        rawItems = extractApiArray(myDealsRes);
-      } catch (e) {
-        console.warn('my-deal API fetch notice:', e);
-      }
+      // Parallel Network Sync
+      const [queueResResult, myDealsResResult] = await Promise.allSettled([
+        getBrokerPendingQueue(compId, token),
+        getBrokerMyDeals(compId, token),
+      ]);
 
-      // 2. Secondary endpoint: GET /api/broker-onboard/my-queue if my-deal returned empty
-      if (rawItems.length === 0) {
-        try {
-          const queueRes = await getBrokerPendingQueue(compId, token);
-          rawItems = extractApiArray(queueRes);
-        } catch (e) {
-          console.warn('my-queue API fetch notice:', e);
+      if (queueResResult.status === 'fulfilled') {
+        const queueArr = extractApiArray(queueResResult.value);
+        if (queueArr.length > 0) {
+          rawItems.push(...queueArr);
         }
       }
 
-      // 3. Fallback endpoint: GET /api/deals if still empty
+      if (myDealsResResult.status === 'fulfilled') {
+        const myDealsArr = extractApiArray(myDealsResResult.value);
+        if (myDealsArr.length > 0) {
+          myDealsArr.forEach(item => {
+            const itemId = item._id || item.id;
+            if (!rawItems.some(existing => (existing._id || existing.id) === itemId)) {
+              rawItems.push(item);
+            }
+          });
+        }
+      }
+
+      // Fallback endpoint: GET /api/deals if still empty
       if (rawItems.length === 0) {
         try {
           const dealsRes = await getDeals(token, 1, 50, compId);
-          rawItems = extractApiArray(dealsRes);
+          const dealsArr = extractApiArray(dealsRes);
+          rawItems.push(...dealsArr);
         } catch (e) {
           console.warn('deals API fallback notice:', e);
         }

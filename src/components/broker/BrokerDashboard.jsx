@@ -432,7 +432,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
                 key={firm._id || firm.id || idx}
                 style={styles.firmCard}
                 activeOpacity={0.85}
-                onPress={() => onNavigate('BrokerCompanyDetails', { company: firm, companyId: firm._id || firm.id })}
+                onPress={() => onNavigate('BrokerCompanyDetails', { company: firm, companyId: firm._id || firm.id, role: 'Broker', user: currentUser })}
               >
                 <View style={styles.firmHeaderRow}>
                   <View style={styles.firmIconCircle}>
@@ -445,6 +445,8 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
                     </Text>
                   </View>
                   <View style={styles.verifiedFirmBadge}>
+
+
                     <ShieldCheck size={12} color="#16A34A" style={{ marginRight: 4 }} />
                     <Text style={styles.verifiedFirmText}>Verified APMC</Text>
                   </View>

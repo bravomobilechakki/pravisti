@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LayoutDashboard, Building2, Plus, Bell, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';

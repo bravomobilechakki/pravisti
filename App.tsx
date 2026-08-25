@@ -23,14 +23,11 @@ import {
   CategoryPage,
   AddProductPage,
   TransactionHistory,
+  OnboardedUsers,
 } from './src/components/trader';
 import Notifications from './src/components/common/Notifications';
 import {
   BrokerDashboard,
-  BrokerLogin,
-  BrokerOTPVerify,
-  BrokerRegistration,
-  BrokerAuthGateway,
   BrokerAddCompany,
   BrokerCompanyDetails,
   BrokerOnboardUser,
@@ -59,6 +56,7 @@ const ContactPickerScreen = ContactPicker as any;
 const CategoryPageScreen = CategoryPage as any;
 const AddProductPageScreen = AddProductPage as any;
 const TransactionHistoryScreen = TransactionHistory as any;
+const OnboardedUsersScreen = OnboardedUsers as any;
 const NotificationsScreen = Notifications as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
 const BrokerAddCompanyScreen = BrokerAddCompany as any;
@@ -76,10 +74,12 @@ const checkIsUserBroker = (userObj: any, explicitRole?: string): boolean => {
     if (cleanExp === 'trader' || cleanExp === 'seller' || cleanExp === 'buyer') return false;
     if (cleanExp === 'broker') return true;
   }
+  const actualUser = (userObj && typeof userObj === 'object' && userObj.user && typeof userObj.user === 'object') ? userObj.user : userObj;
   const uRole = (
     userObj?.role ||
-    userObj?.userType ||
-    (userObj?.roles && userObj.roles[0]) ||
+    actualUser?.role ||
+    actualUser?.userType ||
+    (actualUser?.roles && actualUser.roles[0]) ||
     ''
   ).toString().toLowerCase();
 
@@ -130,9 +130,7 @@ function App() {
             const initialScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
             setNavigationStack([{ screen: initialScreen, data: { user: mergedUser, role: isBroker ? 'Broker' : 'Trader' } }]);
 
-            if (!isBroker) {
-              checkPendingVerification(token);
-            }
+            checkPendingVerification(token);
           } else {
             // Token invalid or expired
             await AsyncStorage.removeItem('userToken');
@@ -287,6 +285,8 @@ function App() {
         finalTarget = isTargetBroker ? 'BrokerAddCompany' : 'AddCompany';
       } else if (finalTarget === 'Profile' || finalTarget === 'BrokerProfile') {
         finalTarget = isTargetBroker ? 'BrokerProfile' : 'Profile';
+      } else if (finalTarget === 'CompanyDetails' || finalTarget === 'BrokerCompanyDetails') {
+        finalTarget = isTargetBroker ? 'BrokerCompanyDetails' : 'CompanyDetails';
       }
 
       if (finalTarget === 'pop') {
@@ -297,7 +297,7 @@ function App() {
         return;
       }
 
-      if (!isTargetBroker && (finalTarget === 'Dashboard' || finalTarget === 'Profile')) {
+      if (finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'Profile' || finalTarget === 'BrokerProfile') {
         checkPendingVerification();
       }
 
@@ -380,6 +380,8 @@ function App() {
         return <AddProductPageScreen onNavigate={onNavigate} routeData={data} />;
       case 'TransactionHistory':
         return <TransactionHistoryScreen onNavigate={onNavigate} routeData={data} />;
+      case 'OnboardedUsers':
+        return <OnboardedUsersScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerDashboard':
         return <BrokerDashboardScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerAddCompany':

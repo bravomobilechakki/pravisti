@@ -12,6 +12,7 @@ import {
   Platform,
   Linking,
   Image,
+  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -38,8 +39,17 @@ import {
   User,
   Check,
   X,
+  ChevronRight,
+  Sparkles,
 } from 'lucide-react-native';
-import { getDealDetails, acceptDeal, rejectDeal } from '../../../services/api';
+import {
+  getDealDetails,
+  acceptDeal,
+  rejectDeal,
+  completeBrokerDraftDeal,
+  recreateExpiredDeal,
+  deleteDeal,
+} from '../../../services/api';
 import Footer from '../../footer/footer';
 
 const BrokerDealDetails = ({ onNavigate, routeData }) => {
@@ -54,8 +64,8 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
   const fetchDetails = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const isValidObjectId = typeof dealId === 'string' && /^[0-9a-fA-F]{24}$/.test(dealId);
-      if (isValidObjectId && token) {
+      const isValidId = typeof dealId === 'string' && dealId.trim().length > 0;
+      if (isValidId && token) {
         try {
           const res = await getDealDetails(dealId, token);
           if (res && res.success && res.data) {
@@ -133,6 +143,75 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     }
   };
 
+  const handleCompleteDraft = async () => {
+    try {
+      setIsActionLoading(true);
+      const token = await AsyncStorage.getItem('userToken');
+      const res = await completeBrokerDraftDeal(dealId, { notes: 'Completing draft deal' }, token);
+      if (res && res.success) {
+        Alert.alert('Success', 'Draft deal completed successfully!', [
+          { text: 'OK', onPress: () => fetchDetails() },
+        ]);
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to complete draft deal');
+      }
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Failed to complete draft deal');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    Alert.alert('Delete Deal', 'Are you sure you want to delete this deal?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setIsActionLoading(true);
+          try {
+            const token = await AsyncStorage.getItem('userToken');
+            const res = await deleteDeal(dealId, token);
+            if (res && res.success) {
+              Alert.alert('Success', 'Deal deleted', [{ text: 'OK', onPress: () => onNavigate('BrokerPendingQueue') }]);
+            } else {
+              Alert.alert('Error', res?.message || 'Failed to delete deal');
+            }
+          } catch (e) {
+            Alert.alert('Error', e.message || 'Failed to delete deal');
+          } finally {
+            setIsActionLoading(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleRecreate = async () => {
+    setIsActionLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 30);
+      const recreatePayload = {
+        expiryDate: futureDate.toISOString(),
+        notes: 'Recreated expired deal',
+        products: deal.products || [],
+      };
+      const res = await recreateExpiredDeal(dealId, recreatePayload, token);
+      if (res && res.success) {
+        Alert.alert('Success', 'Expired deal recreated successfully', [{ text: 'OK', onPress: () => fetchDetails() }]);
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to recreate deal');
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to recreate deal');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   const handleShareSauda = async () => {
     try {
       const saudaNo = deal.dealNumber || deal.id || `SAUDA-${dealId?.slice(-6) || ''}`;
@@ -167,7 +246,8 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
   const saudaNo = deal.dealNumber || deal.id || (deal._id ? `DEAL-${deal._id.slice(-4).toUpperCase()}` : 'DEAL-0001');
 
   // Extract crop name ONLY from actual data
-  const _p0 = deal.products?.[0];
+  const productsList = Array.isArray(deal.products) && deal.products.length > 0 ? deal.products : [];
+  const _p0 = productsList[0];
   const _pid0 = _p0?.productId;
   const cropName = deal.crop || deal.productName || deal.cropName
     || _p0?.name
@@ -175,19 +255,17 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     || _p0?.title
     || 'Commodity Item';
 
-  // Dynamic Product Image from deal data (no hardcoded image URL)
   const productImg = (typeof _p0?.image === 'string' && _p0.image.trim())
     || (typeof _p0?.productImage === 'string' && _p0.productImage.trim())
     || (_pid0 && typeof _pid0 === 'object' && typeof _pid0.image === 'string' && _pid0.image.trim())
     || (typeof deal.image === 'string' && deal.image.trim())
     || null;
 
-  // Extract quantity & rate ONLY from actual data
   const unitStr = _p0?.unitName || _p0?.unitShortName || (_p0?.unitId && typeof _p0.unitId === 'object' ? (_p0.unitId.name || _p0.unitId.shortName) : null) || _p0?.unit || '';
   const quantity = deal.quantity ? String(deal.quantity).replace(/\s*units?/gi, '').trim() : (_p0?.quantity ? `${_p0.quantity} ${unitStr}`.trim() : '—');
   const rate = deal.rate || (_p0?.price ? `₹${parseFloat(_p0.price).toLocaleString('en-IN')}/unit` : '—');
 
-  // Total amount from API
+  // Total amounts from API
   const rawTotal = deal.grandTotal || deal.totalAmount || deal.totalValue || deal.totalPrice || _p0?.totalAmount || _p0?.subtotal || _p0?.totalPrice;
   let numericTotal = parseNum(rawTotal);
   if (!numericTotal) {
@@ -202,12 +280,11 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     ? `₹${numericTotal.toLocaleString('en-IN')}`
     : (deal.totalAmount || deal.totalValue ? `₹${deal.totalAmount || deal.totalValue}` : '—');
 
-  // Subtotal, Discount & GST breakdown from actual deal data
-  const rawSubtotal = deal.subtotal || deal.totalSubtotal || _p0?.subtotal || numericTotal;
+  const rawSubtotal = deal.totalSubtotal || deal.subtotal || _p0?.subtotal || numericTotal;
   const subtotalDisplay = parseNum(rawSubtotal) > 0 ? `₹${parseNum(rawSubtotal).toLocaleString('en-IN')}` : totalVal;
 
-  const discountVal = parseNum(deal.discount || deal.totalDiscount || _p0?.discount || 0);
-  const gstVal = parseNum(deal.gstAmount || deal.totalGSTAmount || _p0?.gstAmount || 0);
+  const discountVal = parseNum(deal.totalDiscount || deal.discount || _p0?.discount || 0);
+  const gstVal = parseNum(deal.totalGSTAmount || deal.gstAmount || _p0?.gstAmount || 0);
 
   const status = deal.status ? (deal.status.charAt(0).toUpperCase() + deal.status.slice(1)) : 'Pending';
 
@@ -227,7 +304,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     return fallbackStr;
   };
 
-  // Seller & Buyer & Broker Details from actual deal data
+  // Seller, Buyer & Broker Company Details
   const sellerCo = deal.sellerCompanyId || deal.sellerCompany || deal.sellerId || (typeof deal.seller === 'object' ? deal.seller : {});
   const sellerName = extractName(sellerCo) || extractName(deal.seller) || deal.sellerCompanyName || deal.sellerName || 'Seller Business';
 
@@ -235,31 +312,33 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
   const buyerName = extractName(buyerCo) || extractName(deal.buyer) || deal.buyerCompanyName || deal.buyerName || 'Buyer Business';
 
   const brokerCo = deal.brokerCompanyId || deal.brokerCompany || deal.brokerId || (typeof deal.broker === 'object' ? deal.broker : {});
-  const brokerName = extractName(brokerCo) || extractName(deal.broker) || deal.brokerCompanyName || deal.brokerName || 'Brokerage Firm';
+  const brokerName = extractName(brokerCo) || extractName(deal.broker) || deal.brokerCompanyName || deal.brokerName || 'mnc Agro Limiteds';
 
   const creatorName = deal.createdBy?.name || deal.creatorName || sellerName;
-  const createdByRole = deal.createdByRole ? (deal.createdByRole.charAt(0).toUpperCase() + deal.createdByRole.slice(1)) : 'Seller';
+  const createdByRole = deal.createdByRole ? (deal.createdByRole.charAt(0).toUpperCase() + deal.createdByRole.slice(1)) : 'Broker';
 
-  // ── Approval Flow Extraction ──
+  // Approval Flow Extraction
   const appStatusObj = deal.approvalStatus || {};
   const acceptedByArr = Array.isArray(deal.acceptedBy) ? deal.acceptedBy : [];
 
-  const sellerAppStatus = (appStatusObj.seller || acceptedByArr.find(a => String(a.companyId) === String(sellerCo._id || sellerCo.id))?.status || deal.sellerStatus || 'approved').toLowerCase();
-  const buyerAppStatus = (appStatusObj.buyer || acceptedByArr.find(a => String(a.companyId) === String(buyerCo._id || buyerCo.id))?.status || deal.buyerStatus || 'pending').toLowerCase();
-  const brokerAppStatus = (appStatusObj.broker || acceptedByArr.find(a => String(a.companyId) === String(brokerCo._id || brokerCo.id))?.status || deal.brokerStatus || 'pending').toLowerCase();
+  const isCreatedByBroker = deal.createdByRole?.toLowerCase() === 'broker' || deal.creatorRole?.toLowerCase() === 'broker' || deal.role?.toLowerCase() === 'broker' || deal.isBrokerDeal === true || deal.isAssisted === true;
 
-  const isBrokerApproved = brokerAppStatus === 'approved' || brokerAppStatus === 'accepted';
+  const sellerAppStatus = (appStatusObj.seller || acceptedByArr.find(a => String(a.companyId) === String(sellerCo._id || sellerCo.id))?.status || deal.sellerStatus || 'pending').toLowerCase();
+  const buyerAppStatus = (appStatusObj.buyer || acceptedByArr.find(a => String(a.companyId) === String(buyerCo._id || buyerCo.id))?.status || deal.buyerStatus || 'pending').toLowerCase();
+  const brokerAppStatus = (appStatusObj.broker || acceptedByArr.find(a => String(a.companyId) === String(brokerCo._id || brokerCo.id))?.status || deal.brokerStatus || (isCreatedByBroker ? 'approved' : 'pending')).toLowerCase();
+
+  const isBrokerApproved = brokerAppStatus === 'approved' || brokerAppStatus === 'accepted' || isCreatedByBroker;
   const isFullyApproved = status.toLowerCase() === 'approved' || status.toLowerCase() === 'active' || status.toLowerCase() === 'completed' ||
     (sellerAppStatus === 'approved' && buyerAppStatus === 'approved' && brokerAppStatus === 'approved');
 
-  const dateStr = deal.createdAt ? new Date(deal.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'July 31, 2026';
+  const dateStr = deal.createdAt ? new Date(deal.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today';
   const timeStr = deal.createdAt ? new Date(deal.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '10:45 AM';
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0284C7" />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
 
-      {/* 1. TOP SKY BLUE APP HEADER (#0284C7) */}
+      {/* 1. TOP APP HEADER */}
       <View style={styles.appBar}>
         <TouchableOpacity style={styles.headerIconBtn} onPress={() => onNavigate('pop')} activeOpacity={0.7}>
           <ArrowLeft size={20} color="#FFFFFF" />
@@ -267,12 +346,19 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
 
         <Text style={styles.appBarTitle}>Sauda Details</Text>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={() => onNavigate('DealChat', { dealId: deal._id || deal.id || dealId, deal })}
+            activeOpacity={0.7}
+          >
+            <MessageSquare size={18} color="#FFFFFF" />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.headerIconBtn} onPress={handleShareSauda} activeOpacity={0.7}>
             <Share2 size={18} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.userAvatarCircle}>
-            <User size={14} color="#0284C7" />
+            <User size={14} color="#2563EB" />
           </View>
         </View>
       </View>
@@ -281,12 +367,12 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
 
         {isLoading && !hasDataToRender ? (
           <View style={{ paddingVertical: 80, alignItems: 'center', justifyContent: 'center' }}>
-            <ActivityIndicator size="large" color="#0284C7" />
-            <Text style={{ marginTop: 12, fontSize: 14, color: '#0284C7', fontWeight: '700' }}>Loading Sauda Contract...</Text>
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text style={{ marginTop: 12, fontSize: 14, color: '#2563EB', fontWeight: '700' }}>Loading Sauda Contract...</Text>
           </View>
         ) : (
           <>
-            {/* 2. TOP DEAL ID CARD (Soft Pastel Light Blue Container) */}
+            {/* 2. TOP DEAL ID CARD */}
             <View style={styles.dealIdCard}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.dealIdLabel}>DEAL ID</Text>
@@ -313,7 +399,50 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
               </View>
             </View>
 
-            {/* 3. APPROVAL WORKFLOW CARD */}
+            {/* 3. CONTRACTING PARTIES & BROKERAGE FIRM CARD */}
+            <View style={styles.cardSection}>
+              <Text style={styles.cardSectionTitle}>CONTRACTING PARTIES & BROKERAGE</Text>
+
+              {/* Originating Brokerage Firm Banner */}
+              <View style={styles.brokerPartyBanner}>
+                <View style={styles.brokerPartyIconBox}>
+                  <Building2 size={20} color="#2563EB" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.brokerPartySub}>ORIGINATING BROKERAGE FIRM</Text>
+                  <Text style={styles.brokerPartyName}>{brokerName}</Text>
+                  {brokerCo?.phone || deal.createdBy?.mobileNumber ? (
+                    <Text style={styles.partyPhoneText}>📞 +91 {brokerCo?.phone || deal.createdBy?.mobileNumber}</Text>
+                  ) : null}
+                </View>
+                <View style={styles.brokerVerifiedTag}>
+                  <ShieldCheck size={12} color="#2563EB" style={{ marginRight: 3 }} />
+                  <Text style={styles.brokerVerifiedTagText}>Broker</Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                {/* Seller Company Card */}
+                <View style={[styles.partySmallBox, { flex: 1, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+                  <Text style={[styles.partySmallRole, { color: '#2563EB' }]}>SELLER FIRM</Text>
+                  <Text style={styles.partySmallName} numberOfLines={1}>{sellerName}</Text>
+                  {sellerCo?.phone ? (
+                    <Text style={styles.partySmallPhone} numberOfLines={1}>📞 +91 {sellerCo.phone}</Text>
+                  ) : null}
+                </View>
+
+                {/* Buyer Company Card */}
+                <View style={[styles.partySmallBox, { flex: 1, backgroundColor: '#F0FDF4', borderColor: '#86EFAC' }]}>
+                  <Text style={[styles.partySmallRole, { color: '#15803D' }]}>BUYER FIRM</Text>
+                  <Text style={styles.partySmallName} numberOfLines={1}>{buyerName}</Text>
+                  {buyerCo?.phone ? (
+                    <Text style={styles.partySmallPhone} numberOfLines={1}>📞 +91 {buyerCo.phone}</Text>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+
+            {/* 4. APPROVAL WORKFLOW CARD */}
             <View style={styles.cardSection}>
               <Text style={styles.cardSectionTitle}>APPROVAL WORKFLOW</Text>
 
@@ -407,47 +536,115 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
               </View>
             </View>
 
-            {/* 4. PRODUCT / COMMODITY SUMMARY CARD */}
+            {/* 5. COMMODITY PRODUCTS SUMMARY CARD */}
             <View style={styles.cardSection}>
-              <View style={styles.productSummaryRow}>
-                {productImg ? (
-                  <Image source={{ uri: productImg }} style={styles.productImageThumb} resizeMode="cover" />
-                ) : (
-                  <View style={styles.productFallbackBox}>
-                    <Package size={32} color="#0D52ED" />
-                  </View>
-                )}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={styles.cardSectionTitle}>COMMODITY PRODUCTS ({productsList.length > 0 ? productsList.length : 1})</Text>
+              </View>
 
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <Text style={styles.productTitleText} numberOfLines={1}>{cropName}</Text>
-                    <View style={styles.commodityCategoryPill}>
-                      <Text style={styles.commodityCategoryText}>COMMODITY</Text>
-                    </View>
-                  </View>
+              {productsList.length > 0 ? (
+                productsList.map((prod, idx) => {
+                  const pObj = typeof prod.productId === 'object' ? prod.productId : {};
+                  const pName = prod.name || pObj.name || cropName;
+                  const pQty = prod.quantity || deal.quantity || '—';
+                  const pUnit = prod.unitName || prod.unitShortName || (pObj.unitId && typeof pObj.unitId === 'object' ? (pObj.unitId.name || pObj.unitId.shortName) : null) || 'unit';
+                  const pPrice = prod.price ? `₹${parseFloat(prod.price).toLocaleString('en-IN')}` : rate;
+                  const pSubtotal = prod.subtotal ? `₹${parseFloat(prod.subtotal).toLocaleString('en-IN')}` : null;
+                  const pDiscount = prod.discount ? `₹${parseFloat(prod.discount).toLocaleString('en-IN')}` : null;
+                  const pGst = prod.gstAmount ? `₹${parseFloat(prod.gstAmount).toLocaleString('en-IN')} (${prod.gst}%)` : null;
+                  const pTotal = prod.totalAmount ? `₹${parseFloat(prod.totalAmount).toLocaleString('en-IN')}` : null;
+                  const pTerms = prod.paymentTerms || deal.paymentTerms || null;
 
-                  <View style={styles.productGridRow}>
-                    <View>
-                      <Text style={styles.prodGridLabel}>QUANTITY</Text>
-                      <Text style={styles.prodGridVal}>{quantity}</Text>
+                  return (
+                    <View key={prod._id || idx} style={styles.productBlockItemCard}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <Text style={styles.productBlockTitle}>{pName}</Text>
+                        <View style={styles.productBlockBadge}>
+                          <Text style={styles.productBlockBadgeText}>Item #{idx + 1}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.productDetailGrid}>
+                        <View style={styles.productDetailCol}>
+                          <Text style={styles.productDetailLabel}>QUANTITY</Text>
+                          <Text style={styles.productDetailVal}>{pQty} {pUnit}</Text>
+                        </View>
+                        <View style={styles.productDetailCol}>
+                          <Text style={styles.productDetailLabel}>RATE / PRICE</Text>
+                          <Text style={styles.productDetailVal}>{pPrice}</Text>
+                        </View>
+                        {pSubtotal ? (
+                          <View style={styles.productDetailCol}>
+                            <Text style={styles.productDetailLabel}>SUBTOTAL</Text>
+                            <Text style={styles.productDetailVal}>{pSubtotal}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      {pDiscount || pGst || pTerms ? (
+                        <View style={styles.productExtraDetailsRow}>
+                          {pDiscount ? (
+                            <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '700' }}>Discount: -{pDiscount}</Text>
+                          ) : null}
+                          {pGst ? (
+                            <Text style={{ fontSize: 11, color: '#059669', fontWeight: '700' }}>GST: +{pGst}</Text>
+                          ) : null}
+                          {pTerms ? (
+                            <Text style={{ fontSize: 11, color: '#475569', fontWeight: '600' }}>Terms: {pTerms}</Text>
+                          ) : null}
+                        </View>
+                      ) : null}
+
+                      {pTotal ? (
+                        <View style={styles.productNetTotalRow}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: '#0F172A' }}>Item Net Total:</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '900', color: '#2563EB' }}>{pTotal}</Text>
+                        </View>
+                      ) : null}
                     </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.prodGridLabel}>PRICE</Text>
-                      <Text style={styles.prodPriceVal}>{rate}</Text>
+                  );
+                })
+              ) : (
+                <View style={styles.productSummaryRow}>
+                  {productImg ? (
+                    <Image source={{ uri: productImg }} style={styles.productImageThumb} resizeMode="cover" />
+                  ) : (
+                    <View style={styles.productFallbackBox}>
+                      <Package size={32} color="#2563EB" />
+                    </View>
+                  )}
+
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={styles.productTitleText} numberOfLines={1}>{cropName}</Text>
+                      <View style={styles.commodityCategoryPill}>
+                        <Text style={styles.commodityCategoryText}>COMMODITY</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.productGridRow}>
+                      <View>
+                        <Text style={styles.prodGridLabel}>QUANTITY</Text>
+                        <Text style={styles.prodGridVal}>{quantity}</Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.prodGridLabel}>PRICE</Text>
+                        <Text style={styles.prodPriceVal}>{rate}</Text>
+                      </View>
                     </View>
                   </View>
                 </View>
-              </View>
+              )}
             </View>
 
-            {/* 5. CREATOR & VERIFICATION BANNER */}
+            {/* 6. CREATOR & VERIFICATION BANNER */}
             <View style={styles.creatorBannerCard}>
               <View style={styles.creatorShieldIconBox}>
-                <ShieldCheck size={20} color="#0D52ED" />
+                <ShieldCheck size={20} color="#2563EB" />
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={styles.creatorBannerTitle}>
-                  Created by <Text style={{ fontWeight: '800', color: '#0F172A' }}>{creatorName}</Text>
+                  Created by <Text style={{ fontWeight: '800', color: '#0F172A' }}>{creatorName}</Text> ({brokerName})
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
@@ -463,7 +660,23 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
               </View>
             </View>
 
-            {/* 6. FINANCIAL BREAKDOWN CARD */}
+            {/* 6.5 SAUDA TRADE CHAT BANNER CARD */}
+            <TouchableOpacity
+              style={styles.chatBannerCard}
+              onPress={() => onNavigate('DealChat', { dealId: deal._id || deal.id || dealId, deal })}
+              activeOpacity={0.85}
+            >
+              <View style={styles.chatIconBox}>
+                <MessageSquare size={20} color="#2563EB" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.chatBannerTitle}>Sauda Trade Chat</Text>
+                <Text style={styles.chatBannerSubtitle}>Open real-time negotiation & messages</Text>
+              </View>
+              <ChevronRight size={18} color="#2563EB" />
+            </TouchableOpacity>
+
+            {/* 7. FINANCIAL BREAKDOWN CARD */}
             <View style={styles.cardSection}>
               <Text style={styles.cardSectionTitle}>FINANCIAL BREAKDOWN</Text>
 
@@ -498,7 +711,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
               </View>
             </View>
 
-            {/* 7. HISTORY & TIMELINE CARD */}
+            {/* 8. HISTORY & TIMELINE CARD */}
             <View style={styles.cardSection}>
               <Text style={styles.cardSectionTitle}>HISTORY & TIMELINE</Text>
 
@@ -512,7 +725,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
                   <View style={styles.timelineContentBox}>
                     <Text style={styles.timelineNodeTitle}>Deal Created</Text>
                     <Text style={styles.timelineNodeTime}>{dateStr} • {timeStr}</Text>
-                    <Text style={styles.timelineNodeSub}>Initiated by {createdByRole} ({creatorName})</Text>
+                    <Text style={styles.timelineNodeSub}>Initiated by {createdByRole} ({creatorName} - {brokerName})</Text>
                   </View>
                 </View>
 
@@ -523,7 +736,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
                   </View>
                   <View style={styles.timelineContentBox}>
                     <Text style={styles.timelineNodeTitle}>
-                      {isFullyApproved ? 'Deal Fully Approved' : 'Awaiting Broker Approval'}
+                      {isFullyApproved ? 'Deal Fully Approved' : 'Awaiting Buyer & Seller Approval'}
                     </Text>
                     <Text style={[styles.timelineNodeSub, { fontStyle: 'italic' }]}>
                       {isFullyApproved ? 'Active trade contract finalized' : 'In progress...'}
@@ -533,34 +746,105 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
               </View>
             </View>
 
-            {/* 8. BOTTOM ACTION BUTTONS BAR */}
+            {/* 9. BOTTOM ACTION BUTTONS BAR */}
             <View style={styles.bottomActionBar}>
-              <TouchableOpacity
-                style={styles.rejectSaudaBtn}
-                onPress={handleReject}
-                disabled={isActionLoading}
-                activeOpacity={0.8}
-              >
-                <X size={18} color="#DC2626" style={{ marginRight: 6 }} />
-                <Text style={styles.rejectSaudaBtnText}>Reject Sauda</Text>
-              </TouchableOpacity>
+              {String(deal.status || '').toLowerCase() === 'draft' ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.rejectSaudaBtn}
+                    onPress={handleDelete}
+                    disabled={isActionLoading}
+                    activeOpacity={0.8}
+                  >
+                    <X size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                    <Text style={styles.rejectSaudaBtnText}>Delete Draft</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.approveSaudaBtn}
-                onPress={handleApprove}
-                disabled={isActionLoading}
-                activeOpacity={0.85}
-              >
-                {isActionLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Check size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.approveSaudaBtnText}>Approve Sauda</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.approveSaudaBtn}
+                    onPress={handleCompleteDraft}
+                    disabled={isActionLoading}
+                    activeOpacity={0.85}
+                  >
+                    {isActionLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Check size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text style={styles.approveSaudaBtnText}>Complete Draft</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : String(deal.status || '').toLowerCase() === 'expired' ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.rejectSaudaBtn}
+                    onPress={handleDelete}
+                    disabled={isActionLoading}
+                    activeOpacity={0.8}
+                  >
+                    <X size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                    <Text style={styles.rejectSaudaBtnText}>Delete Deal</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.approveSaudaBtn}
+                    onPress={handleRecreate}
+                    disabled={isActionLoading}
+                    activeOpacity={0.85}
+                  >
+                    {isActionLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Check size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text style={styles.approveSaudaBtnText}>Recreate Deal</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  {(!isBrokerApproved && !isCreatedByBroker && !isFullyApproved) ? (
+                    <>
+                      <TouchableOpacity
+                        style={styles.rejectSaudaBtn}
+                        onPress={handleReject}
+                        disabled={isActionLoading}
+                        activeOpacity={0.8}
+                      >
+                        <X size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                        <Text style={styles.rejectSaudaBtnText}>Reject Sauda</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.approveSaudaBtn}
+                        onPress={handleApprove}
+                        disabled={isActionLoading}
+                        activeOpacity={0.85}
+                      >
+                        {isActionLoading ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <>
+                            <Check size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                            <Text style={styles.approveSaudaBtnText}>Approve Sauda</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <View style={{ width: '100%', paddingVertical: 10, alignItems: 'center', backgroundColor: '#ECFDF5', borderRadius: 12, borderWidth: 1, borderColor: '#A7F3D0' }}>
+                      <Text style={{ color: '#059669', fontSize: 13, fontWeight: '700' }}>
+                        ✓ Deal Created & Approved by Broker ({brokerName})
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
             </View>
+
           </>
         )}
 
@@ -574,61 +858,52 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#0D52ED',
-    fontWeight: '600',
+    backgroundColor: '#F8FAFC',
   },
 
-  /* 1. TOP SKY BLUE HEADER (#0284C7) */
+  /* 1. APP BAR */
   appBar: {
-    height: 58,
-    backgroundColor: '#0284C7',
+    height: 56,
+    backgroundColor: '#2563EB',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    elevation: 4,
-    shadowColor: '#0D52ED',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    elevation: 3,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   headerIconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   appBarTitle: {
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.2,
+    letterSpacing: -0.2,
   },
   userAvatarCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
   },
 
   scrollContent: {
-    padding: 14,
+    padding: 16,
     paddingBottom: 120,
-    gap: 12,
+    gap: 14,
   },
 
   /* 2. TOP DEAL ID CARD */
@@ -636,35 +911,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#EEF4FF',
-    borderColor: '#DBEAFE',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
     borderWidth: 1,
     borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    padding: 14,
   },
   dealIdLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     color: '#64748B',
     letterSpacing: 0.5,
-    marginBottom: 2,
   },
   dealIdValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
-    color: '#1D4ED8',
-    letterSpacing: -0.2,
+    color: '#0F172A',
+    marginTop: 1,
   },
   statusPillBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
-  statusPillPending: {
-    backgroundColor: '#FFEDD5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
   },
   statusPillApproved: {
     backgroundColor: '#DCFCE7',
@@ -672,33 +942,107 @@ const styles = StyleSheet.create({
   statusPillRejected: {
     backgroundColor: '#FEE2E2',
   },
+  statusPillPending: {
+    backgroundColor: '#FFEDD5',
+  },
   statusPillBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
-  textPending: { color: '#C2410C' },
   textApproved: { color: '#16A34A' },
   textRejected: { color: '#DC2626' },
+  textPending: { color: '#C2410C' },
 
-  /* 3. CARD SECTION */
+  /* CARDS & SECTIONS */
   cardSection: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    elevation: 2,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
   },
   cardSectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: '#64748B',
-    letterSpacing: 0.6,
-    marginBottom: 12,
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+
+  /* BROKER & PARTIES CARDS */
+  brokerPartyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+  },
+  brokerPartyIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#DBEAFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  brokerPartySub: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.4,
+  },
+  brokerPartyName: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 1,
+  },
+  partyPhoneText: {
+    fontSize: 11,
+    color: '#475569',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  brokerVerifiedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  brokerVerifiedTagText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+  partySmallBox: {
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+  },
+  partySmallRole: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  partySmallName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  partySmallPhone: {
+    fontSize: 10.5,
+    color: '#475569',
+    marginTop: 1,
   },
 
   /* APPROVAL WORKFLOW GRID */
@@ -708,192 +1052,266 @@ const styles = StyleSheet.create({
   },
   workflowBox: {
     flex: 1,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 14,
     borderWidth: 1,
   },
   wfBoxApproved: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-  },
-  wfBoxPending: {
-    backgroundColor: '#FFF7ED',
-    borderColor: '#FFEDD5',
+    backgroundColor: '#F0FDF4',
+    borderColor: '#86EFAC',
   },
   wfBoxRejected: {
     backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
+    borderColor: '#FCA5A5',
+  },
+  wfBoxPending: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
   },
   wfIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
-    marginBottom: 8,
+    alignItems: 'center',
+    marginBottom: 6,
   },
   wfIconCircleApproved: { backgroundColor: '#16A34A' },
-  wfIconCirclePending: { backgroundColor: '#F97316' },
   wfIconCircleRejected: { backgroundColor: '#DC2626' },
-
+  wfIconCirclePending: { backgroundColor: '#F59E0B' },
   wfPartyName: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
-    color: '#1E293B',
-    marginBottom: 1,
+    color: '#0F172A',
     textAlign: 'center',
   },
   wfRoleSubText: {
     fontSize: 9.5,
-    fontWeight: '700',
-    color: '#64748B',
-    marginBottom: 4,
-    textAlign: 'center',
+    marginTop: 1,
   },
   wfStatusText: {
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 0.4,
+    marginTop: 4,
   },
-  textGreen: { color: '#15803D' },
-  textOrange: { color: '#C2410C' },
-  textRed: { color: '#B91C1C' },
+  textGreen: { color: '#16A34A' },
+  textRed: { color: '#DC2626' },
+  textOrange: { color: '#D97706' },
 
-  /* 4. PRODUCT / COMMODITY SUMMARY */
+  /* PRODUCTS MULTI-ITEM CARDS */
+  productBlockItemCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8,
+  },
+  productBlockTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  productBlockBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  productBlockBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+  productDetailGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginVertical: 6,
+  },
+  productDetailCol: {
+    flex: 1,
+  },
+  productDetailLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  productDetailVal: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 1,
+  },
+  productExtraDetailsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 4,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  productNetTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+
   productSummaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   productImageThumb: {
-    width: 80,
-    height: 80,
-    borderRadius: 14,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    width: 52,
+    height: 52,
+    borderRadius: 12,
   },
   productFallbackBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 12,
     backgroundColor: '#EFF6FF',
-    alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
+    alignItems: 'center',
   },
   productTitleText: {
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 15,
+    fontWeight: '800',
     color: '#0F172A',
-    flex: 1,
   },
   commodityCategoryPill: {
-    backgroundColor: '#DBEAFE',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   commodityCategoryText: {
     fontSize: 9,
-    fontWeight: '900',
-    color: '#1D4ED8',
-    letterSpacing: 0.4,
+    fontWeight: '800',
+    color: '#2563EB',
   },
   productGridRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: 10,
+    marginTop: 4,
   },
   prodGridLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#64748B',
-    letterSpacing: 0.4,
-    marginBottom: 2,
   },
   prodGridVal: {
-    fontSize: 14,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#0F172A',
   },
   prodPriceVal: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#0D9488',
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#059669',
   },
 
-  /* 5. CREATOR BANNER */
+  /* CREATOR BANNER */
   creatorBannerCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#EFF6FF',
-    borderColor: '#DBEAFE',
+    borderColor: '#BFDBFE',
     borderWidth: 1,
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
   },
   creatorShieldIconBox: {
     width: 36,
     height: 36,
     borderRadius: 18,
     backgroundColor: '#DBEAFE',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   creatorBannerTitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#334155',
     fontWeight: '600',
   },
   verifiedTagText: {
     fontSize: 9.5,
-    fontWeight: '900',
+    fontWeight: '800',
     color: '#16A34A',
-    letterSpacing: 0.3,
   },
 
-  /* 6. FINANCIAL BREAKDOWN */
+  /* CHAT BANNER */
+  chatBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+  },
+  chatIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#E0E7FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatBannerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E1B4B',
+  },
+  chatBannerSubtitle: {
+    fontSize: 11.5,
+    color: '#4338CA',
+    marginTop: 1,
+  },
+
+  /* FINANCIAL BREAKDOWN */
   finRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 4,
+    marginBottom: 8,
   },
   finLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12.5,
     color: '#475569',
+    fontWeight: '600',
   },
   finVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  dottedDivider: {
+    height: 1,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    marginVertical: 6,
+  },
+  grandTotalLabel: {
     fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
   },
-  dottedDivider: {
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    marginVertical: 10,
-  },
-  grandTotalLabel: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
   grandTotalVal: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '900',
-    color: '#1D4ED8',
+    color: '#059669',
   },
 
-  /* 7. HISTORY & TIMELINE */
+  /* HISTORY TIMELINE */
   timelineWrapper: {
-    marginTop: 4,
     gap: 12,
   },
   timelineRow: {
@@ -902,25 +1320,26 @@ const styles = StyleSheet.create({
   timelineLeftCol: {
     width: 24,
     alignItems: 'center',
-    paddingTop: 2,
   },
   blueDotNode: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#1D4ED8',
+    backgroundColor: '#2563EB',
+    marginTop: 3,
   },
   greyDotNode: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#94A3B8',
+    backgroundColor: '#CBD5E1',
+    marginTop: 3,
   },
   timelineLine: {
+    flex: 1,
     width: 2,
-    height: 28,
-    backgroundColor: '#CBD5E1',
-    marginTop: 2,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 2,
   },
   timelineContentBox: {
     flex: 1,
@@ -935,53 +1354,47 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748B',
     marginTop: 1,
-    fontWeight: '600',
   },
   timelineNodeSub: {
-    fontSize: 11,
-    color: '#64748B',
+    fontSize: 11.5,
+    color: '#475569',
     marginTop: 2,
   },
 
-  /* 8. BOTTOM ACTION BUTTONS */
+  /* BOTTOM ACTION BAR */
   bottomActionBar: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
+    gap: 10,
+    marginTop: 6,
   },
   rejectSaudaBtn: {
     flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#DC2626',
-    borderWidth: 1.5,
-    borderRadius: 14,
-    paddingVertical: 14,
+    alignItems: 'center',
   },
   rejectSaudaBtnText: {
-    fontSize: 14,
-    fontWeight: '900',
+    fontSize: 13.5,
+    fontWeight: '800',
     color: '#DC2626',
   },
   approveSaudaBtn: {
     flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#2563EB',
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0D52ED',
-    borderRadius: 14,
-    paddingVertical: 14,
-    elevation: 3,
-    shadowColor: '#0D52ED',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    alignItems: 'center',
   },
   approveSaudaBtnText: {
-    fontSize: 14,
-    fontWeight: '900',
+    fontSize: 13.5,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
 });

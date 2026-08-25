@@ -139,6 +139,7 @@ const Profile = ({ onNavigate, routeData }) => {
       color: '#3B82F6',
     },
     { Icon: Handshake, label: 'My Deals', subtitle: 'View all sauda deals', color: '#10B981' },
+    { Icon: Users, label: 'Onboarded Users', subtitle: 'Users onboarded during deal creation', color: '#6366F1' },
     { Icon: Users, label: 'Contacts', subtitle: 'Saved parties & brokers', color: '#8B5CF6' },
     { Icon: TrendingUp, label: 'Reports', subtitle: 'Commission & analytics', color: '#EC4899' },
     { Icon: Bell, label: 'Notifications', subtitle: 'Manage alerts', color: '#F59E0B' },
@@ -237,6 +238,8 @@ const Profile = ({ onNavigate, routeData }) => {
                     onNavigate('MyCompanies');
                   } else if (item.label === 'My Deals') {
                     onNavigate('DealsList');
+                  } else if (item.label === 'Onboarded Users') {
+                    onNavigate('OnboardedUsers');
                   }
                 }}
                 activeOpacity={0.7}

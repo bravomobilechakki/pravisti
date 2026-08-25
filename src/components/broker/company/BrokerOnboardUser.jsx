@@ -317,16 +317,16 @@ const BrokerOnboardUser = ({ onNavigate, routeData }) => {
             <>
               {/* Party Role Selector */}
               <View style={styles.roleSegmentContainer}>
-                <Text style={styles.fieldHeading}>1. SELECT TRADER ROLE</Text>
+                <Text style={styles.fieldHeading}>1. SELECT PARTY ROLE</Text>
                 <View style={styles.roleTabRow}>
                   <TouchableOpacity
                     style={[styles.roleTabItem, partyType === 'seller' && styles.roleTabActiveSeller]}
                     onPress={() => setPartyType('seller')}
                     activeOpacity={0.85}
                   >
-                    <Building2 size={18} color={partyType === 'seller' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
+                    <Building2 size={16} color={partyType === 'seller' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 4 }} />
                     <Text style={[styles.roleTabText, partyType === 'seller' && styles.roleTabTextActive]}>
-                      Seller (विक्रेता)
+                      Seller
                     </Text>
                   </TouchableOpacity>
 
@@ -335,9 +335,20 @@ const BrokerOnboardUser = ({ onNavigate, routeData }) => {
                     onPress={() => setPartyType('buyer')}
                     activeOpacity={0.85}
                   >
-                    <User size={18} color={partyType === 'buyer' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
+                    <User size={16} color={partyType === 'buyer' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 4 }} />
                     <Text style={[styles.roleTabText, partyType === 'buyer' && styles.roleTabTextActive]}>
-                      Buyer (खरीदार)
+                      Buyer
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.roleTabItem, partyType === 'broker' && { backgroundColor: '#7C3AED' }]}
+                    onPress={() => setPartyType('broker')}
+                    activeOpacity={0.85}
+                  >
+                    <ShieldCheck size={16} color={partyType === 'broker' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 4 }} />
+                    <Text style={[styles.roleTabText, partyType === 'broker' && styles.roleTabTextActive]}>
+                      Broker
                     </Text>
                   </TouchableOpacity>
                 </View>

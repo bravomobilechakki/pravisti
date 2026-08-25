@@ -33,9 +33,31 @@ import {
   Plus,
   ArrowUpRight,
   ChevronRight,
+  Users,
+  UserCheck,
 } from 'lucide-react-native';
-import { getCompanyDetails, updateCompany, deleteCompany, getDeals, getExpiredDeals, getUserProfile, getBrokerProductAccessRequests } from '../../../services/api';
+import { getCompanyDetails, updateCompany, deleteCompany, getDeals, getExpiredDeals, getUserProfile, getBrokerProductAccessRequests, getBrokerMyDeals, getBrokerPendingQueue } from '../../../services/api';
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
+
+const extractApiArray = (res) => {
+  if (!res) return [];
+  if (Array.isArray(res)) return res;
+  if (res.data) {
+    if (Array.isArray(res.data)) return res.data;
+    if (Array.isArray(res.data.queue)) return res.data.queue;
+    if (Array.isArray(res.data.onboardings)) return res.data.onboardings;
+    if (Array.isArray(res.data.onboardedUsers)) return res.data.onboardedUsers;
+    if (Array.isArray(res.data.myDeals)) return res.data.myDeals;
+    if (Array.isArray(res.data.deals)) return res.data.deals;
+    if (Array.isArray(res.data.companies)) return res.data.companies;
+  }
+  if (Array.isArray(res.queue)) return res.queue;
+  if (Array.isArray(res.onboardings)) return res.onboardings;
+  if (Array.isArray(res.onboardedUsers)) return res.onboardedUsers;
+  if (Array.isArray(res.myDeals)) return res.myDeals;
+  if (Array.isArray(res.deals)) return res.deals;
+  return [];
+};
 
 const formatVolume = (value) => {
   const num = Number(value);
@@ -240,6 +262,75 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
   const [accessRequests, setAccessRequests] = React.useState([]);
   const [isAccessModalVisible, setIsAccessModalVisible] = React.useState(false);
+  const [onboardedUsers, setOnboardedUsers] = React.useState([]);
+  const [isOnboardedLoading, setIsOnboardedLoading] = React.useState(false);
+
+  const fetchOnboardedUsers = React.useCallback(async () => {
+    const currentCompanyId = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
+    if (!currentCompanyId) return;
+
+    const cacheKey = `company_onboarded_users_${currentCompanyId}`;
+
+    // 1. Instant Cache Hydration
+    try {
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          setOnboardedUsers(parsed);
+        }
+      }
+    } catch (e) { }
+
+    setIsOnboardedLoading(true);
+
+    // 2. Parallel Network Sync
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) return;
+
+      const [queueResResult, myDealsResResult] = await Promise.allSettled([
+        getBrokerPendingQueue(currentCompanyId, token),
+        getBrokerMyDeals(currentCompanyId, token),
+      ]);
+
+      const combined = [];
+      const seenIds = new Set();
+
+      const addItems = (arr) => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(item => {
+          const id = item._id || item.id || item.registrationId || item.mobileNumber || item.invitedMobile || item.name || item.companyName;
+          if (id && !seenIds.has(String(id))) {
+            seenIds.add(String(id));
+            combined.push(item);
+          }
+        });
+      };
+
+      if (queueResResult.status === 'fulfilled') {
+        addItems(extractApiArray(queueResResult.value));
+      }
+      if (myDealsResResult.status === 'fulfilled') {
+        addItems(extractApiArray(myDealsResResult.value));
+      }
+
+      // Strictly filter users specifically matching this company
+      const filteredList = combined.filter(usr => {
+        const usrCompanyId = String(usr.companyId || usr.company?._id || usr.company?.id || usr.brokerCompanyId || usr.creatorCompanyId || '');
+        const usrTargetCompanyId = String(usr.targetCompanyId || usr.company?.companyId || '');
+        if (!usrCompanyId && !usrTargetCompanyId) return false;
+        return usrCompanyId === String(currentCompanyId) || usrTargetCompanyId === String(currentCompanyId);
+      });
+
+      setOnboardedUsers(filteredList);
+      AsyncStorage.setItem(cacheKey, JSON.stringify(filteredList)).catch(() => { });
+    } catch (e) {
+      console.warn('Failed to fetch onboarded users for company details:', e);
+    } finally {
+      setIsOnboardedLoading(false);
+    }
+  }, [company, routeData]);
 
   const checkProductAccessRequests = React.useCallback(async () => {
     const companyId = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
@@ -267,9 +358,10 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   React.useEffect(() => {
     if (company) {
       fetchDealsList();
+      fetchOnboardedUsers();
       checkProductAccessRequests();
     }
-  }, [company, fetchDealsList, checkProductAccessRequests]);
+  }, [company, fetchDealsList, fetchOnboardedUsers, checkProductAccessRequests]);
 
   const handleUpdate = async () => {
     if (!editData.name || !editData.phone || !editData.registrationNumber) {
@@ -542,7 +634,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           </View>
         </View>
 
-        {/* Modern 1 Row (4 Small Square Tiles) for Quick Actions */}
+        {/* Modern Quick Actions Grid */}
         <View style={styles.quickServicesGrid}>
           <TouchableOpacity
             style={styles.squareServiceCard}
@@ -564,6 +656,17 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               <Plus size={20} color="#1A56DB" />
             </View>
             <Text style={styles.squareServiceLabel} numberOfLines={1}>New Sauda</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.squareServiceCard}
+            onPress={() => onNavigate('OnboardedUsers', { companyId: company?._id || company?.id, companyName: company?.name })}
+            activeOpacity={0.8}
+          >
+            <View style={styles.squareIconBox}>
+              <Users size={20} color="#1A56DB" />
+            </View>
+            <Text style={styles.squareServiceLabel} numberOfLines={1}>Onboard Users</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -722,6 +825,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                   </TouchableOpacity>
                 </View>
               )}
+
             </View>
           ) : (
             <View style={styles.tabContentContainer}>

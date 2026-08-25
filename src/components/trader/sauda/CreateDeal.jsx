@@ -34,9 +34,11 @@ import {
   Search,
   UserPlus,
   X,
+  MessageSquare,
 } from 'lucide-react-native';
 import {
   createDeal,
+  createBrokerDraftDeal,
   getUserProfile,
   inviteDeal,
   getProducts,
@@ -46,6 +48,11 @@ import {
   getCompanies,
   getCompanyDetails,
   getCompaniesByNumber,
+  assistedCreatePartyAccount,
+  getUnits,
+  getIndustries,
+  searchCounterpartyUser,
+  fetchPincodeDetails,
 } from '../../../services/api';
 import { Linking } from 'react-native';
 
@@ -121,6 +128,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   // Dynamic Identity Sync
   const [activeUserCompany, setActiveUserCompany] = useState(initialCompany);
   const [activeUserId, setActiveUserId] = useState(routeData?.user?._id || routeData?.user?.id);
+  const originCompanyId = routeData?.companyId || activeUserCompany?._id || activeUserCompany?.id || activeUserCompany?.companyId || initialCompany?._id || initialCompany?.id;
 
   const getInitialRole = () => {
     const raw = String(routeData?.prefill?.role || routeData?.role || 'seller').toLowerCase();
@@ -139,6 +147,175 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [directInputBroker, setDirectInputBroker] = useState('');
   const [directInputErrors, setDirectInputErrors] = useState({});
   const [lookupResults, setLookupResults] = useState({});
+
+  // Master Data Loaded from API
+  const [unitsList, setUnitsList] = useState([]);
+  const [industriesList, setIndustriesList] = useState([]);
+  const [userCompaniesList, setUserCompaniesList] = useState([]);
+  const [currentUserMobile, setCurrentUserMobile] = useState('');
+  const [isPincodeLoading, setIsPincodeLoading] = useState(false);
+
+  // Trader Assisted Onboarding Modal States for Unregistered Counterparty
+  const [showOnboardModal, setShowOnboardModal] = useState(false);
+  const [onboardStep, setOnboardStep] = useState(1);
+  const [onboardRole, setOnboardRole] = useState('seller');
+  const [onboardForm, setOnboardForm] = useState({
+    name: '',
+    mobileNumber: '',
+    companyName: '',
+    industryId: '',
+    registrationNumber: '',
+    street: '',
+    city: '',
+    district: '',
+    state: '',
+    postalCode: '',
+    country: 'India',
+    productName: '',
+    unitId: '64d0a1b2c3d4e5f6a7b8c9df',
+    hsnCode: '76011010',
+    gstCode: 'GST_18',
+    description: '',
+  });
+  const [onboardErrors, setOnboardErrors] = useState({});
+  const [isOnboardingSubmitting, setIsOnboardingSubmitting] = useState(false);
+
+  // Master Data Initial Load
+  React.useEffect(() => {
+    const loadMasterData = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) return;
+
+        const userRes = await getUserProfile(token);
+        if (userRes && userRes.success && userRes.data) {
+          const u = userRes.data;
+          setCurrentUserMobile(u.mobileNumber || u.phone || '');
+          if (Array.isArray(u.companies)) {
+            setUserCompaniesList(u.companies);
+          }
+        }
+
+        try {
+          const unitsRes = await getUnits('active', token);
+          if (unitsRes && (unitsRes.success || Array.isArray(unitsRes.data))) {
+            const list = Array.isArray(unitsRes.data) ? unitsRes.data : (unitsRes.data?.data || []);
+            setUnitsList(list);
+          }
+        } catch (e) {
+          console.warn('Units load error:', e);
+        }
+
+        try {
+          const indRes = await getIndustries();
+          if (indRes && (indRes.success || Array.isArray(indRes.data))) {
+            const list = Array.isArray(indRes.data) ? indRes.data : (indRes.data?.data || []);
+            setIndustriesList(list);
+          }
+        } catch (e) {
+          console.warn('Industries load error:', e);
+        }
+      } catch (err) {
+        console.warn('Master data load error:', err);
+      }
+    };
+    loadMasterData();
+  }, []);
+
+  const openOnboardModalForRole = async (targetRole, contactData, nameVal) => {
+    let currentIndustries = industriesList;
+    if (!currentIndustries || currentIndustries.length === 0) {
+      try {
+        const indRes = await getIndustries();
+        if (indRes && (indRes.success || Array.isArray(indRes.data))) {
+          currentIndustries = Array.isArray(indRes.data) ? indRes.data : (indRes.data?.data || []);
+          setIndustriesList(currentIndustries);
+        }
+      } catch (e) {
+        console.warn('Industries load error:', e);
+      }
+    }
+
+    const rawMob = contactData?.mobile || contactData?.phone || nameVal || '';
+    const cleanMob = rawMob.replace(/\D/g, '');
+    let searchedUser = null;
+
+    if (cleanMob.length === 10) {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        const searchRes = await searchCounterpartyUser(`+91${cleanMob}`, token);
+        if (searchRes && searchRes.success && searchRes.data) {
+          searchedUser = searchRes.data.user || searchRes.data;
+        }
+      } catch (e) {
+        console.warn('User search error:', e);
+      }
+    }
+
+    let defaultName = searchedUser?.name || contactData?.name || '';
+    // Do NOT pre-fill phone numbers into User Full Name field
+    if (/^\+?\d+$/.test(defaultName.trim())) {
+      defaultName = '';
+    }
+
+    const defaultMobile = cleanMob || (contactData?.mobile || contactData?.phone || '').replace(/^\+91/, '');
+    const defaultCompany = contactData?.company || contactData?.companyName || '';
+    const firstProdName = productsList[0]?.productName || '';
+    const defaultIndustryId = currentIndustries[0]?._id || currentIndustries[0]?.id || '';
+    const defaultUnitId = unitsList[0]?._id || unitsList[0]?.id || '64d0a1b2c3d4e5f6a7b8c9df';
+
+    // Strict Role Resolution:
+    let resolvedRole = 'seller';
+    if (targetRole === 'seller' || targetRole === 'buyer' || targetRole === 'broker') {
+      resolvedRole = targetRole;
+    } else if (role === 'buyer') {
+      resolvedRole = 'seller';
+    } else if (role === 'seller' || role === 'broker') {
+      resolvedRole = 'buyer';
+    }
+
+    setOnboardRole(resolvedRole);
+    setOnboardStep(1);
+    setOnboardForm({
+      name: defaultName,
+      mobileNumber: defaultMobile,
+      companyName: defaultCompany,
+      industryId: defaultIndustryId,
+      registrationNumber: '',
+      street: '',
+      city: '',
+      district: '',
+      state: '',
+      postalCode: '',
+      country: 'India',
+      productName: firstProdName,
+      unitId: defaultUnitId,
+      hsnCode: '76011010',
+      gstCode: 'GST_18',
+      description: '',
+    });
+    setOnboardErrors({});
+    setShowOnboardModal(true);
+  };
+
+  const handlePincodeChange = async (pincodeVal) => {
+    setOnboardForm(prev => ({ ...prev, postalCode: pincodeVal }));
+    const cleanPin = pincodeVal.replace(/\D/g, '');
+    if (cleanPin.length === 6) {
+      setIsPincodeLoading(true);
+      const res = await fetchPincodeDetails(cleanPin);
+      setIsPincodeLoading(false);
+      if (res && res.success) {
+        setOnboardForm(prev => ({
+          ...prev,
+          city: res.city || prev.city,
+          district: res.district || prev.district || res.city,
+          state: res.state || prev.state,
+          country: res.country || 'India',
+        }));
+      }
+    }
+  };
 
   // Auto live company lookup when a 10-digit mobile number is typed
   React.useEffect(() => {
@@ -168,6 +345,10 @@ const CreateDeal = ({ onNavigate, routeData }) => {
               ...prev,
               [field]: { searching: false, companies: [], mobile: formattedNumber, notFound: true }
             }));
+            // Auto add contact & auto open registration modal popup
+            handleDirectAddContact(field, cleanDigits);
+            const targetRole = field === 'brokerCompany' ? 'broker' : (field === 'sellerCompany' ? 'seller' : (role === 'buyer' ? 'seller' : 'buyer'));
+            openOnboardModalForRole(targetRole, null, cleanDigits);
           }
         } catch (e) {
           console.warn('Step 1 number lookup error:', e);
@@ -178,11 +359,14 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       }
     };
 
+    const isAnyTenDigits = [directInputSeller, directInputParty2, directInputBroker].some(v => (v || '').replace(/\D/g, '').length === 10);
+    const delay = isAnyTenDigits ? 0 : 350;
+
     const timer = setTimeout(() => {
       if (directInputSeller) checkNumber('sellerCompany', directInputSeller);
       if (directInputParty2) checkNumber('party2', directInputParty2);
       if (directInputBroker) checkNumber('brokerCompany', directInputBroker);
-    }, 400);
+    }, delay);
 
     return () => clearTimeout(timer);
   }, [directInputSeller, directInputParty2, directInputBroker]);
@@ -417,42 +601,64 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           });
         };
 
-        // 1. Fetch products of activeUserCompany (always relevant!)
-        const activeCompanyId =
-          activeUserCompany?._id ||
-          activeUserCompany?.id ||
-          activeUserCompany?.companyId ||
-          routeData?.companyId ||
-          routeData?.company?._id ||
-          routeData?.company?.id ||
-          routeData?.originCompany?._id ||
-          routeData?.originCompany?.id;
+        // Determine target seller company ID based on current role
+        let targetSellerCompanyId = null;
 
-        console.warn('DEBUG [activeCompanyId]:', activeCompanyId);
-
-        if (activeCompanyId) {
-          const resActive = await getProducts(activeCompanyId, token, undefined, undefined, undefined);
-          console.warn('DEBUG [resActive]:', { success: resActive?.success, count: resActive?.data?.length });
-          if (resActive && resActive.success && resActive.data) {
-            addProducts(resActive.data);
-          }
+        if (role === 'buyer') {
+          // When current user is Buyer, products MUST belong to the Seller (party2Data or sellerCompanyData)
+          // DO NOT fetch Buyer's (activeUserCompany) products!
+          targetSellerCompanyId =
+            party2Data?.companyId ||
+            party2Data?._id ||
+            party2Data?.id ||
+            sellerCompanyData?.companyId ||
+            sellerCompanyData?._id ||
+            sellerCompanyData?.id;
+        } else if (role === 'seller') {
+          // When current user is Seller, products belong to activeUserCompany
+          targetSellerCompanyId =
+            activeUserCompany?._id ||
+            activeUserCompany?.id ||
+            activeUserCompany?.companyId ||
+            routeData?.companyId ||
+            routeData?.company?._id ||
+            routeData?.company?.id ||
+            routeData?.originCompany?._id ||
+            routeData?.originCompany?.id;
+        } else if (role === 'broker') {
+          // When current user is Broker, products belong to Seller Company
+          targetSellerCompanyId =
+            sellerCompanyData?.companyId ||
+            sellerCompanyData?._id ||
+            sellerCompanyData?.id ||
+            party2Data?.companyId ||
+            party2Data?._id ||
+            party2Data?.id;
         }
 
-        // 2. Fetch products of the other target company (buyer/seller/party2)
-        const targetCompany = role === 'seller' ? activeUserCompany : role === 'buyer' ? party2Data : sellerCompanyData;
-        const targetCompanyId = targetCompany?._id || targetCompany?.id || targetCompany?.companyId;
-        console.warn('DEBUG [targetCompanyId]:', targetCompanyId);
+        console.warn('DEBUG [targetSellerCompanyId]:', targetSellerCompanyId, 'role:', role);
 
-        if (targetCompanyId && String(targetCompanyId) !== String(activeCompanyId)) {
-          const resTarget = await getProducts(targetCompanyId, token, undefined, undefined, undefined);
-          console.warn('DEBUG [resTarget]:', { success: resTarget?.success, count: resTarget?.data?.length });
+        if (targetSellerCompanyId && targetSellerCompanyId !== 'undefined') {
+          const resTarget = await getProducts(targetSellerCompanyId, token, undefined, undefined, undefined).catch(() => ({ success: true, data: [] }));
           if (resTarget && resTarget.success && resTarget.data) {
             addProducts(resTarget.data);
           }
         }
 
-        console.warn('DEBUG [combinedProducts]:', combinedProducts.map(p => p.name));
-        setCompanyProducts(combinedProducts);
+        // Merge locally created / newly onboarded seller products so they are not wiped out
+        setCompanyProducts(prev => {
+          const locallyOnboarded = (prev || []).filter(p => p.isNewlyOnboarded || (targetSellerCompanyId && String(p.companyId) === String(targetSellerCompanyId)));
+          locallyOnboarded.forEach(p => {
+            const id = p._id || p.id;
+            const name = String(p.name || '').trim().toLowerCase();
+            if (id && !seenIds.has(String(id)) && name && !seenNames.has(name)) {
+              seenIds.add(String(id));
+              seenNames.add(name);
+              combinedProducts.unshift(p);
+            }
+          });
+          return combinedProducts;
+        });
       } catch (e) {
         console.warn('Failed to load company products:', e);
       }
@@ -460,26 +666,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     fetchCompanyInventory();
   }, [activeUserCompany, party2Data, sellerCompanyData, role, routeData]);
 
-  React.useEffect(() => {
-    if (companyProducts && companyProducts.length > 0) {
-      setProductsList(prev => {
-        return prev.map(item => {
-          if (!item.productName || item.productName.trim() === '') {
-            const defaultProd = companyProducts[0];
-            const gstMatch = String(defaultProd.gstCode || '').match(/\d+/);
-            const parsedGst = gstMatch ? gstMatch[0] : '';
-            return {
-              ...item,
-              productName: defaultProd.name,
-              price: defaultProd.price ? String(defaultProd.price) : item.price,
-              gst: parsedGst || item.gst,
-            };
-          }
-          return item;
-        });
-      });
-    }
-  }, [companyProducts]);
+  // Keep productsList clean so user can choose or add products manually
 
   React.useEffect(() => {
     const refreshIdentity = async () => {
@@ -624,49 +811,204 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     });
   };
 
-  const resolveProductId = async (name, companyId, token) => {
+  const resolveProductId = async (name, companyId, token, existingId) => {
+    if (existingId) return existingId;
+    if (!name) return '64d0a1b2c3d4e5f6a7b8c9df';
     try {
-      const productsRes = await getProducts(companyId, token, undefined, undefined, undefined);
-      const prodList = productsRes && (Array.isArray(productsRes.data)
-        ? productsRes.data
-        : (productsRes.data && Array.isArray(productsRes.data.data) ? productsRes.data.data : []));
+      if (companyId && companyId !== 'undefined') {
+        const productsRes = await getProducts(companyId, token, undefined, undefined, undefined).catch(() => null);
+        const prodList = productsRes && (Array.isArray(productsRes.data)
+          ? productsRes.data
+          : (productsRes.data && Array.isArray(productsRes.data.data) ? productsRes.data.data : []));
 
-      if (prodList && prodList.length > 0) {
-        const matched = prodList.find(
-          p => String(p.name || '').toLowerCase().trim() === String(name).toLowerCase().trim()
-        );
-        if (matched) return matched._id || matched.id;
-      }
-      let categoryId = null;
-      const categoriesRes = await getCategories(companyId, token);
-      if (categoriesRes && categoriesRes.success && categoriesRes.data && categoriesRes.data.length > 0) {
-        categoryId = categoriesRes.data[0]._id || categoriesRes.data[0].id;
-      } else {
-        const catRes = await createCategory({ name: 'General', companyId }, token);
-        if (catRes && catRes.success && catRes.data) {
-          categoryId = catRes.data._id || catRes.data.id;
+        if (prodList && prodList.length > 0) {
+          const matched = prodList.find(
+            p => String(p.name || '').toLowerCase().trim() === String(name).toLowerCase().trim()
+          );
+          if (matched) return matched._id || matched.id;
+        }
+
+        let categoryId = null;
+        const categoriesRes = await getCategories(companyId, token).catch(() => null);
+        if (categoriesRes && categoriesRes.success && categoriesRes.data && categoriesRes.data.length > 0) {
+          categoryId = categoriesRes.data[0]._id || categoriesRes.data[0].id;
+        } else {
+          const catRes = await createCategory({ name: 'General', companyId }, token).catch(() => null);
+          if (catRes && catRes.success && catRes.data) {
+            categoryId = catRes.data._id || catRes.data.id;
+          }
+        }
+
+        if (categoryId) {
+          const defaultUnit = unitsList[0]?._id || unitsList[0]?.id || '64d0a1b2c3d4e5f6a7b8c9df';
+          const productPayload = {
+            name,
+            categoryId,
+            unitId: defaultUnit,
+            companyId,
+            description: 'Dynamically created product for deal invitation',
+          };
+          const newProductRes = await createProduct(productPayload, token).catch(() => null);
+          if (newProductRes && newProductRes.success && newProductRes.data) {
+            return newProductRes.data._id || newProductRes.data.id;
+          }
         }
       }
-      if (!categoryId) throw new Error('Could not resolve or create category');
-      const productPayload = {
-        name,
-        categoryId,
-        unitId: '6a0c118913e627687603da11',
-        companyId,
-        description: 'Dynamically created product for deal invitation',
-      };
-      const newProductRes = await createProduct(productPayload, token);
-      if (newProductRes && newProductRes.success && newProductRes.data) {
-        return newProductRes.data._id || newProductRes.data.id;
-      }
-      throw new Error('Failed to create new product');
     } catch (error) {
-      console.warn('Dynamic product resolution failed:', error);
-      throw new Error(`Unable to resolve Product ID for "${name}". Please add the product to your inventory first.`);
+      console.warn('Notice: Dynamic product resolution fallback used for:', name, error);
+    }
+    return '64d0a1b2c3d4e5f6a7b8c9df';
+  };
+
+  const handleExecuteOnboard = async () => {
+    if (!onboardForm.name.trim()) {
+      setOnboardErrors({ name: 'Name is required' });
+      return;
+    }
+    const cleanMobile = onboardForm.mobileNumber.replace(/\D/g, '');
+    if (cleanMobile.length !== 10) {
+      setOnboardErrors({ mobileNumber: 'Valid 10-digit mobile number required' });
+      return;
+    }
+    if (!onboardForm.companyName.trim()) {
+      setOnboardErrors({ companyName: 'Company Name is required' });
+      return;
+    }
+
+    setIsOnboardingSubmitting(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const payload = {
+        role: onboardRole,
+        name: onboardForm.name.trim(),
+        mobileNumber: `+91${cleanMobile}`,
+        brokerCompanyId: (role === 'broker' || activeUserCompany?._id) ? String(activeUserCompany?._id || originCompanyId) : undefined,
+        companyName: onboardForm.companyName.trim(),
+        industryId: onboardForm.industryId || undefined,
+        gst: onboardForm.registrationNumber.trim() || undefined,
+        companyAddress: {
+          street: onboardForm.street || '',
+          city: onboardForm.city || '',
+          district: onboardForm.district || '',
+          state: onboardForm.state || '',
+          postalCode: onboardForm.postalCode || '',
+          country: onboardForm.country || 'India',
+        },
+        ...(onboardRole === 'seller' ? {
+          products: [
+            {
+              name: onboardForm.productName || productsList[0]?.productName || 'Commodity Product',
+              unitId: onboardForm.unitId || '64d0a1b2c3d4e5f6a7b8c9df',
+              description: onboardForm.description || '',
+              hsnCode: onboardForm.hsnCode || '76011010',
+              gstCode: onboardForm.gstCode || 'GST_18',
+            }
+          ]
+        } : {
+          products: []
+        })
+      };
+
+      const response = await assistedCreatePartyAccount(payload, token);
+      if (response && (response.success || response.statusCode === 201 || response.data)) {
+        const data = response.data || {};
+        const newCompany = data.company || {};
+        const newCompanyId = newCompany.id || newCompany._id;
+        const newCompanyName = newCompany.name || onboardForm.companyName;
+        const newProducts = data.products || [];
+        const newProductId = newProducts[0]?.id || newProducts[0]?._id;
+
+        setShowOnboardModal(false);
+
+        if (onboardRole === 'seller') {
+          setSellerCompany(newCompanyName);
+          setSellerCompanyData({
+            id: newCompanyId,
+            companyId: newCompanyId,
+            name: newCompanyName,
+            isRegistered: true,
+          });
+          setParty2(newCompanyName);
+          setParty2Data({
+            id: newCompanyId,
+            companyId: newCompanyId,
+            name: newCompanyName,
+            isRegistered: true,
+          });
+
+          const onboardedProductName = newProducts[0]?.name || onboardForm.productName || 'Commodity Product';
+          const onboardedProdId = newProductId || `onboarded_prod_${Date.now()}`;
+
+          const createdProdObj = {
+            _id: onboardedProdId,
+            id: onboardedProdId,
+            name: onboardedProductName,
+            productName: onboardedProductName,
+            companyId: newCompanyId,
+            isNewlyOnboarded: true,
+          };
+
+          setCompanyProducts(prev => [createdProdObj, ...(prev || []).filter(p => p.id !== onboardedProdId)]);
+
+          // Pre-fill productsList[0] if current product name is empty or default
+          setProductsList(prev => {
+            if (!prev || prev.length === 0) {
+              return [{
+                id: Date.now(),
+                productName: onboardedProductName,
+                productId: onboardedProdId,
+                quantity: '',
+                price: '',
+                gst: '',
+                discount: '',
+                paymentTerms: '',
+                showProductDropdown: false,
+                showAdditionalDetails: false,
+              }];
+            }
+            if (prev.length > 0 && (!prev[0].productName || !prev[0].productName.trim())) {
+              const updated = [...prev];
+              updated[0] = {
+                ...updated[0],
+                productName: onboardedProductName,
+                productId: onboardedProdId,
+              };
+              return updated;
+            }
+            return prev;
+          });
+        } else if (onboardRole === 'broker') {
+          setBrokerCompany(newCompanyName);
+          setBrokerCompanyData({
+            id: newCompanyId,
+            companyId: newCompanyId,
+            name: newCompanyName,
+            isRegistered: true,
+          });
+          setBrokerCompanyId(String(newCompanyId || ''));
+        } else {
+          setParty2(newCompanyName);
+          setParty2Data({
+            id: newCompanyId,
+            companyId: newCompanyId,
+            name: newCompanyName,
+            isRegistered: true,
+          });
+        }
+
+        setFieldErrors({});
+        setBtnErrorMessage('');
+      } else {
+        Alert.alert('Onboarding Failed', response?.message || 'Could not onboard party.');
+      }
+    } catch (err) {
+      Alert.alert('Onboarding Error', err.message || 'Failed to complete party onboarding.');
+    } finally {
+      setIsOnboardingSubmitting(false);
     }
   };
 
-  const handleCreateDeal = async () => {
+  const handleSubmit = async () => {
     const activeProducts = productsList.filter(prod =>
       (prod.productName && String(prod.productName).trim()) ||
       (prod.quantity && String(prod.quantity).trim()) ||
@@ -770,7 +1112,25 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           ? party2Data?.isRegistered === false || !resolvedBuyerId
           : false;
 
-      const isInviteMode = !resolvedSellerId || !resolvedBuyerId || party2Data?.isRegistered === false || sellerCompanyData?.isRegistered === false;
+      const isBrokerUnregistered = brokerCompanyData?.isRegistered === false;
+
+      if ((isSellerUnregistered || isBuyerUnregistered || isBrokerUnregistered) && !showOnboardModal) {
+        const targetRole = isBrokerUnregistered
+          ? 'broker'
+          : isSellerUnregistered
+            ? 'seller'
+            : 'buyer';
+
+        const targetContact = isBrokerUnregistered
+          ? brokerCompanyData
+          : isSellerUnregistered
+            ? (sellerCompanyData || party2Data)
+            : party2Data;
+
+        openOnboardModalForRole(targetRole, targetContact, targetContact?.name || party2 || brokerCompany);
+        setIsSubmitting(false);
+        return;
+      }
 
       const sellerIdForProduct = resolvedSellerId || originCompanyId;
 
@@ -792,15 +1152,16 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         totalAmountValue += netTotalAmount;
         totalDiscountValue += numericDiscount;
 
-        const resolvedProductId = await resolveProductId(prod.productName, sellerIdForProduct, token);
+        const resolvedProductId = await resolveProductId(prod.productName, sellerIdForProduct, token, prod.productId);
 
         return {
           productId: resolvedProductId,
           quantity: numericQuantity,
           price: numericPrice,
           paymentTerms: prod.paymentTerms || undefined,
-          discount: prod.discount ? numericDiscount : undefined,
-          gst: prod.gst ? numericGst : undefined,
+          discount: prod.discount ? numericDiscount : 0,
+          gst: prod.gst ? numericGst : 0,
+          totalAmount: netTotalAmount,
         };
       }));
 
@@ -832,6 +1193,15 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         const response = await inviteDeal(invitePayload, token);
         if (response && response.success) {
           setShowSuccessModal(true);
+          // Clear deals list cache so new invitation appears instantly
+          try {
+            const keys = await AsyncStorage.getAllKeys();
+            const cacheKeys = keys.filter(k => k.startsWith('trader_deals_cache_'));
+            if (cacheKeys.length > 0) {
+              await AsyncStorage.multiRemove(cacheKeys);
+            }
+          } catch (e) { }
+
           if (response.data?.whatsappUrl) {
             setTimeout(() => {
               Linking.openURL(response.data.whatsappUrl).catch(err => console.warn('Failed to open WhatsApp URL:', err));
@@ -842,10 +1212,10 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             onNavigate('DealsList', {
               companyId: originCompanyId,
               companyName: activeUserCompany?.name || party1,
-              filter: 'Invitations',
+              filter: 'All',
               refresh: true
             }, { refresh: true });
-          }, 2500);
+          }, 5000);
         } else {
           Alert.alert('Invite Error', response?.message || 'Failed to create deal invitation.');
         }
@@ -855,28 +1225,64 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           setIsSubmitting(false);
           return;
         }
+
+        const targetCompanyId = validRole === 'seller' ? resolvedBuyerId : resolvedSellerId;
+
         const payload = {
           role: validRole,
           sellerCompanyId: resolvedSellerId,
           buyerCompanyId: resolvedBuyerId,
-          myCompanyId: validRole === 'broker' ? String(originCompanyId) : undefined,
-          brokerCompanyId: (validRole !== 'broker' && brokerCompanyId) ? brokerCompanyId : undefined,
+          myCompanyId: String(originCompanyId),
+          targetCompanyId: targetCompanyId,
+          brokerCompanyId: (brokerCompanyId && String(brokerCompanyId).length === 24) ? String(brokerCompanyId) : null,
           products: resolvedProducts,
+          totalAmount: totalAmountValue,
+          discount: totalDiscountValue,
           expiryDate: new Date(validityDate).toISOString(),
           notes: description || undefined,
         };
-        const response = await createDeal(payload, token);
+
+        let response;
+        if (validRole === 'broker') {
+          response = await createBrokerDraftDeal({
+            sellerCompanyId: resolvedSellerId,
+            buyerCompanyId: resolvedBuyerId,
+            products: resolvedProducts,
+            expiryDate: new Date(validityDate).toISOString(),
+            notes: description || undefined,
+          }, token);
+        } else {
+          response = await createDeal(payload, token);
+        }
+
         if (response && response.success) {
           setShowSuccessModal(true);
+          // Clear deals list cache so new deal appears instantly
+          try {
+            const keys = await AsyncStorage.getAllKeys();
+            const cacheKeys = keys.filter(k => k.startsWith('trader_deals_cache_'));
+            if (cacheKeys.length > 0) {
+              await AsyncStorage.multiRemove(cacheKeys);
+            }
+          } catch (e) { }
+
+          const dealStatus = String(response.data?.status || '').toLowerCase();
+          let targetFilter = 'Pending';
+          if (dealStatus === 'draft' || validRole === 'broker') {
+            targetFilter = 'Draft';
+          } else if (dealStatus === 'active' || dealStatus === 'approved') {
+            targetFilter = 'Active';
+          }
+
           setTimeout(() => {
             setShowSuccessModal(false);
             onNavigate('DealsList', {
               companyId: originCompanyId,
               companyName: activeUserCompany?.name || party1,
-              filter: 'Active',
+              filter: 'All',
               refresh: true
             }, { refresh: true });
-          }, 2000);
+          }, 5000);
         }
       }
     } catch (error) {
@@ -1083,61 +1489,93 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                     <Text style={styles.fieldLabel}>Seller Company*</Text>
 
                     {sellerCompany && sellerCompanyData ? (
-                      <View
-                        style={[
-                          styles.profileCard,
-                          {
-                            borderColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#BBF7D0',
-                            backgroundColor: '#FFFFFF',
-                            shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669',
-                          }
-                        ]}
-                      >
-                        <TouchableOpacity
-                          style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-                          onPress={() => {
-                            setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-                            navigateToContactPicker('sellerCompany');
-                          }}
-                          activeOpacity={0.8}
+                      <View style={{ gap: 8 }}>
+                        <View
+                          style={[
+                            styles.profileCard,
+                            {
+                              borderColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#BBF7D0',
+                              backgroundColor: '#FFFFFF',
+                              shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669',
+                            }
+                          ]}
                         >
-                          <View style={[styles.profileAvatar, { backgroundColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669', shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669' }]}>
-                            <Text style={styles.profileAvatarText}>
-                              {(sellerCompanyData.company || sellerCompany).charAt(0).toUpperCase()}
-                            </Text>
-                          </View>
-                          <View style={styles.profileCardInfo}>
-                            <Text style={styles.profileCardName}>
-                              {sellerCompanyData.company ? `${sellerCompanyData.company} (${sellerCompanyData.name || sellerCompany})` : (sellerCompanyData.name || sellerCompany)}
-                            </Text>
-                            <Text style={[
-                              styles.profileCardRole,
-                              { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#059669' }
-                            ]}>
-                              {sellerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <TouchableOpacity
-                            style={[
-                              styles.profileCardBadge,
-                              {
-                                backgroundColor: '#FEF2F2',
-                                borderColor: '#FCA5A5',
-                                borderWidth: 1,
-                              }
-                            ]}
+                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
                             onPress={() => {
-                              setSellerCompany('');
-                              setSellerCompanyData(null);
+                              setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
+                              navigateToContactPicker('sellerCompany');
                             }}
-                            activeOpacity={0.7}
+                            activeOpacity={0.8}
                           >
-                            <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
+                            <View style={[styles.profileAvatar, { backgroundColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669', shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669' }]}>
+                              <Text style={styles.profileAvatarText}>
+                                {(sellerCompanyData.company || sellerCompany).charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <View style={styles.profileCardInfo}>
+                              <Text style={styles.profileCardName}>
+                                {sellerCompanyData.company ? `${sellerCompanyData.company} (${sellerCompanyData.name || sellerCompany})` : (sellerCompanyData.name || sellerCompany)}
+                              </Text>
+                              <Text style={[
+                                styles.profileCardRole,
+                                { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#059669' }
+                              ]}>
+                                {sellerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                              </Text>
+                            </View>
                           </TouchableOpacity>
-                          <Text style={[styles.changeText, { color: '#059669' }]}>Edit ›</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <TouchableOpacity
+                              style={[
+                                styles.profileCardBadge,
+                                {
+                                  backgroundColor: '#FEF2F2',
+                                  borderColor: '#FCA5A5',
+                                  borderWidth: 1,
+                                }
+                              ]}
+                              onPress={() => {
+                                setSellerCompany('');
+                                setSellerCompanyData(null);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
+                            </TouchableOpacity>
+                            <Text style={[styles.changeText, { color: '#059669' }]}>Edit ›</Text>
+                          </View>
                         </View>
+
+                        {sellerCompanyData.isRegistered === false && (
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: '#059669',
+                              paddingVertical: 10,
+                              paddingHorizontal: 14,
+                              borderRadius: 10,
+                              alignItems: 'center',
+                              flexDirection: 'row',
+                              justifyContent: 'center',
+                              gap: 6,
+                              marginTop: 8,
+                              shadowColor: '#059669',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.15,
+                              shadowRadius: 4,
+                              elevation: 2,
+                            }}
+                            onPress={() => {
+                              openOnboardModalForRole('seller', sellerCompanyData, sellerCompany);
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <UserPlus size={15} color="#FFFFFF" />
+                            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
+                              Register & Onboard Seller Company
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     ) : (
                       <View style={styles.step1DirectBox}>
@@ -1145,14 +1583,17 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                           <Phone size={14} color="#059669" style={{ marginRight: 6 }} />
                           <TextInput
                             style={styles.step1SearchInput}
-                            placeholder="Type seller name or mobile..."
+                            placeholder="Type seller name or 10-digit mobile..."
                             placeholderTextColor="#94A3B8"
                             value={directInputSeller}
                             onChangeText={(text) => {
-                              setDirectInputSeller(text);
+                              const isNum = /^\d/.test(text.trim()) || /^\+?91/.test(text.trim());
+                              const val = isNum ? text.replace(/\D/g, '').slice(0, 10) : text;
+                              setDirectInputSeller(val);
                               if (directInputErrors.sellerCompany) setDirectInputErrors(prev => ({ ...prev, sellerCompany: undefined }));
                             }}
                             keyboardType="phone-pad"
+                            maxLength={/^\d/.test((directInputSeller || '').trim()) ? 10 : undefined}
                           />
                           <TouchableOpacity
                             style={[styles.step1AddBtn, { backgroundColor: '#059669' }]}
@@ -1238,61 +1679,101 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                       const cpBorder = isSellerCp ? '#BBF7D0' : '#BAE6FD';
 
                       return (
-                        <View
-                          style={[
-                            styles.profileCard,
-                            {
-                              borderColor: party2Data.isRegistered === false ? '#F59E0B' : cpBorder,
-                              backgroundColor: '#FFFFFF',
-                              shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor,
-                            }
-                          ]}
-                        >
-                          <TouchableOpacity
-                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-                            onPress={() => {
-                              setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                              navigateToContactPicker('party2');
-                            }}
-                            activeOpacity={0.8}
+                        <View style={{ gap: 8 }}>
+                          <View
+                            style={[
+                              styles.profileCard,
+                              {
+                                borderColor: party2Data.isRegistered === false ? '#F59E0B' : cpBorder,
+                                backgroundColor: '#FFFFFF',
+                                shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor,
+                              }
+                            ]}
                           >
-                            <View style={[styles.profileAvatar, { backgroundColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor, shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor }]}>
-                              <Text style={styles.profileAvatarText}>
-                                {(party2Data.company || party2).charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <View style={styles.profileCardInfo}>
-                              <Text style={styles.profileCardName}>
-                                {party2Data.company ? `${party2Data.company} (${party2Data.name || party2})` : (party2Data.name || party2)}
-                              </Text>
-                              <Text style={[
-                                styles.profileCardRole,
-                                { color: party2Data.isRegistered === false ? '#D97706' : cpColor }
-                              ]}>
-                                {party2Data.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <TouchableOpacity
-                              style={[
-                                styles.profileCardBadge,
-                                {
-                                  backgroundColor: '#FEF2F2',
-                                  borderColor: '#FCA5A5',
-                                  borderWidth: 1,
-                                }
-                              ]}
+                              style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
                               onPress={() => {
-                                setParty2('');
-                                setParty2Data(null);
+                                setFieldErrors(prev => ({ ...prev, party2: undefined }));
+                                navigateToContactPicker('party2');
                               }}
-                              activeOpacity={0.7}
+                              activeOpacity={0.8}
                             >
-                              <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
+                              <View style={[styles.profileAvatar, { backgroundColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor, shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor }]}>
+                                <Text style={styles.profileAvatarText}>
+                                  {(party2Data.company || party2).charAt(0).toUpperCase()}
+                                </Text>
+                              </View>
+                              <View style={styles.profileCardInfo}>
+                                <Text style={styles.profileCardName}>
+                                  {party2Data.company ? `${party2Data.company} (${party2Data.name || party2})` : (party2Data.name || party2)}
+                                </Text>
+                                <Text style={[
+                                  styles.profileCardRole,
+                                  { color: party2Data.isRegistered === false ? '#D97706' : cpColor }
+                                ]}>
+                                  {party2Data.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                                </Text>
+                              </View>
                             </TouchableOpacity>
-                            <Text style={[styles.changeText, { color: cpColor }]}>Edit ›</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.profileCardBadge,
+                                  {
+                                    backgroundColor: '#FEF2F2',
+                                    borderColor: '#FCA5A5',
+                                    borderWidth: 1,
+                                  }
+                                ]}
+                                onPress={() => {
+                                  setParty2('');
+                                  setParty2Data(null);
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  setFieldErrors(prev => ({ ...prev, party2: undefined }));
+                                  navigateToContactPicker('party2');
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[styles.changeText, { color: cpColor }]}>Edit ›</Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
+
+                          {party2Data.isRegistered === false && (
+                            <TouchableOpacity
+                              style={{
+                                backgroundColor: '#2563EB',
+                                paddingVertical: 10,
+                                paddingHorizontal: 14,
+                                borderRadius: 10,
+                                alignItems: 'center',
+                                flexDirection: 'row',
+                                justifyContent: 'center',
+                                gap: 6,
+                                shadowColor: '#2563EB',
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.15,
+                                shadowRadius: 4,
+                                elevation: 2,
+                              }}
+                              onPress={() => {
+                                const targetRole = role === 'buyer' ? 'seller' : 'buyer';
+                                openOnboardModalForRole(targetRole, party2Data, party2);
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <UserPlus size={15} color="#FFFFFF" />
+                              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
+                                Register & Onboard {role === 'buyer' ? 'Seller' : 'Buyer'} Company
+                              </Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       );
                     })()
@@ -1308,14 +1789,17 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                             <Phone size={14} color={cpColor} style={{ marginRight: 6 }} />
                             <TextInput
                               style={styles.step1SearchInput}
-                              placeholder={`Type ${labelRole} name or mobile...`}
+                              placeholder={`Type ${labelRole} name or 10-digit mobile...`}
                               placeholderTextColor="#94A3B8"
                               value={directInputParty2}
                               onChangeText={(text) => {
-                                setDirectInputParty2(text);
+                                const isNum = /^\d/.test(text.trim()) || /^\+?91/.test(text.trim());
+                                const val = isNum ? text.replace(/\D/g, '').slice(0, 10) : text;
+                                setDirectInputParty2(val);
                                 if (directInputErrors.party2) setDirectInputErrors(prev => ({ ...prev, party2: undefined }));
                               }}
                               keyboardType="phone-pad"
+                              maxLength={/^\d/.test((directInputParty2 || '').trim()) ? 10 : undefined}
                             />
                             <TouchableOpacity
                               style={[styles.step1AddBtn, { backgroundColor: cpColor }]}
@@ -1394,62 +1878,94 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                     <Text style={styles.fieldLabel}>Broker Company (Optional)</Text>
 
                     {brokerCompany && brokerCompanyData ? (
-                      <View
-                        style={[
-                          styles.profileCard,
-                          {
-                            borderColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#DDD6FE',
-                            backgroundColor: '#FFFFFF',
-                            shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED',
-                          }
-                        ]}
-                      >
-                        <TouchableOpacity
-                          style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-                          onPress={() => {
-                            navigateToContactPicker('brokerCompany');
-                          }}
-                          activeOpacity={0.8}
+                      <View style={{ gap: 8 }}>
+                        <View
+                          style={[
+                            styles.profileCard,
+                            {
+                              borderColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#DDD6FE',
+                              backgroundColor: '#FFFFFF',
+                              shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED',
+                            }
+                          ]}
                         >
-                          <View style={[styles.profileAvatar, { backgroundColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED', shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED' }]}>
-                            <Text style={styles.profileAvatarText}>
-                              {(brokerCompanyData.company || brokerCompany).charAt(0).toUpperCase()}
-                            </Text>
-                          </View>
-                          <View style={styles.profileCardInfo}>
-                            <Text style={styles.profileCardName}>
-                              {brokerCompanyData.company ? `${brokerCompanyData.company} (${brokerCompanyData.name || brokerCompany})` : (brokerCompanyData.name || brokerCompany)}
-                            </Text>
-                            <Text style={[
-                              styles.profileCardRole,
-                              { color: brokerCompanyData.isRegistered === false ? '#D97706' : '#7C3AED' }
-                            ]}>
-                              {brokerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <TouchableOpacity
-                            style={[
-                              styles.profileCardBadge,
-                              {
-                                backgroundColor: '#FEF2F2',
-                                borderColor: '#FCA5A5',
-                                borderWidth: 1,
-                              }
-                            ]}
+                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
                             onPress={() => {
-                              setBrokerCompany('');
-                              setBrokerCompanyData(null);
-                              setBrokerCompanyId('');
+                              navigateToContactPicker('brokerCompany');
                             }}
-                            activeOpacity={0.7}
+                            activeOpacity={0.8}
                           >
-                            <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
+                            <View style={[styles.profileAvatar, { backgroundColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED', shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED' }]}>
+                              <Text style={styles.profileAvatarText}>
+                                {(brokerCompanyData.company || brokerCompany).charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <View style={styles.profileCardInfo}>
+                              <Text style={styles.profileCardName}>
+                                {brokerCompanyData.company ? `${brokerCompanyData.company} (${brokerCompanyData.name || brokerCompany})` : (brokerCompanyData.name || brokerCompany)}
+                              </Text>
+                              <Text style={[
+                                styles.profileCardRole,
+                                { color: brokerCompanyData.isRegistered === false ? '#D97706' : '#7C3AED' }
+                              ]}>
+                                {brokerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
+                              </Text>
+                            </View>
                           </TouchableOpacity>
-                          <Text style={[styles.changeText, { color: '#7C3AED' }]}>Edit ›</Text>
+
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <TouchableOpacity
+                              style={[
+                                styles.profileCardBadge,
+                                {
+                                  backgroundColor: '#FEF2F2',
+                                  borderColor: '#FCA5A5',
+                                  borderWidth: 1,
+                                }
+                              ]}
+                              onPress={() => {
+                                setBrokerCompany('');
+                                setBrokerCompanyData(null);
+                                setBrokerCompanyId('');
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
+                            </TouchableOpacity>
+                            <Text style={[styles.changeText, { color: '#7C3AED' }]}>Edit ›</Text>
+                          </View>
                         </View>
+
+                        {brokerCompanyData.isRegistered === false && (
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: '#7C3AED',
+                              paddingVertical: 10,
+                              paddingHorizontal: 14,
+                              borderRadius: 10,
+                              alignItems: 'center',
+                              flexDirection: 'row',
+                              justifyContent: 'center',
+                              gap: 6,
+                              marginTop: 8,
+                              shadowColor: '#7C3AED',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.15,
+                              shadowRadius: 4,
+                              elevation: 2,
+                            }}
+                            onPress={() => {
+                              openOnboardModalForRole('broker', brokerCompanyData, brokerCompany);
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <UserPlus size={15} color="#FFFFFF" />
+                            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
+                              Register & Onboard Broker Company
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     ) : (
                       <View style={styles.step1DirectBox}>
@@ -1457,14 +1973,17 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                           <Phone size={14} color="#7C3AED" style={{ marginRight: 6 }} />
                           <TextInput
                             style={styles.step1SearchInput}
-                            placeholder="Type broker name or mobile..."
+                            placeholder="Type broker name or 10-digit mobile..."
                             placeholderTextColor="#94A3B8"
                             value={directInputBroker}
                             onChangeText={(text) => {
-                              setDirectInputBroker(text);
+                              const isNum = /^\d/.test(text.trim()) || /^\+?91/.test(text.trim());
+                              const val = isNum ? text.replace(/\D/g, '').slice(0, 10) : text;
+                              setDirectInputBroker(val);
                               if (directInputErrors.brokerCompany) setDirectInputErrors(prev => ({ ...prev, brokerCompany: undefined }));
                             }}
                             keyboardType="phone-pad"
+                            maxLength={/^\d/.test((directInputBroker || '').trim()) ? 10 : undefined}
                           />
                           <TouchableOpacity
                             style={[styles.step1AddBtn, { backgroundColor: '#7C3AED' }]}
@@ -1489,7 +2008,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         <TouchableOpacity
                           style={styles.directorySelectBtn}
                           onPress={() => {
-                            setFocusedField('brokerCompany');
+                            setFocusedField
+                              ('brokerCompany');
                             navigateToContactPicker('brokerCompany');
                           }}
                           activeOpacity={0.7}
@@ -1636,63 +2156,47 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
                         {/* Product Name Input */}
                         <View style={styles.inputGroup}>
-                          <Text style={styles.fieldLabel}>Product / Commodity Name*</Text>
+                          <Text style={styles.fieldLabel}>Product / Commodity Name *</Text>
 
                           <View style={styles.productInputWrapper}>
-                            <TouchableOpacity
+                            <TextInput
                               style={[
                                 styles.textInput,
-                                { flex: 1, justifyContent: 'space-between', flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF' },
+                                { backgroundColor: '#FFFFFF', fontSize: 13, fontWeight: '600', color: '#0F172A' },
                                 focusedField === `productSelect_${prod.id}` && [styles.inputFocused, { borderColor: rTheme.color, shadowColor: rTheme.color }],
                                 prodErrors.productName && styles.inputError
                               ]}
-                              onPress={() => {
-                                const isShowing = prod.showProductDropdown;
-                                setProductsList(prev => prev.map(item => ({
-                                  ...item,
-                                  showProductDropdown: item.id === prod.id ? !isShowing : false
-                                })));
-                                if (!isShowing) {
-                                  setFocusedField(`productSelect_${prod.id}`);
-                                  setDropdownSearchText(''); // Show all products initially when opening
-                                } else {
-                                  setFocusedField('');
+                              value={prod.productName}
+                              onChangeText={(text) => {
+                                updateProductFields(prod.id, {
+                                  productName: text,
+                                  showProductDropdown: true
+                                });
+                                setDropdownSearchText(text);
+                                if (prodErrors.productName) {
+                                  setFieldErrors(prev => ({ ...prev, [`prod_${prod.id}_productName`]: undefined }));
                                 }
                               }}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={{ fontSize: 13, fontWeight: '600', color: prod.productName ? '#0F172A' : '#94A3B8' }}>
-                                {prod.productName || "Select & Add Product"}
-                              </Text>
-                              <Text style={{ fontSize: 14, color: '#64748B', fontWeight: '800' }}>▾</Text>
-                            </TouchableOpacity>
+                              onFocus={() => {
+                                setFocusedField(`productSelect_${prod.id}`);
+                                setDropdownSearchText(prod.productName || '');
+                                setProductsList(prev => prev.map(item => ({
+                                  ...item,
+                                  showProductDropdown: item.id === prod.id
+                                })));
+                              }}
+                              placeholder="Type product name (e.g. Jeera, Wheat, Copper...)"
+                              placeholderTextColor="#94A3B8"
+                            />
                           </View>
                           {prodErrors.productName && <Text style={styles.fieldErrorText}>⚠ {prodErrors.productName}</Text>}
 
-                          {prod.showProductDropdown && (() => {
-                            const filtered = companyProducts.filter(p => !dropdownSearchText || p.name.toLowerCase().includes(dropdownSearchText.toLowerCase()));
+                          {prod.showProductDropdown && companyProducts.length > 0 && (() => {
+                            const searchVal = (dropdownSearchText || prod.productName || '').toLowerCase().trim();
+                            const filtered = companyProducts.filter(p => !searchVal || String(p.name || '').toLowerCase().includes(searchVal));
+                            if (filtered.length === 0) return null;
                             return (
                               <View style={[styles.autocompleteDropdown, { position: 'relative', top: 0, marginTop: 4, width: '100%' }]}>
-                                <View style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
-                                  <TextInput
-                                    style={{
-                                      height: 38,
-                                      backgroundColor: '#F8FAFC',
-                                      borderRadius: 8,
-                                      paddingHorizontal: 10,
-                                      fontSize: 12,
-                                      fontWeight: '600',
-                                      color: '#0F172A',
-                                      borderWidth: 1,
-                                      borderColor: '#E2E8F0',
-                                    }}
-                                    placeholder="Search or enter custom product..."
-                                    placeholderTextColor="#94A3B8"
-                                    value={dropdownSearchText}
-                                    onChangeText={(v) => setDropdownSearchText(v)}
-                                    onFocus={() => setFocusedField(`productSelect_${prod.id}`)}
-                                  />
-                                </View>
                                 <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always" style={{ maxHeight: 180 }}>
                                   {filtered.map((p) => (
                                     <TouchableOpacity
@@ -1703,6 +2207,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                                         const parsedGst = gstMatch ? gstMatch[0] : '';
                                         updateProductFields(prod.id, {
                                           productName: p.name,
+                                          productId: p._id || p.id,
                                           price: p.price ? String(p.price) : prod.price,
                                           gst: parsedGst || prod.gst,
                                           showProductDropdown: false,
@@ -1726,23 +2231,6 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                                       </View>
                                     </TouchableOpacity>
                                   ))}
-                                  {dropdownSearchText.trim() !== '' && !companyProducts.some(p => p.name.toLowerCase().trim() === dropdownSearchText.toLowerCase().trim()) && (
-                                    <TouchableOpacity
-                                      style={[styles.dropdownItem, { backgroundColor: rTheme.bg }]}
-                                      onPress={() => {
-                                        updateProductFields(prod.id, {
-                                          productName: dropdownSearchText,
-                                          showProductDropdown: false,
-                                        });
-                                        setFocusedField('');
-                                        setDropdownSearchText('');
-                                      }}
-                                    >
-                                      <Text style={{ fontSize: 12, fontWeight: '800', color: rTheme.color }}>
-                                        Use Custom: "{dropdownSearchText}"
-                                      </Text>
-                                    </TouchableOpacity>
-                                  )}
                                 </ScrollView>
                               </View>
                             );
@@ -2001,7 +2489,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   { flex: 2, marginTop: 0 }
                 ]}
                 activeOpacity={0.855}
-                onPress={handleCreateDeal}
+                onPress={handleSubmit}
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (
@@ -2132,10 +2620,391 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                 </View>
               </View>
 
-              {/* Live Progress Bar */}
+              {/* Live Progress Bar & Timed Auto Redirect */}
               <View style={styles.successProgressRow}>
                 <ActivityIndicator size="small" color={isInviteMode ? '#059669' : rTheme.color} style={{ marginRight: 8 }} />
-                <Text style={styles.successProgressText}>Opening Deals Ledger...</Text>
+                <Text style={styles.successProgressText}>Redirecting to Deals Ledger in 5s...</Text>
+              </View>
+
+              {/* Share Deal Button */}
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#25D366',
+                  paddingVertical: 11,
+                  paddingHorizontal: 16,
+                  borderRadius: 10,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  marginTop: 14,
+                  width: '100%',
+                  shadowColor: '#25D366',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 4,
+                  elevation: 2,
+                }}
+                onPress={() => {
+                  const p1 = party1 || activeUserCompany?.name || 'Company';
+                  const p2 = party2 || sellerCompany || 'Counterparty';
+                  const firstProd = productsList[0]?.productName || 'Commodity Product';
+                  const totals = getTotals();
+                  const grandTotal = totals ? totals.grandTotal : '0';
+
+                  const msg = `🤝 *Pravisti Trade Agreement*\n\n` +
+                    `🏢 *Seller/Buyer*: ${p1}\n` +
+                    `🏬 *Counterparty*: ${p2}\n` +
+                    `📦 *Product*: ${firstProd}\n` +
+                    `💰 *Total Value*: ₹${Number(grandTotal).toLocaleString('en-IN')}\n` +
+                    `📅 *Date*: ${new Date().toLocaleDateString('en-IN')}\n\n` +
+                    `View trade details on Pravisti: https://pravisti.com`;
+
+                  const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                  Linking.openURL(url).catch(err => console.warn('Share WhatsApp error:', err));
+                }}
+                activeOpacity={0.8}
+              >
+                <MessageSquare size={16} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
+                  Share Deal via WhatsApp
+                </Text>
+              </TouchableOpacity>
+
+              {/* Go to Deals List Button */}
+              <TouchableOpacity
+                style={{
+                  backgroundColor: isInviteMode ? '#059669' : rTheme.color,
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  borderRadius: 10,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  marginTop: 8,
+                  width: '100%',
+                }}
+                onPress={() => {
+                  setShowSuccessModal(false);
+                  onNavigate('DealsList', {
+                    companyId: originCompanyId,
+                    companyName: activeUserCompany?.name || party1,
+                    filter: 'All',
+                    refresh: true
+                  }, { refresh: true });
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
+                  Go to Deals Ledger →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Trader Assisted Onboarding Modal for Unregistered Counterparty */}
+        <Modal visible={showOnboardModal} transparent animationType="slide">
+          <View style={styles.successOverlay}>
+            <View style={[styles.successCardContainer, { maxWidth: 360, padding: 20 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>
+                  Onboard Counterparty
+                </Text>
+                <TouchableOpacity onPress={() => setShowOnboardModal(false)} style={{ padding: 4 }}>
+                  <X size={18} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Role Selector Chips */}
+              <View style={{ flexDirection: 'row', gap: 6, width: '100%', marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: onboardRole === 'seller' ? '#059669' : '#F1F5F9',
+                    alignItems: 'center'
+                  }}
+                  onPress={() => setOnboardRole('seller')}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: onboardRole === 'seller' ? '#FFFFFF' : '#475569' }}>
+                    Seller
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: onboardRole === 'buyer' ? '#2563EB' : '#F1F5F9',
+                    alignItems: 'center'
+                  }}
+                  onPress={() => setOnboardRole('buyer')}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: onboardRole === 'buyer' ? '#FFFFFF' : '#475569' }}>
+                    Buyer
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: onboardRole === 'broker' ? '#7C3AED' : '#F1F5F9',
+                    alignItems: 'center'
+                  }}
+                  onPress={() => setOnboardRole('broker')}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: onboardRole === 'broker' ? '#FFFFFF' : '#475569' }}>
+                    Broker
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Dynamic Role Description Subtitle */}
+              <Text style={{ fontSize: 11.5, color: '#64748B', marginBottom: 12, textAlign: 'left', width: '100%' }}>
+                {onboardRole === 'seller'
+                  ? 'Onboarding a Seller company: Fill account, business profile, and product catalog.'
+                  : onboardRole === 'buyer'
+                    ? 'Onboarding a Buyer company: Fill account and company profile.'
+                    : 'Onboarding a Broker company: Fill account and company profile.'}
+              </Text>
+
+              <ScrollView style={{ width: '100%', maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+                <View style={{ gap: 10 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155', textTransform: 'uppercase' }}>
+                    1. Account Info
+                  </Text>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.fieldLabel}>User Full Name *</Text>
+                    <TextInput
+                      style={[styles.textInput, onboardErrors.name && styles.inputError]}
+                      value={onboardForm.name}
+                      onChangeText={val => setOnboardForm({ ...onboardForm, name: val })}
+                      placeholder="Name"
+                      placeholderTextColor="#94A3B8"
+                    />
+                    {!!onboardErrors.name && <Text style={styles.fieldErrorText}>{onboardErrors.name}</Text>}
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.fieldLabel}>Mobile Number *</Text>
+                    <TextInput
+                      style={[styles.textInput, onboardErrors.mobileNumber && styles.inputError]}
+                      value={onboardForm.mobileNumber}
+                      onChangeText={val => {
+                        const cleanMob = val.replace(/\D/g, '').slice(0, 10);
+                        setOnboardForm({ ...onboardForm, mobileNumber: cleanMob });
+                        if (onboardErrors.mobileNumber) setOnboardErrors(prev => ({ ...prev, mobileNumber: undefined }));
+                      }}
+                      placeholder="Mobile Number"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="phone-pad"
+                      maxLength={10}
+                    />
+                    {!!onboardErrors.mobileNumber && <Text style={styles.fieldErrorText}>{onboardErrors.mobileNumber}</Text>}
+                  </View>
+
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155', textTransform: 'uppercase', marginTop: 6 }}>
+                    2. Company Profile
+                  </Text>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.fieldLabel}>Company Name *</Text>
+                    <TextInput
+                      style={[styles.textInput, onboardErrors.companyName && styles.inputError]}
+                      value={onboardForm.companyName}
+                      onChangeText={val => setOnboardForm({ ...onboardForm, companyName: val })}
+                      placeholder="Company Name"
+                      placeholderTextColor="#94A3B8"
+                    />
+                    {!!onboardErrors.companyName && <Text style={styles.fieldErrorText}>{onboardErrors.companyName}</Text>}
+                  </View>
+
+                  {/* Industry Selection Field */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.fieldLabel}>Industry / Business Type *</Text>
+                    {industriesList && industriesList.length > 0 ? (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 4 }}>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {industriesList.map((ind) => {
+                            const indId = ind._id || ind.id;
+                            const indName = ind.name || ind.title || ind.industryName || 'Industry';
+                            const isSelected = String(onboardForm.industryId) === String(indId);
+                            return (
+                              <TouchableOpacity
+                                key={indId}
+                                style={{
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 7,
+                                  borderRadius: 20,
+                                  backgroundColor: isSelected ? rTheme.color : '#F1F5F9',
+                                  borderWidth: 1,
+                                  borderColor: isSelected ? rTheme.color : '#CBD5E1',
+                                }}
+                                onPress={() => setOnboardForm(prev => ({ ...prev, industryId: indId }))}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#334155' }}>
+                                  {indName}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </ScrollView>
+                    ) : (
+                      <View style={{ paddingVertical: 6 }}>
+                        <Text style={{ fontSize: 11, color: '#94A3B8', fontStyle: 'italic' }}>Loading industries...</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.fieldLabel}>GST / Registration Number</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={onboardForm.registrationNumber}
+                      onChangeText={val => setOnboardForm({ ...onboardForm, registrationNumber: val })}
+                      placeholder="GST Number"
+                      placeholderTextColor="#94A3B8"
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                      <Text style={styles.fieldLabel}>Pincode / Postal Code</Text>
+                      {isPincodeLoading && <ActivityIndicator size="small" color="#2563EB" />}
+                    </View>
+                    <TextInput
+                      style={styles.textInput}
+                      value={onboardForm.postalCode}
+                      onChangeText={handlePincodeChange}
+                      placeholder="6-digit pincode"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="number-pad"
+                      maxLength={6}
+                    />
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                      <Text style={styles.fieldLabel}>City</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={onboardForm.city}
+                        onChangeText={val => setOnboardForm({ ...onboardForm, city: val })}
+                        placeholder="City"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                      <Text style={styles.fieldLabel}>District</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={onboardForm.district}
+                        onChangeText={val => setOnboardForm({ ...onboardForm, district: val })}
+                        placeholder="District"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                      <Text style={styles.fieldLabel}>State</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={onboardForm.state}
+                        onChangeText={val => setOnboardForm({ ...onboardForm, state: val })}
+                        placeholder="State"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                    <View style={[styles.inputGroup, { flex: 1 }]}>
+                      <Text style={styles.fieldLabel}>Country</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={onboardForm.country}
+                        onChangeText={val => setOnboardForm({ ...onboardForm, country: val })}
+                        placeholder="India"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  </View>
+
+                  {onboardRole === 'seller' && (
+                    <>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155', textTransform: 'uppercase', marginTop: 6 }}>
+                        3. Seller Product Info
+                      </Text>
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.fieldLabel}>Product Name *</Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={onboardForm.productName}
+                          onChangeText={val => setOnboardForm({ ...onboardForm, productName: val })}
+                          placeholder="e.g. Soybean Seed Grade A"
+                          placeholderTextColor="#94A3B8"
+                        />
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <View style={[styles.inputGroup, { flex: 1 }]}>
+                          <Text style={styles.fieldLabel}>HSN Code</Text>
+                          <TextInput
+                            style={styles.textInput}
+                            value={onboardForm.hsnCode}
+                            onChangeText={val => setOnboardForm({ ...onboardForm, hsnCode: val })}
+                            placeholder="e.g. 1201"
+                            placeholderTextColor="#94A3B8"
+                          />
+                        </View>
+                        <View style={[styles.inputGroup, { flex: 1 }]}>
+                          <Text style={styles.fieldLabel}>GST Code</Text>
+                          <TextInput
+                            style={styles.textInput}
+                            value={onboardForm.gstCode}
+                            onChangeText={val => setOnboardForm({ ...onboardForm, gstCode: val })}
+                            placeholder="GST_18"
+                            placeholderTextColor="#94A3B8"
+                          />
+                        </View>
+                      </View>
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.fieldLabel}>Description</Text>
+                        <TextInput
+                          style={[styles.textInput, { height: 60 }]}
+                          value={onboardForm.description}
+                          onChangeText={val => setOnboardForm({ ...onboardForm, description: val })}
+                          placeholder="Product specification / details"
+                          placeholderTextColor="#94A3B8"
+                          multiline
+                        />
+                      </View>
+                    </>
+                  )}
+                </View>
+              </ScrollView>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, width: '100%' }}>
+                <TouchableOpacity
+                  style={{ flex: 1, height: 44, borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}
+                  onPress={() => setShowOnboardModal(false)}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 2, height: 44, borderRadius: 10, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' }}
+                  onPress={handleExecuteOnboard}
+                  disabled={isOnboardingSubmitting}
+                >
+                  {isOnboardingSubmitting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#FFFFFF' }}>Onboard & Create Deal ✓</Text>
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
           </View>

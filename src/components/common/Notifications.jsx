@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,6 +9,7 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -22,13 +23,34 @@ import {
   FileText,
   ChevronRight,
   CheckCheck,
-  Filter,
   DollarSign,
-  TrendingUp,
   Mail,
   Trash2,
+  X,
+  ShieldCheck,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react-native';
 import { getPendingInvitations, getDeals } from '../../services/api';
+
+const formatRelativeTime = (timestamp) => {
+  if (!timestamp) return 'Just now';
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return 'Just now';
+
+  const now = new Date();
+  const diffInSeconds = Math.floor((now - date) / 1000);
+
+  if (diffInSeconds < 60) return 'Just now';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+  if (diffInSeconds < 172800) return 'Yesterday';
+
+  return date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+  });
+};
 
 const Notifications = ({ onNavigate, routeData }) => {
   const [activeTab, setActiveTab] = useState('All');
@@ -55,12 +77,16 @@ const Notifications = ({ onNavigate, routeData }) => {
               type: 'deal_invite',
               category: 'Deals',
               title: 'New Sauda Sign Invitation',
-              message: `${inv.senderName || 'A counterparty'} sent you a Sauda invitation for ${pName}.`,
+              message: `${inv.senderName || 'A counterparty'} sent you a Sauda contract invitation for ${pName}. Review & sign to lock the deal.`,
               timestamp: inv.createdAt ? new Date(inv.createdAt) : new Date(),
               isRead: false,
               rawItem: inv,
               targetScreen: 'DealsList',
               targetData: { filter: 'Invitations' },
+              actionLabel: 'Review & Sign Sauda',
+              badgeText: 'Action Needed',
+              badgeColor: '#D97706',
+              badgeBg: '#FEF3C7',
             });
           });
         }
@@ -87,12 +113,16 @@ const Notifications = ({ onNavigate, routeData }) => {
                 type: 'deal_confirmed',
                 category: 'Deals',
                 title: 'Sauda Contract Confirmed',
-                message: `Sauda #${d.dealNumber || 'Agreement'} for ${pName} has been confirmed by both parties.`,
+                message: `Sauda #${d.dealNumber || 'Agreement'} for ${pName} has been fully confirmed by both parties.`,
                 timestamp: d.updatedAt || d.createdAt ? new Date(d.updatedAt || d.createdAt) : new Date(),
                 isRead: true,
                 rawItem: d,
                 targetScreen: 'DealDetails',
                 targetData: { dealId, deal: d },
+                actionLabel: 'View Contract',
+                badgeText: 'Confirmed',
+                badgeColor: '#059669',
+                badgeBg: '#ECFDF5',
               });
             } else if (status === 'pending') {
               list.push({
@@ -100,12 +130,16 @@ const Notifications = ({ onNavigate, routeData }) => {
                 type: 'deal_pending',
                 category: 'Deals',
                 title: 'Pending Signature',
-                message: `Sauda #${d.dealNumber || 'Contract'} is awaiting signature confirmation.`,
+                message: `Sauda #${d.dealNumber || 'Contract'} is currently awaiting signature confirmation from counterparty.`,
                 timestamp: d.createdAt ? new Date(d.createdAt) : new Date(),
                 isRead: false,
                 rawItem: d,
                 targetScreen: 'DealDetails',
                 targetData: { dealId, deal: d },
+                actionLabel: 'Check Status',
+                badgeText: 'Pending',
+                badgeColor: '#0284C7',
+                badgeBg: '#E0F2FE',
               });
             }
           });
@@ -115,33 +149,56 @@ const Notifications = ({ onNavigate, routeData }) => {
       }
 
       // 3. Fallback mock notifications if list is sparse
-      if (list.length === 0) {
+      if (list.length < 3) {
         list.push(
           {
             id: 'mock-1',
             type: 'system',
             category: 'Alerts',
             title: 'Welcome to Pravisti Trade Ledger',
-            message: 'Your account is active. Create or accept Sauda contracts to start digital mandi trading.',
-            timestamp: new Date(),
+            message: 'Your account is active. Create or accept Sauda contracts to start digital mandi trading securely.',
+            timestamp: new Date(Date.now() - 1000 * 60 * 15),
             isRead: false,
             targetScreen: 'Dashboard',
+            actionLabel: 'Go to Dashboard',
+            badgeText: 'Welcome',
+            badgeColor: '#4F46E5',
+            badgeBg: '#EEF2FF',
           },
           {
             id: 'mock-2',
+            type: 'deal_invite',
+            category: 'Deals',
+            title: 'Wheat (Gehun) Contract Pending',
+            message: 'M/s Laxmi Agro Industries invited you to lock a 50 MT Wheat Sauda deal at ₹2,450/Qtl.',
+            timestamp: new Date(Date.now() - 1000 * 60 * 120),
+            isRead: false,
+            targetScreen: 'DealsList',
+            targetData: { filter: 'Invitations' },
+            actionLabel: 'Review & Sign Sauda',
+            badgeText: 'Action Needed',
+            badgeColor: '#D97706',
+            badgeBg: '#FEF3C7',
+          },
+          {
+            id: 'mock-3',
             type: 'payment',
             category: 'Payments',
-            title: 'Payment Status Alert',
-            message: 'Track brokerage payments and invoice clearings directly under deal contracts.',
-            timestamp: new Date(Date.now() - 3600000 * 2),
+            title: 'Brokerage Payment Clearance',
+            message: 'Payment clearance receipt for Sauda #PRV-8821 generated successfully.',
+            timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24),
             isRead: true,
             targetScreen: 'MyCompanies',
+            actionLabel: 'View Receipt',
+            badgeText: 'Cleared',
+            badgeColor: '#7C3AED',
+            badgeBg: '#F3E8FF',
           }
         );
       }
 
       // Sort by latest timestamp
-      list.sort((a, b) => b.timestamp - a.timestamp);
+      list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       setNotifications(list);
     } catch (err) {
       console.error('Error fetching notifications:', err);
@@ -164,12 +221,20 @@ const Notifications = ({ onNavigate, routeData }) => {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
-  const filteredNotifications = notifications.filter(n => {
-    if (activeTab === 'All') return true;
-    return n.category === activeTab;
-  });
+  const deleteNotification = (id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter(n => {
+      if (activeTab === 'All') return true;
+      return n.category === activeTab;
+    });
+  }, [notifications, activeTab]);
+
+  const unreadCount = useMemo(() => {
+    return notifications.filter(n => !n.isRead).length;
+  }, [notifications]);
 
   const renderNotificationItem = ({ item }) => {
     let iconBg = '#EFF6FF';
@@ -179,7 +244,7 @@ const Notifications = ({ onNavigate, routeData }) => {
     if (item.type === 'deal_invite') {
       iconBg = '#FEF3C7';
       iconColor = '#D97706';
-      IconComponent = Mail;
+      IconComponent = Handshake;
     } else if (item.type === 'deal_confirmed') {
       iconBg = '#ECFDF5';
       iconColor = '#059669';
@@ -190,35 +255,35 @@ const Notifications = ({ onNavigate, routeData }) => {
       IconComponent = Clock;
     } else if (item.type === 'payment') {
       iconBg = '#F3E8FF';
-      iconColor = '#8B5CF6';
+      iconColor = '#7C3AED';
       IconComponent = DollarSign;
+    } else if (item.type === 'system') {
+      iconBg = '#EEF2FF';
+      iconColor = '#4F46E5';
+      IconComponent = ShieldCheck;
     }
 
-    const timeAgoStr = item.timestamp
-      ? new Date(item.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-      : 'Just now';
+    const timeAgoStr = formatRelativeTime(item.timestamp);
 
     return (
       <TouchableOpacity
         style={[styles.notifCard, !item.isRead && styles.unreadNotifCard]}
         activeOpacity={0.85}
         onPress={() => {
-          setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, isRead: true } : n));
+          setNotifications(prev => prev.map(n => (n.id === item.id ? { ...n, isRead: true } : n)));
           if (item.targetScreen) {
             onNavigate(item.targetScreen, item.targetData || {});
           }
         }}
       >
-        {!item.isRead && <View style={styles.unreadBlueIndicator} />}
-
-        {/* Icon Bubble */}
+        {/* Left Icon */}
         <View style={[styles.iconBubble, { backgroundColor: iconBg }]}>
-          <IconComponent size={20} color={iconColor} />
+          <IconComponent size={18} color={iconColor} />
         </View>
 
-        {/* Main Content */}
+        {/* Center Main Content */}
         <View style={styles.notifMainContent}>
-          <View style={styles.notifHeaderRow}>
+          <View style={styles.titleRow}>
             <Text style={styles.notifTitle} numberOfLines={1}>
               {item.title}
             </Text>
@@ -229,16 +294,26 @@ const Notifications = ({ onNavigate, routeData }) => {
             {item.message}
           </Text>
 
-          {item.type === 'deal_invite' && (
-            <View style={styles.actionChipRow}>
-              <View style={styles.reviewChip}>
-                <Text style={styles.reviewChipText}>Review & Sign Sauda →</Text>
-              </View>
+          {item.actionLabel && (
+            <View style={styles.actionRow}>
+              <Text style={[styles.actionLinkText, item.type === 'deal_invite' && styles.actionLinkAmber]}>
+                {item.actionLabel} →
+              </Text>
             </View>
           )}
         </View>
 
-        <ChevronRight size={16} color="#94A3B8" style={{ marginLeft: 6 }} />
+        {/* Right Actions */}
+        <View style={styles.rightActions}>
+          <TouchableOpacity
+            style={styles.dismissBtn}
+            onPress={() => deleteNotification(item.id)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <X size={14} color="#94A3B8" />
+          </TouchableOpacity>
+          {!item.isRead && <View style={styles.unreadDot} />}
+        </View>
       </TouchableOpacity>
     );
   };
@@ -344,6 +419,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     backgroundColor: '#1A56DB',
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
   },
   backBtn: {
     width: 36,
@@ -360,7 +437,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   headerSubtitle: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.85)',
     fontSize: 11,
     fontWeight: '500',
     marginTop: 1,
@@ -404,57 +481,47 @@ const styles = StyleSheet.create({
 
   /* List & Cards */
   listContentContainer: {
-    padding: 16,
+    padding: 12,
     paddingBottom: 90,
   },
   notifCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1.2,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
-    shadowColor: '#1A56DB',
-    shadowOffset: { width: 0, height: 3 },
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 6,
+    shadowRadius: 4,
     elevation: 2,
-    position: 'relative',
-    overflow: 'hidden',
   },
   unreadNotifCard: {
-    backgroundColor: '#F0F7FF',
-    borderColor: '#BFDBFE',
-  },
-  unreadBlueIndicator: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    backgroundColor: '#1A56DB',
+    backgroundColor: '#F8FAFC',
+    borderColor: '#93C5FD',
   },
   iconBubble: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   notifMainContent: {
     flex: 1,
   },
-  notifHeaderRow: {
+  titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 3,
   },
   notifTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
     flex: 1,
@@ -471,22 +538,31 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '500',
   },
-  actionChipRow: {
-    marginTop: 8,
+  actionRow: {
+    marginTop: 4,
   },
-  reviewChip: {
-    backgroundColor: '#FEF3C7',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  reviewChipText: {
-    fontSize: 10,
+  actionLinkText: {
+    fontSize: 11,
     fontWeight: '800',
+    color: '#1A56DB',
+  },
+  actionLinkAmber: {
     color: '#D97706',
+  },
+  rightActions: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    marginLeft: 6,
+  },
+  dismissBtn: {
+    padding: 2,
+  },
+  unreadDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#1A56DB',
+    marginTop: 8,
   },
 
   /* Empty & Loading States */

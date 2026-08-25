@@ -13,11 +13,6 @@ const SummaryApi = {
     method: "post",
   },
 
-  login: {
-    url: `${backendDomain}/api/auth/login`,
-    method: "post",
-  },
-
   verifyOTP: {
     url: `${backendDomain}/api/auth/verify-otp`,
     method: "post",
@@ -70,11 +65,6 @@ const SummaryApi = {
     method: "post",
   }),
 
-  verifyCompany: (id) => ({
-    url: `${backendDomain}/api/companies/${id}/verify`,
-    method: "post",
-  }),
-
   /* ================= DEALS ================= */
   createDeal: {
     url: `${backendDomain}/api/deals`,
@@ -101,10 +91,13 @@ const SummaryApi = {
     method: "put",
   }),
 
-  getDeals: (page = 1, limit = 10, companyId = null) => {
+  getDeals: (page = 1, limit = 10, companyId = null, status = null) => {
     let url = `${backendDomain}/api/deals?page=${page}&limit=${limit}`;
     if (companyId) {
       url += `&companyId=${encodeURIComponent(companyId)}`;
+    }
+    if (status) {
+      url += `&status=${encodeURIComponent(status)}`;
     }
     return {
       url,
@@ -147,6 +140,23 @@ const SummaryApi = {
       method: "get",
     };
   },
+
+  getRecreatedDeals: (page = 1, limit = 10, companyId = null) => {
+    let url = `${backendDomain}/api/deals/recreated?page=${page}&limit=${limit}`;
+    if (companyId) {
+      url += `&companyId=${encodeURIComponent(companyId)}`;
+    }
+    return {
+      url,
+      method: "get",
+    };
+  },
+
+  deleteDeal: (id) => ({
+    url: `${backendDomain}/api/deals/${id}`,
+    method: "delete",
+  }),
+
 
   /* ================= CATEGORIES ================= */
   createCategory: {
@@ -392,26 +402,34 @@ const SummaryApi = {
     method: "patch",
   }),
 
-  /* ================= BROKER ONBOARDING APIs ================= */
+  /* ================= ONBOARDING APIs ================= */
   searchCounterpartyUser: (mobileNumber) => ({
-    url: `${backendDomain}/api/broker-onboard/search-user?mobileNumber=${encodeURIComponent(mobileNumber)}`,
+    url: `${backendDomain}/api/onboarding/search-user?mobileNumber=${encodeURIComponent(mobileNumber)}`,
     method: "get",
   }),
 
   assistedCreateBusiness: {
-    url: `${backendDomain}/api/broker-onboard/create-business`,
+    url: `${backendDomain}/api/onboarding/create-business`,
     method: "post",
   },
 
-  getBrokerOnboardQueue: {
-    url: `${backendDomain}/api/broker-onboard/my-queue`,
-    method: "get",
+  getBrokerOnboardQueue: (companyId = null) => {
+    let url = `${backendDomain}/api/onboarding/queue`;
+    const cleanId = (typeof companyId === 'object' && companyId !== null) ? (companyId._id || companyId.id || companyId.companyId) : companyId;
+    if (cleanId && cleanId !== 'null' && cleanId !== 'undefined' && String(cleanId) !== '[object Object]') {
+      url += `?companyId=${encodeURIComponent(cleanId)}`;
+    }
+    return {
+      url,
+      method: "get",
+    };
   },
 
   getBrokerMyDeals: (companyId = null) => {
-    let url = `${backendDomain}/api/broker-onboard/my-deal`;
-    if (companyId) {
-      url += `?companyId=${encodeURIComponent(companyId)}`;
+    let url = `${backendDomain}/api/onboarding/onboarded-users`;
+    const cleanId = (typeof companyId === 'object' && companyId !== null) ? (companyId._id || companyId.id || companyId.companyId) : companyId;
+    if (cleanId && cleanId !== 'null' && cleanId !== 'undefined' && String(cleanId) !== '[object Object]') {
+      url += `?companyId=${encodeURIComponent(cleanId)}`;
     }
     return {
       url,
@@ -420,42 +438,42 @@ const SummaryApi = {
   },
 
   editPendingBusiness: (id) => ({
-    url: `${backendDomain}/api/broker-onboard/edit-business/${id}`,
+    url: `${backendDomain}/api/onboarding/edit-business/${id}`,
     method: "put",
   }),
 
   resendWhatsAppInvite: (id) => ({
-    url: `${backendDomain}/api/broker-onboard/resend-invite/${id}`,
+    url: `${backendDomain}/api/onboarding/resend-invite/${id}`,
     method: "post",
   }),
 
   cancelBrokerOnboard: (id) => ({
-    url: `${backendDomain}/api/broker-onboard/cancel-onboard/${id}`,
+    url: `${backendDomain}/api/onboarding/cancel-onboard/${id}`,
     method: "post",
   }),
 
   getPendingVerificationStatus: {
-    url: `${backendDomain}/api/broker-onboard/pending-verification`,
+    url: `${backendDomain}/api/onboarding/pending-verification`,
     method: "get",
   },
 
   verifyAccount: {
-    url: `${backendDomain}/api/broker-onboard/verify-account`,
+    url: `${backendDomain}/api/onboarding/verify-account`,
     method: "post",
   },
 
   completeCompanyProfile: {
-    url: `${backendDomain}/api/broker-onboard/complete-company`,
+    url: `${backendDomain}/api/onboarding/complete-company`,
     method: "patch",
   },
 
   verifyProducts: {
-    url: `${backendDomain}/api/broker-onboard/verify-products`,
+    url: `${backendDomain}/api/onboarding/verify-products`,
     method: "patch",
   },
 
   verifyOwnership: {
-    url: `${backendDomain}/api/broker-onboard/verify`,
+    url: `${backendDomain}/api/onboarding/verify`,
     method: "patch",
   },
 };

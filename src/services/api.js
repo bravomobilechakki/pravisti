@@ -214,8 +214,8 @@ export const getUserProfile = async (token) => {
   try {
     return await getRequest(SummaryApi.getUserProfile, token);
   } catch (error) {
-    console.error('Error fetching user profile:', error.message || error);
-    throw error;
+    console.warn('Notice fetching user profile:', error.message || error);
+    return { success: false, message: error.message || 'User does not exist' };
   }
 };
 
@@ -261,10 +261,13 @@ export const getCompanies = async (page = 1, limit = 10) => {
 
 export const getCompanyDetails = async (id) => {
   try {
+    if (!id || id === 'undefined' || id === 'null') {
+      return { success: false, message: 'Invalid Company ID' };
+    }
     return await getRequest(SummaryApi.getCompanyDetails(id));
   } catch (error) {
-    console.warn('Error fetching company details:', error.message || error);
-    throw error;
+    console.warn('Notice fetching company details:', error.message || error);
+    return { success: false, message: error.message || 'Company not found' };
   }
 };
 
@@ -375,9 +378,9 @@ export const createDeal = async (dealData, token) => {
 
 // Get deals of user's company only.................................................................................................................................................................
 
-export const getDeals = async (token, page = 1, limit = 10, companyId = null) => {
+export const getDeals = async (token, page = 1, limit = 10, companyId = null, status = null) => {
   try {
-    return await getRequest(SummaryApi.getDeals(page, limit, companyId), token);
+    return await getRequest(SummaryApi.getDeals(page, limit, companyId, status), token);
   } catch (error) {
     console.error('Error fetching deals:', error.message || error);
     throw error;
@@ -396,7 +399,7 @@ export const getDealDetails = async (id, token) => {
 export const updateDealStatus = async (id, payload, token) => {
   try {
     const body = typeof payload === 'string' ? { status: payload } : payload;
-    return await postRequest(SummaryApi.updateDealStatus(id), body, token);
+    return await patchRequest(SummaryApi.updateDealStatus(id), body, token);
   } catch (error) {
     console.error('Error updating deal status:', error.message || error);
     throw error;
@@ -415,7 +418,7 @@ export const acceptDeal = async (id, role, token) => {
     if (activeRole) {
       return await updateDealStatus(id, { approvalType: activeRole, approvalStatus: 'approved' }, activeToken);
     }
-    return await postRequest(SummaryApi.acceptDeal(id), {}, activeToken);
+    return await updateDealStatus(id, { status: 'approved' }, activeToken);
   } catch (error) {
     console.error('Error accepting deal:', error.message || error);
     throw error;
@@ -449,7 +452,7 @@ export const rejectDeal = async (id, roleOrReason, reasonOrToken = null, token =
     if (activeRole) {
       return await updateDealStatus(id, { approvalType: activeRole, approvalStatus: 'rejected', reason: activeReason }, activeToken);
     }
-    return await postRequest(SummaryApi.rejectDeal(id), { status: 'rejected', reason: activeReason }, activeToken);
+    return await updateDealStatus(id, { status: 'rejected', reason: activeReason }, activeToken);
   } catch (error) {
     console.error('Error rejecting deal:', error.message || error);
     throw error;
@@ -473,6 +476,41 @@ export const getExpiredDeals = async (token, page = 1, limit = 10, companyId = n
     throw error;
   }
 };
+
+export const getRecreatedDeals = async (token, page = 1, limit = 10, companyId = null) => {
+  try {
+    return await getRequest(SummaryApi.getRecreatedDeals(page, limit, companyId), token);
+  } catch (error) {
+    console.error('Error fetching recreated deals:', error.message || error);
+    throw error;
+  }
+};
+
+export const deleteDeal = async (id, token) => {
+  try {
+    const config = SummaryApi.deleteDeal(id);
+    const headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+    let activeToken = token;
+    if (!activeToken) {
+      activeToken = await AsyncStorage.getItem('userToken');
+    }
+    if (activeToken) {
+      headers.Authorization = `Bearer ${activeToken}`;
+    }
+    const response = await fetchWithTimeout(config.url, {
+      method: config.method || 'DELETE',
+      headers,
+    });
+    return await handleResponse(response);
+  } catch (error) {
+    console.error('Error deleting deal:', error.message || error);
+    throw error;
+  }
+};
+
 
 // --- CATEGORY & SUBCATEGORY APIs ---
 
@@ -589,11 +627,14 @@ export const createProduct = async (productData, token) => {
 };
 
 export const getProducts = async (companyId, token, categoryId, subCategoryId, status) => {
+  if (!companyId || companyId === 'undefined' || companyId === 'null') {
+    return { success: true, statusCode: 200, data: [] };
+  }
   try {
     return await getRequest(SummaryApi.getProducts(companyId, categoryId, subCategoryId, status), token);
   } catch (error) {
-    console.error('Error fetching products:', error.message || error);
-    throw error;
+    console.warn('Notice: Products fetch for companyId:', companyId, error.message || error);
+    return { success: true, statusCode: 200, data: [] };
   }
 };
 
@@ -682,6 +723,7 @@ export const getPendingInvitations = async (token) => {
     throw error;
   }
 };
+
 
 // --- CHAT APIs ---
 
@@ -808,32 +850,63 @@ export const searchCounterpartyUser = async (mobileNumber, token) => {
   }
 };
 
+export const fetchPincodeDetails = async (pincode) => {
+  try {
+    const res = await fetchWithTimeout(`https://api.postalpincode.in/pincode/${pincode}`, { method: 'GET' }, 5000);
+    const data = await res.json();
+    if (Array.isArray(data) && data[0]?.Status === 'Success' && data[0]?.PostOffice?.length > 0) {
+      const po = data[0].PostOffice[0];
+      return {
+        success: true,
+        city: po.Block !== 'NA' ? po.Block : po.Name,
+        district: po.District,
+        state: po.State,
+        country: po.Country || 'India',
+      };
+    }
+    return { success: false };
+  } catch (err) {
+    console.warn('Pincode fetch error:', err.message || err);
+    return { success: false };
+  }
+};
+
 export const assistedCreatePartyAccount = async (payload, token) => {
   try {
+    const roleClean = (payload.role || payload.partyType || 'seller').toLowerCase();
+    const cleanDigits = (payload.mobileNumber || '').replace(/\D/g, '');
+    const rawEmail = (payload.email || '').trim();
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    const isValidEmail = emailRegex.test(rawEmail);
+    const fallbackPrefix = cleanDigits.length >= 6 ? cleanDigits : `user${Date.now().toString().slice(-6)}`;
+    const defaultEmail = `user${fallbackPrefix}@gmail.com`;
+    const emailToUse = isValidEmail ? rawEmail : defaultEmail;
+
     const formattedPayload = {
-      role: (payload.role || payload.partyType || 'seller').toLowerCase(),
+      role: roleClean,
       name: payload.name || payload.ownerName || payload.targetUserName || '',
       mobileNumber: payload.mobileNumber || '',
+      email: emailToUse,
+      companyEmail: emailToUse,
       companyName: payload.companyName || '',
-      ...(payload.companyAddress || payload.address || payload.mandiAddress ? {
-        companyAddress: payload.companyAddress || {
-          street: payload.address?.street || payload.street || '',
-          city: payload.address?.city || payload.city || '',
-          state: payload.address?.state || payload.state || '',
-          zip: payload.address?.zip || payload.address?.postalCode || payload.postalCode || payload.zip || '',
-        }
-      } : {}),
+      ...(payload.industryId || payload.industry ? { industryId: payload.industryId || payload.industry } : {}),
+      companyAddress: payload.companyAddress || {
+        street: payload.address?.street || payload.street || '',
+        city: payload.address?.city || payload.city || '',
+        district: payload.address?.district || payload.district || '',
+        state: payload.address?.state || payload.state || '',
+        postalCode: payload.address?.postalCode || payload.address?.zip || payload.postalCode || payload.zip || '',
+        country: payload.address?.country || payload.country || 'India',
+      },
       gst: payload.gst || payload.gstNumber || payload.gstin || payload.registrationNumber || '',
       businessDetails: payload.businessDetails || payload.description || '',
-      ...(Array.isArray(payload.products) && payload.products.length > 0 ? {
-        products: payload.products.map(p => ({
-          name: typeof p === 'string' ? p : p.name,
-          unitId: p.unitId || p.unit || '64d0a1b2c3d4e5f6a7b8c9df',
-          description: p.description || '',
-          hsnCode: p.hsnCode || '',
-          gstCode: p.gstCode || p.gst || '',
-        }))
-      } : {}),
+      products: roleClean === 'buyer' ? [] : (Array.isArray(payload.products) && payload.products.length > 0 ? payload.products.map(p => ({
+        name: typeof p === 'string' ? p : p.name,
+        unitId: p.unitId || p.unit || '64d0a1b2c3d4e5f6a7b8c9df',
+        description: p.description || '',
+        hsnCode: p.hsnCode || '',
+        gstCode: p.gstCode || p.gst || '',
+      })) : []),
     };
 
     return await postRequest(SummaryApi.assistedCreateBusiness, formattedPayload, token);
@@ -860,13 +933,20 @@ export const getBrokerPendingQueue = async (companyIdOrToken = null, tokenArg = 
       activeToken = await AsyncStorage.getItem('userToken');
     }
 
+    if (companyId && typeof companyId === 'object') {
+      companyId = companyId._id || companyId.id || companyId.companyId || null;
+    }
+    if (companyId === 'null' || companyId === 'undefined' || String(companyId) === '[object Object]') {
+      companyId = null;
+    }
+
     const config = typeof SummaryApi.getBrokerOnboardQueue === 'function'
       ? SummaryApi.getBrokerOnboardQueue(companyId)
       : SummaryApi.getBrokerOnboardQueue;
 
     return await getRequest(config, activeToken);
   } catch (error) {
-    console.error('Error fetching broker pending queue:', error.message || error);
+    console.warn('getBrokerPendingQueue notice:', error.message || error);
     return { success: true, statusCode: 200, data: [] };
   }
 };
@@ -992,13 +1072,22 @@ export const getBrokerMyDeals = async (companyId = null, token = null) => {
     if (!activeToken || typeof activeToken !== 'string' || activeToken.length < 30) {
       activeToken = await AsyncStorage.getItem('userToken');
     }
+
+    let cleanCompanyId = companyId;
+    if (cleanCompanyId && typeof cleanCompanyId === 'object') {
+      cleanCompanyId = cleanCompanyId._id || cleanCompanyId.id || cleanCompanyId.companyId || null;
+    }
+    if (cleanCompanyId === 'null' || cleanCompanyId === 'undefined' || String(cleanCompanyId) === '[object Object]') {
+      cleanCompanyId = null;
+    }
+
     const config = typeof SummaryApi.getBrokerMyDeals === 'function'
-      ? SummaryApi.getBrokerMyDeals(companyId)
+      ? SummaryApi.getBrokerMyDeals(cleanCompanyId)
       : SummaryApi.getBrokerMyDeals;
     return await getRequest(config, activeToken);
   } catch (error) {
     console.warn('getBrokerMyDeals notice:', error.message || error);
-    return { success: false, data: [] };
+    return { success: true, statusCode: 200, data: [] };
   }
 };
 

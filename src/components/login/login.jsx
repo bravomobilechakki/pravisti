@@ -341,6 +341,24 @@ const Login = ({ onNavigate, routeData }) => {
     }
   };
 
+  //  center of login page
+
+
+  styles.formCard
+  styles.titleText
+  styles.subtitleText
+  styles.inputLabel
+  styles.inputWrapper
+  styles.inputDisabled
+  styles.inputFocused
+  styles.inputIcon
+  styles.prefixText
+  styles.input
+  styles.editNumberBtn
+  styles.inputErrorBorder
+
+  // 
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0F172A" />

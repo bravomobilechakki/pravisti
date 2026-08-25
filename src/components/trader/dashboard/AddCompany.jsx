@@ -141,6 +141,8 @@ const AddCompany = ({ onNavigate, routeData }) => {
         return;
       }
 
+
+
       const payload = {
         name: formData.name,
         email: formData.email,
@@ -288,7 +290,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
             </View>
 
             <Text style={[styles.inputLabel, { marginTop: 10 }]}>Address Details</Text>
-            
+
             <View style={styles.fieldContainer}>
               <Text style={styles.inputLabel}>Street / Area</Text>
               <TextInput
@@ -301,50 +303,50 @@ const AddCompany = ({ onNavigate, routeData }) => {
             </View>
 
             <View style={{ flexDirection: 'row', gap: 12 }}>
-                <View style={[styles.fieldContainer, { flex: 1 }]}>
-                    <Text style={styles.inputLabel}>City</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Karachi/Mumbai"
-                        placeholderTextColor="#9CA3AF"
-                        value={formData.city}
-                        onChangeText={(text) => handleInputChange('city', text)}
-                    />
-                </View>
-                <View style={[styles.fieldContainer, { flex: 1 }]}>
-                    <Text style={styles.inputLabel}>State</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Sindh/Maharashtra"
-                        placeholderTextColor="#9CA3AF"
-                        value={formData.state}
-                        onChangeText={(text) => handleInputChange('state', text)}
-                    />
-                </View>
+              <View style={[styles.fieldContainer, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>City</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Karachi/Mumbai"
+                  placeholderTextColor="#9CA3AF"
+                  value={formData.city}
+                  onChangeText={(text) => handleInputChange('city', text)}
+                />
+              </View>
+              <View style={[styles.fieldContainer, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>State</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Sindh/Maharashtra"
+                  placeholderTextColor="#9CA3AF"
+                  value={formData.state}
+                  onChangeText={(text) => handleInputChange('state', text)}
+                />
+              </View>
             </View>
 
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
-                <View style={[styles.fieldContainer, { flex: 1 }]}>
-                    <Text style={styles.inputLabel}>Postal / ZIP Code</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="e.g. 302001"
-                        placeholderTextColor="#9CA3AF"
-                        value={formData.postalCode}
-                        onChangeText={(text) => handleInputChange('postalCode', text)}
-                        keyboardType="numeric"
-                    />
-                </View>
-                <View style={[styles.fieldContainer, { flex: 1 }]}>
-                    <Text style={styles.inputLabel}>Country</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="India"
-                        placeholderTextColor="#9CA3AF"
-                        value={formData.country}
-                        onChangeText={(text) => handleInputChange('country', text)}
-                    />
-                </View>
+              <View style={[styles.fieldContainer, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>Postal / ZIP Code</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. 302001"
+                  placeholderTextColor="#9CA3AF"
+                  value={formData.postalCode}
+                  onChangeText={(text) => handleInputChange('postalCode', text)}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={[styles.fieldContainer, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>Country</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="India"
+                  placeholderTextColor="#9CA3AF"
+                  value={formData.country}
+                  onChangeText={(text) => handleInputChange('country', text)}
+                />
+              </View>
             </View>
 
             <View style={[styles.fieldContainer, { marginTop: 10 }]}>
@@ -490,7 +492,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
             <Text style={styles.modalSubtitle}>
               Your company <Text style={styles.boldText}>{formData.name}</Text> has been registered successfully.
             </Text>
-            
+
             <TouchableOpacity
               style={styles.modalButton}
               activeOpacity={0.8}

@@ -10,6 +10,7 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  ScrollView,
   Platform,
 } from 'react-native';
 import {
@@ -24,41 +25,43 @@ import {
   Building2,
   X,
   RotateCcw,
-  TrendingUp,
   ShieldCheck,
   ArrowRight,
+  FileText,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Navbar from '../../navbar/navbar';
 import { getDeals, getBrokerMyDeals } from '../../../services/api';
 
-// --- COLOR SYSTEM (Cobalt Royal Blue Theme) ---
+// --- PRAVISTI COLOR SYSTEM ---
 const COLORS = {
-  primary: '#3465EA',
-  primaryDark: '#3465EA',
-  headerMiddle: '#2554D7',
-  headerEnd: '#1E46C6',
-  primaryLight: '#EEF2FF',
-  primaryBorder: '#C7D2FE',
-  cyan: '#06B6D4',
-  buyerBlue: '#0284C7',
-  buyerBlueLight: '#E0F2FE',
-  sellerPurple: '#7C3AED',
-  sellerPurpleLight: '#F5F3FF',
-  success: '#059669',
-  successDark: '#15803D',
-  successLight: '#DCFCE7',
-  warning: '#D97706',
-  warningLight: '#FEF3C7',
-  error: '#DC2626',
-  errorLight: '#FEF2F2',
-  textPrimary: '#0F172A',
-  textSecondary: '#475569',
-  textMuted: '#64748B',
-  textPlaceholder: '#94A3B8',
-  bgMain: '#F0F9FF',
+  primary: '#1463FF',
+  primaryDark: '#0B4DD8',
+  navy: '#071B3A',
+  textPrimary: '#071B3A',
+  textSecondary: '#66758F',
+  textMuted: '#94A3B8',
+  bgMain: '#F6F8FC',
   cardBg: '#FFFFFF',
-  border: '#E0F2FE',
+  border: '#E6EBF2',
+  softBlue: '#EFF6FF',
+
+  // Status colors
+  confirmedBg: '#EAFBF1',
+  confirmedBorder: '#B8F0CB',
+  confirmedText: '#07883F',
+
+  pendingBg: '#FFF7E6',
+  pendingBorder: '#FFD88A',
+  pendingText: '#D17A00',
+
+  draftBg: '#F1F5F9',
+  draftBorder: '#DCE3EA',
+  draftText: '#64748B',
+
+  rejectedBg: '#FFF1F2',
+  rejectedBorder: '#FCA5A5',
+  rejectedText: '#D92D20',
 };
 
 const extractCompanyId = (d) => {
@@ -107,10 +110,11 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
       setDeals(localDeals);
       setIsLoading(false);
 
-      // 2. PARALLEL BACKGROUND API FETCH for fast updates
-      const [brokerResResult, dealsResResult] = await Promise.allSettled([
+      // 2. PARALLEL BACKGROUND API FETCH for fast updates including status=draft deals
+      const [brokerResResult, dealsResResult, draftDealsResult] = await Promise.allSettled([
         getBrokerMyDeals(token),
-        getDeals(token, 1, 1000, companyId || null),
+        getDeals(token, 1, 50, companyId || null),
+        getDeals(token, 1, 50, companyId || null, 'draft'),
       ]);
 
       let fetchedDeals = [];
@@ -147,10 +151,8 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
         });
       }
 
-      if (dealsResResult.status === 'fulfilled' && dealsResResult.value?.success) {
-        const res = dealsResResult.value;
-        const rawDeals = Array.isArray(res.data) ? res.data : (res.data?.deals || []);
-        const apiMapped = rawDeals.map(d => {
+      const processDealsArray = (rawDeals) => {
+        return rawDeals.map(d => {
           const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : '';
           const p0 = d.products?.[0];
           const pid0 = p0?.productId;
@@ -174,7 +176,16 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
             rawDeal: d,
           };
         });
-        fetchedDeals.push(...apiMapped);
+      };
+
+      if (dealsResResult.status === 'fulfilled' && dealsResResult.value?.success) {
+        const rawDeals = Array.isArray(dealsResResult.value.data) ? dealsResResult.value.data : (dealsResResult.value.data?.deals || []);
+        fetchedDeals.push(...processDealsArray(rawDeals));
+      }
+
+      if (draftDealsResult.status === 'fulfilled' && draftDealsResult.value?.success) {
+        const rawDrafts = Array.isArray(draftDealsResult.value.data) ? draftDealsResult.value.data : (draftDealsResult.value.data?.deals || []);
+        fetchedDeals.push(...processDealsArray(rawDrafts));
       }
 
       // Fast O(N) deduplication using Map
@@ -247,6 +258,7 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
       const statusLower = (deal.status || '').toLowerCase();
       if (activeTab === 'Confirmed') return matchesSearch && (statusLower === 'confirmed' || statusLower === 'approved');
       if (activeTab === 'Pending') return matchesSearch && statusLower.includes('pending');
+      if (activeTab === 'Draft') return matchesSearch && statusLower.includes('draft');
       return matchesSearch;
     });
   }, [companyFilteredDeals, searchQuery, activeTab]);
@@ -258,108 +270,129 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
     return s === 'confirmed' || s === 'approved';
   }).length;
   const pendingCount = companyFilteredDeals.filter(d => (d.status || '').toLowerCase().includes('pending')).length;
+  const draftCount = companyFilteredDeals.filter(d => (d.status || '').toLowerCase().includes('draft')).length;
 
   // Render Header Section for FlatList
   const renderListHeader = () => (
     <View style={styles.headerContainer}>
-      {/* Hero Header Banner */}
+      {/* Compact Top Title Header */}
       <View style={styles.topHeader}>
-        <View style={{ flex: 1, marginRight: 12 }}>
-          <Text style={styles.pageTitle}>My Sauda Ledger</Text>
-          <Text style={styles.pageSubtitle}>Manage active contracts & mandi trades</Text>
-        </View>
+        <Text style={styles.pageTitle}>My Saudas</Text>
 
         <TouchableOpacity
           style={styles.newSaudaBtn}
           activeOpacity={0.85}
           onPress={() => onNavigate('CreateBrokerDeal')}
         >
-          <Plus size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
-          <Text style={styles.newSaudaBtnText}>New Sauda</Text>
+          <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+          <Text style={styles.newSaudaBtnText}>+ New</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Summary Statistics Strip */}
-      <View style={styles.statsStripRow}>
-        <View style={[styles.statCardBox, { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primaryBorder }]}>
-          <View style={styles.statIconCircle}>
-            <TrendingUp size={14} color={COLORS.primary} />
-          </View>
-          <View>
-            <Text style={[styles.statCountText, { color: COLORS.primaryDark }]}>{totalCount}</Text>
-            <Text style={styles.statLabelText}>Total Sauda</Text>
-          </View>
-        </View>
-
-        <View style={[styles.statCardBox, { backgroundColor: COLORS.successLight, borderColor: '#A7F3D0' }]}>
-          <View style={[styles.statIconCircle, { backgroundColor: '#DCFCE7' }]}>
-            <CheckCircle2 size={14} color={COLORS.success} />
-          </View>
-          <View>
-            <Text style={[styles.statCountText, { color: COLORS.successDark }]}>{confirmedCount}</Text>
-            <Text style={styles.statLabelText}>Confirmed</Text>
-          </View>
-        </View>
-
-        <View style={[styles.statCardBox, { backgroundColor: COLORS.warningLight, borderColor: '#FDE68A' }]}>
-          <View style={[styles.statIconCircle, { backgroundColor: '#FEF3C7' }]}>
-            <Clock size={14} color={COLORS.warning} />
-          </View>
-          <View>
-            <Text style={[styles.statCountText, { color: COLORS.warning }]}>{pendingCount}</Text>
-            <Text style={styles.statLabelText}>Pending</Text>
-          </View>
-        </View>
       </View>
 
       {/* Search Bar */}
       <View style={styles.searchSection}>
         <View style={styles.searchBox}>
-          <Search size={16} color={COLORS.textPlaceholder} style={{ marginRight: 8 }} />
+          <Search size={16} color={COLORS.textMuted} style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search crop, buyer, seller or Sauda ID"
-            placeholderTextColor={COLORS.textPlaceholder}
+            placeholder="Search Sauda, buyer, seller..."
+            placeholderTextColor={COLORS.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X size={16} color={COLORS.textPlaceholder} />
+              <X size={16} color={COLORS.textMuted} />
             </TouchableOpacity>
           ) : null}
         </View>
       </View>
 
-      {/* Filter Tabs */}
-      <View style={styles.tabsContainer}>
+      {/* Filter Tabs (Horizontal Scrollable Strip) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabsScrollContent}
+        style={styles.tabsWrapper}
+      >
         {[
-          { key: 'All', label: `All (${totalCount})` },
-          { key: 'Confirmed', label: `Confirmed (${confirmedCount})` },
-          { key: 'Pending', label: `Pending (${pendingCount})` },
+          { key: 'All', label: 'ALL', count: totalCount },
+          { key: 'Confirmed', label: 'CONFIRMED', count: confirmedCount },
+          { key: 'Pending', label: 'PENDING', count: pendingCount },
+          { key: 'Draft', label: 'DRAFT', count: draftCount },
         ].map((tab) => {
           const isActive = activeTab === tab.key;
           return (
             <TouchableOpacity
               key={tab.key}
-              style={[styles.tabItem, isActive && styles.tabItemActive]}
+              style={[styles.tabPill, isActive ? styles.tabPillActive : styles.tabPillInactive]}
               onPress={() => setActiveTab(tab.key)}
               activeOpacity={0.8}
             >
-              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+              <Text style={[styles.tabLabelText, isActive ? styles.tabLabelActive : styles.tabLabelInactive]}>
                 {tab.label}
               </Text>
+              <View style={[styles.countBadge, isActive ? styles.countBadgeActive : styles.countBadgeInactive]}>
+                <Text style={[styles.countBadgeText, isActive ? styles.countTextActive : styles.countTextInactive]}>
+                  {tab.count}
+                </Text>
+              </View>
             </TouchableOpacity>
           );
         })}
-      </View>
+      </ScrollView>
     </View>
   );
 
-  // Render Each Premium Modern Card
+  // Render Deal Card Item
   const renderDealItem = ({ item }) => {
     const statusLower = (item.status || '').toLowerCase();
     const isPending = statusLower.includes('pending');
+    const isDraft = statusLower.includes('draft');
+    const isRejected = statusLower.includes('reject');
+
+    let statusStyle = {
+      bg: COLORS.confirmedBg,
+      border: COLORS.confirmedBorder,
+      text: COLORS.confirmedText,
+      label: 'CONFIRMED',
+    };
+
+    if (isDraft) {
+      statusStyle = {
+        bg: COLORS.draftBg,
+        border: COLORS.draftBorder,
+        text: COLORS.draftText,
+        label: 'DRAFT',
+      };
+    } else if (isPending) {
+      statusStyle = {
+        bg: COLORS.pendingBg,
+        border: COLORS.pendingBorder,
+        text: COLORS.pendingText,
+        label: 'PENDING',
+      };
+    } else if (isRejected) {
+      statusStyle = {
+        bg: COLORS.rejectedBg,
+        border: COLORS.rejectedBorder,
+        text: COLORS.rejectedText,
+        label: 'REJECTED',
+      };
+    }
+
+    const dealNo = item.id || (item._id ? `#SD-${item._id.slice(-4).toUpperCase()}` : '#SD-9042');
+    const dateDisplay = item.date || 'Today';
+
+    const rawTotal = item.rawDeal?.grandTotal || item.rawDeal?.totalAmount || item.rawDeal?.totalValue || item.totalAmount || item.totalValue;
+    let totalValStr = '';
+    if (typeof rawTotal === 'number' && rawTotal > 0) {
+      totalValStr = `₹${rawTotal.toLocaleString('en-IN')}`;
+    } else if (typeof rawTotal === 'string' && rawTotal.trim().length > 0) {
+      totalValStr = rawTotal.startsWith('₹') ? rawTotal : `₹${rawTotal}`;
+    } else {
+      totalValStr = item.rate || '—';
+    }
 
     return (
       <TouchableOpacity
@@ -367,88 +400,76 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
         activeOpacity={0.88}
         onPress={() => onNavigate('BrokerDealDetails', { dealId: item._id || item.id, deal: item })}
       >
-        {/* Card Header Row: Commodity Name & Status Badge */}
+        {/* Card Header Row: Deal Number, Date & Status Badge */}
         <View style={styles.cardHeaderRow}>
-          <View style={styles.commodityNameBadge}>
-            <View style={styles.commodityIconBox}>
-              <Handshake size={14} color={COLORS.primary} />
-            </View>
-            <Text style={styles.commodityNameText} numberOfLines={1}>
-              {item.crop || item.productName || 'Agricultural Commodity'}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 8 }}>
+            <Text style={styles.dealNoText} numberOfLines={1}>{dealNo}</Text>
+            <Text style={styles.dealDateText}>{dateDisplay}</Text>
           </View>
 
-          <View style={[styles.statusBadge, { backgroundColor: isPending ? COLORS.warningLight : COLORS.successLight }]}>
-            {isPending ? (
-              <Clock size={11} color={COLORS.warning} style={{ marginRight: 4 }} />
-            ) : (
-              <ShieldCheck size={11} color={COLORS.successDark} style={{ marginRight: 4 }} />
-            )}
-            <Text style={[styles.statusText, { color: isPending ? COLORS.warning : COLORS.successDark }]}>
-              {isPending ? 'Pending Sign' : 'Confirmed'}
+          <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg, borderColor: statusStyle.border }]}>
+            <Text style={[styles.statusBadgeText, { color: statusStyle.text }]}>
+              {statusStyle.label}
             </Text>
           </View>
         </View>
 
-        {/* Counterparty Buyer & Seller Info Box */}
-        <View style={styles.partiesContainerBox}>
-          <View style={styles.partyColumn}>
-            <View style={styles.partyRoleLabelRow}>
-              <View style={[styles.partyAvatarCircle, { backgroundColor: COLORS.buyerBlueLight }]}>
-                <User size={10} color={COLORS.buyerBlue} />
-              </View>
-              <Text style={styles.partyRoleText}>BUYER</Text>
-            </View>
-            <Text style={styles.buyerNameText} numberOfLines={1}>
+        {/* Buyer → Seller Flow Boxes */}
+        <View style={styles.buyerSellerFlowRow}>
+          {/* Buyer Box */}
+          <View style={styles.partyBox}>
+            <Text style={styles.partyRoleLabel}>BUYER</Text>
+            <Text style={styles.partyNameText} numberOfLines={1}>
               {item.buyer || 'Buyer Business'}
             </Text>
           </View>
 
-          <View style={styles.partyDividerLine} />
+          {/* Center Arrow */}
+          <View style={styles.flowArrowCircle}>
+            <ArrowRight size={15} color={COLORS.primary} />
+          </View>
 
-          <View style={styles.partyColumn}>
-            <View style={styles.partyRoleLabelRow}>
-              <View style={[styles.partyAvatarCircle, { backgroundColor: COLORS.sellerPurpleLight }]}>
-                <Building2 size={10} color={COLORS.sellerPurple} />
-              </View>
-              <Text style={styles.partyRoleText}>SELLER</Text>
-            </View>
-            <Text style={styles.sellerNameText} numberOfLines={1}>
+          {/* Seller Box */}
+          <View style={styles.partyBox}>
+            <Text style={[styles.partyRoleLabel, { color: '#7790B5' }]}>SELLER</Text>
+            <Text style={styles.partyNameText} numberOfLines={1}>
               {item.seller || 'Seller Business'}
             </Text>
           </View>
         </View>
 
-        {/* Deal Values Grid: Quantity, Rate, Brokerage */}
-        <View style={styles.detailsGridBox}>
-          <View style={styles.detailCol}>
-            <Text style={styles.detailLabel}>Quantity</Text>
-            <Text style={styles.detailValue}>{item.quantity ? String(item.quantity).replace(/ units/gi, '') : '100'}</Text>
-          </View>
-
-          <View style={styles.detailCol}>
-            <Text style={styles.detailLabel}>Agreed Rate</Text>
-            <Text style={styles.rateValueText}>{item.rate || '₹0'}</Text>
-          </View>
-
-          <View style={[styles.detailCol, { alignItems: 'flex-end' }]}>
-            <Text style={styles.detailLabel}>Brokerage</Text>
-            <Text style={styles.brokerageValText}>
-              {item.commission || '₹0'}
+        {/* Product Chips Row */}
+        <View style={styles.productChipsRow}>
+          <View style={styles.cropChip}>
+            <Text style={styles.cropChipText} numberOfLines={1}>
+              {item.crop || 'Commodity'}
             </Text>
           </View>
+
+          {item.quantity ? (
+            <View style={styles.metaChip}>
+              <Text style={styles.metaChipText}>{String(item.quantity).replace(/ units/gi, '')}</Text>
+            </View>
+          ) : null}
+
+          {item.rate ? (
+            <View style={styles.metaChip}>
+              <Text style={styles.metaChipText}>{item.rate}</Text>
+            </View>
+          ) : null}
         </View>
 
-        {/* Card Footer Row: Reference ID, Date & Action Button */}
-        <View style={styles.cardFooterRow}>
-          <Text style={styles.referenceDateText}>
-            Ref: {item.id || 'SAUDA'} • {item.date || 'Today'}
-          </Text>
+        {/* Card Divider */}
+        <View style={styles.cardDivider} />
 
-          <View style={styles.viewDetailBtnRow}>
-            <Text style={styles.viewDetailBtnText}>View Contract</Text>
-            <ArrowRight size={13} color={COLORS.primary} style={{ marginLeft: 4 }} />
+        {/* Card Footer Row: Total Value & Action Arrow */}
+        <View style={styles.cardFooterRow}>
+          <View>
+            <Text style={styles.totalLabel}>Total Value</Text>
+            <Text style={styles.totalValText}>{totalValStr}</Text>
           </View>
+
+          <ChevronRight size={18} color="#94A3B8" />
         </View>
       </TouchableOpacity>
     );
@@ -460,7 +481,7 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
       return (
         <View style={styles.emptyContainer}>
           <ActivityIndicator size="small" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading your Sauda...</Text>
+          <Text style={styles.loadingText}>Loading Saudas...</Text>
         </View>
       );
     }
@@ -471,7 +492,7 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
           <View style={styles.emptyIconBadge}>
             <Handshake size={26} color={COLORS.primary} />
           </View>
-          <Text style={styles.emptyTitle}>No Sauda yet</Text>
+          <Text style={styles.emptyTitle}>No Saudas Found</Text>
           <Text style={styles.emptyDesc}>
             Create your first Sauda to start managing buyer and seller transactions.
           </Text>
@@ -492,9 +513,9 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
         <View style={styles.emptyIconBadge}>
           <Search size={24} color={COLORS.textMuted} />
         </View>
-        <Text style={styles.emptyTitle}>No matching Sauda</Text>
+        <Text style={styles.emptyTitle}>No Saudas Found</Text>
         <Text style={styles.emptyDesc}>
-          Try changing your search query or status filter.
+          Try changing the search query or status filter.
         </Text>
         <TouchableOpacity
           style={styles.emptyResetBtn}
@@ -517,6 +538,7 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
         data={filteredDeals}
         keyExtractor={(item, index) => (item.id || item._id || index).toString()}
         ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={renderEmptyState}
         renderItem={renderDealItem}
         contentContainerStyle={styles.listContentContainer}
         showsVerticalScrollIndicator={false}
@@ -532,318 +554,283 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
   );
 };
 
-// --- STYLES SYSTEM (Premium Modern Cards) ---
+// --- PRAVISTI FINTECH STYLES SYSTEM ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bgMain,
   },
   listContentContainer: {
-    paddingBottom: 40,
+    paddingBottom: 110,
   },
   headerContainer: {
     backgroundColor: COLORS.bgMain,
     paddingBottom: 4,
   },
 
-  // ─── HEADER ───
+  // ─── TOP COMPACT HEADER ───
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 14,
-    backgroundColor: COLORS.cardBg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
   },
   pageTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  pageSubtitle: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: COLORS.textMuted,
-    marginTop: 2,
+    color: COLORS.navy,
+    letterSpacing: -0.3,
   },
   newSaudaBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primary,
     paddingHorizontal: 14,
-    height: 42,
-    borderRadius: 12,
-    elevation: 3,
+    paddingVertical: 7,
+    borderRadius: 20,
+    elevation: 2,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
   },
   newSaudaBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
   },
 
-  // ─── STATS STRIP CARDS ───
-  statsStripRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginTop: 14,
-    gap: 10,
-  },
-  statCardBox: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    gap: 10,
-  },
-  statIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statCountText: {
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  statLabelText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-    marginTop: 1,
-  },
-
-  // ─── SEARCH SECTION ───
+  // ─── SEARCH BAR ───
   searchSection: {
     paddingHorizontal: 16,
-    marginTop: 12,
+    marginTop: 4,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.cardBg,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
     paddingHorizontal: 12,
-    height: 46,
-    elevation: 2,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
+    height: 44,
   },
   searchInput: {
     flex: 1,
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.textPrimary,
+    color: COLORS.navy,
   },
-
-  // ─── TABS ───
-  tabsContainer: {
-    flexDirection: 'row',
+  // ─── FILTER TABS (E-COMMERCE SYSTEM PILLS WITH COUNTS) ───
+  tabsWrapper: {
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  tabsScrollContent: {
     paddingHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
+    paddingVertical: 4,
     gap: 8,
+    alignItems: 'center',
   },
-  tabItem: {
+  tabPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 36,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: COLORS.cardBg,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    gap: 6,
   },
-  tabItemActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+  tabPillActive: {
+    backgroundColor: '#1463FF',
+    borderColor: '#1463FF',
   },
-  tabText: {
-    fontSize: 12,
+  tabPillInactive: {
+    backgroundColor: '#F4F6F9',
+    borderColor: '#E2E8F0',
+  },
+  tabLabelText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: COLORS.textSecondary,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
-  tabTextActive: {
+  tabLabelActive: {
     color: '#FFFFFF',
   },
+  tabLabelInactive: {
+    color: '#5F6F86',
+  },
+  countBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  countBadgeActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.20)',
+  },
+  countBadgeInactive: {
+    backgroundColor: '#E8EDF3',
+  },
+  countBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  countTextActive: {
+    color: '#FFFFFF',
+  },
+  countTextInactive: {
+    color: '#64748B',
+  },
 
-  // ─── ELEVATED MODERN CARDS ───
+  // ─── COMPACT DEAL CARD SYSTEM ───
   dealCard: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 16,
+    padding: 14,
     marginHorizontal: 16,
-    marginTop: 12,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    elevation: 3,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E7ECF2',
+    elevation: 1,
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
     shadowRadius: 6,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  commodityNameBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 8,
-  },
-  commodityIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: COLORS.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  commodityNameText: {
-    fontSize: 15,
+  dealNoText: {
+    fontSize: 14.5,
     fontWeight: '800',
-    color: COLORS.textPrimary,
-    flex: 1,
+    color: COLORS.navy,
+  },
+  dealDateText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: COLORS.textMuted,
+    marginLeft: 8,
   },
   statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
   },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
+  statusBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 
-  // Parties Box
-  partiesContainerBox: {
+  // BUYER → SELLER FLOW BOXES
+  buyerSellerFlowRow: {
     flexDirection: 'row',
-    backgroundColor: '#F8FAFF',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  partyBox: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
     borderRadius: 12,
     padding: 10,
-    marginBottom: 12,
-    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E8EFFE',
+    borderColor: '#E7ECF2',
   },
-  partyColumn: {
-    flex: 1,
-  },
-  partyRoleLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  partyRoleLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#90A0B8',
+    letterSpacing: 0.3,
     marginBottom: 2,
   },
-  partyAvatarCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+  partyNameText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: COLORS.navy,
+  },
+  flowArrowCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.softBlue,
+    borderWidth: 1,
+    borderColor: '#D7E6FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 4,
-  },
-  partyRoleText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-  },
-  buyerNameText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.buyerBlue,
-  },
-  sellerNameText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.sellerPurple,
-  },
-  partyDividerLine: {
-    width: 1,
-    height: 26,
-    backgroundColor: COLORS.border,
-    marginHorizontal: 8,
+    marginHorizontal: 6,
   },
 
-  // Details Grid Box
-  detailsGridBox: {
+  // PRODUCT CHIPS
+  productChipsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#FAFBFF',
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E8EFFE',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
   },
-  detailCol: {
-    flex: 1,
+  cropChip: {
+    backgroundColor: COLORS.softBlue,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  detailLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-    marginBottom: 2,
-  },
-  detailValue: {
-    fontSize: 13,
+  cropChipText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: COLORS.textPrimary,
-  },
-  rateValueText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  brokerageValText: {
-    fontSize: 13,
-    fontWeight: '800',
     color: COLORS.primary,
   },
+  metaChip: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E7ECF2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  metaChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
 
-  // Card Footer Row
+  // CARD DIVIDER
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#EDF1F5',
+    marginVertical: 10,
+  },
+
+  // CARD FOOTER
   cardFooterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 4,
   },
-  referenceDateText: {
-    fontSize: 11,
+  totalLabel: {
+    fontSize: 10,
     fontWeight: '600',
     color: COLORS.textMuted,
   },
-  viewDetailBtnRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  viewDetailBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.primary,
+  totalValText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.navy,
+    marginTop: 1,
   },
 
   // ─── EMPTY & LOADING STATES ───
   emptyContainer: {
-    paddingVertical: 50,
+    paddingVertical: 60,
     paddingHorizontal: 20,
     alignItems: 'center',
   },
@@ -857,7 +844,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: COLORS.softBlue,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 14,
@@ -865,7 +852,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: COLORS.textPrimary,
+    color: COLORS.navy,
     marginBottom: 4,
   },
   emptyDesc: {
@@ -881,9 +868,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.primary,
     paddingHorizontal: 18,
-    height: 44,
+    height: 42,
     borderRadius: 12,
-    elevation: 3,
   },
   emptyCreateBtnText: {
     color: '#FFFFFF',

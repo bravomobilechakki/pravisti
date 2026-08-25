@@ -46,6 +46,8 @@ import {
   acceptDeal,
   rejectDeal,
   updateDealStatus,
+  recreateExpiredDeal,
+  deleteDeal,
   getUserProfile,
   recordPayment,
   getPayments,
@@ -54,6 +56,7 @@ import {
   getDeliveries,
   updateDeliveryStatus,
 } from '../../../services/api';
+
 
 // Design Tokens Palette
 const COLORS = {
@@ -208,11 +211,12 @@ const DealDetails = ({ onNavigate, routeData }) => {
       return;
     }
 
-    const isValidObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
-    if (!isValidObjectId) {
+    const isValidId = typeof id === 'string' && id.trim().length > 0;
+    if (!isValidId) {
       setIsLoading(false);
       return;
     }
+
 
     try {
       const token = await AsyncStorage.getItem('userToken');

@@ -7,7 +7,10 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "bundle:android": "mkdir -p android/app/src/main/assets && npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/",
+    "build:apk": "npm run bundle:android && cd android && ./gradlew clean && ./gradlew assembleRelease",
+    "build:bundle": "npm run bundle:android && cd android && ./gradlew clean && ./gradlew bundleRelease"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.23.1",

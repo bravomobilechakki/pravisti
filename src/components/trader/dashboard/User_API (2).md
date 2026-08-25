@@ -509,6 +509,224 @@ All APIs follow the standard response format shown below:
 ```
 
 
+# 🤝 Trader Assisted Onboarding & Verification Wizard APIs
+
+> 💡 **COMMON API**: This workflow connects **Brokers** and **Traders (Buyers & Sellers)**.
+> - **Broker Role**: Initiates onboarding via `POST /api/broker-onboard/create-business` and monitors verification progress via `GET /api/broker-onboard/my-deal`.
+> - **Trader Role (Buyer/Seller)**: Invited user logs in and completes this 3-step wizard (`Account Verification` -> `Company Profile` -> `Product Verification`).
+
+---
+
+## 1. Get Pending Verification Status
+
+### Endpoint
+```http
+GET /api/broker-onboard/pending-verification
+```
+
+### Description
+Called immediately when an invited Trader (Buyer or Seller) logs in to check if they have a pending Broker-Assisted onboarding request. Returns the onboarding step statuses (`accountStatus`, `companyStatus`, `productStatus`), pre-filled company information, and products added by the broker.
+
+### Usage in Application
+- **Frontend App**: Called on root/login router guard. If `pending: true`, redirects user to Onboarding Wizard screens. If `pending: false`, redirects to main dashboard.
+
+### Authentication
+**Required:** Bearer Token (Invited Trader)
+
+```http
+Authorization: Bearer <TRADER_ACCESS_TOKEN>
+```
+
+### Success Response
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "pending": true,
+    "details": {
+      "registrationId": "6a6c8ab7c7d58bb5faf77db4",
+      "companyName": "Rahul Metal Traders",
+      "brokerName": "Aniket Kumar",
+      "brokerCompanyName": "HCBBCBBCBCBCB",
+      "role": "seller",
+      "createdDate": "2026-07-31T11:44:55.660Z",
+      "accountStatus": "pending",
+      "companyStatus": "pending",
+      "productStatus": "pending",
+      "company": {
+        "id": "6a6c8ab7c7d58bb5faf77daf",
+        "name": "Rahul Metal Traders",
+        "registrationNumber": "27ABCDE1234F1Z5",
+        "phone": "0676543210",
+        "address": {
+          "street": "123 Industrial Area",
+          "city": "Mumbai",
+          "state": "Maharashtra",
+          "postalCode": "400001"
+        }
+      },
+      "products": [
+        {
+          "id": "6a6c8ab7c7d58bb5faf77db2",
+          "name": "Aluminium Ingot A7",
+          "status": "pending_owner_verification"
+        }
+      ]
+    }
+  },
+  "message": "Pending confirmation fetched",
+  "success": true
+}
+```
+
+---
+
+## 2. Verify Account Ownership (Approve or Reject)
+
+### Endpoint
+```http
+POST /api/broker-onboard/verify-account
+PATCH /api/broker-onboard/verify-account
+ALL /api/broker-onboard/verify
+```
+
+### Description
+Step 1 of the Onboarding Wizard. Allows the invited Trader to **Approve** or **Reject** ownership of the account created on their behalf by a Broker.
+
+* **Approve (`"status": "approved"`)**: Confirms ownership, updates `accountStatus` to `"verified"`, links company ownership, and advances `nextStep` to `"company"`.
+* **Reject (`"status": "rejected"`)**: Rejects ownership, sets `accountStatus` and overall status to `"rejected"`, cleans up temporary account records, automatically transitions all linked pending/draft deals to `"rejected"` status with an explicit rejection reason, and notifies the Broker via system notification.
+
+### Request Example (Approve)
+```json
+{
+  "status": "approved"
+}
+```
+
+### Success Response (Approve)
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "message": "Account verification complete",
+    "accountStatus": "verified",
+    "nextStep": "company"
+  },
+  "message": "Account verified successfully",
+  "success": true
+}
+```
+
+### Request Example (Reject)
+```json
+{
+  "status": "rejected"
+}
+```
+
+### Success Response (Reject)
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "message": "Account rejected and cleaned up successfully",
+    "accountStatus": "rejected"
+  },
+  "message": "Account rejected",
+  "success": true
+}
+```
+
+---
+
+## 3. Complete Company Profile (Step 2)
+
+### Endpoint
+```http
+PATCH /api/broker-onboard/complete-company
+POST /api/broker-onboard/complete-company
+PUT /api/broker-onboard/complete-company
+```
+
+### Description
+Step 2 of the Onboarding Wizard. Allows the Trader to review, edit, and confirm their company profile details (company name, GST number, registered address, description, logo). For a **Buyer**, completing this step finishes onboarding (`completed: true`, `nextStep: "dashboard"`). For a **Seller**, completing this step advances to product verification (`completed: false`, `nextStep: "products"`).
+
+### Request Example
+```json
+{
+  "status": "approved",
+  "name": "Rahul Metal Traders Pvt Ltd",
+  "gst": "27ABCDE1234F1Z5",
+  "address": {
+    "street": "123 Industrial Area",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "postalCode": "400001"
+  },
+  "description": "Wholesale non-ferrous metal supplier"
+}
+```
+
+### Success Response
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "message": "Company verification complete",
+    "companyStatus": "verified",
+    "nextStep": "products",
+    "completed": false
+  },
+  "message": "Company profile completed successfully",
+  "success": true
+}
+```
+
+---
+
+## 4. Verify Products Step (Step 3 - Seller Only)
+
+### Endpoint
+```http
+POST /api/broker-onboard/verify-products
+PATCH /api/broker-onboard/verify-products
+ALL /api/products/verify
+ALL /api/products/verify-products
+```
+
+### Description
+Step 3 of the Onboarding Wizard (Sellers only). Confirms the products added by the broker during assisted onboarding, activates the seller's account and products, and automatically activates eligible draft deals.
+
+### Request Example
+```json
+{
+  "status": "approved",
+  "products": [
+    "6a6c8ab7c7d58bb5faf77db2"
+  ]
+}
+```
+
+### Success Response
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "message": "Products verified successfully",
+    "productStatus": "verified",
+    "nextStep": "dashboard",
+    "completed": true
+  },
+  "message": "Products verified successfully",
+  "success": true
+}
+```
+
+---
+
+
+
+
 # 🏢 Company Management APIs
 
 ---
@@ -966,9 +1184,7 @@ The authenticated user can remove a company that is no longer required.
 
 Once deleted:
 
-* Company cannot be used for 
-
- creation.
+* Company cannot be used for deal creation.
 * Company cannot participate in business operations.
 * Company management access is removed.
 * Deletion is permanent unless restored through admin intervention.
@@ -1011,6 +1227,9 @@ Authorization: Bearer <JWT_TOKEN>
 
 
 # 🏭 Industries API
+
+> 💡 **COMMON API**: Used by all roles (**Buyer**, **Seller**, **Broker**) during company profile creation and onboarding.
+> - **Used In**: Company Registration, Onboarding Wizard, and Company Profile Edit forms.
 
 ---
 
@@ -2100,6 +2319,9 @@ Authorization: Bearer <JWT_TOKEN>
 
 # 📏 Unit Management APIs
 
+> 💡 **COMMON API**: Used across all 3 roles (**Buyer**, **Seller**, **Broker**).
+> - **Used In**: Product Creation forms, Deal Creation modals, Inventory Management, and Product Detail screens.
+
 ---
 
 # 1. Get All Units API
@@ -2414,7 +2636,12 @@ The API can also be accessed without authentication depending on system configur
 
 ---
 
-# 1. Create Product API
+# 1. Create Product API (Standard & Buyer Product Creation)
+
+> 💡 **COMMON API**: This API is used across multiple roles: **Seller**, **Buyer**, and **Broker**.
+> - **Seller (Owner Role)**: Creates catalog products directly under their own company (status: `"active"` / `"verified"`). Used in Catalog Management & Product Addition screens.
+> - **Buyer Role**: Creates proposed products under a Seller's company (`sellerCompanyId`, `createdByRole: "buyer"`, `isBuyerCreation: true`) during deal creation (status: `"unverified"`). Used in Buyer Deal Creation modal.
+> - **Broker Role**: Adds products under an onboarded company during broker-assisted registration.
 
 ## Endpoint
 
@@ -2422,83 +2649,80 @@ The API can also be accessed without authentication depending on system configur
 POST /api/products
 ```
 
-### Example Endpoint
+### Base URL
 
 ```http
-POST http://localhost:8080/api/products
+http://localhost:8081/api/products
 ```
 
 ---
 
 ## Description
 
-This API is used to create a new product.
-
-### Important Rules
-
-* The authenticated user must be the owner of the company (or a broker creating on behalf of the owner).
-* The selected category (if provided) must belong to the same company.
-* `categoryId` is OPTIONAL. If omitted, the system automatically resolves or creates a default "Other" category.
-* If `subCategoryId` is provided, it must also belong to the same company.
-* `userId` is automatically assigned from the JWT token.
+This API allows a Seller company owner, a Broker, or a **Buyer** to create a product.
+- **Seller/Owner Creation**: Product is created with status `"active"` or `"verified"`.
+- **Buyer Product Creation**: A Buyer creates a new proposed product under a target Seller's company (`sellerCompanyId`). The product is created with status `"unverified"` and requires Seller review/verification before it can be used for normal active business operations.
 
 ---
 
-## Request Fields
+## Request Fields (Buyer Creation)
 
-| Field         | Type              | Required   | Description                      |
-| ------------- | ----------------- | ---------- | -------------------------------- |
-| companyId     | String (ObjectId) | ✅ Required | Company ID                       |
-| categoryId    | String (ObjectId) | ❌ Optional | Category ID (Default: "Other")   |
-| unitId        | String (ObjectId) | ✅ Required | Unit ID (kg, litre, piece, etc.) |
-| name          | String            | ✅ Required | Product name                     |
-| subCategoryId | String (ObjectId) | ❌ Optional | SubCategory ID                   |
-| image         | String            | ❌ Optional | Product image URL                |
-| description   | String            | ❌ Optional | Product description              |
-| hsnCode       | String            | ❌ Optional | Product HSN code                 |
-| gstCode       | String            | ❌ Optional | Product GST code                 |
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `name` | String | ✅ Yes | Product name. |
+| `sellerCompanyId` | String | ✅ Yes | Seller company under which the product will be created. |
+| `unitId` | String | ✅ Yes | Product unit identifier. |
+| `hsnCode` | String | ✅ Yes | HSN code of the product. |
+| `gstCode` | String | ✅ Yes | Applicable GST code (e.g. `"GST_18"`). |
+| `createdByRole` | String | ✅ Yes | Must be `"buyer"` for buyer-created products. |
+| `isBuyerCreation` | Boolean | ✅ Yes | Set to `true` to indicate buyer-created product. |
 
 ---
 
-## Example Request Body
+## Example Request (Buyer Creation)
 
 ```json
 {
-  "companyId": "6a0d784381e9215467e6d3e2",
-  "categoryId": "6a0d8779f1732529c7e2522b",
-  "unitId": "6a0eac4cd59663585920f09c",
-  "name": "Basmati Rice 5kg",
-  "hsnCode": "73181510",
-  "gstCode": "GST_12"
+  "name": "Aluminium Sheet 2mm",
+  "sellerCompanyId": "6a6dbdf08e86e52fb8836c17",
+  "unitId": "6a6db3e5ada115f9a997c5c1",
+  "hsnCode": "76011010",
+  "gstCode": "GST_18",
+  "createdByRole": "buyer",
+  "isBuyerCreation": true
 }
 ```
 
 ---
 
-## Success Response
+## Success Response (HTTP 201 Created)
 
 ```json
 {
   "success": true,
   "message": "Product created successfully",
   "data": {
-    "userId": "6a0d77b581e9215467e6d3c8",
-    "companyId": "6a0d784381e9215467e6d3e2",
-    "categoryId": "6a0d8779f1732529c7e2522b",
-    "unitId": "6a0eac4cd59663585920f09c",
-    "name": "Basmati Rice 5kg",
-    "image": "",
-    "description": "",
-    "status": "active",
-    "hsnCode": "73181510",
-    "gstCode": "GST_12",
-    "_id": "6a101afda79a62e7dee09028",
-    "createdAt": "2026-05-22T08:59:41.461Z",
-    "updatedAt": "2026-05-22T08:59:41.461Z",
-    "__v": 0
+    "_id": "6a718d8c26b4fa7ac54e6fa8",
+    "companyId": "6a6dbdf08e86e52fb8836c17",
+    "name": "Aluminium Sheet 2mm",
+    "status": "unverified",
+    "createdByRole": "buyer",
+    "hsnCode": "76011010",
+    "gstCode": "GST_18",
+    "createdAt": "2026-08-04T06:58:20.790Z"
   }
 }
 ```
+
+---
+
+## Frontend Notes (Buyer Creation)
+1. Use the logged-in Buyer's access token in the `Authorization: Bearer <ACCESS_TOKEN>` header.
+2. Pass the selected Seller's `sellerCompanyId`.
+3. After successful creation, store the returned product `_id`.
+4. The returned product status will be `"unverified"` until the Seller reviews and approves it via `PATCH /api/products/:productId/review`.
+5. This `productId` can be used while creating a Buyer Draft Deal via `POST /api/deals`.
+
 
 ---
 
@@ -2881,6 +3105,107 @@ This API deletes an existing product from the system.
 
 ---
 
+# 6. Seller Product Review (Approve / Reject / Correction Required)
+
+> 💡 **COMMON API**: This API is used in **Seller Verification** flows for products submitted by **Buyers** or **Brokers**.
+> - **Seller Role (Executing Role)**: Product owner company approves, rejects, or requests correction on unverified proposed products.
+> - **Impact on Buyer / Broker**: When approved by Seller, product becomes `"verified"` and any linked Draft Deal automatically promotes from `"draft"` to `"pending"` (`DEAL-XXXX`), rendering it active for partner review.
+> - **Used In**: Seller Product Approval screen & Deal Verification Modal.
+
+## Endpoint
+
+```http
+PATCH /api/products/:id/review
+```
+
+---
+
+## Description
+
+Allows the Seller (company owner) to review an unverified product created under their company by a Buyer or Broker during deal creation or onboarding. The Seller can:
+* **Approve** (`"approve"`): Sets product status to `"verified"`. If linked to a draft deal, automatically promotes the deal status from `"draft"` to `"pending"`.
+* **Reject** (`"reject"`): Sets product status to `"rejected"`. Requires mandatory `rejectionReason`.
+* **Request Correction** (`"request_correction"`): Sets product status to `"correction_required"`. Requires mandatory `correctionNotes`.
+
+---
+
+## Authentication
+
+**Required:** Bearer Token (Seller Owner)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+---
+
+## Request Body Parameters
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `action` | String | ✅ Required | Review action: `"approve"`, `"reject"`, or `"request_correction"` |
+| `rejectionReason` | String | ⚠️ Conditional | Mandatory when `action` is `"reject"` |
+| `correctionNotes` | String | ⚠️ Conditional | Mandatory when `action` is `"request_correction"` |
+
+---
+
+## Request Examples
+
+### Approve Product
+```json
+{
+  "action": "approve"
+}
+```
+
+### Reject Product
+```json
+{
+  "action": "reject",
+  "rejectionReason": "Specifications do not match our manufacturing standards."
+}
+```
+
+### Request Correction
+```json
+{
+  "action": "request_correction",
+  "correctionNotes": "Please update unit price to include packaging charges."
+}
+```
+
+---
+
+## Success Response
+
+```json
+{
+  "success": true,
+  "message": "Product review completed: verified",
+  "data": {
+    "_id": "64d0a1b2c3d4e5f6a7b8c9e0",
+    "name": "Aluminium Ingot A7",
+    "status": "verified",
+    "rejectionReason": "",
+    "correctionNotes": ""
+  }
+}
+```
+
+---
+
+## Response Codes
+
+| Status Code | Meaning |
+| :--- | :--- |
+| 200 | Product review completed successfully |
+| 400 | Validation error / missing rejection reason or correction notes |
+| 403 | Forbidden (User is not the owner of the seller company) |
+| 404 | Product not found |
+| 500 | Internal server error |
+
+---
+
 ## Authentication
 
 All Product APIs require authentication.
@@ -2893,6 +3218,9 @@ Authorization: Bearer <JWT_TOKEN>
 
 
 # 📱 Contact Sync & Contact Discovery APIs
+
+> 💡 **COMMON API**: Used by **Buyer**, **Seller**, and **Broker**.
+> - **Used In**: Mobile App Contact Sync, Counterparty Search by Mobile Number, and WhatsApp Onboarding Invite Generation.
 
 ---
 
@@ -3213,7 +3541,12 @@ Authorization: Bearer <JWT_TOKEN>
 
 ---
 
-# 1. Create Deal API
+# 1. Create Deal API (Standard & Buyer Draft Deal)
+
+> 💡 **COMMON API**: This API is used by all 3 roles: **Buyer**, **Seller**, and **Broker**.
+> - **Buyer Role**: Creates a deal with a Seller. If selected product is unverified, deal is created as a Draft (`DRAFT-XXXX`) and generates a Product Access Request. Used in Buyer Create Deal screen.
+> - **Seller Role**: Creates a deal with a Buyer using verified products (status: `"pending"`, automatically approved for Seller). Used in Seller Create Deal screen.
+> - **Broker Role**: Initiates a deal between Buyer and Seller companies (`role: "broker"`, `myCompanyId: BROKER_COMPANY_ID`).
 
 ## Endpoint
 
@@ -3221,39 +3554,26 @@ Authorization: Bearer <JWT_TOKEN>
 POST /api/deals
 ```
 
-### Example Endpoint
+### Base URL
 
 ```http
-POST http://localhost:8080/api/deals
+http://localhost:8081/api/deals
 ```
 
 ---
 
 ## Description
 
-This API is used to create a new business deal (Sauda) between companies.
-
-The authenticated user can create deals as:
-
-* Seller
-* Buyer
-* Broker
-
-### Features
-
-* Multiple Products Support
-* GST Calculations
-* Discount Management
-* Payment Terms
-* Deal Expiry Management
-* Multi-Party Approval Workflow
+This API creates a new deal between a Buyer and a Seller (or initiated by a Broker).
+- **Verified Product Deal**: If all selected products are verified, the deal is created directly with status `"pending"`.
+- **Buyer Draft Deal (Unverified Product)**: If the selected product is `"unverified"`, the deal is automatically created in **`Draft`** status (`dealNumber: "DRAFT-XXXX"`) and a **`Product Access Request`** is generated for the Seller (`accessType: "deal_specific"`, `status: "pending"`). The Seller must review/approve the product before the deal can proceed.
 
 ---
 
 ## Authentication
 
 ```http
-Authorization: Bearer <JWT_TOKEN>
+Authorization: Bearer <ACCESS_TOKEN>
 Content-Type: application/json
 ```
 
@@ -3261,108 +3581,93 @@ Content-Type: application/json
 
 ## Request Fields
 
-| Field           | Type             | Required   | Description                  |
-| --------------- | ---------------- | ---------- | ---------------------------- |
-| role            | String           | ✅ Required | seller / buyer / broker      |
-| myCompanyId     | String(ObjectId) | ❌ Optional | Required when role is broker |
-| sellerCompanyId | String(ObjectId) | ✅ Required | Seller company ID            |
-| buyerCompanyId  | String(ObjectId) | ✅ Required | Buyer company ID             |
-| products        | Array            | ✅ Required | Product list                 |
-| expiryDate      | Date             | ✅ Required | Deal expiry date             |
-| notes           | String           | ❌ Optional | Additional remarks           |
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `role` | String | ✅ Yes | User role (`"buyer"`, `"seller"`, or `"broker"`). |
+| `sellerCompanyId` | String | ✅ Yes | Seller company ID. |
+| `buyerCompanyId` | String | ✅ Yes | Buyer company ID. |
+| `dealDate` | Date | ✅ Yes | Deal creation date (e.g. `"2026-08-04"`). |
+| `expiryDate` | Date | ✅ Yes | Deal expiry date (e.g. `"2026-12-31"`). |
+| `notes` | String | ❌ No | Additional remarks for the deal. |
+| `products` | Array | ✅ Yes | List of products included in the deal. |
+
+### Product Object Structure
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `productId` | String | ✅ Yes | Product ID (returned from Create Product API). |
+| `quantity` | Number | ✅ Yes | Quantity of the product. |
+| `price` | Number | ✅ Yes | Unit price. |
+| `discount` | Number | ❌ No | Discount amount. |
+| `gst` | Number | ✅ Yes | GST percentage (e.g. `18`). |
 
 ---
 
-## Product Object Structure
-
-| Field        | Type             | Required   | Description      |
-| ------------ | ---------------- | ---------- | ---------------- |
-| productId    | String(ObjectId) | ✅ Required | Product ID       |
-| quantity     | Number           | ✅ Required | Product quantity |
-| price        | Number           | ✅ Required | Product price    |
-| gst          | Number           | ❌ Optional | GST percentage   |
-| discount     | Number           | ❌ Optional | Discount amount  |
-| paymentTerms | String           | ❌ Optional | Payment terms    |
-
----
-
-## Example Request
+## Example Request (Buyer Draft Deal with Unverified Product)
 
 ```json
 {
-  "role": "seller",
-  "sellerCompanyId": "6a0d784381e9215467e6d3e2",
-  "buyerCompanyId": "6a0d75d181e9215467e6d323",
+  "role": "buyer",
+  "sellerCompanyId": "6a6dbdf08e86e52fb8836c17",
+  "buyerCompanyId": "6a6db5fdab4e0a0cc4ee291a",
+  "dealDate": "2026-08-04",
+  "expiryDate": "2026-12-31",
+  "notes": "Testing buyer deal creation with unverified product",
   "products": [
     {
-      "productId": "6a103df22516b1294d111fdf",
-      "quantity": 2,
-      "price": 100,
-      "gst": 18,
-      "discount": 20,
-      "paymentTerms": "100% Advance"
+      "productId": "6a718d8c26b4fa7ac54e6fa8",
+      "quantity": 100,
+      "price": 500,
+      "discount": 0,
+      "gst": 18
     }
-  ],
-  "expiryDate": "2026-06-27T12:00:00.000Z",
-  "notes": "Seller created a deal."
+  ]
 }
 ```
 
 ---
 
-# Deal Approval Workflow
-
-### Seller Creates Deal
+## Success Response (HTTP 201 Created)
 
 ```json
 {
-  "approvalStatus": {
-    "seller": "approved",
-    "buyer": "pending"
-  }
-}
-```
-
-### Buyer Creates Deal
-
-```json
-{
-  "approvalStatus": {
-    "buyer": "approved",
-    "seller": "pending"
-  }
-}
-```
-
-### Workflow Rules
-
-* Creator company is automatically approved.
-* Creator does not need to approve again.
-* Remaining participants remain pending.
-* Deal stays pending until all approvals are completed.
-* Any rejection immediately marks the deal as rejected.
-* Once all approvals are completed, deal becomes approved.
-
----
-
-## Success Response
-
-```json
-{
-  "statusCode": 201,
+  "success": true,
+  "message": "Deal created successfully",
   "data": {
     "deal": {
-      "_id": "6a1e9759fc59ef1fa6e41e98",
-      "dealNumber": "DEAL-0007",
-      "role": "seller",
+      "_id": "6a719164c772c6fa97fed2e7",
+      "dealNumber": "DRAFT-0009",
+      "status": "draft",
+      "buyerCompanyId": "6a6db5fdab4e0a0cc4ee291a",
+      "sellerCompanyId": "6a6dbdf08e86e52fb8836c17",
+      "grandTotal": 59000,
+      "approvalStatus": {
+        "buyer": "approved",
+        "seller": "pending"
+      }
+    },
+    "accessRequest": {
+      "_id": "6a719164c772c6fa97fed2ec",
       "status": "pending",
-      "totalAmount": 148167.6
+      "accessType": "deal_specific",
+      "dealId": "6a719164c772c6fa97fed2e7"
     }
-  },
-  "message": "Deal created successfully",
-  "success": true
+  }
 }
 ```
+
+---
+
+## Frontend Notes (Buyer Draft Deal)
+1. Send the logged-in Buyer's access token in the `Authorization` header.
+2. Pass `buyerCompanyId` and `sellerCompanyId`.
+3. The `productId` should be the ID returned from the Create Product API.
+4. If the product status is `"unverified"`, the deal is automatically created in **`draft`** status (`DRAFT-XXXX`).
+5. A Product Access Request is also created with `"pending"` status for Seller approval.
+6. Store both the returned `deal._id` and `accessRequest._id` for future operations.
+7. Draft deals remain hidden from the Seller until the Seller approves the product!
+8. After the Seller approves the product/access request via `PATCH /api/products/:productId/review`, the deal automatically transitions from Draft to `"pending"` status (`DEAL-XXXX`) and becomes visible to the Seller.
+
 
 ---
 
@@ -3379,7 +3684,12 @@ Content-Type: application/json
 
 ---
 
-# 2. Get User Deals API
+# 2. Get User Deals API & Get Buyer Draft Deals API
+
+> 💡 **COMMON API**: This endpoint is used by **Buyer**, **Seller**, and **Broker** to fetch their respective deal lists.
+> - **Buyer Role**: Uses `GET /api/deals?status=draft&buyerCompanyId=<ID>` to view draft deals awaiting seller verification, and `GET /api/deals` for active/pending deals. Used in Buyer Deals Dashboard.
+> - **Seller Role**: Uses `GET /api/deals?sellerCompanyId=<ID>` to view pending/active deals. Promoted draft deals automatically appear here after product approval. Used in Seller Deals Dashboard.
+> - **Broker Role**: Uses `GET /api/deals?companyId=<ID>` or `GET /api/deals` to monitor deals involving third-party buyers and sellers. Used in Broker Deals Dashboard.
 
 ## Endpoint
 
@@ -3391,67 +3701,148 @@ GET /api/deals
 
 ## Description
 
-Returns all deals associated with the authenticated user's companies.
+Returns deals associated with the authenticated user's companies based on query filters.
 
-Supported Roles:
+### 2A. Get Buyer Draft Deals API
 
-* Buyer
-* Seller
-* Broker
+```http
+GET /api/deals?status=draft&buyerCompanyId=<BUYER_COMPANY_ID>
+```
 
-### Features
+#### Description
+Fetches all Draft deals for a specific Buyer company awaiting product verification or seller approval.
 
-* Deal Listing
-* Pagination
-* Company Filtering
-* Approval Tracking
-* Payment Tracking
-* Financial Summary
-* Viewer Permissions
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `status` | String | ✅ Yes | Deal status filter (use `draft`). |
+| `buyerCompanyId` | String | ✅ Yes | Buyer company ID whose draft deals to fetch. |
+| `page` | Number | ❌ No | Page number (default: `1`). |
+| `limit` | Number | ❌ No | Records per page (default: `10`). |
+
+#### Example Request
+```http
+GET /api/deals?status=draft&buyerCompanyId=6a6db5fdab4e0a0cc4ee291a
+```
+
+#### Success Response (HTTP 200)
+```json
+{
+  "success": true,
+  "message": "User deals fetched successfully",
+  "data": {
+    "deals": [],
+    "pagination": {
+      "total": 0,
+      "page": 1,
+      "limit": 10,
+      "pages": 0
+    }
+  }
+}
+```
+
+#### Frontend Notes (Buyer Draft Deals)
+- Always send the logged-in Buyer's access token.
+- Use `status=draft` to fetch draft deals.
+- If `deals` is an empty array (`[]`), display an empty-state message.
+- **Seller Check Note**: Draft deals remain strictly **hidden** from the Seller (`sellerCompanyId`) until the Seller approves the unverified product.
 
 ---
 
-## Query Parameters
-
-| Parameter | Type             | Required   | Description       |
-| --------- | ---------------- | ---------- | ----------------- |
-| companyId | String(ObjectId) | ❌ Optional | Filter by company |
-| page      | Number           | ❌ Optional | Default 1         |
-| limit     | Number           | ❌ Optional | Default 10        |
-
----
-
-## Example Requests
-
-### Get All Deals
+### 2B. Get Seller Deals API (Promoted Deals View)
 
 ```http
-GET /api/deals
+GET /api/deals?sellerCompanyId=<SELLER_COMPANY_ID>
 ```
 
-### Get Company Deals
+#### Description
+Fetches all deals associated with a Seller company. After a Buyer-created product is approved by the Seller via `PATCH /api/products/:productId/review`, the related Draft Deal is automatically promoted to **`pending`** status (`DEAL-XXXX`) and becomes visible in this endpoint response.
 
-```http
-GET /api/deals?companyId=COMPANY_ID
-```
+#### Query Parameters
 
-### Pagination
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `sellerCompanyId` | String | ✅ Yes | Seller company ID. |
+| `page` | Number | ❌ No | Page number (default: `1`). |
+| `limit` | Number | ❌ No | Records per page (default: `10`). |
 
-```http
-GET /api/deals?page=1&limit=10
-```
-
----
-
-## Success Response
-
+#### Success Response (HTTP 200)
 ```json
 {
   "statusCode": 200,
   "data": {
-    "deals": [],
+    "deals": [
+      {
+        "_id": "6a719164c772c6fa97fed2e7",
+        "dealNumber": "DEAL-0016",
+        "status": "pending",
+        "role": "buyer",
+        "createdByRole": "buyer",
+        "viewerRole": "seller",
+        "currentUserRole": "seller",
+        "viewerApprovalStatus": "pending",
+        "canApprove": true,
+        "canReject": true,
+        "pendingApprovalFor": "seller",
+        "approvalStatus": {
+          "seller": "pending",
+          "buyer": "approved"
+        },
+        "buyerCompanyId": {
+          "_id": "6a6db5fdab4e0a0cc4ee291a",
+          "name": "Micro Pvt ltd",
+          "phone": "6202579799",
+          "type": "trader"
+        },
+        "sellerCompanyId": {
+          "_id": "6a6dbdf08e86e52fb8836c17",
+          "name": "fdffd",
+          "phone": "0264557888",
+          "type": "trader"
+        },
+        "products": [
+          {
+            "productId": {
+              "_id": "6a718d8c26b4fa7ac54e6fa8",
+              "name": "Aluminium Sheet 2mm",
+              "status": "verified",
+              "hsnCode": "76011010",
+              "gstCode": "GST_18"
+            },
+            "name": "Aluminium Sheet 2mm",
+            "quantity": 100,
+            "price": 500,
+            "subtotal": 50000,
+            "gst": 18,
+            "gstAmount": 9000,
+            "discount": 0,
+            "totalAmount": 59000
+          }
+        ],
+        "totalSubtotal": 50000,
+        "totalDiscount": 0,
+        "totalGSTAmount": 9000,
+        "grandTotal": 59000,
+        "totalAmount": 59000,
+        "notes": "Testing buyer deal creation with unverified product",
+        "paymentInfo": {
+          "dealAmount": 59000,
+          "role": "seller",
+          "remainingAmount": 59000,
+          "progressBarPercentage": 0
+        },
+        "accountVerificationStatus": {
+          "seller": "approved",
+          "buyer": "approved"
+        },
+        "remainingPayment": 59000,
+        "remainingQuantity": 100
+      }
+    ],
     "pagination": {
-      "total": 7,
+      "total": 1,
       "page": 1,
       "limit": 10,
       "pages": 1
@@ -3461,6 +3852,13 @@ GET /api/deals?page=1&limit=10
   "success": true
 }
 ```
+
+#### Frontend Notes (Seller Deals)
+- Send the Seller's access token in the `Authorization` header.
+- After the Seller approves the Buyer-created product, the related Draft Deal automatically becomes a Pending deal and is returned by this API.
+- Use `canApprove` and `canReject` to enable or disable the Approve and Reject buttons in the Seller UI.
+- Display `viewerApprovalStatus` and `pendingApprovalFor` to indicate the current approval stage.
+
 
 ---
 
@@ -3549,6 +3947,155 @@ GET /api/deals/6a1d6aad18c735096642ec4d
 ```
 
 ---
+
+Response 
+{
+    "statusCode": 200,
+    "data": {
+        "approvalStatus": {
+            "seller": "approved",
+            "buyer": "pending",
+            "broker": "pending"
+        },
+        "_id": "6a6c4ef115e034b5f1a09bee",
+        "dealNumber": "DEAL-0014",
+        "createdBy": {
+            "_id": "6a69ec6020b157166cc31c77",
+            "name": "rahsusjhaja",
+            "email": null,
+            "profilePicture": null,
+            "mobileNumber": "9708382522"
+        },
+        "buyerCompanyId": {
+            "_id": "6a6b2c3b8fdd636e37db5692",
+            "name": "Bdnndnxj",
+            "email": "6202579799@pravisti.temporary.com",
+            "phone": "6202579799",
+            "logo": null,
+            "type": "trader",
+            "id": "6a6b2c3b8fdd636e37db5692"
+        },
+        "sellerCompanyId": {
+            "_id": "6a69ec6020b157166cc31c7b",
+            "name": "rrrrrrrrrrrrrrrrrr",
+            "email": "9708382522@pravisti.temporary.com",
+            "phone": "9708382522",
+            "logo": null,
+            "type": "trader",
+            "id": "6a69ec6020b157166cc31c7b"
+        },
+        "brokerCompanyId": {
+            "_id": "6a6b27878fdd636e37db3d0c",
+            "name": "MNC",
+            "email": "bravomobiblechakki@gmail.com",
+            "phone": "7061901464",
+            "logo": null,
+            "type": "trader",
+            "id": "6a6b27878fdd636e37db3d0c"
+        },
+        "role": "seller",
+        "products": [
+            {
+                "productId": {
+                    "_id": "6a69ec6020b157166cc31c7e",
+                    "categoryId": null,
+                    "unitId": {
+                        "_id": "6a69ebd68b856243dd0b3c0c",
+                        "name": "kilog",
+                        "shortName": "sdds"
+                    },
+                    "name": "gffggg",
+                    "image": "",
+                    "description": "",
+                    "hsnCode": "33333333",
+                    "gstCode": "0%"
+                },
+                "name": "gffggg",
+                "image": "",
+                "description": "",
+                "hsnCode": "33333333",
+                "gstCode": "0%",
+                "unitName": "kilog",
+                "unitShortName": "sdds",
+                "quantity": 1000,
+                "price": 10,
+                "subtotal": 10000,
+                "gst": 10,
+                "gstAmount": 999,
+                "discount": 10,
+                "totalAmount": 10989,
+                "paymentTerms": "15 days",
+                "_id": "6a6c4ef115e034b5f1a09bef"
+            }
+        ],
+        "totalSubtotal": 10000,
+        "totalDiscount": 10,
+        "totalGSTAmount": 999,
+        "grandTotal": 10989,
+        "totalAmount": 10989,
+        "discount": 10,
+        "dealDate": "2026-07-31T07:29:53.762Z",
+        "expiryDate": "2026-08-30T23:59:59.000Z",
+        "notes": "",
+        "status": "pending",
+        "acceptedBy": [
+            {
+                "companyId": "6a69ec6020b157166cc31c7b",
+                "status": "accepted",
+                "updatedAt": "2026-07-31T07:29:53.762Z",
+                "_id": "6a6c4ef115e034b5f1a09bf0"
+            },
+            {
+                "companyId": "6a6b2c3b8fdd636e37db5692",
+                "status": "pending",
+                "updatedAt": "2026-07-31T07:29:53.762Z",
+                "_id": "6a6c4ef115e034b5f1a09bf1"
+            },
+            {
+                "companyId": "6a6b27878fdd636e37db3d0c",
+                "status": "pending",
+                "updatedAt": "2026-07-31T07:29:53.762Z",
+                "_id": "6a6c4ef115e034b5f1a09bf2"
+            }
+        ],
+        "isDeleted": false,
+        "deletedAt": null,
+        "linkedDealId": null,
+        "createdAt": "2026-07-31T07:29:53.808Z",
+        "updatedAt": "2026-07-31T07:29:53.808Z",
+        "__v": 0,
+        "paymentInfo": {
+            "dealAmount": 10989,
+            "role": "broker",
+            "amountSent": 0,
+            "amountReceived": 0,
+            "amountSentOrReceived": 0,
+            "remainingAmount": 10989,
+            "progressBarPercentage": 0,
+            "historyTimeline": []
+        },
+        "accountVerificationStatus": {
+            "seller": "approved",
+            "buyer": "approved"
+        },
+        "viewerRole": "broker",
+        "currentUserRole": "broker",
+        "createdByRole": "seller",
+        "viewerApprovalStatus": "pending",
+        "canApprove": true,
+        "canReject": true,
+        "pendingApprovalFor": "buyer, broker",
+        "remainingPayment": 10989,
+        "remainingQuantity": 1000,
+        "deliveryInfo": {
+            "historyTimeline": []
+        }
+    },
+    "message": "Deal fetched successfully",
+    "success": true
+}
+
+
 
 ## Description
 
@@ -6161,3 +6708,185 @@ Fully Paid Check
 | 403         | Permission denied            |
 | 404         | Resource not found           |
 | 500         | Internal server error        |
+
+---
+
+
+# 🚚 Delivery Management APIs
+
+> 💡 **COMMON API**: Used by **Seller** (recording dispatched/sent delivery) and **Buyer** (recording or approving received delivery).
+> - **Seller Role**: Creates `sent` delivery entry when dispatching goods for an approved deal.
+> - **Buyer Role**: Approves `sent` delivery entry or creates a `received` entry. Once approved, deal delivery progress is updated.
+
+---
+
+## 1. Create Delivery Entry API
+
+### Endpoint
+
+```http
+POST /api/delivery
+```
+
+### Description
+
+Used to record a new goods delivery entry (sent by Seller or received by Buyer) against an approved or completed Deal.
+
+### Authentication
+
+**Required:** Bearer Token
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Request Fields
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `dealId` | String (ObjectId) | ✅ Required | Approved Deal ObjectId. |
+| `productId` | String (ObjectId) | ✅ Required | Product ObjectId included in the deal. |
+| `quantity` | Number | ✅ Required | Delivered quantity (must not exceed remaining balance). |
+| `deliveryType` | String | ✅ Required | `"sent"` (Seller dispatch) or `"received"` (Buyer arrival). |
+| `notes` | String | ❌ Optional | Delivery remarks / LR details. |
+| `attachmentUrl` | String | ❌ Optional | Proof of delivery image/document URL. |
+
+### Example Request
+
+```json
+{
+  "dealId": "6a719164c772c6fa97fed2e7",
+  "productId": "6a718d8c26b4fa7ac54e6fa8",
+  "quantity": 50,
+  "deliveryType": "sent",
+  "notes": "Truck No: RJ-14-GA-1234. Driver: Suresh Kumar",
+  "attachmentUrl": "https://cdn.example.com/lr-copy.jpg"
+}
+```
+
+### Success Response (HTTP 201 Created)
+
+```json
+{
+  "statusCode": 201,
+  "data": {
+    "delivery": {
+      "_id": "6a7201b2c4e5f6a7b8c9d0e1",
+      "dealId": "6a719164c772c6fa97fed2e7",
+      "productId": "6a718d8c26b4fa7ac54e6fa8",
+      "quantity": 50,
+      "deliveryType": "sent",
+      "status": "pending",
+      "notes": "Truck No: RJ-14-GA-1234. Driver: Suresh Kumar",
+      "attachmentUrl": "https://cdn.example.com/lr-copy.jpg",
+      "createdAt": "2026-08-04T12:30:00.000Z"
+    }
+  },
+  "message": "Delivery sent entry recorded successfully",
+  "success": true
+}
+```
+
+---
+
+## 2. Get Deliveries List API
+
+### Endpoint
+
+```http
+GET /api/delivery
+```
+
+### Description
+
+Fetches delivery records associated with the user's companies, filtered by deal, status, delivery type, or search term.
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `dealId` | String | ❌ Optional | Filter by specific deal. |
+| `companyId` | String | ❌ Optional | Filter by company ID. |
+| `type` | String | ❌ Optional | `"sent"` or `"received"`. |
+| `status` | String | ❌ Optional | `"pending"`, `"approved"`, or `"rejected"`. |
+| `search` | String | ❌ Optional | Search notes / details. |
+| `page` | Number | ❌ Optional | Default `1`. |
+| `limit` | Number | ❌ Optional | Default `10`. |
+
+### Example Request
+
+```http
+GET /api/delivery?dealId=6a719164c772c6fa97fed2e7&page=1&limit=10
+```
+
+### Success Response (HTTP 200 OK)
+
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "deliveries": [
+      {
+        "_id": "6a7201b2c4e5f6a7b8c9d0e1",
+        "dealId": "6a719164c772c6fa97fed2e7",
+        "productId": {
+          "_id": "6a718d8c26b4fa7ac54e6fa8",
+          "name": "Aluminium Sheet 2mm"
+        },
+        "quantity": 50,
+        "deliveryType": "sent",
+        "status": "pending",
+        "createdAt": "2026-08-04T12:30:00.000Z"
+      }
+    ],
+    "pagination": {
+      "total": 1,
+      "page": 1,
+      "limit": 10,
+      "pages": 1
+    }
+  },
+  "message": "Deliveries fetched successfully",
+  "success": true
+}
+```
+
+---
+
+## 3. Update Delivery Status API (Approve / Reject Delivery)
+
+### Endpoint
+
+```http
+PATCH /api/delivery/:id/status
+```
+
+### Description
+
+Allows the counterparty (Buyer/Seller) to approve or reject a pending delivery entry. When approved, a corresponding received entry is created and the deal's remaining delivery quantity balance is automatically updated.
+
+### Request Body
+
+```json
+{
+  "status": "approved"
+}
+```
+
+### Success Response (HTTP 200 OK)
+
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "delivery": {
+      "_id": "6a7201b2c4e5f6a7b8c9d0e1",
+      "status": "approved",
+      "updatedAt": "2026-08-04T12:35:00.000Z"
+    }
+  },
+  "message": "Delivery status updated to approved successfully",
+  "success": true
+}
+```
+

@@ -26,9 +26,10 @@ import {
   CheckCircle2,
   MessageSquare,
   Clock,
+  Users,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getCompanyDetails, getBrokerMyDeals, getDeals, getBrokerProductAccessRequests } from '../../../services/api';
+import { getCompanyDetails, getBrokerMyDeals, getDeals, getBrokerProductAccessRequests, getBrokerPendingQueue } from '../../../services/api';
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
 import { fontSize, moderateScale, scale, isTablet } from '../../../utils/responsive';
 
@@ -134,6 +135,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
   const [company, setCompany] = useState(passedCompany);
   const [firmDeals, setFirmDeals] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [onboardedQueueUsers, setOnboardedQueueUsers] = useState([]);
 
   const [accessRequests, setAccessRequests] = useState([]);
   const [isAccessModalVisible, setIsAccessModalVisible] = useState(false);
@@ -269,10 +271,11 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
       // 2. PARALLEL BACKGROUND API SYNC
       const token = await AsyncStorage.getItem('userToken');
 
-      const [compResResult, brokerDealsRes, allDealsRes] = await Promise.allSettled([
+      const [compResResult, brokerDealsRes, allDealsRes, pendingQueueRes] = await Promise.allSettled([
         effectiveCompId ? getCompanyDetails(effectiveCompId) : Promise.resolve(null),
         token ? getBrokerMyDeals(effectiveCompId, token) : Promise.resolve(null),
         token ? getDeals(token, 1, 100, effectiveCompId) : Promise.resolve(null),
+        token ? getBrokerPendingQueue(effectiveCompId, token) : Promise.resolve(null),
       ]);
 
       let updatedComp = { ...passedComp, ...company };
@@ -280,6 +283,31 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
         updatedComp = { ...updatedComp, ...compResResult.value.data };
         setCompany(updatedComp);
       }
+
+      const queueList = [];
+      const seenQueueIds = new Set();
+      const addQueueItem = (item) => {
+        if (!item) return;
+        const qid = item._id || item.id || item.registrationId || item.mobileNumber || item.name;
+        if (qid && !seenQueueIds.has(String(qid))) {
+          seenQueueIds.add(String(qid));
+          queueList.push(item);
+        }
+      };
+
+      if (pendingQueueRes.status === 'fulfilled' && pendingQueueRes.value) {
+        const qVal = pendingQueueRes.value;
+        const qArr = Array.isArray(qVal) ? qVal : (qVal.data ? (Array.isArray(qVal.data) ? qVal.data : qVal.data.queue || qVal.data.onboardings || []) : []);
+        qArr.forEach(addQueueItem);
+      }
+
+      if (brokerDealsRes.status === 'fulfilled' && brokerDealsRes.value) {
+        const bVal = brokerDealsRes.value;
+        const bArr = Array.isArray(bVal) ? bVal : (bVal.data ? (Array.isArray(bVal.data) ? bVal.data : bVal.data.myDeals || bVal.data.deals || []) : []);
+        bArr.forEach(addQueueItem);
+      }
+
+      setOnboardedQueueUsers(queueList);
 
       let apiDeals = [];
       if (brokerDealsRes.status === 'fulfilled' && brokerDealsRes.value?.success) {
@@ -605,6 +633,74 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
                     <Text style={[styles.compactViewText, { color: viewTextColor }]}>View →</Text>
                   </View>
                 </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+
+        {/* ─── ONBOARDED ACCOUNTS & QUEUE SECTION ─── */}
+        <View style={[styles.sectionContainer, { marginTop: 16 }]}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>
+              Onboarded Queue ({onboardedQueueUsers.length})
+            </Text>
+            <TouchableOpacity onPress={() => onNavigate('BrokerPendingQueue', { company, companyId: company._id || company.id || companyId })}>
+              <Text style={styles.seeAllText}>View All →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {onboardedQueueUsers.length === 0 ? (
+            <View style={[styles.emptySaudaCard, { paddingVertical: 16 }]}>
+              <Users size={24} color="#94A3B8" style={{ marginBottom: 6 }} />
+              <Text style={styles.emptySaudaSub}>No pending onboardings for this company</Text>
+            </View>
+          ) : (
+            onboardedQueueUsers.slice(0, 3).map((usr, uIdx) => {
+              const uName = usr.targetUserName || usr.name || usr.user?.name || 'Unnamed Account';
+              const uMobile = usr.invitedMobile || usr.mobileNumber || usr.phone || 'N/A';
+              const uRole = (usr.role || usr.userRole || 'Trader').toUpperCase();
+              const uStatus = String(usr.status || usr.accountStatus || 'pending').toLowerCase();
+              const isVer = uStatus.includes('verified') || uStatus.includes('approved') || uStatus.includes('active');
+
+              return (
+                <View key={usr._id || usr.id || uIdx} style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 12,
+                  padding: 12,
+                  marginBottom: 8,
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <View style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 17,
+                      backgroundColor: '#EEF2FF',
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#4F46E5' }}>
+                        {uName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }} numberOfLines={1}>
+                        {uName}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#64748B' }}>📞 {uMobile}</Text>
+                    </View>
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#475569' }}>{uRole}</Text>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: isVer ? '#16A34A' : '#D97706' }}>
+                      {isVer ? 'VERIFIED' : 'PENDING'}
+                    </Text>
+                  </View>
+                </View>
               );
             })
           )}

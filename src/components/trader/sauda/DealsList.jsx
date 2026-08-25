@@ -12,9 +12,23 @@ import {
   Linking,
   Image,
   Dimensions,
+  TextInput,
+  ScrollView,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDeals, getExpiredDeals, getPendingInvitations, getUserProfile, getCompanyDetails } from '../../../services/api';
+import {
+  getDeals,
+  getExpiredDeals,
+  getRecreatedDeals,
+  getBrokerProductAccessRequests,
+  respondToProductAccessRequest,
+  deleteDeal,
+  recreateExpiredDeal,
+  getPendingInvitations,
+  getUserProfile,
+  getCompanyDetails,
+} from '../../../services/api';
+
 import {
   ArrowLeft,
   Building2,
@@ -35,13 +49,18 @@ import {
   Layers,
   Activity,
   Package,
+  Search,
+  ShieldCheck,
+  Briefcase,
+  DollarSign,
+  RefreshCw,
 } from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const DealsList = ({ onNavigate, routeData }) => {
-  const searchQuery = '';
-  const [filter, setFilter] = useState('Active');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState('All');
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deals, setDeals] = useState([]);
@@ -62,10 +81,18 @@ const DealsList = ({ onNavigate, routeData }) => {
   const [currentUserCompanyIds, setCurrentUserCompanyIds] = useState([]);
   const [companyNames, setCompanyNames] = useState({});
 
-  const resolveName = useCallback((company, fallback) => {
+  const resolveName = useCallback((company, fallback = 'Company') => {
     if (!company) return fallback;
     if (typeof company === 'object') {
-      return company.name || company.companyName || fallback;
+      return (
+        company.name ||
+        company.companyName ||
+        company.businessName ||
+        company.title ||
+        (company.companyId && (company.companyId.name || company.companyId.companyName)) ||
+        company.ownerName ||
+        fallback
+      );
     }
     if (companyNames[company]) {
       return companyNames[company];
@@ -73,7 +100,7 @@ const DealsList = ({ onNavigate, routeData }) => {
     if (typeof company === 'string' && company.match(/^[0-9a-fA-F]{24}$/)) {
       return 'Loading...';
     }
-    return fallback;
+    return String(company);
   }, [companyNames]);
 
   React.useEffect(() => {
@@ -195,7 +222,7 @@ const DealsList = ({ onNavigate, routeData }) => {
       const token = await AsyncStorage.getItem('userToken');
       if (!token) return;
 
-      const cacheKey = `trader_deals_cache_${filter}_${activeCompanyId || 'all'}`;
+      const cacheKey = `trader_deals_cache_${activeCompanyId || 'all'}`;
       const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
         try {
@@ -207,29 +234,22 @@ const DealsList = ({ onNavigate, routeData }) => {
         } catch (e) { }
       }
 
-      let response;
-      if (filter === 'Active') {
-        response = await getDeals(token, 1, 50, activeCompanyId);
-      } else if (filter === 'Expired') {
-        response = await getExpiredDeals(token, 1, 50, activeCompanyId);
-      } else if (filter === 'Invitations') {
-        response = await getPendingInvitations(token);
-      }
-
+      const response = await getDeals(token, 1, 100, activeCompanyId);
       if (response && response.success) {
-        const dealList = filter === 'Invitations' ? (response.data || []) : (response.data.deals || response.data || []);
+        const dealList = Array.isArray(response.data?.deals) ? response.data.deals : (Array.isArray(response.data) ? response.data : []);
         setDeals(dealList);
-        if (Array.isArray(dealList) && dealList.length > 0) {
+        if (dealList.length > 0) {
           AsyncStorage.setItem(cacheKey, JSON.stringify(dealList)).catch(() => { });
         }
       }
+
     } catch (error) {
       console.error('Error fetching deals:', error);
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [filter, activeCompanyId]);
+  }, [activeCompanyId]);
 
   React.useEffect(() => {
     fetchDeals();
@@ -240,6 +260,51 @@ const DealsList = ({ onNavigate, routeData }) => {
     fetchDeals();
   };
 
+  const metrics = React.useMemo(() => {
+    let allCount = 0;
+    let activeCount = 0;
+    let pendingCount = 0;
+    let expiredCount = 0;
+    let activeTotalValue = 0;
+
+    deals.forEach(deal => {
+      if (activeCompanyId) {
+        const p1CompanyId = deal.party1?.companyId?._id || deal.party1?.companyId || deal.party1?.company?._id || deal.party1?.company?.id;
+        const p2CompanyId = deal.party2?.companyId?._id || deal.party2?.companyId || deal.party2?.company?._id || deal.party2?.company?.id;
+        const sellerCompanyId = deal.sellerCompany?._id || deal.sellerCompany?.id || deal.sellerCompanyId?._id || deal.sellerCompanyId?.id || deal.sellerCompanyId;
+        const buyerCompanyId = deal.buyerCompany?._id || deal.buyerCompany?.id || deal.buyerCompanyId?._id || deal.buyerCompanyId?.id || deal.buyerCompanyId;
+        const brokerCompanyId = deal.brokerCompanyId?._id || deal.brokerCompanyId?.id || deal.brokerCompanyId || deal.broker?._id || deal.broker?.id || deal.broker;
+
+        const isAssociated =
+          (p1CompanyId && String(p1CompanyId).toLowerCase() === String(activeCompanyId).toLowerCase()) ||
+          (p2CompanyId && String(p2CompanyId).toLowerCase() === String(activeCompanyId).toLowerCase()) ||
+          (sellerCompanyId && String(sellerCompanyId).toLowerCase() === String(activeCompanyId).toLowerCase()) ||
+          (buyerCompanyId && String(buyerCompanyId).toLowerCase() === String(activeCompanyId).toLowerCase()) ||
+          (brokerCompanyId && String(brokerCompanyId).toLowerCase() === String(activeCompanyId).toLowerCase());
+
+        if (!isAssociated) return;
+      }
+
+      allCount++;
+      const statusLower = String(deal.status || '').toLowerCase();
+      const isPending = statusLower === 'pending' || statusLower === 'draft';
+      const isExpired = statusLower === 'expired' || statusLower === 'completed' || statusLower === 'rejected' || statusLower === 'cancelled';
+      const isActive = !isPending && !isExpired;
+
+      if (isPending) {
+        pendingCount++;
+      } else if (isExpired) {
+        expiredCount++;
+      } else {
+        activeCount++;
+        activeTotalValue += Number(deal.totalAmount || 0);
+      }
+    });
+
+    return { allCount, activeCount, pendingCount, expiredCount, activeTotalValue };
+  }, [deals, activeCompanyId]);
+
+
   const filteredDeals = deals.filter(deal => {
     let pName = '';
     if (filter === 'Invitations') {
@@ -249,9 +314,14 @@ const DealsList = ({ onNavigate, routeData }) => {
       const firstProd = deal.products?.[0] || deal.product || {};
       pName = firstProd.productId?.name || firstProd.name || (typeof firstProd === 'string' ? firstProd : '') || '';
     }
-    const matchesSearch =
-      String(pName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      String(deal.dealNumber || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const sellerName = resolveName(deal.sellerCompanyId || deal.sellerCompany, '');
+    const buyerName = resolveName(deal.buyerCompanyId || deal.buyerCompany, '');
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch = !query ||
+      String(pName || '').toLowerCase().includes(query) ||
+      String(deal.dealNumber || '').toLowerCase().includes(query) ||
+      String(sellerName || '').toLowerCase().includes(query) ||
+      String(buyerName || '').toLowerCase().includes(query);
 
     if (!matchesSearch) return false;
 
@@ -272,9 +342,11 @@ const DealsList = ({ onNavigate, routeData }) => {
     }
 
     const statusLower = String(deal.status || '').toLowerCase();
-    const isTradeActive = statusLower === 'active' || statusLower === 'approved' || statusLower === 'in_progress' || statusLower === 'pending';
+    const isPendingTrade = statusLower === 'pending' || statusLower === 'draft';
     const isExpiredTrade = statusLower === 'expired' || statusLower === 'completed' || statusLower === 'rejected' || statusLower === 'cancelled';
-    const statusMatches = filter === 'Expired' ? isExpiredTrade : isTradeActive;
+    const isActiveTrade = !isPendingTrade && !isExpiredTrade;
+
+    const statusMatches = filter === 'All' ? true : (filter === 'Pending' ? isPendingTrade : (filter === 'Expired' ? isExpiredTrade : isActiveTrade));
 
     if (!statusMatches) return false;
 
@@ -344,6 +416,18 @@ const DealsList = ({ onNavigate, routeData }) => {
     return { role, companyName };
   };
 
+  //   mention here in the UI there should be the name of the broker also.
+  const renderbroker = ({ item }) => {
+    return (
+      <View>
+        <Text>{item.broker.name}</Text>
+      </View>
+    );
+  }
+
+
+
+
   const renderDealItem = ({ item }) => {
     if (filter === 'Invitations') {
       const draft = item.dealDraft || {};
@@ -401,99 +485,68 @@ const DealsList = ({ onNavigate, routeData }) => {
 
       const creatorCompanyName = senderCompanyName;
       const productImage = firstProd.productId?.image || firstProd.image || firstProd.productImage || item.image || draft.image;
-      const hasImage = typeof productImage === 'string' && productImage.trim().length > 0;
+      const hasImage = typeof productImage === 'string' &&
+        productImage.trim().length > 5 &&
+        (productImage.startsWith('http://') || productImage.startsWith('https://') || productImage.startsWith('data:image/'));
 
       return (
-        <View style={[styles.dealCard, { borderColor: '#F59E0B33' }]}>
-          {/* Violet top strip for invitations */}
-
-
-          {/* Card Header Row */}
-          <View style={styles.newCardHeader}>
-            <View style={[styles.newIconBubble, { backgroundColor: '#FEF3C715', borderColor: '#F59E0B44' }]}>
-              {hasImage
-                ? <Image source={{ uri: productImage }} style={styles.newProductImage} resizeMode="cover" />
-                : <Mail size={22} color="#D97706" />
-              }
+        <TouchableOpacity
+          style={styles.tableRow}
+          onPress={() => handleReshareInvite(item)}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.tableStatusIndicator, { backgroundColor: '#F59E0B' }]} />
+          <View style={styles.tableRowInner}>
+            <View style={styles.cardHeaderRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.tableProductName} numberOfLines={1}>{pName}</Text>
+                <Text style={styles.tableRefText}>Code: #{inviteCode} • 📅 {date}</Text>
+              </View>
+              <View style={[styles.tableStatusPill, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                <Mail size={11} color="#D97706" style={{ marginRight: 3 }} />
+                <Text style={[styles.tableStatusText, { color: '#D97706' }]}>INVITATION</Text>
+              </View>
             </View>
 
-            <View style={styles.newCardTitleBlock}>
-              <Text style={styles.newProductName} numberOfLines={1}>{pName}</Text>
-              <View style={styles.newPartyRow}>
-                <Building2 size={11} color="#94A3B8" />
-                <Text style={styles.newPartyText} numberOfLines={1}>
-                  {sellerName} → {buyerName}
+            <View style={styles.partiesContainerBox}>
+              <View style={styles.partyItemCol}>
+                <Text style={styles.partyRoleLabelSeller}>SELLER</Text>
+                <Text style={styles.partyNameValue} numberOfLines={1}>{sellerName}</Text>
+              </View>
+              <View style={styles.partyArrowDivider}>
+                <Handshake size={14} color="#94A3B8" />
+              </View>
+              <View style={styles.partyItemCol}>
+                <Text style={styles.partyRoleLabelBuyer}>BUYER</Text>
+                <Text style={styles.partyNameValue} numberOfLines={1}>{buyerName}</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardFooterRow}>
+              <View style={{ flex: 1.2 }}>
+                <Text style={styles.metricFooterLabel}>ESTIMATED AMOUNT</Text>
+                <Text style={[styles.tableValueText, { color: '#D97706', marginTop: 2 }]}>
+                  {totalAmtDisplay ? '₹' + Number(totalAmtDisplay).toLocaleString('en-IN') : 'Pending'}
                 </Text>
               </View>
-            </View>
-
-            <View style={styles.newRightBadgeCol}>
-              <View style={[styles.newStatusPill, { backgroundColor: '#F59E0B' }]}>
-                <Text style={styles.newStatusPillText}>INVITE</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.metricFooterLabel}>QUANTITY</Text>
+                <Text style={[styles.tableQtyText, { marginTop: 2, fontSize: 13, fontWeight: '700' }]}>{String(qtyDisplay)} MT</Text>
               </View>
-              {['Seller', 'Buyer'].includes(myRole) && (
-                <View style={[styles.newRolePill, myRole === 'Seller' ? styles.newSellerPill : styles.newBuyerPill]}>
-                  <Text style={[styles.newRolePillText, { color: myRole === 'Seller' ? '#1A56DB' : '#0EA5E9' }]}>
-                    {myRole}
-                  </Text>
-                </View>
-              )}
+              <TouchableOpacity style={styles.tableReshareBtn} onPress={() => handleReshareInvite(item)} activeOpacity={0.8}>
+                <MessageSquare size={12} color="#FFFFFF" style={{ marginRight: 3 }} />
+                <Text style={styles.tableReshareText}>Share</Text>
+              </TouchableOpacity>
             </View>
           </View>
-
-          {/* Divider */}
-          <View style={styles.newDivider} />
-
-          {/* Stats Row */}
-          <View style={styles.newStatsRow}>
-            <View style={styles.newStatItem}>
-              <Package size={12} color="#94A3B8" />
-              <Text style={styles.newStatLabel}>Qty</Text>
-              <Text style={styles.newStatValue}>{String(qtyDisplay)}</Text>
-            </View>
-            <View style={styles.newStatDivider} />
-            <View style={styles.newStatItem}>
-              <TrendingUp size={12} color="#94A3B8" />
-              <Text style={styles.newStatLabel}>Rate</Text>
-              <Text style={styles.newStatValue}>₹{String(priceDisplay)}</Text>
-            </View>
-            {totalAmtDisplay ? (
-              <>
-                <View style={styles.newStatDivider} />
-                <View style={styles.newStatItem}>
-                  <Activity size={12} color="#F59E0B" />
-                  <Text style={styles.newStatLabel}>Value</Text>
-                  <Text style={[styles.newStatValue, { color: '#F59E0B', fontWeight: '900' }]}>
-                    ₹{Number(totalAmtDisplay).toLocaleString('en-IN')}
-                  </Text>
-                </View>
-              </>
-            ) : null}
-          </View>
-
-          {/* Footer */}
-          <View style={styles.newCardFooter}>
-            <View style={styles.inviteCodeBadge}>
-              <Text style={styles.inviteCodeText}>#{inviteCode}</Text>
-            </View>
-            <View style={styles.newDateChip}>
-              <Calendar size={9} color="#94A3B8" />
-              <Text style={styles.newDateText}>{date}</Text>
-            </View>
-            <TouchableOpacity style={styles.reshareBtn} onPress={() => handleReshareInvite(item)} activeOpacity={0.7}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <MessageSquare size={12} color="#FFFFFF" />
-                <Text style={styles.reshareBtnText}>Reshare</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
+        </TouchableOpacity>
       );
     }
 
     const itemStatusLower = String(item.status || '').toLowerCase();
     const isPending = itemStatusLower === 'pending';
     const isActive = itemStatusLower === 'active' || itemStatusLower === 'approved' || itemStatusLower === 'in_progress';
+    const isDraft = itemStatusLower === 'draft';
     const isCompleted = itemStatusLower === 'completed';
     const isRejected = itemStatusLower === 'rejected' || itemStatusLower === 'cancelled';
 
@@ -502,39 +555,45 @@ const DealsList = ({ onNavigate, routeData }) => {
     let statusTextColor = '#475569';
     let statusBorderColor = '#EADFC9';
     let labelText = (item.status || 'EXPIRED').toUpperCase();
-    let leftAccentColor = '#1A56DB'; // Default Indigo
+    let leftAccentColor = '#1A56DB';
 
-    if (isPending) {
-      StatusIcon = PenTool;
-      bgColor = '#FEF3C7'; // warm amber bg
+    if (isDraft) {
+      StatusIcon = Clock;
+      bgColor = '#FEF3C7';
       statusTextColor = '#D97706';
       statusBorderColor = '#FDE68A';
-      labelText = 'PENDING SIGN';
-      leftAccentColor = '#F59E0B'; // Amber yellow
+      labelText = 'DRAFT';
+      leftAccentColor = '#F59E0B';
+    } else if (isPending) {
+      StatusIcon = PenTool;
+      bgColor = '#FEF3C7';
+      statusTextColor = '#D97706';
+      statusBorderColor = '#FDE68A';
+      labelText = 'PENDING';
+      leftAccentColor = '#F59E0B';
     } else if (isActive) {
       StatusIcon = TrendingUp;
-      bgColor = '#EEF2FF'; // light indigo
+      bgColor = '#EEF2FF';
       statusTextColor = '#1A56DB';
       statusBorderColor = '#C7D2FE';
       labelText = 'ACTIVE';
-      leftAccentColor = '#1A56DB'; // Royal Blue
+      leftAccentColor = '#1A56DB';
     } else if (isCompleted) {
       StatusIcon = CheckCircle;
-      bgColor = '#ECFDF5'; // Emerald-50
+      bgColor = '#ECFDF5';
       statusTextColor = '#059669';
       statusBorderColor = '#A7F3D0';
-      labelText = 'COMPLETED';
-      leftAccentColor = '#059669'; // Green
+      labelText = 'DONE';
+      leftAccentColor = '#059669';
     } else if (isRejected) {
       StatusIcon = XCircle;
-      bgColor = '#FEF2F2'; // Red-50
+      bgColor = '#FEF2F2';
       statusTextColor = '#EF4444';
       statusBorderColor = '#FCA5A5';
       labelText = 'REJECTED';
-      leftAccentColor = '#EF4444'; // Red
+      leftAccentColor = '#EF4444';
     }
 
-    // Aggregate qty/price/total across all products
     const allProds = item.products || (item.product ? [item.product] : []);
     let totalQty = 0;
     let firstPrice = 0;
@@ -553,7 +612,6 @@ const DealsList = ({ onNavigate, routeData }) => {
       firstPrice = Number(item.price || item.rate || 0);
       totalValue = Number(item.totalAmount || totalQty * firstPrice || 0);
     }
-    // Also use deal-level totals if present
     const qty = totalQty > 0 ? totalQty : (item.totalQuantity || item.qty || 'N/A');
     const price = firstPrice > 0 ? firstPrice : (item.price || item.rate || 'N/A');
     const totalAmt = totalValue > 0 ? totalValue : (item.totalAmount || null);
@@ -576,94 +634,79 @@ const DealsList = ({ onNavigate, routeData }) => {
       item.crop ||
       item.dealNumber ||
       'Sauda Agreement';
-    const productImage = firstProd.productId?.image || firstProd.image || firstProd.productImage || item.image;
-    const hasImage = typeof productImage === 'string' && productImage.trim().length > 0;
 
-    // --- NEW PREMIUM CARD DESIGN ---
     return (
       <TouchableOpacity
-        style={[styles.dealCard, isPending && styles.dealCardPending]}
+        style={styles.tableRow}
         onPress={() => onNavigate('DealDetails', { dealId, deal: item })}
-        activeOpacity={0.82}
+        activeOpacity={0.8}
       >
-        {/* Top gradient accent strip */}
-
-
-        {/* Card Header Row */}
-        <View style={styles.newCardHeader}>
-          <View style={[styles.newIconBubble, { backgroundColor: bgColor + '33', borderColor: leftAccentColor + '55' }]}>
-            {hasImage
-              ? <Image source={{ uri: productImage }} style={styles.newProductImage} resizeMode="cover" />
-              : <StatusIcon size={22} color={leftAccentColor} />
-            }
-          </View>
-
-          <View style={styles.newCardTitleBlock}>
-            <Text style={styles.newProductName} numberOfLines={1}>{pName}</Text>
-            <View style={styles.newPartyRow}>
-              <Building2 size={11} color="#94A3B8" />
-              <Text style={styles.newPartyText} numberOfLines={1}>
-                {sellerName} → {buyerName}
+        <View style={styles.tableRowInner}>
+          {/* Top Row: Product Name & Status Badge */}
+          <View style={styles.cardHeaderRow}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.tableProductName} numberOfLines={1}>{pName}</Text>
+              <Text style={styles.tableRefText}>#{item.dealNumber || 'DRAFT'} • 📅 {date}</Text>
+            </View>
+            <View style={[styles.tableStatusPill, { backgroundColor: bgColor, borderColor: statusBorderColor }]}>
+              <StatusIcon size={11} color={statusTextColor} style={{ marginRight: 3 }} />
+              <Text style={[styles.tableStatusText, { color: statusTextColor }]}>
+                {labelText}
               </Text>
             </View>
           </View>
 
-          <View style={styles.newRightBadgeCol}>
-            <View style={[styles.newStatusPill, { backgroundColor: leftAccentColor }]}>
-              <Text style={styles.newStatusPillText}>{labelText}</Text>
+          {/* Middle Row: Parties Seller ↔ Buyer Box */}
+          <View style={styles.partiesContainerBox}>
+            <View style={styles.partyItemCol}>
+              <Text style={styles.partyRoleLabelSeller}>SELLER</Text>
+              <Text style={styles.partyNameValue} numberOfLines={1}>{sellerName}</Text>
             </View>
-            {['Seller', 'Buyer'].includes(myRole) && (
-              <View style={[styles.newRolePill, myRole === 'Seller' ? styles.newSellerPill : styles.newBuyerPill]}>
-                <Text style={[styles.newRolePillText, { color: myRole === 'Seller' ? '#1A56DB' : '#0EA5E9' }]}>
-                  {myRole}
+            <View style={styles.partyArrowDivider}>
+              <Handshake size={14} color="#94A3B8" />
+            </View>
+            <View style={styles.partyItemCol}>
+              <Text style={styles.partyRoleLabelBuyer}>BUYER</Text>
+              <Text style={styles.partyNameValue} numberOfLines={1}>{buyerName}</Text>
+            </View>
+          </View>
+
+          {/* Broker Badge (if deal has a Broker) */}
+          {(() => {
+            const bObj = item.brokerCompanyId || item.brokerCompany || item.broker;
+            const bName = bObj?.name || bObj?.companyName || (typeof bObj === 'string' ? companyNames[bObj] : null);
+            if (!bName || bName === 'Company') return null;
+            return (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, paddingTop: 4, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                <Text style={{ fontSize: 9.5, fontWeight: '800', color: '#7C3AED', textTransform: 'uppercase', marginRight: 4, letterSpacing: 0.5 }}>
+                  BROKER:
+                </Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155' }} numberOfLines={1}>
+                  {bName}
                 </Text>
               </View>
-            )}
-          </View>
-        </View>
+            );
+          })()}
 
-        {/* Divider */}
-        <View style={styles.newDivider} />
-
-        {/* Stats Row */}
-        <View style={styles.newStatsRow}>
-          <View style={styles.newStatItem}>
-            <Package size={12} color="#94A3B8" />
-            <Text style={styles.newStatLabel}>Qty</Text>
-            <Text style={styles.newStatValue}>
-              {typeof qty === 'number' ? qty.toLocaleString('en-IN') : String(qty)}
-            </Text>
+          {/* Bottom Row: Amount, Qty & Action */}
+          <View style={styles.cardFooterRow}>
+            <View style={{ flex: 1.2 }}>
+              <Text style={styles.metricFooterLabel}>TOTAL TRADE VALUE</Text>
+              <Text style={[styles.tableValueText, { color: leftAccentColor, marginTop: 2 }]}>
+                {totalAmt ? '₹' + Number(totalAmt).toLocaleString('en-IN') : '₹0'}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.metricFooterLabel}>QUANTITY</Text>
+              <Text style={[styles.tableQtyText, { marginTop: 2, fontSize: 13, fontWeight: '700' }]}>
+                {typeof qty === 'number' ? qty.toLocaleString('en-IN') : String(qty)} {firstProd.unit || 'MT'}
+              </Text>
+            </View>
+            <View style={styles.viewDetailsBtn}>
+              <Text style={styles.viewDetailsBtnText}>Details</Text>
+              <ChevronRight size={14} color="#2563EB" />
+            </View>
           </View>
-          <View style={styles.newStatDivider} />
-          <View style={styles.newStatItem}>
-            <TrendingUp size={12} color="#94A3B8" />
-            <Text style={styles.newStatLabel}>Rate</Text>
-            <Text style={styles.newStatValue}>
-              {typeof price === 'number' && price > 0 ? '₹' + price.toLocaleString('en-IN') : (price !== 'N/A' ? '₹' + price : 'N/A')}
-            </Text>
-          </View>
-          {totalAmt ? (
-            <>
-              <View style={styles.newStatDivider} />
-              <View style={styles.newStatItem}>
-                <Activity size={12} color={leftAccentColor} />
-                <Text style={styles.newStatLabel}>Value</Text>
-                <Text style={[styles.newStatValue, { color: leftAccentColor, fontWeight: '900' }]}>
-                  ₹{Number(totalAmt).toLocaleString('en-IN')}
-                </Text>
-              </View>
-            </>
-          ) : null}
-        </View>
-
-        {/* Footer */}
-        <View style={styles.newCardFooter}>
-          <Text style={styles.newDealRef}># {item.dealNumber || 'NO-REF'}</Text>
-          <View style={styles.newDateChip}>
-            <Calendar size={9} color="#94A3B8" />
-            <Text style={styles.newDateText}>{date}</Text>
-          </View>
-          <ChevronRight size={14} color="#475569" />
         </View>
       </TouchableOpacity>
     );
@@ -698,44 +741,96 @@ const DealsList = ({ onNavigate, routeData }) => {
         </TouchableOpacity>
       </View>
 
-      {/* ACTIVE COMPANY FILTER BADGE */}
-      {activeCompanyId && (
-        <View style={styles.filterBadge}>
-          <Building2 size={12} color="#1A56DB" />
-          <Text style={styles.filterBadgeText}>{activeCompanyName}</Text>
-          <TouchableOpacity
-            style={styles.clearFilterBtn}
-            onPress={() => { setActiveCompanyId(null); setActiveCompanyName(null); }}
-            activeOpacity={0.7}
-          >
-            <X size={11} color="#94A3B8" />
-            <Text style={styles.clearFilterText}>Clear</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* TAB FILTERS */}
-      <View style={styles.tabBar}>
-        {[
-          { key: 'Active', Icon: Activity, label: 'Active', color: '#1A56DB' },
-          { key: 'Expired', Icon: FileText, label: 'Expired', color: '#64748B' },
-          { key: 'Invitations', Icon: Mail, label: 'Invites', color: '#10B981' },
-        ].map((t) => {
-          const isTabActive = filter === t.key;
-          const TabIcon = t.Icon;
-          return (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.tab, isTabActive && [styles.activeTab, { borderBottomColor: t.color }]]}
-              onPress={() => { setIsLoading(true); setFilter(t.key); }}
-              activeOpacity={0.75}
-            >
-              <TabIcon size={14} color={isTabActive ? t.color : '#64748B'} />
-              <Text style={[styles.tabText, isTabActive && { color: t.color, fontWeight: '800' }]}>{t.label}</Text>
+      {/* SEARCH BAR */}
+      <View style={styles.searchBarContainer}>
+        <View style={styles.searchInner}>
+          <Search size={15} color="#64748B" style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search deals by product, party, deal #..."
+            placeholderTextColor="#94A3B8"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7} style={{ padding: 4 }}>
+              <X size={14} color="#64748B" />
             </TouchableOpacity>
-          );
-        })}
+          )}
+        </View>
       </View>
+
+
+
+      {/* TAB FILTERS (ROUNDED PILL CHIPS) */}
+      <View style={styles.tabBarContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabScrollContent}
+        >
+          {[
+            { key: 'All', Icon: Layers, label: 'All', count: metrics.allCount, activeBg: '#F1F5F9', activeText: '#0F172A', activeBorder: '#CBD5E1' },
+            { key: 'Active', Icon: Activity, label: 'Active', count: metrics.activeCount, activeBg: '#EFF6FF', activeText: '#1D4ED8', activeBorder: '#BFDBFE' },
+            { key: 'Pending', Icon: PenTool, label: 'Pending', count: metrics.pendingCount, activeBg: '#FEF3C7', activeText: '#B45309', activeBorder: '#FDE68A' },
+            { key: 'Expired', Icon: FileText, label: 'Expired', count: metrics.expiredCount, activeBg: '#F8FAFC', activeText: '#475569', activeBorder: '#CBD5E1' },
+          ].map((t) => {
+            const isTabActive = filter === t.key;
+            const TabIcon = t.Icon;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={[
+                  styles.pillTab,
+                  isTabActive
+                    ? { backgroundColor: t.activeBg, borderColor: t.activeBorder }
+                    : styles.pillTabInactive,
+                ]}
+                onPress={() => {
+                  setFilter(t.key);
+                }}
+                activeOpacity={0.75}
+              >
+                <TabIcon
+                  size={13}
+                  color={isTabActive ? t.activeText : '#64748B'}
+                  style={{ marginRight: 5 }}
+                />
+                <Text
+                  style={[
+                    styles.pillTabText,
+                    isTabActive
+                      ? { color: t.activeText, fontWeight: '800' }
+                      : styles.pillTabTextInactive,
+                  ]}
+                >
+                  {t.label}
+                </Text>
+                {t.count > 0 && (
+                  <View
+                    style={[
+                      styles.pillCountBadge,
+                      isTabActive
+                        ? { backgroundColor: t.activeText }
+                        : styles.pillCountBadgeInactive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.pillCountText,
+                        isTabActive ? { color: '#FFFFFF' } : styles.pillCountTextInactive,
+                      ]}
+                    >
+                      {t.count}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
 
       {isLoading ? (
         <View style={styles.loaderWrap}>
@@ -791,8 +886,11 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 16,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#E2E8F0',
+    elevation: 2,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
   },
   backButton: {
     width: 38,
@@ -801,8 +899,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '900', color: '#1E293B', letterSpacing: -0.3 },
@@ -816,9 +912,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A56DB',
     borderRadius: 12,
     shadowColor: '#1A56DB',
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
   },
   newDealBtnText: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
 
@@ -828,8 +924,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     backgroundColor: '#EEF2FF',
-    borderColor: '#C7D2FE',
-    borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 9,
@@ -845,133 +939,276 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
   },
   clearFilterText: { fontSize: 11, fontWeight: '700', color: '#1A56DB' },
 
-  // TAB BAR — underline style
-  tabBar: {
-    flexDirection: 'row',
+  // TAB BAR CONTAINER — ROUNDED PILL CHIPS
+  tabBarContainer: {
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#E2E8F0',
-    marginBottom: 4,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 13,
+  tabScrollContent: {
+    paddingHorizontal: 16,
+    gap: 8,
     alignItems: 'center',
+  },
+  pillTab: {
     flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+  },
+  pillTabInactive: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  pillTabText: {
+    fontSize: 12,
+  },
+  pillTabTextInactive: {
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  pillCountBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 6,
+  },
+  pillCountBadgeInactive: {
+    backgroundColor: '#E2E8F0',
+  },
+  pillCountText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  pillCountTextInactive: {
+    color: '#475569',
+  },
+
+  // SEARCH BAR
+  searchBarContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  searchInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 40,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#0F172A',
+    paddingVertical: 0,
+  },
+
+  // METRICS CONTAINER
+  metricsContainer: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+  },
+  metricsScrollContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  metricCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 12,
+    minWidth: 115,
+  },
+  metricIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    borderBottomWidth: 2.5,
-    borderBottomColor: 'transparent',
   },
-  activeTab: {
-    borderBottomWidth: 2.5,
+  metricLabel: {
+    fontSize: 8.5,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
-  tabText: { fontSize: 12, fontWeight: '600', color: '#94A3B8' },
+  metricValue: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  // TAB COUNT PILL
+  tabCountPill: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 10,
+    marginLeft: 2,
+  },
+  tabCountPillText: {
+    fontSize: 9,
+    fontWeight: '900',
+  },
 
   // LIST
-  listContent: { padding: 14, paddingBottom: 120, gap: 12 },
+  listContent: { padding: 12, paddingBottom: 120, gap: 8 },
 
-  // NEW PREMIUM DEAL CARD
-  dealCard: {
+  // HIGH DENSITY DEAL CARD STYLES
+  tableRow: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 14,
+    flexDirection: 'row',
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    shadowColor: '#1A56DB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
     elevation: 3,
+    marginBottom: 4,
   },
-  dealCardPending: {
-    borderColor: '#F59E0B',
-    shadowColor: '#F59E0B',
-    shadowOpacity: 0.10,
+  tableStatusIndicator: {
+    width: 5,
+    alignSelf: 'stretch',
   },
-
-  newCardHeader: {
+  tableRowInner: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  tableProductName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  tableRefText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  tableStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  newIconBubble: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-  },
-  newProductImage: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-  },
-  newCardTitleBlock: { flex: 1, gap: 5 },
-  newProductName: { fontSize: 15, fontWeight: '800', color: '#1E293B', letterSpacing: -0.3 },
-  newPartyRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  newPartyText: { fontSize: 12, color: '#94A3B8', fontWeight: '500', flex: 1 },
-  newRightBadgeCol: { alignItems: 'flex-end', gap: 5 },
-  newStatusPill: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  newStatusPillText: { fontSize: 8, fontWeight: '900', color: '#FFFFFF', letterSpacing: 0.8 },
-  newRolePill: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
     borderWidth: 1,
   },
-  newSellerPill: { backgroundColor: '#EFF6FF', borderColor: '#93C5FD' },
-  newBuyerPill: { backgroundColor: '#E0F2FE', borderColor: '#7DD3FC' },
-  newRolePillText: { fontSize: 9, fontWeight: '800' },
-
-  // DIVIDER
-  newDivider: { height: 1, backgroundColor: '#F1F5F9', marginHorizontal: 16 },
-
-  // STATS ROW
-  newStatsRow: {
+  tableStatusText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  partiesContainerBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
-  newStatItem: {
+  partyItemCol: {
     flex: 1,
-    alignItems: 'center',
-    gap: 3,
   },
-  newStatLabel: { fontSize: 9, fontWeight: '600', color: '#94A3B8', letterSpacing: 0.5, textTransform: 'uppercase' },
-  newStatValue: { fontSize: 13, fontWeight: '800', color: '#334155' },
-  newStatDivider: { width: 1, height: 28, backgroundColor: '#E2E8F0' },
-
-  // CARD FOOTER
-  newCardFooter: {
+  partyRoleLabelSeller: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  partyRoleLabelBuyer: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#2563EB',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  partyNameValue: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  partyArrowDivider: {
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
+    paddingTop: 4,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: '#F8FAFC',
   },
-  newDealRef: { fontSize: 10, fontWeight: '700', color: '#94A3B8' },
-  newDateChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  newDateText: { fontSize: 10, color: '#94A3B8', fontWeight: '600' },
+  metricFooterLabel: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  tableValueText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  tableQtyText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  viewDetailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 2,
+  },
+  viewDetailsBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  tableReshareBtn: {
+    backgroundColor: '#128C7E',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  tableReshareText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
 
   // INVITE specific (reuse in invitations render)
   inviteCodeBadge: {

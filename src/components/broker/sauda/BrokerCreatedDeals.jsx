@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   SafeAreaView,
+  FlatList,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -16,16 +17,44 @@ import {
   Plus,
   Search,
   ArrowRight,
-  ShieldCheck,
-  CheckCircle2,
-  Clock,
   ArrowLeft,
-  Building2,
-  User,
-  Share2,
+  X,
+  ChevronRight,
+  RotateCcw,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDeals, getBrokerMyDeals } from '../../../services/api';
+
+// --- PRAVISTI COLOR SYSTEM ---
+const COLORS = {
+  primary: '#1463FF',
+  primaryDark: '#0B4DD8',
+  navy: '#071B3A',
+  textPrimary: '#071B3A',
+  textSecondary: '#66758F',
+  textMuted: '#94A3B8',
+  bgMain: '#F6F8FC',
+  cardBg: '#FFFFFF',
+  border: '#E6EBF2',
+  softBlue: '#EFF6FF',
+
+  // Status colors
+  confirmedBg: '#EAFBF1',
+  confirmedBorder: '#B8F0CB',
+  confirmedText: '#07883F',
+
+  pendingBg: '#FFF7E6',
+  pendingBorder: '#FFD88A',
+  pendingText: '#D17A00',
+
+  draftBg: '#F1F5F9',
+  draftBorder: '#DCE3EA',
+  draftText: '#64748B',
+
+  rejectedBg: '#FFF1F2',
+  rejectedBorder: '#FCA5A5',
+  rejectedText: '#D92D20',
+};
 
 const extractCompanyId = (d) => {
   if (!d) return null;
@@ -73,10 +102,11 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
       setDeals(localDeals);
       setIsLoading(false);
 
-      // 2. PARALLEL BACKGROUND API FETCH for fast updates
-      const [brokerResResult, dealsResResult] = await Promise.allSettled([
+      // 2. PARALLEL BACKGROUND API FETCH for fast updates including status=draft deals
+      const [brokerResResult, dealsResResult, draftDealsResult] = await Promise.allSettled([
         getBrokerMyDeals(token),
-        getDeals(token, 1, 1000, companyId || null),
+        getDeals(token, 1, 50, companyId || null),
+        getDeals(token, 1, 50, companyId || null, 'draft'),
       ]);
 
       let fetchedDeals = [];
@@ -113,10 +143,8 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
         });
       }
 
-      if (dealsResResult.status === 'fulfilled' && dealsResResult.value?.success) {
-        const res = dealsResResult.value;
-        const rawDeals = Array.isArray(res.data) ? res.data : (res.data?.deals || []);
-        const apiMapped = rawDeals.map(d => {
+      const processDealsArray = (rawDeals) => {
+        return rawDeals.map(d => {
           const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : '';
           const p0 = d.products?.[0];
           const pid0 = p0?.productId;
@@ -140,10 +168,19 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
             rawDeal: d,
           };
         });
-        fetchedDeals.push(...apiMapped);
+      };
+
+      if (dealsResResult.status === 'fulfilled' && dealsResResult.value?.success) {
+        const rawDeals = Array.isArray(dealsResResult.value.data) ? dealsResResult.value.data : (dealsResResult.value.data?.deals || []);
+        fetchedDeals.push(...processDealsArray(rawDeals));
       }
 
-      // Fast O(N) deduplication using Map
+      if (draftDealsResult.status === 'fulfilled' && draftDealsResult.value?.success) {
+        const rawDrafts = Array.isArray(draftDealsResult.value.data) ? draftDealsResult.value.data : (draftDealsResult.value.data?.deals || []);
+        fetchedDeals.push(...processDealsArray(rawDrafts));
+      }
+
+      // Fast O(N) deduplication using ju                                                              
       const dealMap = new Map();
       localDeals.forEach(d => {
         const key = d._id || d.id || d.dealNumber;
@@ -213,35 +250,46 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
       const statusLower = (deal.status || '').toLowerCase();
       if (activeTab === 'Confirmed') return matchesSearch && (statusLower === 'confirmed' || statusLower === 'approved');
       if (activeTab === 'Pending') return matchesSearch && statusLower.includes('pending');
+      if (activeTab === 'Draft') return matchesSearch && statusLower.includes('draft');
       return matchesSearch;
     });
   }, [companyFilteredDeals, searchQuery, activeTab]);
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0C4A6E" />
+  // Calculate Stat Counts
+  const totalCount = companyFilteredDeals.length;
+  const confirmedCount = companyFilteredDeals.filter(d => {
+    const s = (d.status || '').toLowerCase();
+    return s === 'confirmed' || s === 'approved';
+  }).length;
+  const pendingCount = companyFilteredDeals.filter(d => (d.status || '').toLowerCase().includes('pending')).length;
+  const draftCount = companyFilteredDeals.filter(d => (d.status || '').toLowerCase().includes('draft')).length;
 
-      {/* Top Header */}
+  // Render FlatList Header
+  const renderListHeader = () => (
+    <View style={styles.headerContainer}>
+      {/* Top Header with Back Button */}
       <View style={styles.topHeader}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => onNavigate('pop')}>
-          <ArrowLeft size={20} color="#FFFFFF" />
+        <TouchableOpacity style={styles.backBtn} onPress={() => onNavigate('pop')} activeOpacity={0.7}>
+          <ArrowLeft size={18} color={COLORS.navy} />
         </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 12 }}>
+
+        <View style={{ flex: 1, marginLeft: 10, marginRight: 8 }}>
           <Text style={styles.pageTitle} numberOfLines={1}>
             {companyName ? `${companyName} Saudas` : 'My Created Saudas'}
           </Text>
           {companyName ? (
-            <Text style={{ fontSize: 11, color: '#BAE6FD', fontWeight: '600', marginTop: 1 }}>
+            <Text style={styles.companySubTitle} numberOfLines={1}>
               🏢 {companyName}
             </Text>
           ) : null}
         </View>
+
         <TouchableOpacity
           style={styles.createBtn}
           activeOpacity={0.85}
           onPress={() => onNavigate('CreateBrokerDeal', targetCompany ? { company: targetCompany } : undefined)}
         >
-          <Plus size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+          <Plus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
           <Text style={styles.createBtnText}>+ New</Text>
         </TouchableOpacity>
       </View>
@@ -249,199 +297,335 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
       {/* Search Input */}
       <View style={styles.searchSection}>
         <View style={styles.searchBox}>
-          <Search size={18} color="#94A3B8" style={{ marginRight: 8 }} />
+          <Search size={16} color={COLORS.textMuted} style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search crop, buyer, seller or Sauda Ref..."
-            placeholderTextColor="#94A3B8"
+            placeholder="Search Sauda, buyer, seller..."
+            placeholderTextColor={COLORS.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <X size={16} color={COLORS.textMuted} />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
 
-      {/* Filter Tabs */}
-      <View style={styles.tabsContainer}>
-        {['All', 'Confirmed', 'Pending'].map((tab) => {
-          const count = companyFilteredDeals.filter(d => {
-            const sLower = (d.status || '').toLowerCase();
-            if (tab === 'All') return true;
-            if (tab === 'Confirmed') return sLower === 'confirmed' || sLower === 'approved';
-            return sLower.includes('pending');
-          }).length;
-
+      {/* Filter Tabs (Horizontal Scrollable Strip) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabsScrollContent}
+        style={styles.tabsWrapper}
+      >
+        {[
+          { key: 'All', label: 'ALL', count: totalCount },
+          { key: 'Confirmed', label: 'CONFIRMED', count: confirmedCount },
+          { key: 'Pending', label: 'PENDING', count: pendingCount },
+          { key: 'Draft', label: 'DRAFT', count: draftCount },
+        ].map((tab) => {
+          const isActive = activeTab === tab.key;
           return (
             <TouchableOpacity
-              key={tab}
-              style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
-              onPress={() => setActiveTab(tab)}
+              key={tab.key}
+              style={[styles.tabPill, isActive ? styles.tabPillActive : styles.tabPillInactive]}
+              onPress={() => setActiveTab(tab.key)}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                {tab} ({count})
+              <Text style={[styles.tabLabelText, isActive ? styles.tabLabelActive : styles.tabLabelInactive]}>
+                {tab.label}
               </Text>
+              <View style={[styles.countBadge, isActive ? styles.countBadgeActive : styles.countBadgeInactive]}>
+                <Text style={[styles.countBadgeText, isActive ? styles.countTextActive : styles.countTextInactive]}>
+                  {tab.count}
+                </Text>
+              </View>
             </TouchableOpacity>
           );
         })}
-      </View>
-
-      {/* Created Deals ScrollView */}
-      <ScrollView
-        contentContainerStyle={styles.scrollList}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0284C7']} tintColor="#0284C7" />}
-      >
-        {isLoading ? (
-          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-            <ActivityIndicator size="large" color="#0284C7" />
-            <Text style={{ fontSize: 13, color: '#64748B', marginTop: 10 }}>Fetching Broker Saudas...</Text>
-          </View>
-        ) : filteredDeals.length === 0 ? (
-          <View style={styles.emptyStateBox}>
-            <Handshake size={38} color="#94A3B8" style={{ marginBottom: 10 }} />
-            <Text style={styles.emptyTitle}>No Broker Sauda Found</Text>
-            <Text style={styles.emptySub}>Issue a real trade contract for buyers and sellers.</Text>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => onNavigate('CreateBrokerDeal')}>
-              <Text style={styles.emptyBtnText}>+ Create Sauda Now</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          filteredDeals.map((deal, idx) => {
-            const isPending = deal.status && deal.status.toLowerCase().includes('pending');
-            return (
-              <TouchableOpacity
-                key={deal.id || idx}
-                style={styles.dealCard}
-                activeOpacity={0.85}
-                onPress={() => onNavigate('BrokerDealDetails', { dealId: deal._id || deal.id, deal })}
-              >
-                <View style={styles.cardHeaderRow}>
-                  <View style={styles.cropBadge}>
-                    <Handshake size={14} color="#0284C7" style={{ marginRight: 6 }} />
-                    <Text style={styles.cropName}>{deal.crop || deal.productName}</Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: isPending ? '#FEF3C7' : '#DCFCE7' },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusText,
-                        { color: isPending ? '#D97706' : '#15803D' },
-                      ]}
-                    >
-                      {deal.status}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Parties Row */}
-                <View style={styles.partyContainer}>
-                  <View style={styles.partyBox}>
-                    <Text style={styles.partyRole}>BUYER (खरीदार)</Text>
-                    <Text style={styles.partyName} numberOfLines={1}>
-                      {deal.buyer}
-                    </Text>
-                  </View>
-                  <View style={styles.partyDivider} />
-                  <View style={styles.partyBox}>
-                    <Text style={styles.partyRole}>SELLER (विक्रेता)</Text>
-                    <Text style={styles.partyName} numberOfLines={1}>
-                      {deal.seller}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Grid Details */}
-                <View style={styles.detailsGrid}>
-                  <View>
-                    <Text style={styles.detailLabel}>Quantity</Text>
-                    <Text style={styles.detailVal}>{deal.quantity}</Text>
-                  </View>
-                  <View>
-                    <Text style={styles.detailLabel}>Agreed Rate</Text>
-                    <Text style={[styles.detailVal, { color: '#0284C7' }]}>{deal.rate}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.detailLabel}>Brokerage Comm.</Text>
-                    <Text style={[styles.detailVal, { color: '#0284C7', fontWeight: '800' }]}>
-                      {deal.commission}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Footer */}
-                <View style={styles.cardFooter}>
-                  <Text style={styles.dateText}>Ref: {deal.id} • {deal.date}</Text>
-                  <View style={styles.viewDetailRow}>
-                    <Text style={styles.viewDetailText}>View Contract</Text>
-                    <ArrowRight size={14} color="#0284C7" />
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
       </ScrollView>
+    </View>
+  );
+
+  // Render Deal Card Item
+  const renderDealItem = ({ item }) => {
+    const statusLower = (item.status || '').toLowerCase();
+    const isPending = statusLower.includes('pending');
+    const isDraft = statusLower.includes('draft');
+    const isRejected = statusLower.includes('reject');
+
+    let statusStyle = {
+      bg: COLORS.confirmedBg,
+      border: COLORS.confirmedBorder,
+      text: COLORS.confirmedText,
+      label: 'CONFIRMED',
+    };
+
+    if (isDraft) {
+      statusStyle = {
+        bg: COLORS.draftBg,
+        border: COLORS.draftBorder,
+        text: COLORS.draftText,
+        label: 'DRAFT',
+      };
+    } else if (isPending) {
+      statusStyle = {
+        bg: COLORS.pendingBg,
+        border: COLORS.pendingBorder,
+        text: COLORS.pendingText,
+        label: 'PENDING',
+      };
+    } else if (isRejected) {
+      statusStyle = {
+        bg: COLORS.rejectedBg,
+        border: COLORS.rejectedBorder,
+        text: COLORS.rejectedText,
+        label: 'REJECTED',
+      };
+    }
+
+    const dealNo = item.id || (item._id ? `#SD-${item._id.slice(-4).toUpperCase()}` : '#SD-9042');
+    const dateDisplay = item.date || 'Today';
+
+    const rawTotal = item.rawDeal?.grandTotal || item.rawDeal?.totalAmount || item.rawDeal?.totalValue || item.totalAmount || item.totalValue;
+    let totalValStr = '';
+    if (typeof rawTotal === 'number' && rawTotal > 0) {
+      totalValStr = `₹${rawTotal.toLocaleString('en-IN')}`;
+    } else if (typeof rawTotal === 'string' && rawTotal.trim().length > 0) {
+      totalValStr = rawTotal.startsWith('₹') ? rawTotal : `₹${rawTotal}`;
+    } else {
+      totalValStr = item.rate || '—';
+    }
+
+    return (
+      <TouchableOpacity
+        style={styles.dealCard}
+        activeOpacity={0.88}
+        onPress={() => onNavigate('BrokerDealDetails', { dealId: item._id || item.id, deal: item })}
+      >
+        {/* Top Row: Deal ID, Date & Status Badge */}
+        <View style={styles.cardHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 8 }}>
+            <Text style={styles.dealNoText} numberOfLines={1}>{dealNo}</Text>
+            <Text style={styles.dealDateText}>{dateDisplay}</Text>
+          </View>
+
+          <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg, borderColor: statusStyle.border }]}>
+            <Text style={[styles.statusBadgeText, { color: statusStyle.text }]}>
+              {statusStyle.label}
+            </Text>
+          </View>
+        </View>
+
+        {/* Buyer → Seller Flow Boxes */}
+        <View style={styles.buyerSellerFlowRow}>
+          {/* Buyer Box */}
+          <View style={styles.partyBox}>
+            <Text style={styles.partyRoleLabel}>BUYER</Text>
+            <Text style={styles.partyNameText} numberOfLines={1}>
+              {item.buyer || 'Buyer Business'}
+            </Text>
+          </View>
+
+          {/* Center Arrow */}
+          <View style={styles.flowArrowCircle}>
+            <ArrowRight size={15} color={COLORS.primary} />
+          </View>
+
+          {/* Seller Box */}
+          <View style={styles.partyBox}>
+            <Text style={[styles.partyRoleLabel, { color: '#7790B5' }]}>SELLER</Text>
+            <Text style={styles.partyNameText} numberOfLines={1}>
+              {item.seller || 'Seller Business'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Product Chips Row */}
+        <View style={styles.productChipsRow}>
+          <View style={styles.cropChip}>
+            <Text style={styles.cropChipText} numberOfLines={1}>
+              {item.crop || item.productName || 'Commodity'}
+            </Text>
+          </View>
+
+          {item.quantity ? (
+            <View style={styles.metaChip}>
+              <Text style={styles.metaChipText}>{String(item.quantity).replace(/ units/gi, '')}</Text>
+            </View>
+          ) : null}
+
+          {item.rate ? (
+            <View style={styles.metaChip}>
+              <Text style={styles.metaChipText}>{item.rate}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Card Divider */}
+        <View style={styles.cardDivider} />
+
+        {/* Card Footer Row: Total Value & Action Arrow */}
+        <View style={styles.cardFooterRow}>
+          <View>
+            <Text style={styles.totalLabel}>Total Value</Text>
+            <Text style={styles.totalValText}>{totalValStr}</Text>
+          </View>
+
+          <ChevronRight size={18} color="#94A3B8" />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // Render Empty State
+  const renderEmptyState = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading Saudas...</Text>
+        </View>
+      );
+    }
+
+    if (deals.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconBadge}>
+            <Handshake size={26} color={COLORS.primary} />
+          </View>
+          <Text style={styles.emptyTitle}>No Saudas Found</Text>
+          <Text style={styles.emptyDesc}>
+            Issue a real trade contract for buyers and sellers.
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyCreateBtn}
+            onPress={() => onNavigate('CreateBrokerDeal', targetCompany ? { company: targetCompany } : undefined)}
+            activeOpacity={0.85}
+          >
+            <Plus size={15} color="#FFFFFF" style={{ marginRight: 4 }} />
+            <Text style={styles.emptyCreateBtnText}>Create New Sauda</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconBadge}>
+          <Search size={24} color={COLORS.textMuted} />
+        </View>
+        <Text style={styles.emptyTitle}>No Saudas Found</Text>
+        <Text style={styles.emptyDesc}>
+          Try changing the search query or status filter.
+        </Text>
+        <TouchableOpacity
+          style={styles.emptyResetBtn}
+          onPress={() => { setSearchQuery(''); setActiveTab('All'); }}
+          activeOpacity={0.8}
+        >
+          <RotateCcw size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+          <Text style={styles.emptyResetBtnText}>Clear Search & Filters</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      <FlatList
+        data={filteredDeals}
+        keyExtractor={(item, index) => (item.id || item._id || index).toString()}
+        ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={renderEmptyState}
+        renderItem={renderDealItem}
+        contentContainerStyle={styles.listContentContainer}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+          />
+        }
+      />
     </SafeAreaView>
   );
 };
 
+// --- STYLES SYSTEM ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: COLORS.bgMain,
   },
+  listContentContainer: {
+    paddingBottom: 60,
+  },
+  headerContainer: {
+    backgroundColor: COLORS.bgMain,
+    marginBottom: 8,
+  },
+
+  // ─── TOP HEADER ───
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#3465EA',
+    paddingTop: 14,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#2554D7',
+    borderBottomColor: '#E2E8F0',
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  titleCol: {
-    flex: 1,
-    marginLeft: 12,
-  },
   pageTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: COLORS.navy,
+    letterSpacing: -0.2,
   },
-  pageSubtitle: {
+  companySubTitle: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontWeight: '600',
+    color: COLORS.primary,
+    marginTop: 1,
   },
   createBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.20)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.30)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    elevation: 2,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
   },
   createBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
+
+  // ─── SEARCH BAR ───
   searchSection: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
+    marginTop: 10,
   },
   searchBox: {
     flexDirection: 'row',
@@ -452,74 +636,91 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 44,
-    elevation: 1,
-    shadowColor: '#3B3CFF',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.navy,
   },
-  tabsContainer: {
-    flexDirection: 'row',
+
+  // ─── FILTER TABS (E-COMMERCE SYSTEM PILLS WITH COUNTS) ───
+  tabsWrapper: {
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  tabsScrollContent: {
     paddingHorizontal: 16,
-    marginBottom: 12,
+    paddingVertical: 4,
     gap: 8,
+    alignItems: 'center',
   },
-  tabItem: {
+  tabPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 36,
     paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     borderWidth: 1,
+    gap: 6,
+  },
+  tabPillActive: {
+    backgroundColor: '#1463FF',
+    borderColor: '#1463FF',
+  },
+  tabPillInactive: {
+    backgroundColor: '#F4F6F9',
     borderColor: '#E2E8F0',
   },
-  tabItemActive: {
-    backgroundColor: '#3465EA',
-    borderColor: '#3465EA',
+  tabLabelText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
-  tabText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  tabTextActive: {
+  tabLabelActive: {
     color: '#FFFFFF',
   },
-  scrollList: {
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-    gap: 14,
+  tabLabelInactive: {
+    color: '#5F6F86',
   },
-  emptyStateBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 30,
+  countBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    elevation: 2,
-    shadowColor: '#0C4A6E',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A' },
-  emptySub: { fontSize: 12, color: '#64748B', marginTop: 4, marginBottom: 16, textAlign: 'center' },
-  emptyBtn: { backgroundColor: '#0284C7', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
-  emptyBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  countBadgeActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.20)',
+  },
+  countBadgeInactive: {
+    backgroundColor: '#E8EDF3',
+  },
+  countBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  countTextActive: {
+    color: '#FFFFFF',
+  },
+  countTextInactive: {
+    color: '#64748B',
+  },
+
+  // ─── COMPACT DEAL CARD ───
   dealCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.cardBg,
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    elevation: 2,
-    shadowColor: '#0C4A6E',
+    borderColor: '#E7ECF2',
+    elevation: 1,
+    shadowColor: COLORS.navy,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
@@ -528,98 +729,186 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  cropBadge: {
+  dealNoText: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: COLORS.navy,
+  },
+  dealDateText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: COLORS.textMuted,
+    marginLeft: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+
+  // BUYER → SELLER FLOW BOXES
+  buyerSellerFlowRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E0F2FE',
+    marginTop: 10,
+  },
+  partyBox: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#E7ECF2',
+  },
+  partyRoleLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#90A0B8',
+    letterSpacing: 0.3,
+    marginBottom: 2,
+  },
+  partyNameText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: COLORS.navy,
+  },
+  flowArrowCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.softBlue,
+    borderWidth: 1,
+    borderColor: '#D7E6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 6,
+  },
+
+  // PRODUCT CHIPS
+  productChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  cropChip: {
+    backgroundColor: COLORS.softBlue,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  cropName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0284C7',
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  statusText: {
+  cropChipText: {
     fontSize: 11,
     fontWeight: '700',
+    color: COLORS.primary,
   },
-  partyContainer: {
-    flexDirection: 'row',
+  metaChip: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 12,
+    borderColor: '#E7ECF2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  metaChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+
+  // CARD DIVIDER
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#EDF1F5',
+    marginVertical: 10,
+  },
+
+  // CARD FOOTER
+  cardFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  partyBox: {
-    flex: 1,
-  },
-  partyRole: {
+  totalLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#94A3B8',
-    marginBottom: 2,
+    fontWeight: '600',
+    color: COLORS.textMuted,
   },
-  partyName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
+  totalValText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.navy,
+    marginTop: 1,
   },
-  partyDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#CBD5E1',
-    marginHorizontal: 8,
-  },
-  detailsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  detailLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    marginBottom: 2,
-  },
-  detailVal: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+
+  // ─── EMPTY & LOADING STATES ───
+  emptyContainer: {
+    paddingVertical: 60,
+    paddingHorizontal: 20,
     alignItems: 'center',
   },
-  dateText: {
-    fontSize: 11,
-    color: '#94A3B8',
+  loadingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginTop: 10,
   },
-  viewDetailRow: {
+  emptyIconBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORS.softBlue,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: COLORS.navy,
+    marginBottom: 4,
+  },
+  emptyDesc: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 18,
+    maxWidth: 280,
+  },
+  emptyCreateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 18,
+    height: 42,
+    borderRadius: 12,
   },
-  viewDetailText: {
+  emptyCreateBtnText: {
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
-    color: '#0284C7',
-    marginRight: 4,
+  },
+  emptyResetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    height: 36,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  emptyResetBtnText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
 

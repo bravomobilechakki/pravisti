@@ -52,6 +52,7 @@ import {
   createCategory,
   createProduct,
   getUnits,
+  filterContacts,
 } from '../../../services/api';
 import { generateAssistedRegistrationLink } from '../../../utils/WhatsAppService';
 import BrokerAssistedOnboardingModal from './BrokerAssistedOnboardingModal';
@@ -261,12 +262,14 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactSearchQuery, setContactSearchQuery] = useState('');
   const [targetRoleForContacts, setTargetRoleForContacts] = useState('Seller');
+  const [contactsActiveTab, setContactsActiveTab] = useState('all'); // 'all' | 'registered' | 'unregistered'
 
   const openDeviceContactsModal = async (targetRole) => {
     setTargetRoleForContacts(targetRole);
     setContactsModalVisible(true);
     setContactsLoading(true);
     setContactSearchQuery('');
+    setContactsActiveTab('all');
     try {
       let granted = true;
       if (Platform.OS === 'android') {
@@ -274,31 +277,86 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
           PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
           {
             title: 'Contacts Access',
-            message: `Pravisti needs access to your contacts to select ${targetRole.toLowerCase()} phone numbers.`,
+            message: `Pravisti needs access to your contacts to select ${targetRole.toLowerCase()} phone numbers and check registered entities.`,
             buttonPositive: 'Allow Access',
           }
         );
         granted = permission === PermissionsAndroid.RESULTS.GRANTED;
+      } else {
+        const permission = await Contacts.requestPermission();
+        granted = permission === 'authorized';
       }
+
       if (granted) {
         const rawContacts = await Contacts.getAll();
         const formatted = [];
-        rawContacts.forEach(c => {
+        const contactsToSend = [];
+
+        (rawContacts || []).forEach(c => {
           const fullName = [c.givenName, c.familyName].filter(Boolean).join(' ') || c.displayName || 'Unnamed Contact';
           (c.phoneNumbers || []).forEach(p => {
             const cleanDigits = (p.number || '').replace(/[^0-9]/g, '');
             const mobile10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
             if (mobile10.length === 10 && !formatted.some(item => item.mobile === mobile10)) {
+              let phoneWithCode = '+91' + mobile10;
               formatted.push({
                 id: (c.recordID || Math.random().toString()) + mobile10,
                 name: fullName,
                 mobile: mobile10,
                 fullPhone: p.number,
+                phoneWithCode,
+                isRegistered: false,
+                companies: [],
+              });
+              contactsToSend.push({
+                name: fullName,
+                phone: phoneWithCode,
               });
             }
           });
         });
-        formatted.sort((a, b) => a.name.localeCompare(b.name));
+
+        // Call Pravisti filterContacts API to find registered businesses & users
+        try {
+          const token = await AsyncStorage.getItem('userToken');
+          if (token && contactsToSend.length > 0) {
+            const response = await filterContacts(contactsToSend, token);
+            if (response && response.success && Array.isArray(response.data)) {
+              const registeredMap = new Map();
+              response.data.forEach(item => {
+                const rawPh = (item.phone || '').replace(/[^0-9]/g, '');
+                const m10 = rawPh.slice(-10);
+                if (m10) {
+                  registeredMap.set(m10, item);
+                }
+              });
+
+              formatted.forEach(c => {
+                const regInfo = registeredMap.get(c.mobile);
+                if (regInfo) {
+                  c.isRegistered = Boolean(regInfo.isRegistered);
+                  c.companies = regInfo.companies || [];
+                  c.registeredName = regInfo.registeredName || regInfo.name || c.name;
+                  if (regInfo.name) c.name = regInfo.name;
+                  if (regInfo.companies && regInfo.companies.length > 0) {
+                    c.primaryCompanyName = regInfo.companies[0].companyName;
+                    c.primaryCompanyId = regInfo.companies[0].companyId;
+                  }
+                }
+              });
+            }
+          }
+        } catch (apiErr) {
+          console.warn('Pravisti filterContacts API error:', apiErr);
+        }
+
+        // Sort: Registered on Pravisti first, then alphabetically by name
+        formatted.sort((a, b) => {
+          if (a.isRegistered && !b.isRegistered) return -1;
+          if (!a.isRegistered && b.isRegistered) return 1;
+          return a.name.localeCompare(b.name);
+        });
+
         setDeviceContacts(formatted);
       } else {
         showToast('Permission denied to access device contacts');
@@ -2104,7 +2162,7 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
         onRequestClose={() => setContactsModalVisible(false)}
       >
         <View style={styles.bottomSheetOverlay}>
-          <View style={styles.bottomSheetContent}>
+          <View style={[styles.bottomSheetContent, { maxHeight: '85%' }]}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <BookUser size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
@@ -2115,11 +2173,66 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
               </TouchableOpacity>
             </View>
 
+            {/* CONTACTS FILTER TABS */}
+            <View style={styles.contactFilterTabsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.contactFilterTabBtn,
+                  contactsActiveTab === 'all' && styles.contactFilterTabBtnActive,
+                ]}
+                onPress={() => setContactsActiveTab('all')}
+              >
+                <Text
+                  style={[
+                    styles.contactFilterTabText,
+                    contactsActiveTab === 'all' && styles.contactFilterTabTextActive,
+                  ]}
+                >
+                  All ({deviceContacts.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.contactFilterTabBtn,
+                  contactsActiveTab === 'registered' && styles.contactFilterTabBtnActiveGreen,
+                ]}
+                onPress={() => setContactsActiveTab('registered')}
+              >
+                <ShieldCheck size={13} color={contactsActiveTab === 'registered' ? '#15803D' : '#64748B'} style={{ marginRight: 4 }} />
+                <Text
+                  style={[
+                    styles.contactFilterTabText,
+                    contactsActiveTab === 'registered' && styles.contactFilterTabTextActiveGreen,
+                  ]}
+                >
+                  On Pravisti ({deviceContacts.filter(c => c.isRegistered).length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.contactFilterTabBtn,
+                  contactsActiveTab === 'unregistered' && styles.contactFilterTabBtnActive,
+                ]}
+                onPress={() => setContactsActiveTab('unregistered')}
+              >
+                <Text
+                  style={[
+                    styles.contactFilterTabText,
+                    contactsActiveTab === 'unregistered' && styles.contactFilterTabTextActive,
+                  ]}
+                >
+                  Others
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.contactSearchBarContainer}>
               <Search size={16} color={COLORS.textPlaceholder} style={{ marginRight: 8 }} />
               <TextInput
                 style={styles.contactSearchInput}
-                placeholder="Search by name or mobile number..."
+                placeholder="Search by name, mobile or company..."
                 placeholderTextColor={COLORS.textPlaceholder}
                 value={contactSearchQuery}
                 onChangeText={setContactSearchQuery}
@@ -2136,40 +2249,79 @@ const CreateBrokerDeal = ({ onNavigate, routeData }) => {
               <View style={{ paddingVertical: 36, alignItems: 'center' }}>
                 <ActivityIndicator size="small" color={COLORS.primary} />
                 <Text style={{ marginTop: 8, fontSize: 13, color: COLORS.textMuted }}>
-                  Loading contacts from address book...
+                  Checking Pravisti registered contacts...
                 </Text>
               </View>
             ) : (
               <FlatList
-                data={deviceContacts.filter(c =>
-                  c.name.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
-                  c.mobile.includes(contactSearchQuery)
-                )}
+                data={deviceContacts.filter(c => {
+                  const q = contactSearchQuery.toLowerCase();
+                  const matchSearch =
+                    c.name.toLowerCase().includes(q) ||
+                    c.mobile.includes(q) ||
+                    (c.primaryCompanyName && c.primaryCompanyName.toLowerCase().includes(q));
+
+                  if (!matchSearch) return false;
+                  if (contactsActiveTab === 'registered') return c.isRegistered;
+                  if (contactsActiveTab === 'unregistered') return !c.isRegistered;
+                  return true;
+                })}
                 keyExtractor={item => item.id}
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ paddingVertical: 4 }}
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    style={styles.contactItemCard}
+                    style={[
+                      styles.contactItemCard,
+                      item.isRegistered && styles.contactItemCardRegistered,
+                    ]}
                     onPress={() => handleSelectContactItem(item)}
                     activeOpacity={0.7}
                   >
-                    <View style={styles.contactAvatarCircle}>
-                      <Text style={styles.contactAvatarText}>
+                    <View
+                      style={[
+                        styles.contactAvatarCircle,
+                        item.isRegistered && styles.contactAvatarCircleRegistered,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.contactAvatarText,
+                          item.isRegistered && styles.contactAvatarTextRegistered,
+                        ]}
+                      >
                         {item.name.charAt(0).toUpperCase()}
                       </Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.contactItemName}>{item.name}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                        <Text style={styles.contactItemName}>{item.name}</Text>
+                        {item.isRegistered ? (
+                          <View style={styles.pravistiBadgeSmall}>
+                            <ShieldCheck size={11} color="#15803D" style={{ marginRight: 3 }} />
+                            <Text style={styles.pravistiBadgeSmallText}>Pravisti User</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {item.primaryCompanyName ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                          <Building2 size={12} color="#059669" style={{ marginRight: 4 }} />
+                          <Text style={styles.contactItemCompany} numberOfLines={1}>
+                            {item.primaryCompanyName}
+                          </Text>
+                        </View>
+                      ) : null}
                       <Text style={styles.contactItemPhone}>+91 {item.mobile}</Text>
                     </View>
-                    <ChevronRight size={16} color={COLORS.textPlaceholder} />
+                    <ChevronRight size={16} color={item.isRegistered ? '#059669' : COLORS.textPlaceholder} />
                   </TouchableOpacity>
                 )}
                 ListEmptyComponent={
                   <View style={{ paddingVertical: 28, alignItems: 'center' }}>
                     <Text style={{ fontSize: 13, color: COLORS.textMuted }}>
-                      No matching contacts found
+                      {contactsActiveTab === 'registered'
+                        ? 'No registered contacts found on Pravisti'
+                        : 'No matching contacts found'}
                     </Text>
                   </View>
                 }
@@ -3286,6 +3438,39 @@ const styles = StyleSheet.create({
   },
 
   // Contact Picker
+  contactFilterTabsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  contactFilterTabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  contactFilterTabBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  contactFilterTabBtnActiveGreen: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  contactFilterTabText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  contactFilterTabTextActive: {
+    color: '#FFFFFF',
+  },
+  contactFilterTabTextActiveGreen: {
+    color: '#15803D',
+  },
   contactSearchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3309,28 +3494,65 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.bgMain,
   },
+  contactItemCardRegistered: {
+    backgroundColor: '#F0FDF4',
+    marginBottom: 4,
+    borderBottomWidth: 0,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
   contactAvatarCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: COLORS.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
+    marginRight: 12,
+  },
+  contactAvatarCircleRegistered: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1.5,
+    borderColor: '#22C55E',
   },
   contactAvatarText: {
     fontSize: 15,
     fontWeight: '800',
     color: COLORS.primary,
   },
+  contactAvatarTextRegistered: {
+    color: '#15803D',
+  },
   contactItemName: {
     fontSize: 13.5,
     fontWeight: '700',
     color: COLORS.textPrimary,
+  },
+  pravistiBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#86EFAC',
+  },
+  pravistiBadgeSmallText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  contactItemCompany: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+    marginBottom: 2,
   },
   contactItemPhone: {
     fontSize: 11.5,

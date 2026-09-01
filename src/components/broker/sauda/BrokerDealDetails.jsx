@@ -105,6 +105,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
 
   const handleApprove = async () => {

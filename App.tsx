@@ -38,6 +38,7 @@ import {
   BrokerPendingQueue,
   OwnershipConfirmationModal,
 } from './src/components/broker';
+import { FloatingVoiceAssistant, VoicePreferencesScreen } from './src/modules/voice';
 
 const LoginScreen = Login as any;
 const SignupScreen = Signup as any;
@@ -67,6 +68,7 @@ const CreateBrokerDealScreen = CreateBrokerDeal as any;
 const BrokerCreatedDealsScreen = BrokerCreatedDeals as any;
 const BrokerPendingQueueScreen = BrokerPendingQueue as any;
 const BrokerDealDetailsScreen = BrokerDealDetails as any;
+const VoicePreferencesScreenComponent = VoicePreferencesScreen as any;
 
 const checkIsUserBroker = (userObj: any, explicitRole?: string): boolean => {
   if (explicitRole) {
@@ -260,54 +262,54 @@ function App() {
   const checkUser = data?.user || {};
   const isBrokerUser = checkIsUserBroker(checkUser, data?.role);
 
-  const renderScreen = () => {
-    const onNavigate = async (target: string, targetData = {} as any, options = { replace: false, refresh: false }) => {
-      const targetUser = targetData?.user || checkUser;
-      const isTargetBroker = checkIsUserBroker(targetUser, targetData?.role);
+  const onNavigate = async (target: string, targetData = {} as any, options = { replace: false, refresh: false }) => {
+    const targetUser = targetData?.user || checkUser;
+    const isTargetBroker = checkIsUserBroker(targetUser, targetData?.role);
 
-      let finalData = {
-        ...targetData,
-        role: isTargetBroker ? 'Broker' : 'Trader',
-        user: targetUser,
-      };
-
-      if (options.refresh) {
-        const freshUser = await refreshUserProfile();
-        if (freshUser) {
-          finalData = { ...finalData, user: freshUser, role: checkIsUserBroker(freshUser) ? 'Broker' : 'Trader' };
-        }
-      }
-
-      let finalTarget = target;
-      if (finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard') {
-        finalTarget = isTargetBroker ? 'BrokerDashboard' : 'Dashboard';
-      } else if (finalTarget === 'AddCompany' || finalTarget === 'BrokerAddCompany') {
-        finalTarget = isTargetBroker ? 'BrokerAddCompany' : 'AddCompany';
-      } else if (finalTarget === 'Profile' || finalTarget === 'BrokerProfile') {
-        finalTarget = isTargetBroker ? 'BrokerProfile' : 'Profile';
-      } else if (finalTarget === 'CompanyDetails' || finalTarget === 'BrokerCompanyDetails') {
-        finalTarget = isTargetBroker ? 'BrokerCompanyDetails' : 'CompanyDetails';
-      }
-
-      if (finalTarget === 'pop') {
-        const popped = popScreen();
-        if (!popped) {
-          replaceScreen(isTargetBroker ? 'BrokerDashboard' : 'Dashboard', finalData);
-        }
-        return;
-      }
-
-      if (finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'Profile' || finalTarget === 'BrokerProfile') {
-        checkPendingVerification();
-      }
-
-      if (options.replace || finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'Login') {
-        replaceScreen(finalTarget, finalData);
-      } else {
-        pushScreen(finalTarget, finalData);
-      }
+    let finalData = {
+      ...targetData,
+      role: isTargetBroker ? 'Broker' : 'Trader',
+      user: targetUser,
     };
 
+    if (options.refresh) {
+      const freshUser = await refreshUserProfile();
+      if (freshUser) {
+        finalData = { ...finalData, user: freshUser, role: checkIsUserBroker(freshUser) ? 'Broker' : 'Trader' };
+      }
+    }
+
+    let finalTarget = target;
+    if (finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard') {
+      finalTarget = isTargetBroker ? 'BrokerDashboard' : 'Dashboard';
+    } else if (finalTarget === 'AddCompany' || finalTarget === 'BrokerAddCompany') {
+      finalTarget = isTargetBroker ? 'BrokerAddCompany' : 'AddCompany';
+    } else if (finalTarget === 'Profile' || finalTarget === 'BrokerProfile') {
+      finalTarget = isTargetBroker ? 'BrokerProfile' : 'Profile';
+    } else if (finalTarget === 'CompanyDetails' || finalTarget === 'BrokerCompanyDetails') {
+      finalTarget = isTargetBroker ? 'BrokerCompanyDetails' : 'CompanyDetails';
+    }
+
+    if (finalTarget === 'pop') {
+      const popped = popScreen();
+      if (!popped) {
+        replaceScreen(isTargetBroker ? 'BrokerDashboard' : 'Dashboard', finalData);
+      }
+      return;
+    }
+
+    if (finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'Profile' || finalTarget === 'BrokerProfile') {
+      checkPendingVerification();
+    }
+
+    if (options.replace || finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'Login') {
+      replaceScreen(finalTarget, finalData);
+    } else {
+      pushScreen(finalTarget, finalData);
+    }
+  };
+
+  const renderScreen = () => {
     switch (screen) {
       case 'Login':
         return <LoginScreen onNavigate={onNavigate} routeData={data} />;
@@ -390,12 +392,22 @@ function App() {
         return <BrokerOnboardUserScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerProfile':
         return <BrokerProfileScreen onNavigate={onNavigate} routeData={data} />;
+      case 'VoicePreferences':
+        return <VoicePreferencesScreenComponent onBack={() => onNavigate('pop')} userToken={data?.token} routeData={data} />;
       default:
+        if (data?.token || data?.user) {
+          return isBrokerUser ? (
+            <BrokerDashboardScreen onNavigate={onNavigate} routeData={data} />
+          ) : (
+            <DashboardScreen onNavigate={onNavigate} routeData={data} />
+          );
+        }
         return <LoginScreen onNavigate={onNavigate} routeData={data} />;
     }
   };
 
   const showFooter = current ? ['Dashboard', 'BrokerDashboard', 'MyCompanies', 'Notifications', 'Profile', 'BrokerProfile'].includes(current.screen) : false;
+  const isAuthScreen = current && !['Login', 'Signup', 'ChooseIndustry', 'VoicePreferences'].includes(current.screen);
 
   return (
     <SafeAreaProvider>
@@ -403,6 +415,14 @@ function App() {
         {renderScreen()}
         {showFooter && current && (
           <Footer onNavigate={navigateTab} activeScreen={current.screen} isBroker={isBrokerUser} />
+        )}
+        {isAuthScreen && (
+          <FloatingVoiceAssistant
+            currentScreen={current.screen}
+            userToken={current.data?.token}
+            onNavigate={onNavigate}
+            onOpenPreferences={() => onNavigate('VoicePreferences')}
+          />
         )}
         <OwnershipConfirmationModal
           visible={showOwnershipModal}

@@ -476,6 +476,27 @@ const SummaryApi = {
     url: `${backendDomain}/api/onboarding/verify`,
     method: "patch",
   },
+
+  /* ================= VOICE ASSISTANT ================= */
+  processVoiceCommand: {
+    url: `${backendDomain}/api/v1/voice/process`,
+    method: "post",
+  },
+
+  getVoicePreferences: {
+    url: `${backendDomain}/api/v1/voice/preferences`,
+    method: "get",
+  },
+
+  updateVoicePreferences: {
+    url: `${backendDomain}/api/v1/voice/preferences`,
+    method: "put",
+  },
+
+  resetVoicePreferences: {
+    url: `${backendDomain}/api/v1/voice/preferences`,
+    method: "delete",
+  },
 };
 
 export default SummaryApi;

@@ -38,6 +38,7 @@ import {
   Percent,
   User,
   Check,
+  Mic,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BrokerSuccessReceipt from '../../common/BrokerSuccessReceipt';
@@ -219,6 +220,14 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
       color: '#06B6D4',
       bgColor: '#ECFEFF',
       target: 'ChatList',
+    },
+    {
+      Icon: Mic,
+      label: 'Voice Preferences',
+      subtitle: 'Voice AI, custom phrases & speed',
+      color: '#0B2265',
+      bgColor: '#EFF6FF',
+      target: 'VoicePreferences',
     },
     {
       Icon: HelpCircle,

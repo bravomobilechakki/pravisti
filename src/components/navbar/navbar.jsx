@@ -7,9 +7,10 @@ import {
   Image,
   Platform,
 } from 'react-native';
-import { Bell, User } from 'lucide-react-native';
+import { Bell, User, Mic } from 'lucide-react-native';
 
 import { fontSize, moderateScale, scale } from '../../utils/responsive';
+import VoiceService from '../../modules/voice/VoiceService';
 
 const Navbar = ({ onNavigate, user }) => {
   return (
@@ -23,8 +24,18 @@ const Navbar = ({ onNavigate, user }) => {
         />
       </View>
 
-      {/* Right: Notifications & Profile Icon */}
+      {/* Right: Voice Mic, Notifications & Profile Icon */}
       <View style={styles.actionsRow}>
+        {/* Voice Assistant Mic Button */}
+        <TouchableOpacity
+          style={styles.voiceIconBtn}
+          onPress={() => VoiceService.emit('open-voice-modal')}
+          activeOpacity={0.75}
+        >
+          <Mic size={19} color="#0B2265" />
+          <View style={styles.voiceDot} />
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.iconBtn}
           onPress={() => onNavigate && onNavigate('ChatList')}
@@ -84,6 +95,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: scale(10),
+  },
+  voiceIconBtn: {
+    width: moderateScale(38),
+    height: moderateScale(38),
+    borderRadius: moderateScale(19),
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+  },
+  voiceDot: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#F59E0B',
   },
   iconBtn: {
     width: moderateScale(38),

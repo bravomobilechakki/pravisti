@@ -369,6 +369,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     }, delay);
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [directInputSeller, directInputParty2, directInputBroker]);
 
   const handleSelectFoundCompany = (pickingFor, coObj, mobileNum) => {

@@ -27,6 +27,7 @@ import {
   ChevronRight,
   LogOut,
   X,
+  Mic,
 } from 'lucide-react-native';
 
 const Profile = ({ onNavigate, routeData }) => {
@@ -139,6 +140,7 @@ const Profile = ({ onNavigate, routeData }) => {
       color: '#3B82F6',
     },
     { Icon: Handshake, label: 'My Deals', subtitle: 'View all sauda deals', color: '#10B981' },
+    { Icon: Mic, label: 'Voice Preferences', subtitle: 'Voice AI, custom phrases & speed', color: '#0B2265' },
     { Icon: Users, label: 'Onboarded Users', subtitle: 'Users onboarded during deal creation', color: '#6366F1' },
     { Icon: Users, label: 'Contacts', subtitle: 'Saved parties & brokers', color: '#8B5CF6' },
     { Icon: TrendingUp, label: 'Reports', subtitle: 'Commission & analytics', color: '#EC4899' },
@@ -238,6 +240,8 @@ const Profile = ({ onNavigate, routeData }) => {
                     onNavigate('MyCompanies');
                   } else if (item.label === 'My Deals') {
                     onNavigate('DealsList');
+                  } else if (item.label === 'Voice Preferences') {
+                    onNavigate('VoicePreferences');
                   } else if (item.label === 'Onboarded Users') {
                     onNavigate('OnboardedUsers');
                   }

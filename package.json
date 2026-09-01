@@ -1,6 +1,6 @@
 {
   "name": "Pravisti",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "private": true,
   "scripts": {
     "android": "dot_clean . 2>/dev/null; COPYFILE_DISABLE=1 react-native run-android",
@@ -9,11 +9,12 @@
     "start": "react-native start",
     "test": "jest",
     "bundle:android": "mkdir -p android/app/src/main/assets && npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/",
-    "build:apk": "npm run bundle:android && cd android && ./gradlew clean && ./gradlew assembleRelease",
-    "build:bundle": "npm run bundle:android && cd android && ./gradlew clean && ./gradlew bundleRelease"
+    "build:apk": "npm run bundle:android && cd android && rm -rf app/.cxx app/build && ./gradlew assembleRelease",
+    "build:bundle": "npm run bundle:android && cd android && rm -rf app/.cxx app/build && ./gradlew bundleRelease"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.23.1",
+    "@react-native-voice/voice": "^3.2.4",
     "@react-native/new-app-screen": "0.84.1",
     "lucide-react-native": "^1.17.0",
     "react": "19.2.3",
@@ -22,6 +23,7 @@
     "react-native-image-picker": "^8.2.1",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-svg": "^15.15.5",
+    "react-native-tts": "^4.1.1",
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {

@@ -214,6 +214,7 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
 
   useEffect(() => {
     fetchBrokerDeals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeData]);
 
   const onRefresh = () => {
@@ -619,7 +620,7 @@ const styles = StyleSheet.create({
     height: 44,
   },
   searchInput: {
-    flex: 1,
+    flex: 1,  
     fontSize: 13,
     fontWeight: '600',
     color: COLORS.navy,

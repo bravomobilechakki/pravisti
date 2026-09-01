@@ -1303,12 +1303,6 @@ const styles = StyleSheet.create({
     height: 24,
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
   },
-  drawerRoleText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
   drawerBody: {
     flex: 1,
     padding: 16,

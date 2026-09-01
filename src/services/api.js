@@ -22,7 +22,7 @@ const handleResponse = async (response) => {
  * Fetch with timeout — prevents infinite hang on slow/cold-start server
  * Default: 30 seconds
  */
-const fetchWithTimeout = async (url, options, timeoutMs = 6000) => {
+const fetchWithTimeout = async (url, options, timeoutMs = 30000) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -153,6 +153,35 @@ const putRequest = async (apiConfig, body, token = null) => {
     method: apiConfig.method || 'PUT',
     headers,
     body: JSON.stringify(body),
+  });
+  return await handleResponse(response);
+};
+
+/**
+ * Standard DELETE request helper
+ */
+const deleteRequest = async (apiConfig, token = null) => {
+  const headers = {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  };
+
+  let activeToken = token;
+  if (!activeToken) {
+    try {
+      activeToken = await AsyncStorage.getItem('userToken');
+    } catch (e) {
+      console.warn('Failed to retrieve userToken:', e);
+    }
+  }
+
+  if (activeToken) {
+    headers.Authorization = `Bearer ${activeToken}`;
+  }
+
+  const response = await fetchWithTimeout(apiConfig.url, {
+    method: apiConfig.method || 'DELETE',
+    headers,
   });
   return await handleResponse(response);
 };
@@ -1090,4 +1119,82 @@ export const getBrokerMyDeals = async (companyId = null, token = null) => {
     return { success: true, statusCode: 200, data: [] };
   }
 };
+
+/* ================= VOICE ASSISTANT APIs ================= */
+
+/**
+ * Process voice spoken text input (STT string)
+ * Endpoint: POST /api/v1/voice/process
+ * @param {Object} payload - { text, query, sessionId, language, context }
+ * @param {string|null} token
+ */
+export const processVoiceCommand = async (payload, token = null) => {
+  try {
+    const body = typeof payload === 'string' ? { query: payload, text: payload, sessionId: null, language: 'hi-IN' } : {
+      ...payload,
+      query: payload.query || payload.text,
+      text: payload.text || payload.query,
+      sessionId: payload.sessionId || null,
+      language: payload.language || 'hi-IN',
+    };
+    return await postRequest(SummaryApi.processVoiceCommand, body, token);
+  } catch (error) {
+    console.error('Error in processVoiceCommand:', error.message || error);
+    throw error;
+  }
+};
+
+/**
+ * Get user voice preferences & phrases
+ * Endpoint: GET /api/v1/voice/preferences
+ * @param {string|null} token
+ */
+export const getVoicePreferences = async (token = null) => {
+  try {
+    return await getRequest(SummaryApi.getVoicePreferences, token);
+  } catch (error) {
+    console.warn('Notice fetching voice preferences:', error.message || error);
+    return {
+      success: true,
+      data: {
+        language: 'hi-IN',
+        speechRate: 1.0,
+        pitch: 1.0,
+        autoSpeakResponse: true,
+        customPhrases: [],
+        aliases: {},
+      },
+    };
+  }
+};
+
+/**
+ * Update user voice preferences & custom phrases/aliases
+ * Endpoint: PUT /api/v1/voice/preferences
+ * @param {Object} preferencesData
+ * @param {string|null} token
+ */
+export const updateVoicePreferences = async (preferencesData, token = null) => {
+  try {
+    return await putRequest(SummaryApi.updateVoicePreferences, preferencesData, token);
+  } catch (error) {
+    console.error('Error updating voice preferences:', error.message || error);
+    throw error;
+  }
+};
+
+/**
+ * Reset voice preferences to defaults
+ * Endpoint: DELETE /api/v1/voice/preferences
+ * @param {string|null} token
+ */
+export const resetVoicePreferences = async (token = null) => {
+  try {
+    return await deleteRequest(SummaryApi.resetVoicePreferences, token);
+  } catch (error) {
+    console.error('Error resetting voice preferences:', error.message || error);
+    throw error;
+  }
+};
+
 

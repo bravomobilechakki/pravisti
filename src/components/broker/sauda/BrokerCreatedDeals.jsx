@@ -206,6 +206,7 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
 
   useEffect(() => {
     fetchBrokerCreatedDeals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeData]);
 
   const onRefresh = () => {

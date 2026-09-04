@@ -133,7 +133,7 @@ const ChooseIndustry = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAFBFC',
+    backgroundColor: '#F4F6FB',
   },
   header: {
     flexDirection: 'row',
@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
     marginTop: Platform.OS === 'android' ? 30 : 0,
-    backgroundColor: '#FAFBFC',
+    backgroundColor: '#F4F6FB',
     borderBottomWidth: 0.5,
     borderBottomColor: '#E8ECF0',
   },
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F5F6F8',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -179,13 +179,13 @@ const styles = StyleSheet.create({
   titleText: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#0F172A',
     marginBottom: 8,
   },
   subtitleText: {
     fontSize: 14,
     color: '#64748B',
-    lineHeight: 22,
+    lineHeight: 20,
   },
   gridContainer: {
     flexDirection: 'row',
@@ -208,9 +208,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   industryCardSelected: {
-    borderColor: '#4F46E5',
-    backgroundColor: '#F5F7FF',
-    shadowColor: '#4F46E5',
+    borderColor: '#2327D8',
+    backgroundColor: '#EEF2FE',
+    shadowColor: '#2327D8',
     shadowOpacity: 0.15,
   },
   iconContainer: {
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   industryNameSelected: {
-    color: '#4F46E5',
+    color: '#2327D8',
     fontWeight: '700',
   },
   footer: {
@@ -251,12 +251,12 @@ const styles = StyleSheet.create({
     borderTopColor: '#E2E8F0',
   },
   continueButton: {
-    backgroundColor: '#4F46E5',
+    backgroundColor: '#2327D8',
     height: 54,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#4F46E5',
+    shadowColor: '#2327D8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,

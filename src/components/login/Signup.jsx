@@ -24,85 +24,23 @@ import { signUpUser, verifyOtp } from '../../services/api';
 import { Edit3, Phone, ShieldCheck, ArrowRight, User } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const THEME = '#4F46E5';
+const THEME = '#2327D8';
+const THEME_HOVER = '#1B1FA7';
+const DARK_NAVY = '#1E1C38';
+const BG_COLOR = '#F4F6FB';
 
-// Sleek Modern Mesh Top Header (Cute Bouncy Animated Photo)
+// Sleek Modern Mesh Top Header (Stationary Logo & Photo)
 const ModernHeader = React.memo(({ width, height }) => {
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  const wobbleAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    // Cute Up & Down Floating Ease
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, {
-          toValue: -7,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatAnim, {
-          toValue: 0,
-          duration: 1500,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Cute Playful Pendulum Wobble Swing (-8deg to +8deg)
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(wobbleAnim, {
-          toValue: 1,
-          duration: 1300,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(wobbleAnim, {
-          toValue: -1,
-          duration: 1300,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Cute Breathing Scale Pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.08,
-          duration: 1400,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1400,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, [floatAnim, wobbleAnim, pulseAnim]);
-
-  const wobble = wobbleAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: ['-8deg', '8deg'],
-  });
-
   return (
-    <View style={{ width, height, backgroundColor: '#0F172A', overflow: 'hidden', position: 'relative' }}>
+    <View style={{ width, height, backgroundColor: DARK_NAVY, overflow: 'hidden', position: 'relative' }}>
       {/* Deep Royal Gradient Background */}
       <Svg height="100%" width="100%" viewBox="0 0 1440 320" preserveAspectRatio="none">
         <Defs>
           <LinearGradient id="meshGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#0F172A" />
-            <Stop offset="45%" stopColor="#1E1B4B" />
-            <Stop offset="85%" stopColor="#312E81" />
-            <Stop offset="100%" stopColor="#4F46E5" />
+            <Stop offset="0%" stopColor={DARK_NAVY} />
+            <Stop offset="45%" stopColor={THEME_HOVER} />
+            <Stop offset="85%" stopColor={THEME} />
+            <Stop offset="100%" stopColor={THEME} />
           </LinearGradient>
         </Defs>
         <Path fill="url(#meshGrad)" d="M0,0 L1440,0 L1440,320 L0,320 Z" />
@@ -115,12 +53,12 @@ const ModernHeader = React.memo(({ width, height }) => {
       {/* Portal Badge Pill */}
       <View style={styles.topPillBadgeContainer}>
         <View style={styles.topPillBadge}>
-          <ShieldCheck size={13} color="#A5B4FC" style={{ marginRight: 6 }} />
+          <ShieldCheck size={13} color="#C7D2FE" style={{ marginRight: 6 }} />
           <Text style={styles.topPillBadgeText}>MEMBER REGISTRATION PORTAL</Text>
         </View>
       </View>
 
-      {/* Logo Container: Stationary Pravisti Logo + Cute Bouncy Photo on Right */}
+      {/* Logo Container: Stationary Pravisti Logo + Stationary Photo on Right */}
       <View style={styles.logoBadgeContainer}>
         <View style={styles.logoRowContainer}>
           <Image
@@ -128,21 +66,13 @@ const ModernHeader = React.memo(({ width, height }) => {
             style={{ width: width * 0.50, height: 60 }}
             resizeMode="contain"
           />
-          <Animated.View
-            style={{
-              transform: [
-                { translateY: floatAnim },
-                { rotate: wobble },
-                { scale: pulseAnim },
-              ],
-            }}
-          >
+          <View>
             <Image
               source={require('../../images/logo/photo22.png')}
               style={styles.miniPhoto22Icon}
               resizeMode="contain"
             />
-          </Animated.View>
+          </View>
         </View>
       </View>
     </View>
@@ -526,7 +456,7 @@ const Signup = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: BG_COLOR,
   },
   topPillBadgeContainer: {
     position: 'absolute',
@@ -559,7 +489,7 @@ const styles = StyleSheet.create({
     width: 240,
     height: 240,
     borderRadius: 120,
-    backgroundColor: 'rgba(99, 102, 241, 0.22)',
+    backgroundColor: 'rgba(35, 39, 216, 0.25)',
   },
   ambientGlowBottomLeft: {
     position: 'absolute',
@@ -568,7 +498,7 @@ const styles = StyleSheet.create({
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: 'rgba(129, 140, 248, 0.18)',
+    backgroundColor: 'rgba(27, 31, 167, 0.22)',
   },
   logoBadgeContainer: {
     position: 'absolute',
@@ -643,8 +573,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   roleCardActive: {
-    borderColor: '#4F46E5',
-    backgroundColor: '#EEF2F6',
+    borderColor: THEME,
+    backgroundColor: '#EEF2FE',
   },
   roleCardDisabled: {
     opacity: 0.6,
@@ -660,13 +590,13 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   roleDotActive: {
-    borderColor: '#4F46E5',
+    borderColor: THEME,
   },
   roleDotInner: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#4F46E5',
+    backgroundColor: THEME,
   },
   roleCardText: {
     fontSize: 15,
@@ -674,7 +604,7 @@ const styles = StyleSheet.create({
     color: '#475569',
   },
   roleCardTextActive: {
-    color: '#4F46E5',
+    color: THEME,
     fontWeight: '700',
   },
   inputWrapper: {

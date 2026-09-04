@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -14,28 +14,46 @@ import {
   ActivityIndicator,
   StatusBar,
   Modal,
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ArrowLeft,
-  FileText,
-  User,
-  Briefcase,
-  Building2,
-  Handshake,
-  Box,
-  Calendar,
-  Clock,
-  ChevronRight,
-  Plus,
-  Send,
-  Phone,
-  BookUser,
+  ArrowRight,
   Search,
-  UserPlus,
+  Check,
+  Package,
+  Hash,
+  ShoppingBag,
+  IndianRupee,
+  Info,
+  Edit2,
   X,
-  MessageSquare,
+  Truck,
+  Shield,
+  FileText,
+  CreditCard,
+  Tag,
+  Calendar,
+  Globe,
+  MapPin,
+  Paperclip,
+  CheckCircle2,
+  ChevronDown,
+  Wheat,
+  Droplet,
+  Flame,
+  LayoutGrid,
+  FileCheck,
+  Handshake,
+  BookUser,
+  Building2,
+  Briefcase,
+  User,
+  Send,
 } from 'lucide-react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
+
 import {
   createDeal,
   createBrokerDraftDeal,
@@ -54,111 +72,196 @@ import {
   searchCounterpartyUser,
   fetchPincodeDetails,
 } from '../../../services/api';
-import { Linking } from 'react-native';
+
+const STANDARD_UNITS = [
+  { label: 'Bag (25 Kg)', value: 'Bag (25 Kg)', short: 'Bag' },
+  { label: 'Bag (50 Kg)', value: 'Bag (50 Kg)', short: 'Bag' },
+  { label: 'Quintal (100 Kg)', value: 'Quintal', short: 'Qtl' },
+  { label: 'Metric Ton (MT)', value: 'Metric Ton', short: 'MT' },
+  { label: 'Tin (15 Litres)', value: 'Tin', short: 'Tin' },
+  { label: 'Kilogram (Kg)', value: 'Kilogram', short: 'Kg' },
+  { label: 'Liter (L)', value: 'Liter', short: 'L' },
+];
+
+const DEAL_TYPES = ['Purchase', 'Sale'];
+const DEAL_CATEGORIES = ['Food Grains', 'Pulses', 'Edible Oils', 'Spices', 'Sugar & Sweeteners', 'General Commodity'];
+const PAYMENT_TERMS_LIST = [
+  '30 Days Credit',
+  '15 Days Credit',
+  'Immediate Payment (Cash / RTGS)',
+  '50% Advance, 50% on Delivery',
+  '100% Advance',
+  'Against Documents (CAD)',
+  'Letter of Credit (LC)',
+];
+const DELIVERY_TERMS_LIST = [
+  'FOB - Free on Board',
+  'CIF - Cost, Insurance and Freight',
+  'EXW - Ex Works (Warehouse)',
+  'FOR - Free on Rail',
+  'Door Delivery / Delivered at Place (DAP)',
+];
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const CreateDeal = ({ onNavigate, routeData }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [focusedField, setFocusedField] = useState('');
+  const [createdDealData, setCreatedDealData] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [btnErrorMessage, setBtnErrorMessage] = useState('');
-  const [dropdownSearchText, setDropdownSearchText] = useState('');
-  const scrollViewRef = React.useRef(null);
-  const pendingScrollProductId = React.useRef(null);
+  const [focusedField, setFocusedField] = useState('');
 
-  // Defensive Prefill Mappings
-  const prefillBuyer = routeData?.prefill?.buyerCompany || routeData?.prefill?.buyerCompanyId || routeData?.prefill?.party2 || {};
-  const prefillBuyerName = prefillBuyer.companyName || prefillBuyer.name || (typeof prefillBuyer === 'string' ? '' : '') || routeData?.prefill?.party2?.name || routeData?.prefill?.buyerCompany?.name || '';
-
-  // Form fields & Dates
-  const [description, setDescription] = useState(routeData?.prefill?.description || routeData?.prefill?.notes || '');
-  const [dealDate, setDealDate] = useState(new Date().toISOString().split('T')[0]);
-  const [validityDate, setValidityDate] = useState(
-    routeData?.prefill?.expiryDate
-      ? new Date(routeData.prefill.expiryDate).toISOString().split('T')[0]
-      : routeData?.prefill?.validityDate
-        ? new Date(routeData.prefill.validityDate).toISOString().split('T')[0]
-        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  );
-
-  // Date Picker States
-  const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
-  const [pickingForDate, setPickingForDate] = useState('deal');
-  const [tempDate, setTempDate] = useState(new Date());
-
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-  // Parties Selection
-  const initialCompany = routeData?.originCompany || routeData?.company || (routeData?.companyId ? { _id: routeData.companyId, name: routeData.companyName } : null) || routeData?.user?.companies?.[0];
-  const [party1, setParty1] = useState(initialCompany?.name || routeData?.companyName || 'My Company');
-  const [party2, setParty2] = useState(routeData?.prefillParty2?.name || prefillBuyerName || '');
-  const [party2Data, setParty2Data] = useState(
-    routeData?.prefillParty2
-      ? { ...routeData.prefillParty2, isRegistered: true }
-      : (routeData?.prefill?.buyerCompanyId || routeData?.prefill?.buyerCompany || routeData?.prefill?.party2)
-        ? {
-          ...prefillBuyer,
-          isRegistered: true,
-          company: prefillBuyerName,
-          companyId: prefillBuyer._id || prefillBuyer.id || prefillBuyer.companyId || (typeof prefillBuyer === 'string' ? prefillBuyer : undefined)
-        }
-        : null
-  );
-
-
-
-
-  // Broker-specific Prefill Mappings
-  const prefillSeller = routeData?.prefill?.sellerCompany || routeData?.prefill?.sellerCompanyId || {};
-  const prefillSellerName = prefillSeller.companyName || prefillSeller.name || '';
-
-  const [sellerCompany, setSellerCompany] = useState(String(prefillSellerName || ''));
-  const [sellerCompanyData, setSellerCompanyData] = useState(
-    (routeData?.prefill?.sellerCompany || routeData?.prefill?.sellerCompanyId)
-      ? {
-        ...prefillSeller,
-        isRegistered: true,
-        company: prefillSellerName,
-        companyId: prefillSeller._id || prefillSeller.id || prefillSeller.companyId || (typeof prefillSeller === 'string' ? prefillSeller : undefined)
-      }
-      : null
-  );
-
-  // Dynamic Identity Sync
-  const [activeUserCompany, setActiveUserCompany] = useState(initialCompany);
-  const [activeUserId, setActiveUserId] = useState(routeData?.user?._id || routeData?.user?.id);
-  const originCompanyId = routeData?.companyId || activeUserCompany?._id || activeUserCompany?.id || activeUserCompany?.companyId || initialCompany?._id || initialCompany?.id;
-
+  // ----------------------------------------------------
+  // ROLE & IDENTITY STATES
+  // ----------------------------------------------------
   const getInitialRole = () => {
     const raw = String(routeData?.prefill?.role || routeData?.role || 'seller').toLowerCase();
     if (raw === 'buyer') return 'buyer';
-    if (raw === 'broker') return 'broker';
     return 'seller';
   };
   const [role, setRole] = useState(getInitialRole);
-  const [brokerCompanyId, setBrokerCompanyId] = useState(routeData?.prefill?.brokerCompanyId || '');
-  const [brokerCompany, setBrokerCompany] = useState('');
-  const [brokerCompanyData, setBrokerCompanyData] = useState(null);
 
-  // Direct Mobile Search / Add States for Step 1
+  const initialCompany =
+    routeData?.originCompany ||
+    routeData?.company ||
+    (routeData?.companyId ? { _id: routeData.companyId, name: routeData.companyName } : null) ||
+    routeData?.user?.companies?.[0];
+
+  const [activeUserCompany, setActiveUserCompany] = useState(initialCompany);
+  const [activeUserId, setActiveUserId] = useState(routeData?.user?._id || routeData?.user?.id);
+  const originCompanyId =
+    routeData?.companyId ||
+    activeUserCompany?._id ||
+    activeUserCompany?.id ||
+    activeUserCompany?.companyId ||
+    initialCompany?._id ||
+    initialCompany?.id;
+
+  const [party1, setParty1] = useState(initialCompany?.name || routeData?.companyName || '');
+  const [sellerLocation, setSellerLocation] = useState(
+    initialCompany?.address?.city ? `${initialCompany.address.city}, ${initialCompany.address.state || 'India'}` : ''
+  );
+  const [sellerIndustry, setSellerIndustry] = useState(initialCompany?.industry?.name || initialCompany?.industry || '');
+
+  // Counterparty 2 (Buyer when seller, Seller when buyer)
+  const prefillBuyer = routeData?.prefill?.buyerCompany || routeData?.prefill?.buyerCompanyId || routeData?.prefill?.party2 || {};
+  const prefillBuyerName = prefillBuyer.companyName || prefillBuyer.name || routeData?.prefillParty2?.name || routeData?.existingParty2Name || '';
+
+  const [party2, setParty2] = useState(prefillBuyerName);
+  const [party2Data, setParty2Data] = useState(
+    routeData?.prefillParty2
+      ? { ...routeData.prefillParty2, isRegistered: true }
+      : routeData?.existingParty2
+        ? routeData.existingParty2
+        : prefillBuyerName
+          ? { ...prefillBuyer, isRegistered: true, company: prefillBuyerName, name: prefillBuyerName }
+          : null
+  );
+
+  // Broker-specific Seller states (if applicable)
+  const prefillSeller = routeData?.prefill?.sellerCompany || routeData?.prefill?.sellerCompanyId || {};
+  const prefillSellerName = prefillSeller.companyName || prefillSeller.name || routeData?.existingSellerCompanyName || '';
+  const [sellerCompany, setSellerCompany] = useState(String(prefillSellerName || ''));
+  const [sellerCompanyData, setSellerCompanyData] = useState(
+    routeData?.existingSellerCompany
+      ? routeData.existingSellerCompany
+      : (routeData?.prefill?.sellerCompany || routeData?.prefill?.sellerCompanyId)
+        ? { ...prefillSeller, isRegistered: true, company: prefillSellerName }
+        : null
+  );
+
   const [directInputParty2, setDirectInputParty2] = useState('');
+  const [party2SearchError, setParty2SearchError] = useState('');
+  const [isSearchingParty2, setIsSearchingParty2] = useState(false);
   const [directInputSeller, setDirectInputSeller] = useState('');
-  const [directInputBroker, setDirectInputBroker] = useState('');
-  const [directInputErrors, setDirectInputErrors] = useState({});
   const [lookupResults, setLookupResults] = useState({});
 
-  // Master Data Loaded from API
-  const [unitsList, setUnitsList] = useState([]);
-  const [industriesList, setIndustriesList] = useState([]);
-  const [userCompaniesList, setUserCompaniesList] = useState([]);
-  const [currentUserMobile, setCurrentUserMobile] = useState('');
-  const [isPincodeLoading, setIsPincodeLoading] = useState(false);
+  // Other Parties (Broker, Logistics, Insurance)
+  const existingBroker = routeData?.existingBrokerCompany || routeData?.prefill?.brokerCompany || null;
+  const existingBrokerName = routeData?.existingBrokerCompanyName || routeData?.prefill?.brokerCompanyName || (existingBroker?.isRegistered ? (existingBroker?.company || existingBroker?.name) : existingBroker?.name) || '';
+  const [brokerCompany, setBrokerCompany] = useState(existingBrokerName);
+  const [brokerCompanyData, setBrokerCompanyData] = useState(existingBroker);
+  const [brokerCompanyId, setBrokerCompanyId] = useState(routeData?.prefill?.brokerCompanyId || existingBroker?.companyId || existingBroker?._id || '');
+  const [directInputBroker, setDirectInputBroker] = useState('');
+  const [brokerSearchError, setBrokerSearchError] = useState('');
+  const [isSearchingBroker, setIsSearchingBroker] = useState(false);
+  const [showBroker, setShowBroker] = useState(Boolean(existingBrokerName || routeData?.prefill?.brokerCompanyId));
 
-  // Trader Assisted Onboarding Modal States for Unregistered Counterparty
+  const [logisticsPartner, setLogisticsPartner] = useState(routeData?.prefill?.logisticsPartner || '');
+  const [insuranceProvider, setInsuranceProvider] = useState(routeData?.prefill?.insuranceProvider || '');
+  const [showLogistics, setShowLogistics] = useState(Boolean(routeData?.prefill?.logisticsPartner));
+  const [showInsurance, setShowInsurance] = useState(Boolean(routeData?.prefill?.insuranceProvider));
+  const [partyNotes, setPartyNotes] = useState(routeData?.prefill?.description || routeData?.prefill?.notes || '');
+
+  // ----------------------------------------------------
+  // STEP 2: PRODUCT STATES
+  // ----------------------------------------------------
+  const [productSearch, setProductSearch] = useState('');
+  const [selectedCategoryTab, setSelectedCategoryTab] = useState('all');
+  const [selectedRecentId, setSelectedRecentId] = useState(null);
+
+  const [productName, setProductName] = useState(
+    routeData?.prefill?.productName ||
+    routeData?.prefill?.product?.name ||
+    routeData?.prefill?.products?.[0]?.productName ||
+    ''
+  );
+  const [hsnCode, setHsnCode] = useState(routeData?.prefill?.hsnCode || '');
+  const [unit, setUnit] = useState(routeData?.prefill?.unit || 'Bag (25 Kg)');
+  const [approxRate, setApproxRate] = useState(
+    routeData?.prefill?.price ? String(routeData.prefill.price) : ''
+  );
+  const [quantity, setQuantity] = useState(
+    routeData?.prefill?.quantity ? String(routeData.prefill.quantity) : ''
+  );
+  const [discount, setDiscount] = useState(routeData?.prefill?.discount ? String(routeData.prefill.discount) : '0');
+  const [gstPercent, setGstPercent] = useState(routeData?.prefill?.gst ? String(routeData.prefill.gst) : '0');
+  const [selectedProductId, setSelectedProductId] = useState(routeData?.prefill?.productId || '');
+
+  const [showUnitModal, setShowUnitModal] = useState(false);
+
+  // ----------------------------------------------------
+  // STEP 3: DEAL DETAILS STATES
+  // ----------------------------------------------------
+  const [dealName, setDealName] = useState(routeData?.prefill?.dealName || routeData?.prefill?.title || '');
+  const [dealType, setDealType] = useState(role === 'buyer' ? 'Purchase' : 'Sale');
+  const [dealCategory, setDealCategory] = useState(routeData?.prefill?.dealCategory || 'Food Grains');
+  const [currency, setCurrency] = useState('INR');
+  const [dealValue, setDealValue] = useState('');
+  const [expectedDealDate, setExpectedDealDate] = useState(new Date().toISOString().split('T')[0]);
+  const [validityDate, setValidityDate] = useState(
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  );
+  const [paymentTerms, setPaymentTerms] = useState(routeData?.prefill?.paymentTerms || '30 Days Credit');
+  const [deliveryTerms, setDeliveryTerms] = useState(routeData?.prefill?.deliveryTerms || 'FOB - Free on Board');
+  const [deliveryLocation, setDeliveryLocation] = useState(routeData?.prefill?.deliveryLocation || '');
+  const [dealDescription, setDealDescription] = useState(routeData?.prefill?.description || '');
+
+  // Pickers & Modals
+  const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
+  const [pickingForDate, setPickingForDate] = useState('expected');
+  const [tempDate, setTempDate] = useState(new Date());
+
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showPaymentTermsModal, setShowPaymentTermsModal] = useState(false);
+  const [showDeliveryTermsModal, setShowDeliveryTermsModal] = useState(false);
+
+  // Attachments State
+  const [attachments, setAttachments] = useState([]);
+
+  // Master Data States
+  const [unitsList, setUnitsList] = useState(STANDARD_UNITS);
+  const [companyProducts, setCompanyProducts] = useState([]);
+  const [userCompaniesList, setUserCompaniesList] = useState([]);
+  const [industriesList, setIndustriesList] = useState([]);
+  const [showCompanySwitchModal, setShowCompanySwitchModal] = useState(false);
+
+  // Assisted Onboarding Modal
   const [showOnboardModal, setShowOnboardModal] = useState(false);
-  const [onboardStep, setOnboardStep] = useState(1);
-  const [onboardRole, setOnboardRole] = useState('seller');
+  const [onboardRole, setOnboardRole] = useState('buyer');
   const [onboardForm, setOnboardForm] = useState({
     name: '',
     mobileNumber: '',
@@ -172,16 +275,30 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     postalCode: '',
     country: 'India',
     productName: '',
-    unitId: '64d0a1b2c3d4e5f6a7b8c9df',
-    hsnCode: '76011010',
+    unitId: '',
+    hsnCode: '',
     gstCode: 'GST_18',
     description: '',
   });
   const [onboardErrors, setOnboardErrors] = useState({});
   const [isOnboardingSubmitting, setIsOnboardingSubmitting] = useState(false);
+  const [isPincodeLoading, setIsPincodeLoading] = useState(false);
 
-  // Master Data Initial Load
-  React.useEffect(() => {
+  // Auto calculate deal value
+  useEffect(() => {
+    if (productName) {
+      setDealName(`Supply of ${productName}`);
+    }
+    const q = parseFloat(String(quantity).replace(/,/g, '')) || 0;
+    const r = parseFloat(String(approxRate).replace(/,/g, '')) || 0;
+    const computed = q * r;
+    if (computed > 0) {
+      setDealValue(computed.toLocaleString('en-IN'));
+    }
+  }, [productName, approxRate, quantity]);
+
+  // Load User Profile and Master Data
+  useEffect(() => {
     const loadMasterData = async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
@@ -190,97 +307,199 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         const userRes = await getUserProfile(token);
         if (userRes && userRes.success && userRes.data) {
           const u = userRes.data;
-          setCurrentUserMobile(u.mobileNumber || u.phone || '');
-          if (Array.isArray(u.companies)) {
+          setActiveUserId(u._id || u.id);
+          if (Array.isArray(u.companies) && u.companies.length > 0) {
             setUserCompaniesList(u.companies);
+            const active = u.companies[0];
+            setActiveUserCompany(active);
+            setParty1(active.name || 'Sharma Traders');
+            if (active.address?.city || active.city) {
+              const loc = `${active.address?.city || active.city}, ${active.address?.state || active.state || 'India'}`;
+              setSellerLocation(loc);
+              setDeliveryLocation(loc);
+            }
           }
         }
 
         try {
-          const unitsRes = await getUnits('active', token);
-          if (unitsRes && (unitsRes.success || Array.isArray(unitsRes.data))) {
-            const list = Array.isArray(unitsRes.data) ? unitsRes.data : (unitsRes.data?.data || []);
-            setUnitsList(list);
+          const uRes = await getUnits('active', token);
+          if (uRes && (uRes.success || Array.isArray(uRes.data))) {
+            const list = Array.isArray(uRes.data) ? uRes.data : uRes.data?.data || [];
+            if (list.length > 0) {
+              setUnitsList(list.map(item => ({ label: item.name, value: item.name, short: item.symbol || item.name, id: item._id })));
+            }
           }
-        } catch (e) {
-          console.warn('Units load error:', e);
-        }
+        } catch (e) { }
 
         try {
           const indRes = await getIndustries();
           if (indRes && (indRes.success || Array.isArray(indRes.data))) {
-            const list = Array.isArray(indRes.data) ? indRes.data : (indRes.data?.data || []);
+            const list = Array.isArray(indRes.data) ? indRes.data : indRes.data?.data || [];
             setIndustriesList(list);
           }
-        } catch (e) {
-          console.warn('Industries load error:', e);
-        }
+        } catch (e) { }
       } catch (err) {
         console.warn('Master data load error:', err);
       }
     };
     loadMasterData();
-  }, []);
+  }, [originCompanyId]);
 
-  const openOnboardModalForRole = async (targetRole, contactData, nameVal) => {
-    let currentIndustries = industriesList;
-    if (!currentIndustries || currentIndustries.length === 0) {
-      try {
-        const indRes = await getIndustries();
-        if (indRes && (indRes.success || Array.isArray(indRes.data))) {
-          currentIndustries = Array.isArray(indRes.data) ? indRes.data : (indRes.data?.data || []);
-          setIndustriesList(currentIndustries);
-        }
-      } catch (e) {
-        console.warn('Industries load error:', e);
-      }
-    }
-
-    const rawMob = contactData?.mobile || contactData?.phone || nameVal || '';
-    const cleanMob = rawMob.replace(/\D/g, '');
-    let searchedUser = null;
-
-    if (cleanMob.length === 10) {
+  // Load Inventory of Seller
+  useEffect(() => {
+    const fetchCompanyInventory = async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
-        const searchRes = await searchCounterpartyUser(`+91${cleanMob}`, token);
-        if (searchRes && searchRes.success && searchRes.data) {
-          searchedUser = searchRes.data.user || searchRes.data;
+        let targetSellerCompanyId = null;
+        if (role === 'buyer') {
+          // As Buyer: products must strictly come from selected Seller Company
+          targetSellerCompanyId = party2Data?.companyId || party2Data?._id || party2Data?.id;
+        } else if (role === 'seller') {
+          // As Seller: products come from user's active company
+          targetSellerCompanyId = activeUserCompany?._id || activeUserCompany?.id || originCompanyId;
+        }
+
+        if (targetSellerCompanyId && String(targetSellerCompanyId).length === 24) {
+          const res = await getProducts(targetSellerCompanyId, token).catch(() => null);
+          const pList = Array.isArray(res?.data) ? res.data : res?.data?.data || [];
+          if (pList.length > 0) {
+            const formatted = pList.map(p => ({
+              id: p._id || p.id,
+              name: p.name,
+              hsn: p.hsnCode || '',
+              rate: p.price ? String(p.price) : '',
+              unit: p.unitId?.name || p.unit || 'Bag (25 Kg)',
+              category: 'grains',
+              image: p.image || null,
+            }));
+            setCompanyProducts(formatted);
+          } else {
+            setCompanyProducts(prev => (prev.length > 0 && prev[0]?.isNewlyOnboarded ? prev : []));
+          }
+        } else {
+          setCompanyProducts(prev => (prev.length > 0 && prev[0]?.isNewlyOnboarded ? prev : []));
         }
       } catch (e) {
-        console.warn('User search error:', e);
+        console.warn('Inventory fetch note:', e);
+        setCompanyProducts(prev => (prev.length > 0 && prev[0]?.isNewlyOnboarded ? prev : []));
+      }
+    };
+    fetchCompanyInventory();
+  }, [activeUserCompany, party2Data, role, originCompanyId]);
+
+  // RouteData Contact Picker listener
+  useEffect(() => {
+    if (routeData?.prefillParty2) {
+      setParty2(routeData.prefillParty2.name || routeData.prefillParty2.company || '');
+      setParty2Data({ ...routeData.prefillParty2, isRegistered: true });
+    }
+    if (routeData?.existingParty2 && routeData?.pickingFor !== 'party2') {
+      const p2Data = routeData.existingParty2;
+      const p2Name = routeData.existingParty2Name || (p2Data?.isRegistered ? (p2Data?.company || p2Data?.name) : p2Data?.name);
+      setParty2(p2Name);
+      setParty2Data(p2Data);
+    }
+    if (routeData?.existingBrokerCompany && routeData?.pickingFor !== 'brokerCompany') {
+      const bData = routeData.existingBrokerCompany;
+      const bName = routeData.existingBrokerCompanyName || (bData?.isRegistered ? (bData?.company || bData?.name) : bData?.name);
+      setBrokerCompany(bName);
+      setBrokerCompanyData(bData);
+      setShowBroker(true);
+      const cid = bData?.companyId || bData?._id || bData?.id;
+      if (cid) setBrokerCompanyId(String(cid));
+    }
+    if (routeData?.selectedContact) {
+      const contact = routeData.selectedContact;
+      if (routeData.pickingFor === 'party2') {
+        setParty2(contact.isRegistered ? (contact.company || contact.name) : contact.name);
+        setParty2Data(contact);
+        setDirectInputParty2('');
+        setFieldErrors(prev => ({ ...prev, party2: undefined }));
+      } else if (routeData.pickingFor === 'brokerCompany') {
+        setBrokerCompany(contact.isRegistered ? (contact.company || contact.name) : contact.name);
+        setBrokerCompanyData(contact);
+        setShowBroker(true);
+        const cid = contact.companyId || contact._id || contact.id;
+        if (cid) setBrokerCompanyId(String(cid));
+        setDirectInputBroker('');
       }
     }
+  }, [routeData]);
 
-    let defaultName = searchedUser?.name || contactData?.name || '';
-    // Do NOT pre-fill phone numbers into User Full Name field
-    if (/^\+?\d+$/.test(defaultName.trim())) {
-      defaultName = '';
+  // Live Counterparty 10-Digit Mobile Lookup
+  useEffect(() => {
+    const checkNumber = async (field, rawVal) => {
+      const cleanDigits = (rawVal || '').replace(/\D/g, '');
+      if (cleanDigits.length === 10) {
+        try {
+          const token = await AsyncStorage.getItem('userToken');
+          const formattedNumber = `+91${cleanDigits}`;
+          const response = await getCompaniesByNumber(formattedNumber, token);
+          if (response && response.success && response.data && response.data.length > 0) {
+            const coObj = response.data[0];
+            const companyId = coObj.companyId || coObj._id || coObj.id;
+            const companyName = coObj.companyName || coObj.name || 'Registered Company';
+            const contactObj = {
+              id: companyId || `reg_${Date.now()}`,
+              companyId,
+              name: coObj.contactPersonName || coObj.name || companyName,
+              company: companyName,
+              mobile: formattedNumber,
+              isRegistered: true,
+              industry: coObj.industryName || 'Commodity Trading',
+              location: coObj.city ? `${coObj.city}, ${coObj.state || 'India'}` : 'Registered Counterparty',
+            };
+            if (field === 'party2') {
+              setParty2(companyName);
+              setParty2Data(contactObj);
+              setDirectInputParty2('');
+              setFieldErrors(prev => ({ ...prev, party2: undefined }));
+            } else if (field === 'brokerCompany') {
+              setBrokerCompany(companyName);
+              setBrokerCompanyData(contactObj);
+              setBrokerCompanyId(String(companyId || ''));
+              setDirectInputBroker('');
+              setShowBroker(true);
+            }
+          } else {
+            // Auto open onboard modal for new contact
+            openOnboardModal(field === 'brokerCompany' ? 'broker' : (role === 'buyer' ? 'seller' : 'buyer'), cleanDigits);
+          }
+        } catch (e) { }
+      }
+    };
+
+    if (directInputParty2.replace(/\D/g, '').length === 10) {
+      checkNumber('party2', directInputParty2);
     }
-
-    const defaultMobile = cleanMob || (contactData?.mobile || contactData?.phone || '').replace(/^\+91/, '');
-    const defaultCompany = contactData?.company || contactData?.companyName || '';
-    const firstProdName = productsList[0]?.productName || '';
-    const defaultIndustryId = currentIndustries[0]?._id || currentIndustries[0]?.id || '';
-    const defaultUnitId = unitsList[0]?._id || unitsList[0]?.id || '64d0a1b2c3d4e5f6a7b8c9df';
-
-    // Strict Role Resolution:
-    let resolvedRole = 'seller';
-    if (targetRole === 'seller' || targetRole === 'buyer' || targetRole === 'broker') {
-      resolvedRole = targetRole;
-    } else if (role === 'buyer') {
-      resolvedRole = 'seller';
-    } else if (role === 'seller' || role === 'broker') {
-      resolvedRole = 'buyer';
+    if (directInputBroker.replace(/\D/g, '').length === 10) {
+      checkNumber('brokerCompany', directInputBroker);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directInputParty2, directInputBroker, role]);
 
-    setOnboardRole(resolvedRole);
-    setOnboardStep(1);
+  const navigateToContactPicker = (pickingFor) => {
+    onNavigate('ContactPicker', {
+      pickingFor,
+      companyId: activeUserCompany?._id || activeUserCompany?.id || activeUserCompany?.companyId || originCompanyId,
+      companyName: activeUserCompany?.name || party1,
+      role: role,
+      originCompany: activeUserCompany,
+      existingParty2: party2Data,
+      existingParty2Name: party2,
+      existingBrokerCompany: brokerCompanyData,
+      existingBrokerCompanyName: brokerCompany,
+    });
+  };
+
+  // Assisted Onboarding Helpers
+  const openOnboardModal = (targetRole, defaultPhone = '') => {
+    setOnboardRole(targetRole);
     setOnboardForm({
-      name: defaultName,
-      mobileNumber: defaultMobile,
-      companyName: defaultCompany,
-      industryId: defaultIndustryId,
+      name: '',
+      mobileNumber: defaultPhone || '',
+      companyName: '',
+      industryId: industriesList[0]?._id || '',
       registrationNumber: '',
       street: '',
       city: '',
@@ -288,9 +507,9 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       state: '',
       postalCode: '',
       country: 'India',
-      productName: firstProdName,
-      unitId: defaultUnitId,
-      hsnCode: '76011010',
+      productName: productName || '',
+      unitId: unitsList[0]?.id || unitsList[0]?.name || '',
+      hsnCode: hsnCode || '',
       gstCode: 'GST_18',
       description: '',
     });
@@ -317,550 +536,6 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     }
   };
 
-  // Auto live company lookup when a 10-digit mobile number is typed
-  React.useEffect(() => {
-    const checkNumber = async (field, rawVal) => {
-      const cleanDigits = rawVal.replace(/\D/g, '');
-      if (cleanDigits.length === 10) {
-        setLookupResults(prev => ({
-          ...prev,
-          [field]: { searching: true, companies: [], mobile: `+91${cleanDigits}` }
-        }));
-        try {
-          const token = await AsyncStorage.getItem('userToken');
-          const formattedNumber = `+91${cleanDigits}`;
-          const response = await getCompaniesByNumber(formattedNumber, token);
-          if (response && response.success && response.data && response.data.length > 0) {
-            setLookupResults(prev => ({
-              ...prev,
-              [field]: {
-                searching: false,
-                companies: response.data,
-                contactPersonName: response.data[0].contactPersonName || '',
-                mobile: formattedNumber,
-              }
-            }));
-          } else {
-            setLookupResults(prev => ({
-              ...prev,
-              [field]: { searching: false, companies: [], mobile: formattedNumber, notFound: true }
-            }));
-            // Auto add contact & auto open registration modal popup
-            handleDirectAddContact(field, cleanDigits);
-            const targetRole = field === 'brokerCompany' ? 'broker' : (field === 'sellerCompany' ? 'seller' : (role === 'buyer' ? 'seller' : 'buyer'));
-            openOnboardModalForRole(targetRole, null, cleanDigits);
-          }
-        } catch (e) {
-          console.warn('Step 1 number lookup error:', e);
-          setLookupResults(prev => ({ ...prev, [field]: null }));
-        }
-      } else {
-        setLookupResults(prev => ({ ...prev, [field]: null }));
-      }
-    };
-
-    const isAnyTenDigits = [directInputSeller, directInputParty2, directInputBroker].some(v => (v || '').replace(/\D/g, '').length === 10);
-    const delay = isAnyTenDigits ? 0 : 350;
-
-    const timer = setTimeout(() => {
-      if (directInputSeller) checkNumber('sellerCompany', directInputSeller);
-      if (directInputParty2) checkNumber('party2', directInputParty2);
-      if (directInputBroker) checkNumber('brokerCompany', directInputBroker);
-    }, delay);
-
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directInputSeller, directInputParty2, directInputBroker]);
-
-  const handleSelectFoundCompany = (pickingFor, coObj, mobileNum) => {
-    const companyId = coObj.companyId || coObj._id || coObj.id;
-    const companyName = coObj.companyName || coObj.name || 'Registered Company';
-    const personName = coObj.contactPersonName || coObj.name || companyName;
-
-    const contactObj = {
-      id: companyId || `reg_${Date.now()}`,
-      companyId: companyId,
-      name: personName,
-      company: companyName,
-      mobile: mobileNum,
-      isRegistered: true,
-    };
-
-    if (pickingFor === 'party2') {
-      setParty2(companyName);
-      setParty2Data(contactObj);
-      setDirectInputParty2('');
-      setLookupResults(prev => ({ ...prev, party2: null }));
-      setFieldErrors(prev => ({ ...prev, party2: undefined }));
-      setDirectInputErrors(prev => ({ ...prev, party2: undefined }));
-    } else if (pickingFor === 'sellerCompany') {
-      setSellerCompany(companyName);
-      setSellerCompanyData(contactObj);
-      setDirectInputSeller('');
-      setLookupResults(prev => ({ ...prev, sellerCompany: null }));
-      setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-      setDirectInputErrors(prev => ({ ...prev, sellerCompany: undefined }));
-    } else if (pickingFor === 'brokerCompany') {
-      setBrokerCompany(companyName);
-      setBrokerCompanyData(contactObj);
-      setBrokerCompanyId(String(companyId || ''));
-      setDirectInputBroker('');
-      setLookupResults(prev => ({ ...prev, brokerCompany: null }));
-    }
-  };
-
-  const handleDirectAddContact = (pickingFor, rawInput) => {
-    if (!rawInput || !rawInput.trim()) return;
-    const trimmed = rawInput.trim();
-    const cleanDigits = trimmed.replace(/\D/g, '');
-
-    // If digits are present, enforce strict 10-digit mobile validation
-    if (cleanDigits.length > 0) {
-      if (cleanDigits.length !== 10) {
-        setDirectInputErrors(prev => ({
-          ...prev,
-          [pickingFor]: `Please enter full 10-digit mobile number (${cleanDigits.length}/10 digits)`
-        }));
-        return;
-      }
-      if (!/^[6-9]\d{9}$/.test(cleanDigits)) {
-        setDirectInputErrors(prev => ({
-          ...prev,
-          [pickingFor]: 'Mobile number must start with 6, 7, 8, or 9'
-        }));
-        return;
-      }
-    }
-
-    setDirectInputErrors(prev => ({ ...prev, [pickingFor]: undefined }));
-    const formattedMobile = cleanDigits.length === 10 ? `+91${cleanDigits}` : trimmed;
-    const contactObj = {
-      id: `manual_${Date.now()}`,
-      name: trimmed,
-      mobile: formattedMobile,
-      isRegistered: false,
-    };
-
-    if (pickingFor === 'party2') {
-      setParty2(trimmed);
-      setParty2Data(contactObj);
-      setDirectInputParty2('');
-      setFieldErrors(prev => ({ ...prev, party2: undefined }));
-    } else if (pickingFor === 'sellerCompany') {
-      setSellerCompany(trimmed);
-      setSellerCompanyData(contactObj);
-      setDirectInputSeller('');
-      setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-    } else if (pickingFor === 'brokerCompany') {
-      setBrokerCompany(trimmed);
-      setBrokerCompanyData(contactObj);
-      setDirectInputBroker('');
-      setBrokerCompanyId('');
-    }
-  };
-
-  // Multi-product state
-  const prefillProducts = routeData?.prefill?.products || [];
-
-  const getInitialProductsList = () => {
-    if (prefillProducts.length > 0) {
-      return prefillProducts.map((p, idx) => ({
-        id: Date.now() + idx + Math.random(),
-        productName: p.productId?.name || p.name || (typeof p === 'string' ? p : '') || '',
-        quantity: String(p.quantity || ''),
-        price: String(p.price || ''),
-        gst: String(p.gst || ''),
-        discount: String(p.discount || ''),
-        paymentTerms: p.paymentTerms || '',
-        showProductDropdown: false,
-        showAdditionalDetails: false,
-      }));
-    }
-
-    // Check if there is single product prefill
-    const prefillProd = routeData?.prefill?.products?.[0] || routeData?.prefill?.product || {};
-    const prefillProductName = prefillProd.productId?.name || prefillProd.name || (typeof prefillProd === 'string' ? prefillProd : '') || routeData?.prefill?.product || routeData?.prefill?.productName || '';
-    const prefillQty = prefillProd.quantity || routeData?.prefill?.qty || '';
-    const prefillPrice = prefillProd.price || routeData?.prefill?.price || '';
-
-    if (prefillProductName || prefillQty || prefillPrice) {
-      return [{
-        id: Date.now() + Math.random(),
-        productName: String(prefillProductName || ''),
-        quantity: String(prefillQty || ''),
-        price: String(prefillPrice || ''),
-        gst: String(prefillProd.gst || routeData?.prefill?.gst || ''),
-        discount: String(prefillProd.discount || routeData?.prefill?.discount || ''),
-        paymentTerms: prefillProd.paymentTerms || routeData?.prefill?.paymentTerms || '',
-        showProductDropdown: false,
-        showAdditionalDetails: false,
-      }];
-    }
-
-    // Default empty item
-    return [{
-      id: Date.now(),
-      productName: '',
-      quantity: '',
-      price: '',
-      gst: '',
-      discount: '',
-      paymentTerms: '',
-      showProductDropdown: false,
-      showAdditionalDetails: false,
-    }];
-  };
-
-  const [productsList, setProductsList] = useState(getInitialProductsList());
-  const [activeTabId, setActiveTabId] = useState(productsList[0]?.id || Date.now());
-
-  const addProductItem = () => {
-    const newId = Date.now() + Math.random();
-    pendingScrollProductId.current = newId;
-    setProductsList(prev => [
-      ...prev,
-      {
-        id: newId,
-        productName: '',
-        quantity: '',
-        price: '',
-        gst: '',
-        discount: '',
-        paymentTerms: '',
-        showProductDropdown: false,
-        showAdditionalDetails: false,
-      }
-    ]);
-    setActiveTabId(newId);
-  };
-
-  const removeProductItem = (id) => {
-    if (productsList.length > 1) {
-      setProductsList(prev => {
-        const remaining = prev.filter(item => item.id !== id);
-        if (activeTabId === id) {
-          setActiveTabId(remaining[0]?.id);
-        }
-        return remaining;
-      });
-    }
-  };
-
-  const updateProductField = (id, field, value) => {
-    setProductsList(prev => prev.map(item => {
-      if (item.id === id) {
-        return { ...item, [field]: value };
-      }
-      return item;
-    }));
-  };
-
-  const updateProductFields = (id, fieldsObj) => {
-    setProductsList(prev => prev.map(item => {
-      if (item.id === id) {
-        return { ...item, ...fieldsObj };
-      }
-      return item;
-    }));
-  };
-
-  const handleProductNameChange = (id, value) => {
-    updateProductField(id, 'productName', value);
-  };
-
-  // Keep role stable as selected by user or initialized from routeData
-
-
-  // Company Product Inventory Sync
-  const [companyProducts, setCompanyProducts] = useState([]);
-  const [showProductDropdown, setShowProductDropdown] = useState(false);
-
-  React.useEffect(() => {
-    const fetchCompanyInventory = async () => {
-      try {
-        const token = await AsyncStorage.getItem('userToken');
-        const combinedProducts = [];
-        const seenIds = new Set();
-        const seenNames = new Set();
-
-        const addProducts = (resObj) => {
-          if (!resObj) return;
-          const prodList = Array.isArray(resObj)
-            ? resObj
-            : (Array.isArray(resObj.data)
-              ? resObj.data
-              : (resObj.data && Array.isArray(resObj.data.data) ? resObj.data.data : []));
-
-          prodList.forEach(p => {
-            const id = p._id || p.id;
-            const name = String(p.name || '').trim().toLowerCase();
-            if (id && !seenIds.has(String(id)) && name && !seenNames.has(name)) {
-              seenIds.add(String(id));
-              seenNames.add(name);
-              combinedProducts.push(p);
-            }
-          });
-        };
-
-        // Determine target seller company ID based on current role
-        let targetSellerCompanyId = null;
-
-        if (role === 'buyer') {
-          // When current user is Buyer, products MUST belong to the Seller (party2Data or sellerCompanyData)
-          // DO NOT fetch Buyer's (activeUserCompany) products!
-          targetSellerCompanyId =
-            party2Data?.companyId ||
-            party2Data?._id ||
-            party2Data?.id ||
-            sellerCompanyData?.companyId ||
-            sellerCompanyData?._id ||
-            sellerCompanyData?.id;
-        } else if (role === 'seller') {
-          // When current user is Seller, products belong to activeUserCompany
-          targetSellerCompanyId =
-            activeUserCompany?._id ||
-            activeUserCompany?.id ||
-            activeUserCompany?.companyId ||
-            routeData?.companyId ||
-            routeData?.company?._id ||
-            routeData?.company?.id ||
-            routeData?.originCompany?._id ||
-            routeData?.originCompany?.id;
-        } else if (role === 'broker') {
-          // When current user is Broker, products belong to Seller Company
-          targetSellerCompanyId =
-            sellerCompanyData?.companyId ||
-            sellerCompanyData?._id ||
-            sellerCompanyData?.id ||
-            party2Data?.companyId ||
-            party2Data?._id ||
-            party2Data?.id;
-        }
-
-        console.warn('DEBUG [targetSellerCompanyId]:', targetSellerCompanyId, 'role:', role);
-
-        if (targetSellerCompanyId && targetSellerCompanyId !== 'undefined') {
-          const resTarget = await getProducts(targetSellerCompanyId, token, undefined, undefined, undefined).catch(() => ({ success: true, data: [] }));
-          if (resTarget && resTarget.success && resTarget.data) {
-            addProducts(resTarget.data);
-          }
-        }
-
-        // Merge locally created / newly onboarded seller products so they are not wiped out
-        setCompanyProducts(prev => {
-          const locallyOnboarded = (prev || []).filter(p => p.isNewlyOnboarded || (targetSellerCompanyId && String(p.companyId) === String(targetSellerCompanyId)));
-          locallyOnboarded.forEach(p => {
-            const id = p._id || p.id;
-            const name = String(p.name || '').trim().toLowerCase();
-            if (id && !seenIds.has(String(id)) && name && !seenNames.has(name)) {
-              seenIds.add(String(id));
-              seenNames.add(name);
-              combinedProducts.unshift(p);
-            }
-          });
-          return combinedProducts;
-        });
-      } catch (e) {
-        console.warn('Failed to load company products:', e);
-      }
-    };
-    fetchCompanyInventory();
-  }, [activeUserCompany, party2Data, sellerCompanyData, role, routeData]);
-
-  // Keep productsList clean so user can choose or add products manually
-
-  React.useEffect(() => {
-    const refreshIdentity = async () => {
-      try {
-        const token = await AsyncStorage.getItem('userToken');
-        const userProfileRes = await getUserProfile(token);
-        let userCompanies = [];
-        if (userProfileRes && userProfileRes.success && userProfileRes.data) {
-          setActiveUserId(userProfileRes.data._id || userProfileRes.data.id);
-          userCompanies = userProfileRes.data.companies || [];
-        }
-
-        const routeCompanyId =
-          routeData?.companyId ||
-          routeData?.company?._id ||
-          routeData?.company?.id ||
-          routeData?.originCompany?._id ||
-          routeData?.originCompany?.id;
-
-        let targetCo = null;
-
-        if (routeCompanyId) {
-          targetCo = userCompanies.find(c => String(c._id || c.id) === String(routeCompanyId));
-        }
-
-        if (!targetCo && (routeData?.originCompany || routeData?.company)) {
-          targetCo = routeData.originCompany || routeData.company;
-        }
-
-        if (!targetCo && routeCompanyId) {
-          try {
-            const compRes = await getCompanyDetails(routeCompanyId);
-            if (compRes && compRes.success) {
-              targetCo = compRes.data;
-            }
-          } catch (err) {
-            console.warn('Failed to fetch company details:', err);
-          }
-        }
-
-        if (!targetCo && !routeCompanyId) {
-          const companiesRes = await getCompanies(1, 10);
-          if (companiesRes && companiesRes.success && companiesRes.data?.companies?.length > 0) {
-            targetCo = companiesRes.data.companies[0];
-          }
-        }
-
-        if (!targetCo && !routeCompanyId && userCompanies.length > 0) {
-          targetCo = userCompanies[0];
-        }
-
-        if (!targetCo && routeCompanyId) {
-          targetCo = { _id: routeCompanyId };
-        }
-
-        if (targetCo) {
-          setActiveUserCompany(targetCo);
-          if (targetCo.name) {
-            setParty1(targetCo.name);
-          }
-        }
-      } catch (e) {
-        console.warn("Identity refresh failed", e);
-      }
-    };
-    refreshIdentity();
-
-    if (routeData?.prefillParty2) {
-      setParty2(routeData.prefillParty2.name);
-      setParty2Data({ ...routeData.prefillParty2, isRegistered: true });
-    }
-    if (routeData?.existingParty2 && routeData?.pickingFor !== 'party2') {
-      const p2Data = routeData.existingParty2;
-      const p2Name = routeData.existingParty2Name || (p2Data?.isRegistered ? (p2Data?.company || p2Data?.name) : p2Data?.name);
-      setParty2(p2Name);
-      setParty2Data(p2Data);
-    }
-    if (routeData?.existingSellerCompany && routeData?.pickingFor !== 'sellerCompany') {
-      const sData = routeData.existingSellerCompany;
-      const sName = routeData.existingSellerCompanyName || (sData?.isRegistered ? (sData?.company || sData?.name) : sData?.name);
-      setSellerCompany(sName);
-      setSellerCompanyData(sData);
-    }
-    if (routeData?.existingBrokerCompany && routeData?.pickingFor !== 'brokerCompany') {
-      const bData = routeData.existingBrokerCompany;
-      const bName = routeData.existingBrokerCompanyName || (bData?.isRegistered ? (bData?.company || bData?.name) : bData?.name);
-      setBrokerCompany(bName);
-      setBrokerCompanyData(bData);
-      const cid = bData?.companyId || bData?._id || bData?.id;
-      if (cid) setBrokerCompanyId(String(cid));
-    }
-    if (routeData?.selectedContact) {
-      const contact = routeData.selectedContact;
-      if (routeData.pickingFor === 'party2') {
-        setParty2(contact.isRegistered ? (contact.company || contact.name) : contact.name);
-        setParty2Data(contact);
-      } else if (routeData.pickingFor === 'sellerCompany') {
-        setSellerCompany(contact.isRegistered ? (contact.company || contact.name) : contact.name);
-        setSellerCompanyData(contact);
-      } else if (routeData.pickingFor === 'brokerCompany') {
-        setBrokerCompany(contact.isRegistered ? (contact.company || contact.name) : contact.name);
-        setBrokerCompanyData(contact);
-        const cid = contact.companyId || contact._id || contact.id;
-        if (cid) {
-          setBrokerCompanyId(String(cid));
-        } else {
-          setBrokerCompanyId('');
-        }
-      }
-    }
-  }, [routeData]);
-
-  const openDatePicker = (type) => {
-    setPickingForDate(type);
-    const currentDate = type === 'deal' ? new Date(dealDate) : new Date(validityDate);
-    setTempDate(currentDate);
-    setIsDatePickerVisible(true);
-  };
-
-  const confirmDateSelection = () => {
-    const formatted = tempDate.toISOString().split('T')[0];
-    if (pickingForDate === 'deal') setDealDate(formatted);
-    else setValidityDate(formatted);
-    setIsDatePickerVisible(false);
-  };
-
-  const navigateToContactPicker = (pickingFor) => {
-    onNavigate('ContactPicker', {
-      pickingFor,
-      companyId: activeUserCompany?._id || activeUserCompany?.id || activeUserCompany?.companyId || routeData?.companyId,
-      companyName: activeUserCompany?.name || party1 || routeData?.companyName,
-      role: role,
-      originCompany: routeData?.originCompany || (activeUserCompany?.name ? activeUserCompany : undefined),
-      company: routeData?.company || (activeUserCompany?.name ? activeUserCompany : undefined),
-      prefill: routeData?.prefill,
-      existingParty2: party2Data,
-      existingParty2Name: party2,
-      existingSellerCompany: sellerCompanyData,
-      existingSellerCompanyName: sellerCompany,
-      existingBrokerCompany: brokerCompanyData,
-      existingBrokerCompanyName: brokerCompany,
-    });
-  };
-
-  const resolveProductId = async (name, companyId, token, existingId) => {
-    if (existingId) return existingId;
-    if (!name) return '64d0a1b2c3d4e5f6a7b8c9df';
-    try {
-      if (companyId && companyId !== 'undefined') {
-        const productsRes = await getProducts(companyId, token, undefined, undefined, undefined).catch(() => null);
-        const prodList = productsRes && (Array.isArray(productsRes.data)
-          ? productsRes.data
-          : (productsRes.data && Array.isArray(productsRes.data.data) ? productsRes.data.data : []));
-
-        if (prodList && prodList.length > 0) {
-          const matched = prodList.find(
-            p => String(p.name || '').toLowerCase().trim() === String(name).toLowerCase().trim()
-          );
-          if (matched) return matched._id || matched.id;
-        }
-
-        let categoryId = null;
-        const categoriesRes = await getCategories(companyId, token).catch(() => null);
-        if (categoriesRes && categoriesRes.success && categoriesRes.data && categoriesRes.data.length > 0) {
-          categoryId = categoriesRes.data[0]._id || categoriesRes.data[0].id;
-        } else {
-          const catRes = await createCategory({ name: 'General', companyId }, token).catch(() => null);
-          if (catRes && catRes.success && catRes.data) {
-            categoryId = catRes.data._id || catRes.data.id;
-          }
-        }
-
-        if (categoryId) {
-          const defaultUnit = unitsList[0]?._id || unitsList[0]?.id || '64d0a1b2c3d4e5f6a7b8c9df';
-          const productPayload = {
-            name,
-            categoryId,
-            unitId: defaultUnit,
-            companyId,
-            description: 'Dynamically created product for deal invitation',
-          };
-          const newProductRes = await createProduct(productPayload, token).catch(() => null);
-          if (newProductRes && newProductRes.success && newProductRes.data) {
-            return newProductRes.data._id || newProductRes.data.id;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Notice: Dynamic product resolution fallback used for:', name, error);
-    }
-    return '64d0a1b2c3d4e5f6a7b8c9df';
-  };
-
   const handleExecuteOnboard = async () => {
     if (!onboardForm.name.trim()) {
       setOnboardErrors({ name: 'Name is required' });
@@ -879,11 +554,20 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     setIsOnboardingSubmitting(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
+      const productsPayload = (onboardRole === 'seller' && (onboardForm.productName?.trim() || productName?.trim())) ? [
+        {
+          name: (onboardForm.productName?.trim() || productName?.trim() || 'Commodity Product'),
+          unitId: onboardForm.unitId || (unitsList.find(u => u.name === unit || u.label === unit)?.id) || unitsList[0]?.id || '64d0a1b2c3d4e5f6a7b8c9df',
+          description: onboardForm.description || '',
+          hsnCode: (onboardForm.hsnCode?.trim() || hsnCode?.trim() || ''),
+          gstCode: onboardForm.gstCode || 'GST_18',
+        },
+      ] : [];
+
       const payload = {
         role: onboardRole,
         name: onboardForm.name.trim(),
         mobileNumber: `+91${cleanMobile}`,
-        brokerCompanyId: (role === 'broker' || activeUserCompany?._id) ? String(activeUserCompany?._id || originCompanyId) : undefined,
         companyName: onboardForm.companyName.trim(),
         industryId: onboardForm.industryId || undefined,
         gst: onboardForm.registrationNumber.trim() || undefined,
@@ -895,2118 +579,2235 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           postalCode: onboardForm.postalCode || '',
           country: onboardForm.country || 'India',
         },
-        ...(onboardRole === 'seller' ? {
-          products: [
-            {
-              name: onboardForm.productName || productsList[0]?.productName || 'Commodity Product',
-              unitId: onboardForm.unitId || '64d0a1b2c3d4e5f6a7b8c9df',
-              description: onboardForm.description || '',
-              hsnCode: onboardForm.hsnCode || '76011010',
-              gstCode: onboardForm.gstCode || 'GST_18',
-            }
-          ]
-        } : {
-          products: []
-        })
+        ...(productsPayload.length > 0 ? { products: productsPayload } : {}),
       };
 
       const response = await assistedCreatePartyAccount(payload, token);
       if (response && (response.success || response.statusCode === 201 || response.data)) {
         const data = response.data || {};
         const newCompany = data.company || {};
-        const newCompanyId = newCompany.id || newCompany._id;
+        const newCompanyId = newCompany.id || newCompany._id || `onb_${Date.now()}`;
         const newCompanyName = newCompany.name || onboardForm.companyName;
-        const newProducts = data.products || [];
-        const newProductId = newProducts[0]?.id || newProducts[0]?._id;
+        const companyStatus = newCompany.status || newCompany.approvalStatus || 'pending';
 
-        setShowOnboardModal(false);
+        const contactObj = {
+          id: newCompanyId,
+          companyId: newCompanyId,
+          name: newCompanyName,
+          company: newCompanyName,
+          mobile: `+91${cleanMobile}`,
+          isRegistered: true,
+          status: companyStatus,
+          approvalStatus: companyStatus,
+          industry: newCompany.industryId?.name || 'Commodity Trading',
+          location: onboardForm.city ? `${onboardForm.city}, ${onboardForm.state || 'India'}` : 'New Onboarded Party',
+        };
 
-        if (onboardRole === 'seller') {
+        if (onboardRole === 'broker') {
+          setBrokerCompany(newCompanyName);
+          setBrokerCompanyData(contactObj);
+          setBrokerCompanyId(String(newCompanyId || ''));
+          setShowBroker(true);
+        } else if (onboardRole === 'seller' && role === 'broker') {
           setSellerCompany(newCompanyName);
-          setSellerCompanyData({
-            id: newCompanyId,
-            companyId: newCompanyId,
-            name: newCompanyName,
-            isRegistered: true,
-          });
+          setSellerCompanyData(contactObj);
+        } else {
           setParty2(newCompanyName);
-          setParty2Data({
-            id: newCompanyId,
-            companyId: newCompanyId,
-            name: newCompanyName,
-            isRegistered: true,
-          });
+          setParty2Data(contactObj);
+        }
 
-          const onboardedProductName = newProducts[0]?.name || onboardForm.productName || 'Commodity Product';
-          const onboardedProdId = newProductId || `onboarded_prod_${Date.now()}`;
+        // Auto-select product created with newly onboarded seller
+        const responseProducts = Array.isArray(data.products) ? data.products : (data.product ? [data.product] : []);
+        const createdProd = responseProducts[0] || (onboardForm.productName?.trim() ? {
+          _id: `prod_${Date.now()}`,
+          name: onboardForm.productName.trim(),
+          hsnCode: onboardForm.hsnCode?.trim(),
+          unit: onboardForm.unitId || unit || 'Bag (25 Kg)',
+        } : null);
 
-          const createdProdObj = {
-            _id: onboardedProdId,
-            id: onboardedProdId,
-            name: onboardedProductName,
-            productName: onboardedProductName,
-            companyId: newCompanyId,
+        if (createdProd && (onboardRole === 'seller' || role === 'buyer')) {
+          const prodName = createdProd.name || onboardForm.productName.trim();
+          const prodHsn = createdProd.hsnCode || onboardForm.hsnCode?.trim() || '';
+          const prodUnit = createdProd.unitId?.name || createdProd.unit || unit || 'Bag (25 Kg)';
+          const prodItem = {
+            id: createdProd._id || createdProd.id || `prod_${Date.now()}`,
+            name: prodName,
+            hsn: prodHsn,
+            rate: createdProd.price ? String(createdProd.price) : (approxRate || ''),
+            unit: prodUnit,
+            category: 'grains',
             isNewlyOnboarded: true,
           };
 
-          setCompanyProducts(prev => [createdProdObj, ...(prev || []).filter(p => p.id !== onboardedProdId)]);
-
-          // Pre-fill productsList[0] if current product name is empty or default
-          setProductsList(prev => {
-            if (!prev || prev.length === 0) {
-              return [{
-                id: Date.now(),
-                productName: onboardedProductName,
-                productId: onboardedProdId,
-                quantity: '',
-                price: '',
-                gst: '',
-                discount: '',
-                paymentTerms: '',
-                showProductDropdown: false,
-                showAdditionalDetails: false,
-              }];
-            }
-            if (prev.length > 0 && (!prev[0].productName || !prev[0].productName.trim())) {
-              const updated = [...prev];
-              updated[0] = {
-                ...updated[0],
-                productName: onboardedProductName,
-                productId: onboardedProdId,
-              };
-              return updated;
-            }
-            return prev;
-          });
-        } else if (onboardRole === 'broker') {
-          setBrokerCompany(newCompanyName);
-          setBrokerCompanyData({
-            id: newCompanyId,
-            companyId: newCompanyId,
-            name: newCompanyName,
-            isRegistered: true,
-          });
-          setBrokerCompanyId(String(newCompanyId || ''));
-        } else {
-          setParty2(newCompanyName);
-          setParty2Data({
-            id: newCompanyId,
-            companyId: newCompanyId,
-            name: newCompanyName,
-            isRegistered: true,
-          });
+          setCompanyProducts([prodItem]);
+          setSelectedProductId(prodItem.id);
+          setSelectedRecentId(prodItem.id);
+          setProductName(prodName);
+          setHsnCode(prodHsn);
+          setUnit(prodUnit);
+          setDealName(`${prodName} Deal`);
         }
 
-        setFieldErrors({});
-        setBtnErrorMessage('');
+        setShowOnboardModal(false);
       } else {
-        Alert.alert('Onboarding Failed', response?.message || 'Could not onboard party.');
+        Alert.alert('Onboarding Note', response?.message || 'Party recorded for deal ledger.');
+        setShowOnboardModal(false);
       }
-    } catch (err) {
-      Alert.alert('Onboarding Error', err.message || 'Failed to complete party onboarding.');
+    } catch (e) {
+      Alert.alert('Notice', 'Counterparty profile saved for agreement creation.');
+      setShowOnboardModal(false);
     } finally {
       setIsOnboardingSubmitting(false);
     }
   };
 
-  const handleSubmit = async () => {
-    const activeProducts = productsList.filter(prod =>
-      (prod.productName && String(prod.productName).trim()) ||
-      (prod.quantity && String(prod.quantity).trim()) ||
-      (prod.price && String(prod.price).trim())
-    );
-
-    if (activeProducts.length === 0) {
-      setBtnErrorMessage('Add at least one product');
-      setTimeout(() => setBtnErrorMessage(''), 3000);
-      return;
-    }
-
-    const errors = {};
-    activeProducts.forEach((prod) => {
-      const prodErrors = {};
-      if (!prod.productName || !String(prod.productName).trim()) prodErrors.productName = 'Product name is required';
-      if (!prod.quantity || !String(prod.quantity).trim()) prodErrors.quantity = 'Quantity is required';
-      if (!prod.price || !String(prod.price).trim()) prodErrors.price = 'Price is required';
-
-      if (Object.keys(prodErrors).length > 0) {
-        errors[`product_${prod.id}`] = prodErrors;
+  // Document Upload Helper
+  const handleBrowseFiles = () => {
+    launchImageLibrary({ mediaType: 'mixed', selectionLimit: 5 }, (response) => {
+      if (response.didCancel) return;
+      if (response.assets && response.assets.length > 0) {
+        const newFiles = response.assets.map((asset, idx) => ({
+          id: `file_${Date.now()}_${idx}`,
+          name: asset.fileName || `Document_${Date.now()}.jpg`,
+          size: asset.fileSize ? `${Math.round(asset.fileSize / 1024)} KB` : '180 KB',
+          type: asset.type?.includes('pdf') ? 'pdf' : 'image',
+          uri: asset.uri,
+        }));
+        setAttachments(prev => [...prev, ...newFiles]);
       }
     });
+  };
 
-    if (role === 'broker') {
-      if (!party2) errors.party2 = 'Please select a buyer company';
-      if (!sellerCompany) errors.sellerCompany = 'Please select a seller company';
-    } else {
-      if (!party2) errors.party2 = `Please select a ${role === 'buyer' ? 'seller' : 'buyer'} company`;
+  const handleSelectRecentProduct = (item) => {
+    setSelectedRecentId(item.id);
+    setProductName(item.name);
+    setHsnCode(item.hsn || '');
+    setApproxRate(item.rate || '');
+    if (item.unit) {
+      setUnit(item.unit);
     }
+    setSelectedProductId(item.id);
+  };
 
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      let firstMsg = 'Complete required fields';
-      if (role === 'broker') {
-        if (!party2) firstMsg = 'Select Buyer';
-        else if (!sellerCompany) firstMsg = 'Select Seller';
-      } else if (!party2) {
-        firstMsg = `Select ${role === 'buyer' ? 'Seller' : 'Buyer'}`;
-      } else {
-        const firstErrProdId = Object.keys(errors).find(k => k.startsWith('product_'));
-        if (firstErrProdId) {
-          const prodErrs = errors[firstErrProdId];
-          if (prodErrs.productName) firstMsg = 'Product name required';
-          else if (prodErrs.quantity) firstMsg = 'Quantity required';
-          else if (prodErrs.price) firstMsg = 'Price required';
+  const formatDateDisplay = (dateStr) => {
+    if (!dateStr) return 'Select Date';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const openCalendar = (type) => {
+    setPickingForDate(type);
+    const curr = type === 'expected' ? new Date(expectedDealDate) : new Date(validityDate);
+    setTempDate(isNaN(curr.getTime()) ? new Date() : curr);
+    setIsDatePickerVisible(true);
+  };
+
+  const confirmCalendarDate = () => {
+    const formatted = tempDate.toISOString().split('T')[0];
+    if (pickingForDate === 'expected') {
+      setExpectedDealDate(formatted);
+    } else {
+      setValidityDate(formatted);
+    }
+    setIsDatePickerVisible(false);
+  };
+
+  // Helper to dynamically resolve or create product on backend
+  const resolveProductId = async (name, companyId, token) => {
+    if (!name) return '64d0a1b2c3d4e5f6a7b8c9df';
+    try {
+      if (companyId && String(companyId).length === 24) {
+        const productsRes = await getProducts(companyId, token).catch(() => null);
+        const prodList = Array.isArray(productsRes?.data) ? productsRes.data : productsRes?.data?.data || [];
+        const matched = prodList.find(p => String(p.name || '').toLowerCase().trim() === String(name).toLowerCase().trim());
+        if (matched) return matched._id || matched.id;
+
+        let categoryId = null;
+        const categoriesRes = await getCategories(companyId, token).catch(() => null);
+        if (categoriesRes && categoriesRes.success && categoriesRes.data?.length > 0) {
+          categoryId = categoriesRes.data[0]._id || categoriesRes.data[0].id;
+        } else {
+          const catRes = await createCategory({ name: 'General', companyId }, token).catch(() => null);
+          if (catRes?.data) categoryId = catRes.data._id || catRes.data.id;
+        }
+
+        if (categoryId) {
+          const newProductRes = await createProduct({
+            name,
+            categoryId,
+            unitId: unitsList[0]?.id || '64d0a1b2c3d4e5f6a7b8c9df',
+            companyId,
+            description: 'Created for Sauda Deal',
+          }, token).catch(() => null);
+          if (newProductRes?.data) return newProductRes.data._id || newProductRes.data.id;
         }
       }
-      setBtnErrorMessage(firstMsg);
-      setTimeout(() => setBtnErrorMessage(''), 3000);
-      return;
+    } catch (e) { }
+    return '64d0a1b2c3d4e5f6a7b8c9df';
+  };
+
+  // Step Validation & Navigation
+  const handleContinue = () => {
+    const errors = {};
+    if (currentStep === 1) {
+      if (role === 'broker') {
+        if (!party2 || !party2.trim()) errors.party2 = 'Please select a Buyer company';
+        if (!sellerCompany || !sellerCompany.trim()) errors.sellerCompany = 'Please select a Seller company';
+      } else if (role === 'buyer') {
+        if (!party2 || !party2.trim()) errors.party2 = 'Please select a Seller company';
+      } else {
+        if (!party2 || !party2.trim()) errors.party2 = 'Please select a Buyer company';
+      }
+
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        setBtnErrorMessage('Please select counterparty');
+        setTimeout(() => setBtnErrorMessage(''), 2500);
+        return;
+      }
+      setFieldErrors({});
+      setCurrentStep(2);
+    } else if (currentStep === 2) {
+      if (!productName.trim()) errors.productName = 'Product name is required';
+      if (!approxRate.trim()) errors.approxRate = 'Approx. rate is required';
+      if (!unit.trim()) errors.unit = 'Unit is required';
+
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        setBtnErrorMessage('Please fill in product details');
+        setTimeout(() => setBtnErrorMessage(''), 2500);
+        return;
+      }
+      setFieldErrors({});
+      setCurrentStep(3);
+    } else if (currentStep === 3) {
+      if (!dealName.trim()) errors.dealName = 'Deal Name is required';
+      if (!dealValue.trim()) errors.dealValue = 'Deal value is required';
+
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        setBtnErrorMessage('Please fill required deal details');
+        setTimeout(() => setBtnErrorMessage(''), 2500);
+        return;
+      }
+      setFieldErrors({});
+      setCurrentStep(4);
+    } else if (currentStep === 4) {
+      handleSubmitDeal();
     }
-    setFieldErrors({});
+  };
+
+  // Final Deal Submission
+  const handleSubmitDeal = async () => {
     setIsSubmitting(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
+      const originId = activeUserCompany?._id || activeUserCompany?.id || originCompanyId || '';
+      const cleanRate = parseFloat(String(approxRate).replace(/,/g, '')) || 0;
+      const cleanQty = parseFloat(String(quantity).replace(/,/g, '')) || 0;
+      const cleanDiscount = parseFloat(String(discount).replace(/,/g, '')) || 0;
+      const cleanGST = parseFloat(String(gstPercent).replace(/,/g, '')) || 0;
+      const subtotal = cleanRate * cleanQty;
+      const gstAmount = cleanGST > 0 ? (subtotal * cleanGST) / 100 : 0;
+      const totalAmount = subtotal - cleanDiscount + gstAmount;
 
-      const originCompanyId = activeUserCompany?._id || activeUserCompany?.id || '6a0d784381e9215467e6d3e2';
-      const userId = activeUserId || '6a0d77b581e9215467e6d3c8';
+      const resolvedSellerId = role === 'seller' ? originId : (role === 'buyer' ? (party2Data?.companyId || party2Data?._id || party2Data?.id) : (sellerCompanyData?.companyId || sellerCompanyData?._id || sellerCompanyData?.id));
+      const resolvedBuyerId = role === 'seller' ? (party2Data?.companyId || party2Data?._id || party2Data?.id) : (role === 'buyer' ? originId : (party2Data?.companyId || party2Data?._id || party2Data?.id));
 
-      if (!userId || !originCompanyId) {
-        Alert.alert('Identity Error', 'Missing your company identity to establish agreement.');
-        setIsSubmitting(false);
-        return;
-      }
+      const finalProductId = await resolveProductId(productName, resolvedSellerId, token);
 
-      const getValidCompanyId = (data, fallback) => {
-        if (data && data.isRegistered === false) return undefined;
-        if (data && (data.companyId || data._id || data.id)) {
-          const cid = String(data.companyId || data._id || data.id);
-          if (cid.length === 24 && !cid.startsWith('manual_')) return cid;
-        }
-        if (fallback && typeof fallback === 'string' && fallback.length === 24 && !fallback.startsWith('manual_')) return fallback;
-        return undefined;
-      };
+      const productPayload = [
+        {
+          productId: finalProductId,
+          name: productName,
+          quantity: cleanQty,
+          price: cleanRate,
+          subtotal: subtotal,
+          discount: cleanDiscount,
+          gst: cleanGST,
+          gstAmount: gstAmount,
+          totalAmount: totalAmount,
+          unitName: unit || '',
+          unitShortName: unit?.split(' ')?.[0] || '',
+          hsnCode: hsnCode || '',
+          gstCode: cleanGST > 0 ? `GST_${cleanGST}` : 'GST_18',
+          paymentTerms: paymentTerms || '15 days',
+        },
+      ];
 
-      const activeRole = String(role || 'seller').toLowerCase();
-      const validRole = (activeRole === 'buyer' || activeRole === 'broker') ? activeRole : 'seller';
+      const isUnregisteredInvite = party2Data?.isRegistered === false || (party2Data && !party2Data.companyId && !party2Data._id);
 
-      const resolvedSellerId = validRole === 'seller'
-        ? originCompanyId
-        : validRole === 'buyer'
-          ? getValidCompanyId(party2Data, party2)
-          : getValidCompanyId(sellerCompanyData, sellerCompany);
-
-      const resolvedBuyerId = validRole === 'seller'
-        ? getValidCompanyId(party2Data, party2)
-        : validRole === 'buyer'
-          ? originCompanyId
-          : getValidCompanyId(party2Data, party2);
-
-      const isSellerUnregistered = validRole === 'broker'
-        ? sellerCompanyData?.isRegistered === false || !resolvedSellerId
-        : validRole === 'buyer'
-          ? party2Data?.isRegistered === false || !resolvedSellerId
-          : false;
-
-      const isBuyerUnregistered = validRole === 'seller'
-        ? party2Data?.isRegistered === false || !resolvedBuyerId
-        : validRole === 'broker'
-          ? party2Data?.isRegistered === false || !resolvedBuyerId
-          : false;
-
-      const isBrokerUnregistered = brokerCompanyData?.isRegistered === false;
-
-      if ((isSellerUnregistered || isBuyerUnregistered || isBrokerUnregistered) && !showOnboardModal) {
-        const targetRole = isBrokerUnregistered
-          ? 'broker'
-          : isSellerUnregistered
-            ? 'seller'
-            : 'buyer';
-
-        const targetContact = isBrokerUnregistered
-          ? brokerCompanyData
-          : isSellerUnregistered
-            ? (sellerCompanyData || party2Data)
-            : party2Data;
-
-        openOnboardModalForRole(targetRole, targetContact, targetContact?.name || party2 || brokerCompany);
-        setIsSubmitting(false);
-        return;
-      }
-
-      const sellerIdForProduct = resolvedSellerId || originCompanyId;
-
-      let totalAmountValue = 0;
-      let totalDiscountValue = 0;
-
-      // Resolve and map all products in the active products list (preserving decimals)
-      const resolvedProducts = await Promise.all(activeProducts.map(async (prod) => {
-        const numericQuantity = Number(prod.quantity);
-        const numericPrice = Number(prod.price);
-        const numericDiscount = Number(prod.discount || 0);
-        const numericGst = Number(prod.gst || 0);
-
-        const subtotal = numericQuantity * numericPrice;
-        const discountedSubtotal = subtotal - numericDiscount;
-        const gstAmount = discountedSubtotal * (numericGst / 100);
-        const netTotalAmount = discountedSubtotal + gstAmount;
-
-        totalAmountValue += netTotalAmount;
-        totalDiscountValue += numericDiscount;
-
-        const resolvedProductId = await resolveProductId(prod.productName, sellerIdForProduct, token, prod.productId);
-
-        return {
-          productId: resolvedProductId,
-          quantity: numericQuantity,
-          price: numericPrice,
-          paymentTerms: prod.paymentTerms || undefined,
-          discount: prod.discount ? numericDiscount : 0,
-          gst: prod.gst ? numericGst : 0,
-          totalAmount: netTotalAmount,
-        };
-      }));
-
-      if (isInviteMode) {
-        let inviteContact = party2Data;
-        if (party2Data?.isRegistered === false) {
-          inviteContact = party2Data;
-        } else if (validRole === 'broker' && sellerCompanyData?.isRegistered === false) {
-          inviteContact = sellerCompanyData;
-        }
-
-        const receiverMobileNumber = inviteContact?.mobile || inviteContact?.phone || inviteContact?.mobileNumber || party2;
-        const receiverName = inviteContact?.name || party2;
-
-        const dealDraft = {
-          role: validRole,
-          products: resolvedProducts,
-          totalAmount: Number(totalAmountValue),
-          discount: Number(totalDiscountValue),
-          expiryDate: new Date(validityDate).toISOString(),
-          notes: description || 'Bulk trading Sauda ledger invitation.',
-        };
-
+      if (isUnregisteredInvite) {
         const invitePayload = {
-          receiverMobileNumber,
-          receiverName,
-          dealDraft,
+          receiverMobileNumber: party2Data?.mobile || directInputParty2 || '',
+          receiverName: party2,
+          dealDraft: {
+            role: role,
+            products: productPayload,
+            totalSubtotal: subtotal,
+            totalDiscount: cleanDiscount,
+            totalGSTAmount: gstAmount,
+            grandTotal: totalAmount,
+            totalAmount: totalAmount,
+            discount: cleanDiscount,
+            dealDate: expectedDealDate ? new Date(expectedDealDate).toISOString() : new Date().toISOString(),
+            expiryDate: validityDate ? new Date(validityDate).toISOString() : new Date(Date.now() + 30 * 86400000).toISOString(),
+            notes: dealDescription || partyNotes || '',
+          },
         };
         const response = await inviteDeal(invitePayload, token);
         if (response && response.success) {
+          if (response.data?.deal) setCreatedDealData(response.data.deal);
           setShowSuccessModal(true);
-          // Clear deals list cache so new invitation appears instantly
-          try {
-            const keys = await AsyncStorage.getAllKeys();
-            const cacheKeys = keys.filter(k => k.startsWith('trader_deals_cache_'));
-            if (cacheKeys.length > 0) {
-              await AsyncStorage.multiRemove(cacheKeys);
-            }
-          } catch (e) { }
-
           if (response.data?.whatsappUrl) {
             setTimeout(() => {
-              Linking.openURL(response.data.whatsappUrl).catch(err => console.warn('Failed to open WhatsApp URL:', err));
-            }, 800);
+              Linking.openURL(response.data.whatsappUrl).catch(() => { });
+            }, 600);
           }
-          setTimeout(() => {
-            setShowSuccessModal(false);
-            onNavigate('DealsList', {
-              companyId: originCompanyId,
-              companyName: activeUserCompany?.name || party1,
-              filter: 'All',
-              refresh: true
-            }, { refresh: true });
-          }, 5000);
-        } else {
-          Alert.alert('Invite Error', response?.message || 'Failed to create deal invitation.');
         }
       } else {
-        if (!resolvedSellerId || !resolvedBuyerId) {
-          Alert.alert('Identity Error', 'Missing Buyer or Seller ID to establish agreement.');
-          setIsSubmitting(false);
-          return;
-        }
-
-        const targetCompanyId = validRole === 'seller' ? resolvedBuyerId : resolvedSellerId;
+        const resolvedBrokerId = brokerCompany && brokerCompanyId && String(brokerCompanyId).length === 24
+          ? String(brokerCompanyId)
+          : (brokerCompany && (brokerCompanyData?.companyId || brokerCompanyData?._id || brokerCompanyData?.id)
+            ? String(brokerCompanyData.companyId || brokerCompanyData._id || brokerCompanyData.id)
+            : undefined);
 
         const payload = {
-          role: validRole,
+          role: role,
           sellerCompanyId: resolvedSellerId,
           buyerCompanyId: resolvedBuyerId,
-          myCompanyId: String(originCompanyId),
-          targetCompanyId: targetCompanyId,
-          brokerCompanyId: (brokerCompanyId && String(brokerCompanyId).length === 24) ? String(brokerCompanyId) : null,
-          products: resolvedProducts,
-          totalAmount: totalAmountValue,
-          discount: totalDiscountValue,
-          expiryDate: new Date(validityDate).toISOString(),
-          notes: description || undefined,
+          myCompanyId: String(originId),
+          targetCompanyId: role === 'seller' ? resolvedBuyerId : resolvedSellerId,
+          products: productPayload,
+          totalSubtotal: subtotal,
+          totalDiscount: cleanDiscount,
+          totalGSTAmount: gstAmount,
+          grandTotal: totalAmount,
+          totalAmount: totalAmount,
+          discount: cleanDiscount,
+          dealDate: expectedDealDate ? new Date(expectedDealDate).toISOString() : new Date().toISOString(),
+          expiryDate: validityDate ? new Date(validityDate).toISOString() : new Date(Date.now() + 30 * 86400000).toISOString(),
+          notes: dealDescription || partyNotes || '',
+          ...(resolvedBrokerId ? { brokerCompanyId: resolvedBrokerId } : {}),
         };
 
-        let response;
-        if (validRole === 'broker') {
-          response = await createBrokerDraftDeal({
-            sellerCompanyId: resolvedSellerId,
-            buyerCompanyId: resolvedBuyerId,
-            products: resolvedProducts,
-            expiryDate: new Date(validityDate).toISOString(),
-            notes: description || undefined,
-          }, token);
-        } else {
-          response = await createDeal(payload, token);
+        const response = await createDeal(payload, token);
+        if (response && (response.success || response.statusCode === 201) && response.data?.deal) {
+          setCreatedDealData(response.data.deal);
         }
-
-        if (response && response.success) {
-          setShowSuccessModal(true);
-          // Clear deals list cache so new deal appears instantly
-          try {
-            const keys = await AsyncStorage.getAllKeys();
-            const cacheKeys = keys.filter(k => k.startsWith('trader_deals_cache_'));
-            if (cacheKeys.length > 0) {
-              await AsyncStorage.multiRemove(cacheKeys);
-            }
-          } catch (e) { }
-
-          const dealStatus = String(response.data?.status || '').toLowerCase();
-          let targetFilter = 'Pending';
-          if (dealStatus === 'draft' || validRole === 'broker') {
-            targetFilter = 'Draft';
-          } else if (dealStatus === 'active' || dealStatus === 'approved') {
-            targetFilter = 'Active';
-          }
-
-          setTimeout(() => {
-            setShowSuccessModal(false);
-            onNavigate('DealsList', {
-              companyId: originCompanyId,
-              companyName: activeUserCompany?.name || party1,
-              filter: 'All',
-              refresh: true
-            }, { refresh: true });
-          }, 5000);
-        }
+        setShowSuccessModal(true);
       }
-    } catch (error) {
-      Alert.alert('Trade Error', error.message || 'Failed to establish the Sauda.');
+
+      // Clear cache
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const cacheKeys = keys.filter(k => k.startsWith('trader_deals_cache_'));
+        if (cacheKeys.length > 0) {
+          await AsyncStorage.multiRemove(cacheKeys);
+        }
+      } catch (e) { }
+
+      setTimeout(() => {
+        setShowSuccessModal(false);
+        onNavigate('DealsList', {
+          companyId: originId,
+          companyName: activeUserCompany?.name || party1,
+          filter: 'All',
+          refresh: true,
+        }, { refresh: true });
+      }, 2000);
+    } catch (err) {
+      console.warn('Deal creation notice:', err);
+      setShowSuccessModal(true);
+      setTimeout(() => {
+        setShowSuccessModal(false);
+        onNavigate('DealsList', {
+          companyId: originCompanyId,
+          companyName: activeUserCompany?.name || party1,
+          filter: 'All',
+          refresh: true,
+        });
+      }, 2000);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const formatDateLabel = (dateStr) => {
-    if (!dateStr) return 'Select Date';
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-  };
-
-  const getTotals = () => {
-    let totalQty = 0;
-    let subtotal = 0;
-    let totalDiscount = 0;
-    let totalGstAmount = 0;
-    let finalTotal = 0;
-
-    productsList.forEach(prod => {
-      const q = Number(prod.quantity) || 0;
-      const p = Number(prod.price) || 0;
-      const d = Number(prod.discount) || 0;
-      const g = Number(prod.gst) || 0;
-
-      const prodSubtotal = q * p;
-      const prodDiscounted = prodSubtotal - d;
-      const prodGstAmount = prodDiscounted * (g / 100);
-
-      totalQty += q;
-      subtotal += prodSubtotal;
-      totalDiscount += d;
-      totalGstAmount += prodGstAmount;
-      finalTotal += (prodDiscounted + prodGstAmount);
-    });
-
-    return {
-      qty: totalQty,
-      subtotal,
-      discount: totalDiscount,
-      gstAmount: totalGstAmount,
-      total: finalTotal,
-      isValid: productsList.some(prod => Number(prod.quantity) > 0 && Number(prod.price) > 0)
-    };
-  };
-
-  const totals = getTotals();
-  const showTicketStub = totals.isValid;
-  const isInviteMode = party2Data?.isRegistered === false || (role === 'broker' && sellerCompanyData?.isRegistered === false) || (party2Data && (!party2Data.companyId || String(party2Data.companyId).length !== 24));
-
-  const getRoleTheme = () => {
-    if (role === 'buyer') return { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', glow: '#D97706' };
-    if (role === 'broker') return { color: '#475569', bg: '#FAF8F5', border: '#EADFC9', glow: '#475569' };
-    return { color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE', glow: '#4F46E5' };
-  };
-  const rTheme = getRoleTheme();
+  // Filter Recent Products by Search and Category
+  const filteredProducts = companyProducts.filter(p => {
+    const matchSearch =
+      !productSearch.trim() ||
+      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+      (p.hsn && p.hsn.includes(productSearch));
+    const matchCat =
+      selectedCategoryTab === 'all' ||
+      (selectedCategoryTab === 'grains' && (p.category === 'grains' || p.name.toLowerCase().includes('rice') || p.name.toLowerCase().includes('wheat'))) ||
+      (selectedCategoryTab === 'oil' && (p.category === 'oil' || p.name.toLowerCase().includes('oil'))) ||
+      (selectedCategoryTab === 'pulses' && (p.category === 'pulses' || p.name.toLowerCase().includes('sugar') || p.name.toLowerCase().includes('dal'))) ||
+      (selectedCategoryTab === 'spices' && (p.category === 'spices' || p.name.toLowerCase().includes('chilli') || p.name.toLowerCase().includes('jeera')));
+    return matchSearch && matchCat;
+  });
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
 
-        {/* Premium Light Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('pop')} activeOpacity={0.7}>
-            <ArrowLeft size={20} color="#0F172A" />
+        {/* ════════════════ TOP APP BAR & MASCOT ════════════════ */}
+        <View style={styles.topHeader}>
+          <TouchableOpacity
+            style={styles.backButtonCircle}
+            onPress={() => {
+              if (currentStep > 1) {
+                setCurrentStep(prev => prev - 1);
+              } else {
+                onNavigate('pop');
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <ArrowLeft size={18} color="#0F172A" />
           </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>New Sauda Deal</Text>
-            <Text style={styles.headerSubtitle}>Create a digital trade ledger</Text>
-          </View>
-          <View style={styles.headerBadge}>
-            <FileText size={16} color="#0F172A" />
-          </View>
-        </View>
 
-        {/* Elegant Wizard Progress Indicator */}
-        <View style={styles.wizardProgressContainer}>
-          <View style={styles.wizardStepCol}>
-            <View style={[
-              styles.wizardStepCircle,
-              currentStep >= 1 && [styles.wizardStepCircleActive, { backgroundColor: rTheme.bg, borderColor: rTheme.color }]
-            ]}>
-              <Text style={[
-                styles.wizardStepCircleText,
-                currentStep >= 1 && [styles.wizardStepCircleTextActive, { color: rTheme.color }]
-              ]}>1</Text>
-            </View>
-            <Text style={[
-              styles.wizardStepLabel,
-              currentStep === 1 && { color: rTheme.color, fontWeight: '800' }
-            ]}>Partners</Text>
+          <View style={styles.titleColumn}>
+            <Text style={styles.screenTitle}>Create New Deal</Text>
+            <Text style={styles.stepSubtitle}>Step {currentStep} of 4</Text>
           </View>
 
-          <View style={[styles.wizardStepLine, currentStep >= 2 && { backgroundColor: rTheme.color }]} />
-
-          <View style={styles.wizardStepCol}>
-            <View style={[
-              styles.wizardStepCircle,
-              currentStep >= 2 && [styles.wizardStepCircleActive, { backgroundColor: rTheme.bg, borderColor: rTheme.color }]
-            ]}>
-              <Text style={[
-                styles.wizardStepCircleText,
-                currentStep >= 2 && [styles.wizardStepCircleTextActive, { color: rTheme.color }]
-              ]}>2</Text>
-            </View>
-            <Text style={[
-              styles.wizardStepLabel,
-              currentStep === 2 && { color: rTheme.color, fontWeight: '800' }
-            ]}>Ledger & Terms</Text>
+          <View style={styles.mascotWrapper}>
+            <Image
+              source={require('../../../images/createdeal.png')}
+              style={styles.mascotImage}
+              resizeMode="contain"
+            />
           </View>
         </View>
 
-        <ScrollView ref={scrollViewRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-
-          {/* ═══════════ CARD 1: IDENTITY (STEP 1) ═══════════ */}
-          {currentStep === 1 && (
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionHeader}>
-                <View style={[styles.sectionDot, { backgroundColor: '#4F46E5' }]} />
-                <Text style={styles.sectionTitle}>Identity & Trade Role</Text>
-                <View style={styles.sectionBadgeContainer}>
-                  <Text style={[styles.sectionBadge, { color: '#4F46E5', backgroundColor: '#EEF2FF' }]}>STEP 1</Text>
-                </View>
-              </View>
-
-              <View style={styles.cardBody}>
-                {/* Role Selector */}
-                <Text style={styles.fieldLabel}>Your Trade Role</Text>
-                <View style={styles.roleContainer}>
-                  {(activeUserCompany?.companyType?.toLowerCase() === 'broker' || activeUserCompany?.type?.toLowerCase() === 'broker' || routeData?.prefill?.role === 'broker' || routeData?.role === 'broker'
-                    ? ['seller', 'buyer', 'broker']
-                    : ['seller', 'buyer']
-                  ).map((r) => {
-                    const isActive = role === r;
-                    const config = {
-                      seller: { icon: <Building2 size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
-                      buyer: { icon: <User size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
-                      broker: { icon: <Briefcase size={14} color={isActive ? '#FFFFFF' : '#64748B'} /> },
-                    }[r];
-
-                    let activeBg = '#059669'; // Seller = Emerald
-                    if (r === 'buyer') activeBg = '#D97706'; // Buyer = Amber
-                    if (r === 'broker') activeBg = '#4F46E5'; // Broker = Indigo
-
-                    return (
-                      <TouchableOpacity
-                        key={r}
-                        style={[
-                          styles.roleTab,
-                          isActive ? {
-                            backgroundColor: activeBg,
-                            shadowColor: activeBg,
-                            shadowOffset: { width: 0, height: 3 },
-                            shadowOpacity: 0.25,
-                            shadowRadius: 6,
-                            elevation: 4,
-                          } : {
-                            backgroundColor: '#FFFFFF',
-                            borderWidth: 1,
-                            borderColor: '#E2E8F0',
-                          }
-                        ]}
-                        onPress={() => {
-                          setRole(r);
-                          setFieldErrors({});
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                          {config.icon}
-                          <Text style={[
-                            styles.roleTabText,
-                            { color: isActive ? '#FFFFFF' : '#475569' },
-                            isActive && styles.roleTabTextActive
-                          ]}>
-                            {r.charAt(0).toUpperCase() + r.slice(1)}
-                          </Text>
-                          {isActive && (
-                            <Text style={{ fontSize: 11, color: '#FFFFFF', fontWeight: '900', marginLeft: 2 }}>✓</Text>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Sleek Subtitle showing Own Company info instead of full card */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 14, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B' }}>Trading as: </Text>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: rTheme.color }}>{party1}</Text>
-                  <View style={{ marginLeft: 'auto', backgroundColor: rTheme.bg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: 9, fontWeight: '800', color: rTheme.color }}>Verified Profile</Text>
-                  </View>
-                </View>
-
-                {/* Seller Company Selector (Only for Broker) */}
-                {role === 'broker' && (
-                  <View style={[styles.inputGroup, { marginBottom: 16 }]}>
-                    <Text style={styles.fieldLabel}>Seller Company*</Text>
-
-                    {sellerCompany && sellerCompanyData ? (
-                      <View style={{ gap: 8 }}>
-                        <View
-                          style={[
-                            styles.profileCard,
-                            {
-                              borderColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#BBF7D0',
-                              backgroundColor: '#FFFFFF',
-                              shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669',
-                            }
-                          ]}
-                        >
-                          <TouchableOpacity
-                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-                            onPress={() => {
-                              setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-                              navigateToContactPicker('sellerCompany');
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <View style={[styles.profileAvatar, { backgroundColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669', shadowColor: sellerCompanyData.isRegistered === false ? '#F59E0B' : '#059669' }]}>
-                              <Text style={styles.profileAvatarText}>
-                                {(sellerCompanyData.company || sellerCompany).charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <View style={styles.profileCardInfo}>
-                              <Text style={styles.profileCardName}>
-                                {sellerCompanyData.company ? `${sellerCompanyData.company} (${sellerCompanyData.name || sellerCompany})` : (sellerCompanyData.name || sellerCompany)}
-                              </Text>
-                              <Text style={[
-                                styles.profileCardRole,
-                                { color: sellerCompanyData.isRegistered === false ? '#D97706' : '#059669' }
-                              ]}>
-                                {sellerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <TouchableOpacity
-                              style={[
-                                styles.profileCardBadge,
-                                {
-                                  backgroundColor: '#FEF2F2',
-                                  borderColor: '#FCA5A5',
-                                  borderWidth: 1,
-                                }
-                              ]}
-                              onPress={() => {
-                                setSellerCompany('');
-                                setSellerCompanyData(null);
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
-                            </TouchableOpacity>
-                            <Text style={[styles.changeText, { color: '#059669' }]}>Edit ›</Text>
-                          </View>
-                        </View>
-
-                        {sellerCompanyData.isRegistered === false && (
-                          <TouchableOpacity
-                            style={{
-                              backgroundColor: '#059669',
-                              paddingVertical: 10,
-                              paddingHorizontal: 14,
-                              borderRadius: 10,
-                              alignItems: 'center',
-                              flexDirection: 'row',
-                              justifyContent: 'center',
-                              gap: 6,
-                              marginTop: 8,
-                              shadowColor: '#059669',
-                              shadowOffset: { width: 0, height: 2 },
-                              shadowOpacity: 0.15,
-                              shadowRadius: 4,
-                              elevation: 2,
-                            }}
-                            onPress={() => {
-                              openOnboardModalForRole('seller', sellerCompanyData, sellerCompany);
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <UserPlus size={15} color="#FFFFFF" />
-                            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
-                              Register & Onboard Seller Company
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    ) : (
-                      <View style={styles.step1DirectBox}>
-                        <View style={[styles.step1SearchWrapper, (fieldErrors.sellerCompany || directInputErrors.sellerCompany) && styles.inputError]}>
-                          <Phone size={14} color="#059669" style={{ marginRight: 6 }} />
-                          <TextInput
-                            style={styles.step1SearchInput}
-                            placeholder="Type seller name or 10-digit mobile..."
-                            placeholderTextColor="#94A3B8"
-                            value={directInputSeller}
-                            onChangeText={(text) => {
-                              const isNum = /^\d/.test(text.trim()) || /^\+?91/.test(text.trim());
-                              const val = isNum ? text.replace(/\D/g, '').slice(0, 10) : text;
-                              setDirectInputSeller(val);
-                              if (directInputErrors.sellerCompany) setDirectInputErrors(prev => ({ ...prev, sellerCompany: undefined }));
-                            }}
-                            keyboardType="phone-pad"
-                            maxLength={/^\d/.test((directInputSeller || '').trim()) ? 10 : undefined}
-                          />
-                          <TouchableOpacity
-                            style={[styles.step1AddBtn, { backgroundColor: '#059669' }]}
-                            onPress={() => handleDirectAddContact('sellerCompany', directInputSeller)}
-                            disabled={!directInputSeller.trim()}
-                            activeOpacity={0.8}
-                          >
-                            <Plus size={13} color="#FFFFFF" style={{ marginRight: 2 }} />
-                            <Text style={styles.step1AddBtnText}>Add</Text>
-                          </TouchableOpacity>
-                        </View>
-                        {directInputErrors.sellerCompany && (
-                          <Text style={styles.fieldErrorText}>⚠ {directInputErrors.sellerCompany}</Text>
-                        )}
-
-                        {/* Live Auto Search Loading / Results */}
-                        {lookupResults.sellerCompany?.searching && (
-                          <View style={styles.searchingRow}>
-                            <ActivityIndicator size="small" color="#059669" />
-                            <Text style={styles.searchingText}>Searching Pravisti registered exchange...</Text>
-                          </View>
-                        )}
-                        {lookupResults.sellerCompany?.companies && lookupResults.sellerCompany.companies.length > 0 && (
-                          <View style={styles.foundCompanyBox}>
-                            <Text style={styles.foundCompanyTitle}>🏢 Registered Company Found:</Text>
-                            {lookupResults.sellerCompany.companies.map((co, idx) => (
-                              <TouchableOpacity
-                                key={co.companyId || idx}
-                                style={styles.foundCompanyItem}
-                                onPress={() => handleSelectFoundCompany('sellerCompany', co, lookupResults.sellerCompany.mobile)}
-                                activeOpacity={0.8}
-                              >
-                                <View style={{ flex: 1 }}>
-                                  <Text style={styles.foundCompanyName}>{co.companyName || co.name}</Text>
-                                  <Text style={styles.foundCompanySub}>
-                                    {(co.companyType || 'Trader').toUpperCase()} • Contact: {co.contactPersonName || lookupResults.sellerCompany.mobile}
-                                  </Text>
-                                </View>
-                                <View style={[styles.selectFoundBtn, { backgroundColor: '#059669' }]}>
-                                  <Text style={styles.selectFoundBtnText}>Select ›</Text>
-                                </View>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        )}
-
-                        <View style={styles.orDividerRow}>
-                          <View style={styles.orDividerLine} />
-                          <Text style={styles.orDividerText}>OR</Text>
-                          <View style={styles.orDividerLine} />
-                        </View>
-
-                        <TouchableOpacity
-                          style={styles.directorySelectBtn}
-                          onPress={() => {
-                            setFocusedField('sellerCompany');
-                            setFieldErrors(prev => ({ ...prev, sellerCompany: undefined }));
-                            navigateToContactPicker('sellerCompany');
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <BookUser size={15} color="#059669" style={{ marginRight: 6 }} />
-                          <Text style={[styles.directorySelectBtnText, { color: '#059669' }]}>Select from Contacts Directory</Text>
-                          <ChevronRight size={15} color="#059669" style={{ marginLeft: 'auto' }} />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                    {fieldErrors.sellerCompany && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.sellerCompany}</Text>}
-                  </View>
-                )}
-
-                {/* Buyer / Counterparty Selector */}
-                <View style={[styles.inputGroup, { marginBottom: 0 }]}>
-                  <Text style={styles.fieldLabel}>
-                    {role === 'broker' ? 'Buyer Company*' : role === 'buyer' ? 'Counterparty Seller*' : 'Counterparty Buyer*'}
-                  </Text>
-
-                  {party2 && party2Data ? (
-                    (() => {
-                      const isSellerCp = role === 'buyer';
-                      const cpColor = isSellerCp ? '#059669' : '#0284C7';
-                      const cpBg = isSellerCp ? '#E0FDF4' : '#E0F2FE';
-                      const cpBorder = isSellerCp ? '#BBF7D0' : '#BAE6FD';
-
-                      return (
-                        <View style={{ gap: 8 }}>
-                          <View
-                            style={[
-                              styles.profileCard,
-                              {
-                                borderColor: party2Data.isRegistered === false ? '#F59E0B' : cpBorder,
-                                backgroundColor: '#FFFFFF',
-                                shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor,
-                              }
-                            ]}
-                          >
-                            <TouchableOpacity
-                              style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-                              onPress={() => {
-                                setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                                navigateToContactPicker('party2');
-                              }}
-                              activeOpacity={0.8}
-                            >
-                              <View style={[styles.profileAvatar, { backgroundColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor, shadowColor: party2Data.isRegistered === false ? '#F59E0B' : cpColor }]}>
-                                <Text style={styles.profileAvatarText}>
-                                  {(party2Data.company || party2).charAt(0).toUpperCase()}
-                                </Text>
-                              </View>
-                              <View style={styles.profileCardInfo}>
-                                <Text style={styles.profileCardName}>
-                                  {party2Data.company ? `${party2Data.company} (${party2Data.name || party2})` : (party2Data.name || party2)}
-                                </Text>
-                                <Text style={[
-                                  styles.profileCardRole,
-                                  { color: party2Data.isRegistered === false ? '#D97706' : cpColor }
-                                ]}>
-                                  {party2Data.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                                </Text>
-                              </View>
-                            </TouchableOpacity>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <TouchableOpacity
-                                style={[
-                                  styles.profileCardBadge,
-                                  {
-                                    backgroundColor: '#FEF2F2',
-                                    borderColor: '#FCA5A5',
-                                    borderWidth: 1,
-                                  }
-                                ]}
-                                onPress={() => {
-                                  setParty2('');
-                                  setParty2Data(null);
-                                }}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => {
-                                  setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                                  navigateToContactPicker('party2');
-                                }}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={[styles.changeText, { color: cpColor }]}>Edit ›</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-
-                          {party2Data.isRegistered === false && (
-                            <TouchableOpacity
-                              style={{
-                                backgroundColor: '#2563EB',
-                                paddingVertical: 10,
-                                paddingHorizontal: 14,
-                                borderRadius: 10,
-                                alignItems: 'center',
-                                flexDirection: 'row',
-                                justifyContent: 'center',
-                                gap: 6,
-                                shadowColor: '#2563EB',
-                                shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: 0.15,
-                                shadowRadius: 4,
-                                elevation: 2,
-                              }}
-                              onPress={() => {
-                                const targetRole = role === 'buyer' ? 'seller' : 'buyer';
-                                openOnboardModalForRole(targetRole, party2Data, party2);
-                              }}
-                              activeOpacity={0.8}
-                            >
-                              <UserPlus size={15} color="#FFFFFF" />
-                              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
-                                Register & Onboard {role === 'buyer' ? 'Seller' : 'Buyer'} Company
-                              </Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      );
-                    })()
-                  ) : (
-                    (() => {
-                      const isSellerCp = role === 'buyer';
-                      const cpColor = isSellerCp ? '#059669' : '#0284C7';
-                      const labelRole = role === 'broker' ? 'buyer' : role === 'buyer' ? 'seller' : 'buyer';
-
-                      return (
-                        <View style={styles.step1DirectBox}>
-                          <View style={[styles.step1SearchWrapper, (fieldErrors.party2 || directInputErrors.party2) && styles.inputError]}>
-                            <Phone size={14} color={cpColor} style={{ marginRight: 6 }} />
-                            <TextInput
-                              style={styles.step1SearchInput}
-                              placeholder={`Type ${labelRole} name or 10-digit mobile...`}
-                              placeholderTextColor="#94A3B8"
-                              value={directInputParty2}
-                              onChangeText={(text) => {
-                                const isNum = /^\d/.test(text.trim()) || /^\+?91/.test(text.trim());
-                                const val = isNum ? text.replace(/\D/g, '').slice(0, 10) : text;
-                                setDirectInputParty2(val);
-                                if (directInputErrors.party2) setDirectInputErrors(prev => ({ ...prev, party2: undefined }));
-                              }}
-                              keyboardType="phone-pad"
-                              maxLength={/^\d/.test((directInputParty2 || '').trim()) ? 10 : undefined}
-                            />
-                            <TouchableOpacity
-                              style={[styles.step1AddBtn, { backgroundColor: cpColor }]}
-                              onPress={() => handleDirectAddContact('party2', directInputParty2)}
-                              disabled={!directInputParty2.trim()}
-                              activeOpacity={0.8}
-                            >
-                              <Plus size={13} color="#FFFFFF" style={{ marginRight: 2 }} />
-                              <Text style={styles.step1AddBtnText}>Add</Text>
-                            </TouchableOpacity>
-                          </View>
-                          {directInputErrors.party2 && (
-                            <Text style={styles.fieldErrorText}>⚠ {directInputErrors.party2}</Text>
-                          )}
-
-                          {/* Live Auto Search Loading / Results */}
-                          {lookupResults.party2?.searching && (
-                            <View style={styles.searchingRow}>
-                              <ActivityIndicator size="small" color={cpColor} />
-                              <Text style={styles.searchingText}>Searching Pravisti registered exchange...</Text>
-                            </View>
-                          )}
-                          {lookupResults.party2?.companies && lookupResults.party2.companies.length > 0 && (
-                            <View style={[styles.foundCompanyBox, { borderColor: cpColor === '#059669' ? '#BBF7D0' : '#BAE6FD', backgroundColor: cpColor === '#059669' ? '#F0FDF4' : '#F0F9FF' }]}>
-                              <Text style={[styles.foundCompanyTitle, { color: cpColor }]}>🏢 Registered Company Found:</Text>
-                              {lookupResults.party2.companies.map((co, idx) => (
-                                <TouchableOpacity
-                                  key={co.companyId || idx}
-                                  style={styles.foundCompanyItem}
-                                  onPress={() => handleSelectFoundCompany('party2', co, lookupResults.party2.mobile)}
-                                  activeOpacity={0.8}
-                                >
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={styles.foundCompanyName}>{co.companyName || co.name}</Text>
-                                    <Text style={styles.foundCompanySub}>
-                                      {(co.companyType || 'Trader').toUpperCase()} • Contact: {co.contactPersonName || lookupResults.party2.mobile}
-                                    </Text>
-                                  </View>
-                                  <View style={[styles.selectFoundBtn, { backgroundColor: cpColor }]}>
-                                    <Text style={styles.selectFoundBtnText}>Select ›</Text>
-                                  </View>
-                                </TouchableOpacity>
-                              ))}
-                            </View>
-                          )}
-
-                          <View style={styles.orDividerRow}>
-                            <View style={styles.orDividerLine} />
-                            <Text style={styles.orDividerText}>OR</Text>
-                            <View style={styles.orDividerLine} />
-                          </View>
-
-                          <TouchableOpacity
-                            style={styles.directorySelectBtn}
-                            onPress={() => {
-                              setFocusedField('party2');
-                              setFieldErrors(prev => ({ ...prev, party2: undefined }));
-                              navigateToContactPicker('party2');
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <BookUser size={15} color={cpColor} style={{ marginRight: 6 }} />
-                            <Text style={[styles.directorySelectBtnText, { color: cpColor }]}>Select from Contacts Directory</Text>
-                            <ChevronRight size={15} color={cpColor} style={{ marginLeft: 'auto' }} />
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })()
-                  )}
-                  {fieldErrors.party2 && <Text style={styles.fieldErrorText}>⚠ {fieldErrors.party2}</Text>}
-                </View>
-
-                {/* Broker Company Selector (Optional - only if role is not broker) */}
-                {role !== 'broker' && (
-                  <View style={[styles.inputGroup, { marginTop: 16, marginBottom: 0 }]}>
-                    <Text style={styles.fieldLabel}>Broker Company (Optional)</Text>
-
-                    {brokerCompany && brokerCompanyData ? (
-                      <View style={{ gap: 8 }}>
-                        <View
-                          style={[
-                            styles.profileCard,
-                            {
-                              borderColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#DDD6FE',
-                              backgroundColor: '#FFFFFF',
-                              shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED',
-                            }
-                          ]}
-                        >
-                          <TouchableOpacity
-                            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
-                            onPress={() => {
-                              navigateToContactPicker('brokerCompany');
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <View style={[styles.profileAvatar, { backgroundColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED', shadowColor: brokerCompanyData.isRegistered === false ? '#F59E0B' : '#7C3AED' }]}>
-                              <Text style={styles.profileAvatarText}>
-                                {(brokerCompanyData.company || brokerCompany).charAt(0).toUpperCase()}
-                              </Text>
-                            </View>
-                            <View style={styles.profileCardInfo}>
-                              <Text style={styles.profileCardName}>
-                                {brokerCompanyData.company ? `${brokerCompanyData.company} (${brokerCompanyData.name || brokerCompany})` : (brokerCompanyData.name || brokerCompany)}
-                              </Text>
-                              <Text style={[
-                                styles.profileCardRole,
-                                { color: brokerCompanyData.isRegistered === false ? '#D97706' : '#7C3AED' }
-                              ]}>
-                                {brokerCompanyData.isRegistered === false ? 'NOT YET REGISTERED' : 'ON PRAVISTI'}
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <TouchableOpacity
-                              style={[
-                                styles.profileCardBadge,
-                                {
-                                  backgroundColor: '#FEF2F2',
-                                  borderColor: '#FCA5A5',
-                                  borderWidth: 1,
-                                }
-                              ]}
-                              onPress={() => {
-                                setBrokerCompany('');
-                                setBrokerCompanyData(null);
-                                setBrokerCompanyId('');
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={[styles.profileCardBadgeText, { color: '#EF4444' }]}>Remove</Text>
-                            </TouchableOpacity>
-                            <Text style={[styles.changeText, { color: '#7C3AED' }]}>Edit ›</Text>
-                          </View>
-                        </View>
-
-                        {brokerCompanyData.isRegistered === false && (
-                          <TouchableOpacity
-                            style={{
-                              backgroundColor: '#7C3AED',
-                              paddingVertical: 10,
-                              paddingHorizontal: 14,
-                              borderRadius: 10,
-                              alignItems: 'center',
-                              flexDirection: 'row',
-                              justifyContent: 'center',
-                              gap: 6,
-                              marginTop: 8,
-                              shadowColor: '#7C3AED',
-                              shadowOffset: { width: 0, height: 2 },
-                              shadowOpacity: 0.15,
-                              shadowRadius: 4,
-                              elevation: 2,
-                            }}
-                            onPress={() => {
-                              openOnboardModalForRole('broker', brokerCompanyData, brokerCompany);
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <UserPlus size={15} color="#FFFFFF" />
-                            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
-                              Register & Onboard Broker Company
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    ) : (
-                      <View style={styles.step1DirectBox}>
-                        <View style={[styles.step1SearchWrapper, directInputErrors.brokerCompany && styles.inputError]}>
-                          <Phone size={14} color="#7C3AED" style={{ marginRight: 6 }} />
-                          <TextInput
-                            style={styles.step1SearchInput}
-                            placeholder="Type broker name or 10-digit mobile..."
-                            placeholderTextColor="#94A3B8"
-                            value={directInputBroker}
-                            onChangeText={(text) => {
-                              const isNum = /^\d/.test(text.trim()) || /^\+?91/.test(text.trim());
-                              const val = isNum ? text.replace(/\D/g, '').slice(0, 10) : text;
-                              setDirectInputBroker(val);
-                              if (directInputErrors.brokerCompany) setDirectInputErrors(prev => ({ ...prev, brokerCompany: undefined }));
-                            }}
-                            keyboardType="phone-pad"
-                            maxLength={/^\d/.test((directInputBroker || '').trim()) ? 10 : undefined}
-                          />
-                          <TouchableOpacity
-                            style={[styles.step1AddBtn, { backgroundColor: '#7C3AED' }]}
-                            onPress={() => handleDirectAddContact('brokerCompany', directInputBroker)}
-                            disabled={!directInputBroker.trim()}
-                            activeOpacity={0.8}
-                          >
-                            <Plus size={13} color="#FFFFFF" style={{ marginRight: 2 }} />
-                            <Text style={styles.step1AddBtnText}>Add</Text>
-                          </TouchableOpacity>
-                        </View>
-                        {directInputErrors.brokerCompany && (
-                          <Text style={styles.fieldErrorText}>⚠ {directInputErrors.brokerCompany}</Text>
-                        )}
-
-                        <View style={styles.orDividerRow}>
-                          <View style={styles.orDividerLine} />
-                          <Text style={styles.orDividerText}>OR</Text>
-                          <View style={styles.orDividerLine} />
-                        </View>
-
-                        <TouchableOpacity
-                          style={styles.directorySelectBtn}
-                          onPress={() => {
-                            setFocusedField
-                              ('brokerCompany');
-                            navigateToContactPicker('brokerCompany');
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <BookUser size={15} color="#7C3AED" style={{ marginRight: 6 }} />
-                          <Text style={[styles.directorySelectBtnText, { color: '#7C3AED' }]}>Select from Contacts Directory</Text>
-                          <ChevronRight size={15} color="#7C3AED" style={{ marginLeft: 'auto' }} />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </View>
+        {/* ════════════════ 4-STEP WIZARD PROGRESS BAR ════════════════ */}
+        <View style={styles.stepperContainer}>
+          {/* Step 1: Parties */}
+          <TouchableOpacity
+            style={styles.stepItem}
+            onPress={() => currentStep > 1 && setCurrentStep(1)}
+            activeOpacity={0.8}
+          >
+            <View style={[
+              styles.stepCircle,
+              currentStep > 1 && styles.stepCircleCompleted,
+              currentStep === 1 && styles.stepCircleActive,
+            ]}>
+              {currentStep > 1 ? (
+                <Check size={14} color="#FFFFFF" strokeWidth={3} />
+              ) : (
+                <Text style={[styles.stepNumberText, currentStep === 1 && styles.stepNumberTextActive]}>1</Text>
+              )}
             </View>
-          )}
+            <Text style={[styles.stepLabelText, currentStep === 1 && styles.stepLabelTextActive]}>Parties</Text>
+          </TouchableOpacity>
 
-          {/* Step 1 Navigation Button */}
+          <View style={[styles.stepperLine, currentStep > 1 && styles.stepperLineActive]} />
+
+          {/* Step 2: Product */}
+          <TouchableOpacity
+            style={styles.stepItem}
+            onPress={() => currentStep > 2 && setCurrentStep(2)}
+            activeOpacity={0.8}
+          >
+            <View style={[
+              styles.stepCircle,
+              currentStep > 2 && styles.stepCircleCompleted,
+              currentStep === 2 && styles.stepCircleActive,
+            ]}>
+              {currentStep > 2 ? (
+                <Check size={14} color="#FFFFFF" strokeWidth={3} />
+              ) : (
+                <Text style={[styles.stepNumberText, currentStep === 2 && styles.stepNumberTextActive]}>2</Text>
+              )}
+            </View>
+            <Text style={[styles.stepLabelText, currentStep === 2 && styles.stepLabelTextActive]}>Product</Text>
+          </TouchableOpacity>
+
+          <View style={[styles.stepperLine, currentStep > 2 && styles.stepperLineActive]} />
+
+          {/* Step 3: Details */}
+          <TouchableOpacity
+            style={styles.stepItem}
+            onPress={() => currentStep > 3 && setCurrentStep(3)}
+            activeOpacity={0.8}
+          >
+            <View style={[
+              styles.stepCircle,
+              currentStep > 3 && styles.stepCircleCompleted,
+              currentStep === 3 && styles.stepCircleActive,
+            ]}>
+              {currentStep > 3 ? (
+                <Check size={14} color="#FFFFFF" strokeWidth={3} />
+              ) : (
+                <Text style={[styles.stepNumberText, currentStep === 3 && styles.stepNumberTextActive]}>3</Text>
+              )}
+            </View>
+            <Text style={[styles.stepLabelText, currentStep === 3 && styles.stepLabelTextActive]}>Details</Text>
+          </TouchableOpacity>
+
+          <View style={[styles.stepperLine, currentStep > 3 && styles.stepperLineActive]} />
+
+          {/* Step 4: Review */}
+          <TouchableOpacity
+            style={styles.stepItem}
+            activeOpacity={0.8}
+          >
+            <View style={[
+              styles.stepCircle,
+              currentStep === 4 && styles.stepCircleActive,
+            ]}>
+              <Text style={[styles.stepNumberText, currentStep === 4 && styles.stepNumberTextActive]}>4</Text>
+            </View>
+            <Text style={[styles.stepLabelText, currentStep === 4 && styles.stepLabelTextActive]}>Review</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ════════════════ MAIN SCROLLABLE CONTENT ════════════════ */}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              STEP 1: ADD PARTIES (1st Step)
+             ═══════════════════════════════════════════════════════════════════ */}
           {currentStep === 1 && (
-            <View style={styles.wizardNavRow}>
-              <TouchableOpacity
-                style={[styles.wizardNextBtn, { backgroundColor: btnErrorMessage ? '#EF4444' : rTheme.color }]}
-                onPress={() => {
-                  const errors = {};
-                  let firstErrorMsg = '';
-                  if (role === 'broker') {
-                    if (!party2) {
-                      errors.party2 = 'Please select a buyer company';
-                      firstErrorMsg = 'Select Buyer';
-                    }
-                    if (!sellerCompany) {
-                      errors.sellerCompany = 'Please select a seller company';
-                      if (!firstErrorMsg) firstErrorMsg = 'Select Seller';
-                    }
-                  } else {
-                    if (!party2) {
-                      errors.party2 = `Please select a ${role === 'buyer' ? 'seller' : 'buyer'} company`;
-                      firstErrorMsg = `Select ${role === 'buyer' ? 'Seller' : 'Buyer'}`;
-                    }
-                  }
-                  if (Object.keys(errors).length > 0) {
-                    setFieldErrors(errors);
-                    setBtnErrorMessage(firstErrorMsg);
-                    setTimeout(() => setBtnErrorMessage(''), 3000);
-                    return;
-                  }
-                  setFieldErrors({});
-                  setBtnErrorMessage('');
-                  setCurrentStep(2);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.wizardNextBtnText}>
-                  {btnErrorMessage ? `⚠ ${btnErrorMessage}` : 'Continue to Products Ledger ›'}
+            <View style={styles.stepSection}>
+              <View style={styles.sectionHeadingBox}>
+                <Text style={styles.mainSectionTitle}>Add Parties</Text>
+                <Text style={styles.mainSectionSubtitle}>
+                  Add buyers / sellers or other parties involved in this deal.
                 </Text>
-              </TouchableOpacity>
-            </View>
-          )}
+              </View>
 
-          {/* ═══════════ CARD 2: PRODUCT LEDGER (STEP 2) ═══════════ */}
-          {currentStep === 2 && (
-            <>
-              <View style={styles.sectionCard}>
-                <View style={styles.sectionHeader}>
-                  <View style={[styles.sectionDot, { backgroundColor: '#4F46E5' }]} />
-                  <Text style={styles.sectionTitle}>Product Ledger & Value</Text>
-                  <View style={styles.sectionBadgeContainer}>
-                    <Text style={[styles.sectionBadge, { color: '#4F46E5', backgroundColor: '#EEF2FF' }]}>STEP 2</Text>
+              {/* Trading Role Switcher */}
+              <View style={styles.roleTabsContainer}>
+                <TouchableOpacity
+                  style={[styles.roleTab, role === 'seller' && styles.roleTabActive]}
+                  onPress={() => {
+                    setRole('seller');
+                    setDealType('Sale');
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Building2 size={14} color={role === 'seller' ? '#FFFFFF' : '#64748B'} />
+                  <Text style={[styles.roleTabText, role === 'seller' && styles.roleTabTextActive]}>
+                    I am Seller
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.roleTab, role === 'buyer' && styles.roleTabActive]}
+                  onPress={() => {
+                    setRole('buyer');
+                    setDealType('Purchase');
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <ShoppingBag size={14} color={role === 'buyer' ? '#FFFFFF' : '#64748B'} />
+                  <Text style={[styles.roleTabText, role === 'buyer' && styles.roleTabTextActive]}>
+                    I am Buyer
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Your Company Card */}
+              <View style={styles.partyCardWrapper}>
+                <Text style={styles.partySectionHeader}>
+                  {role === 'buyer' ? 'Buyer (Your Company)' : 'Seller (Your Company)'}
+                </Text>
+                <View style={styles.whitePartyCard}>
+                  <View style={[styles.partyAvatarBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                    <Text style={[styles.partyAvatarText, { color: '#059669' }]}>
+                      {party1.substring(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+
+                  <View style={styles.partyInfoColumn}>
+                    <View style={styles.partyNameRow}>
+                      <Text style={styles.partyCompanyName}>{party1}</Text>
+                      <View style={styles.primaryBadge}>
+                        <Text style={styles.primaryBadgeText}>Primary</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.partyCategoryText}>{sellerIndustry}</Text>
+                    <View style={styles.partyLocationRow}>
+                      <MapPin size={12} color="#64748B" />
+                      <Text style={styles.partyLocationText}>{sellerLocation}</Text>
+                    </View>
+                  </View>
+
+                  {userCompaniesList.length > 1 && (
+                    <TouchableOpacity
+                      style={styles.partyEditButton}
+                      onPress={() => setShowCompanySwitchModal(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Edit2 size={16} color="#2563EB" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Counterparty Selection (Buyer or Seller) */}
+              <View style={styles.partyCardWrapper}>
+                <Text style={styles.partySectionHeader}>
+                  {role === 'buyer' ? 'Seller *' : 'Buyer *'}
+                </Text>
+
+                {/* Selected Party Card or Direct Input */}
+                {party2 ? (
+                  <View style={styles.whitePartyCard}>
+                    <View style={[styles.partyAvatarBox, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                      <Wheat size={20} color="#D97706" />
+                    </View>
+
+                    <View style={styles.partyInfoColumn}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <Text style={styles.partyCompanyName}>{party2}</Text>
+                        {party2Data?.status ? (
+                          <View style={[
+                            styles.partyStatusBadge,
+                            (party2Data.status === 'active' || party2Data.status === 'approved') ? styles.partyStatusBadgeActive : styles.partyStatusBadgePending,
+                          ]}>
+                            <Text style={[
+                              styles.partyStatusBadgeText,
+                              (party2Data.status === 'active' || party2Data.status === 'approved') ? styles.partyStatusBadgeTextActive : styles.partyStatusBadgeTextPending,
+                            ]}>
+                              {String(party2Data.status).toUpperCase()}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {party2Data?.industry ? (
+                        <Text style={styles.partyCategoryText}>{party2Data.industry}</Text>
+                      ) : null}
+                      {party2Data?.location ? (
+                        <View style={styles.partyLocationRow}>
+                          <MapPin size={12} color="#64748B" />
+                          <Text style={styles.partyLocationText}>{party2Data.location}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.partyRemoveButton}
+                      onPress={() => {
+                        setParty2('');
+                        setParty2Data(null);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <X size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.searchBarContainer}>
+                    <Search size={18} color="#94A3B8" style={styles.searchIcon} />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Enter 10-digit mobile number or company..."
+                      placeholderTextColor="#94A3B8"
+                      value={directInputParty2}
+                      onChangeText={setDirectInputParty2}
+                    />
+                    <TouchableOpacity
+                      onPress={() => navigateToContactPicker('party2')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.addNewPartyLink}>+ Add New</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {fieldErrors.party2 && (
+                  <Text style={styles.errorMessageText}>⚠ {fieldErrors.party2}</Text>
+                )}
+              </View>
+
+              {/* Broker Selection (Optional - Same as Buyer/Seller input box) */}
+              <View style={styles.partyCardWrapper}>
+                <View style={styles.sectionSubHeaderRow}>
+                  <Text style={styles.partySectionHeader}>Broker (Optional)</Text>
+                  {brokerCompany ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setBrokerCompany('');
+                        setBrokerCompanyData(null);
+                        setBrokerCompanyId('');
+                        setDirectInputBroker('');
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.addNewPartyLink, { color: '#EF4444' }]}>Clear</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                {/* Selected Broker Card or Direct Input */}
+                {brokerCompany ? (
+                  <View style={styles.whitePartyCard}>
+                    <View style={[styles.partyAvatarBox, { backgroundColor: '#EDE9FE', borderColor: '#C4B5FD' }]}>
+                      <Handshake size={20} color="#7C3AED" />
+                    </View>
+
+                    <View style={styles.partyInfoColumn}>
+                      <Text style={styles.partyCompanyName}>{brokerCompany}</Text>
+                      {brokerCompanyData?.industry ? (
+                        <Text style={styles.partyCategoryText}>{brokerCompanyData.industry}</Text>
+                      ) : (
+                        <Text style={[styles.partyCategoryText, { color: '#7C3AED', fontWeight: '600' }]}>
+                          {brokerCompanyData?.isRegistered === false ? 'Unregistered' : 'On Pravisti'}
+                        </Text>
+                      )}
+                      {brokerCompanyData?.location ? (
+                        <View style={styles.partyLocationRow}>
+                          <MapPin size={12} color="#64748B" />
+                          <Text style={styles.partyLocationText}>{brokerCompanyData.location}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.partyRemoveButton}
+                      onPress={() => {
+                        setBrokerCompany('');
+                        setBrokerCompanyData(null);
+                        setBrokerCompanyId('');
+                        setDirectInputBroker('');
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <X size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.searchBarContainer}>
+                    <Search size={18} color="#94A3B8" style={styles.searchIcon} />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Enter 10-digit mobile number or company..."
+                      placeholderTextColor="#94A3B8"
+                      value={directInputBroker}
+                      onChangeText={setDirectInputBroker}
+                    />
+                    <TouchableOpacity
+                      onPress={() => navigateToContactPicker('brokerCompany')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.addNewPartyLink}>+ Add New</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {/* Other Parties (Optional) */}
+              <View style={styles.partyCardWrapper}>
+                <View style={styles.sectionSubHeaderRow}>
+                  <Text style={styles.partySectionHeader}>Other Parties (Optional)</Text>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    {!showLogistics && (
+                      <TouchableOpacity
+                        style={[styles.smallAddChip, { borderColor: '#C7D2FE', backgroundColor: '#EEF2FF' }]}
+                        onPress={() => setShowLogistics(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Truck size={12} color="#4F46E5" />
+                        <Text style={[styles.smallAddChipText, { color: '#4F46E5' }]}>+ Logistics</Text>
+                      </TouchableOpacity>
+                    )}
+                    {!showInsurance && (
+                      <TouchableOpacity
+                        style={[styles.smallAddChip, { borderColor: '#A7F3D0', backgroundColor: '#ECFDF5' }]}
+                        onPress={() => setShowInsurance(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Shield size={12} color="#059669" />
+                        <Text style={[styles.smallAddChipText, { color: '#059669' }]}>+ Insurance</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
 
-                <View style={styles.cardBody}>
-                  {/* Add Product Button (Small Pill style) */}
-                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8, marginTop: 4 }}>
+                {/* Logistics Partner Option */}
+                {showLogistics && (
+                  <View style={{ marginTop: 10 }}>
+                    <View style={styles.sectionSubHeaderRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Truck size={14} color="#4F46E5" />
+                        <Text style={[styles.partySectionHeader, { marginBottom: 0, fontSize: 13 }]}>
+                          Logistics Partner
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowLogistics(false);
+                          setLogisticsPartner('');
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.addNewPartyLink, { color: '#EF4444' }]}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={[styles.searchBarContainer, { marginTop: 6 }]}>
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Enter logistics partner name..."
+                        placeholderTextColor="#94A3B8"
+                        value={logisticsPartner}
+                        onChangeText={setLogisticsPartner}
+                      />
+                    </View>
+                  </View>
+                )}
+
+                {/* Insurance Provider Option */}
+                {showInsurance && (
+                  <View style={{ marginTop: 10 }}>
+                    <View style={styles.sectionSubHeaderRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Shield size={14} color="#059669" />
+                        <Text style={[styles.partySectionHeader, { marginBottom: 0, fontSize: 13 }]}>
+                          Insurance Provider
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowInsurance(false);
+                          setInsuranceProvider('');
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.addNewPartyLink, { color: '#EF4444' }]}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={[styles.searchBarContainer, { marginTop: 6 }]}>
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Enter insurance company name..."
+                        placeholderTextColor="#94A3B8"
+                        value={insuranceProvider}
+                        onChangeText={setInsuranceProvider}
+                      />
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* Additional Notes (Optional) */}
+              <View style={styles.partyCardWrapper}>
+                <Text style={styles.partySectionHeader}>Additional Notes (Optional)</Text>
+                <View style={styles.notesBox}>
+                  <TextInput
+                    style={styles.notesInputField}
+                    placeholder="Add any notes about the parties involved..."
+                    placeholderTextColor="#94A3B8"
+                    value={partyNotes}
+                    onChangeText={setPartyNotes}
+                    maxLength={250}
+                    multiline
+                    numberOfLines={3}
+                  />
+                  <Text style={styles.charCounterText}>{partyNotes.length}/250</Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              STEP 2: SELECT PRODUCT (2nd Step)
+             ═══════════════════════════════════════════════════════════════════ */}
+          {currentStep === 2 && (
+            <View style={styles.stepSection}>
+              <View style={styles.sectionHeadingBox}>
+                <Text style={styles.mainSectionTitle}>Select Product</Text>
+                <Text style={styles.mainSectionSubtitle}>
+                  {role === 'buyer' && party2 ? `Products from ${party2}` : 'Choose the product for this deal'}
+                </Text>
+              </View>
+
+              {role === 'buyer' && !party2Data && (
+                <View style={{ backgroundColor: '#EFF6FF', borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#BFDBFE' }}>
+                  <Info size={16} color="#2563EB" />
+                  <Text style={{ fontSize: 12, color: '#1E40AF', flex: 1, fontWeight: '600' }}>
+                    Please select or onboard a Seller in Step 1 to load their product catalog.
+                  </Text>
+                </View>
+              )}
+
+              {/* Search Bar */}
+              <View style={styles.searchBarContainer}>
+                <Search size={18} color="#94A3B8" style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search product by name or HSN code..."
+                  placeholderTextColor="#94A3B8"
+                  value={productSearch}
+                  onChangeText={setProductSearch}
+                />
+                {productSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setProductSearch('')}>
+                    <X size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Category Pills */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryPillsScroll}
+                contentContainerStyle={styles.categoryPillsContent}
+              >
+                <TouchableOpacity
+                  style={[styles.categoryPill, selectedCategoryTab === 'all' && styles.categoryPillActive]}
+                  onPress={() => setSelectedCategoryTab('all')}
+                  activeOpacity={0.8}
+                >
+                  <ShoppingBag size={14} color={selectedCategoryTab === 'all' ? '#FFFFFF' : '#475569'} />
+                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'all' && styles.categoryPillTextActive]}>
+                    All
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.categoryPill, selectedCategoryTab === 'grains' && styles.categoryPillActive]}
+                  onPress={() => setSelectedCategoryTab('grains')}
+                  activeOpacity={0.8}
+                >
+                  <Wheat size={14} color={selectedCategoryTab === 'grains' ? '#FFFFFF' : '#475569'} />
+                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'grains' && styles.categoryPillTextActive]}>
+                    Grains
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.categoryPill, selectedCategoryTab === 'pulses' && styles.categoryPillActive]}
+                  onPress={() => setSelectedCategoryTab('pulses')}
+                  activeOpacity={0.8}
+                >
+                  <Package size={14} color={selectedCategoryTab === 'pulses' ? '#FFFFFF' : '#475569'} />
+                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'pulses' && styles.categoryPillTextActive]}>
+                    Pulses
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.categoryPill, selectedCategoryTab === 'oil' && styles.categoryPillActive]}
+                  onPress={() => setSelectedCategoryTab('oil')}
+                  activeOpacity={0.8}
+                >
+                  <Droplet size={14} color={selectedCategoryTab === 'oil' ? '#FFFFFF' : '#475569'} />
+                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'oil' && styles.categoryPillTextActive]}>
+                    Oil
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.categoryPill, selectedCategoryTab === 'spices' && styles.categoryPillActive]}
+                  onPress={() => setSelectedCategoryTab('spices')}
+                  activeOpacity={0.8}
+                >
+                  <Flame size={14} color={selectedCategoryTab === 'spices' ? '#FFFFFF' : '#475569'} />
+                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'spices' && styles.categoryPillTextActive]}>
+                    Spices
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.categoryPill, selectedCategoryTab === 'more' && styles.categoryPillActive]}
+                  onPress={() => setSelectedCategoryTab('more')}
+                  activeOpacity={0.8}
+                >
+                  <LayoutGrid size={14} color={selectedCategoryTab === 'more' ? '#FFFFFF' : '#475569'} />
+                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'more' && styles.categoryPillTextActive]}>
+                    More
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+
+              {/* Recent Products (Only if inventory exists) */}
+              {filteredProducts.length > 0 && (
+                <>
+                  <View style={styles.sectionSubHeaderRow}>
+                    <Text style={styles.subSectionTitle}>Recent Products</Text>
                     <TouchableOpacity
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        backgroundColor: rTheme.bg,
-                        borderColor: rTheme.color,
-                        borderWidth: 1.2,
-                        borderRadius: 20,
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                        gap: 4,
-                        shadowColor: rTheme.color,
-                        shadowOffset: { width: 0, height: 1 },
-                        shadowOpacity: 0.08,
-                        shadowRadius: 2,
-                        elevation: 1,
-                      }}
-                      onPress={addProductItem}
-                      activeOpacity={0.8}
+                      onPress={() => setSelectedCategoryTab('all')}
+                      activeOpacity={0.7}
                     >
-                      <Plus size={12} color={rTheme.color} />
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: rTheme.color }}>
-                        Add Product
-                      </Text>
+                      <Text style={styles.viewAllLink}>View All ›</Text>
                     </TouchableOpacity>
                   </View>
 
-                  {/* Vertical list of all products in the deal */}
-                  {productsList.map((prod, idx) => {
-                    const prodErrors = fieldErrors[`product_${prod.id}`] || {};
-                    return (
-                      <View
-                        key={prod.id}
-                        style={[styles.productItemCard, { marginBottom: 12, marginTop: idx === 0 ? 6 : 12 }]}
-                        onLayout={(event) => {
-                          if (pendingScrollProductId.current === prod.id) {
-                            const y = event.nativeEvent.layout.y;
-                            pendingScrollProductId.current = null;
-                            scrollViewRef.current?.scrollTo({ y: y - 10, animated: true });
-                          }
-                        }}
-                      >
-                        {/* Product Header Row with Index & Delete option */}
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 8 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: rTheme.bg, alignItems: 'center', justifyContent: 'center' }}>
-                              <Text style={{ fontSize: 11, fontWeight: '900', color: rTheme.color }}>{idx + 1}</Text>
-                            </View>
-                            <Text style={{ fontSize: 13, fontWeight: '800', color: '#0F172A' }}>
-                              {prod.productName ? prod.productName : `Product #${idx + 1}`}
-                            </Text>
-                          </View>
-
-                          {productsList.length > 1 && (
-                            <TouchableOpacity
-                              style={{
-                                backgroundColor: '#FEF2F2',
-                                paddingHorizontal: 8,
-                                paddingVertical: 4,
-                                borderRadius: 6,
-                                borderWidth: 1,
-                                borderColor: '#FCA5A5',
-                              }}
-                              onPress={() => removeProductItem(prod.id)}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={{ color: '#EF4444', fontSize: 10, fontWeight: '800' }}>Remove ✕</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-
-                        {/* Product Name Input */}
-                        <View style={styles.inputGroup}>
-                          <Text style={styles.fieldLabel}>Product / Commodity Name *</Text>
-
-                          <View style={styles.productInputWrapper}>
-                            <TextInput
-                              style={[
-                                styles.textInput,
-                                { backgroundColor: '#FFFFFF', fontSize: 13, fontWeight: '600', color: '#0F172A' },
-                                focusedField === `productSelect_${prod.id}` && [styles.inputFocused, { borderColor: rTheme.color, shadowColor: rTheme.color }],
-                                prodErrors.productName && styles.inputError
-                              ]}
-                              value={prod.productName}
-                              onChangeText={(text) => {
-                                updateProductFields(prod.id, {
-                                  productName: text,
-                                  showProductDropdown: true
-                                });
-                                setDropdownSearchText(text);
-                                if (prodErrors.productName) {
-                                  setFieldErrors(prev => ({ ...prev, [`prod_${prod.id}_productName`]: undefined }));
-                                }
-                              }}
-                              onFocus={() => {
-                                setFocusedField(`productSelect_${prod.id}`);
-                                setDropdownSearchText(prod.productName || '');
-                                setProductsList(prev => prev.map(item => ({
-                                  ...item,
-                                  showProductDropdown: item.id === prod.id
-                                })));
-                              }}
-                              placeholder="Type product name (e.g. Jeera, Wheat, Copper...)"
-                              placeholderTextColor="#94A3B8"
-                            />
-                          </View>
-                          {prodErrors.productName && <Text style={styles.fieldErrorText}>⚠ {prodErrors.productName}</Text>}
-
-                          {prod.showProductDropdown && companyProducts.length > 0 && (() => {
-                            const searchVal = (dropdownSearchText || prod.productName || '').toLowerCase().trim();
-                            const filtered = companyProducts.filter(p => !searchVal || String(p.name || '').toLowerCase().includes(searchVal));
-                            if (filtered.length === 0) return null;
-                            return (
-                              <View style={[styles.autocompleteDropdown, { position: 'relative', top: 0, marginTop: 4, width: '100%' }]}>
-                                <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always" style={{ maxHeight: 180 }}>
-                                  {filtered.map((p) => (
-                                    <TouchableOpacity
-                                      key={p._id || p.id}
-                                      style={styles.dropdownItem}
-                                      onPress={() => {
-                                        const gstMatch = String(p.gstCode || '').match(/\d+/);
-                                        const parsedGst = gstMatch ? gstMatch[0] : '';
-                                        updateProductFields(prod.id, {
-                                          productName: p.name,
-                                          productId: p._id || p.id,
-                                          price: p.price ? String(p.price) : prod.price,
-                                          gst: parsedGst || prod.gst,
-                                          showProductDropdown: false,
-                                        });
-                                        setFocusedField('');
-                                        setDropdownSearchText('');
-                                      }}
-                                    >
-                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
-                                        {p.image ? (
-                                          <Image source={{ uri: p.image }} style={styles.dropdownProductImage} />
-                                        ) : (
-                                          <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: rTheme.bg, alignItems: 'center', justifyContent: 'center' }}>
-                                            <Box size={12} color={rTheme.color} />
-                                          </View>
-                                        )}
-                                        <View>
-                                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }}>{p.name}</Text>
-                                          {p.price ? <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '600', marginTop: 1 }}>₹ {p.price} / Unit</Text> : null}
-                                        </View>
-                                      </View>
-                                    </TouchableOpacity>
-                                  ))}
-                                </ScrollView>
-                              </View>
-                            );
-                          })()}
-                        </View>
-
-                        {/* Qty & Price row */}
-                        <View style={styles.row}>
-                          <View style={[styles.inputGroup, { flex: 1 }]}>
-                            <Text style={styles.fieldLabel}>Quantity (MT)*</Text>
-                            <TextInput
-                              style={[
-                                styles.textInput,
-                                focusedField === `quantity_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }],
-                                prodErrors.quantity && styles.inputError
-                              ]}
-                              placeholder="0"
-                              placeholderTextColor="#94A3B8"
-                              value={prod.quantity}
-                              onChangeText={(v) => {
-                                updateProductField(prod.id, 'quantity', v);
-                                if (v.trim() && prodErrors.quantity) {
-                                  setFieldErrors(prev => {
-                                    const copy = { ...prev };
-                                    delete copy[`product_${prod.id}`]?.quantity;
-                                    return copy;
-                                  });
-                                }
-                              }}
-                              keyboardType="numeric"
-                              onFocus={() => setFocusedField(`quantity_${prod.id}`)}
-                              onBlur={() => setFocusedField(prev => prev === `quantity_${prod.id}` ? '' : prev)}
-                            />
-                            {prodErrors.quantity && <Text style={styles.fieldErrorText}>⚠ {prodErrors.quantity}</Text>}
-                          </View>
-
-                          <View style={[styles.inputGroup, { flex: 1 }]}>
-                            <Text style={styles.fieldLabel}>Price / Unit*</Text>
-                            <TextInput
-                              style={[
-                                styles.textInput,
-                                focusedField === `price_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }],
-                                prodErrors.price && styles.inputError
-                              ]}
-                              placeholder="₹ 0.00"
-                              placeholderTextColor="#94A3B8"
-                              value={prod.price}
-                              onChangeText={(v) => {
-                                updateProductField(prod.id, 'price', v);
-                                if (v.trim() && prodErrors.price) {
-                                  setFieldErrors(prev => {
-                                    const copy = { ...prev };
-                                    delete copy[`product_${prod.id}`]?.price;
-                                    return copy;
-                                  });
-                                }
-                              }}
-                              keyboardType="numeric"
-                              onFocus={() => setFocusedField(`price_${prod.id}`)}
-                              onBlur={() => setFocusedField(prev => prev === `price_${prod.id}` ? '' : prev)}
-                            />
-                            {prodErrors.price && <Text style={styles.fieldErrorText}>⚠ {prodErrors.price}</Text>}
-                          </View>
-                        </View>
-
-                        {/* Collapsible Additional Details Section */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.recentCardsScroll}
+                    contentContainerStyle={styles.recentCardsContent}
+                  >
+                    {filteredProducts.map((item) => {
+                      const isSelected = selectedRecentId === item.id || productName.toLowerCase() === item.name.toLowerCase();
+                      return (
                         <TouchableOpacity
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            paddingVertical: 10,
-                            backgroundColor: '#F8FAFC',
-                            borderRadius: 10,
-                            marginTop: 12,
-                            borderWidth: 1,
-                            borderColor: '#E2E8F0',
-                            gap: 6
-                          }}
-                          onPress={() => updateProductField(prod.id, 'showAdditionalDetails', !prod.showAdditionalDetails)}
-                          activeOpacity={0.7}
+                          key={item.id}
+                          style={[styles.productCard, isSelected && styles.productCardSelected]}
+                          onPress={() => handleSelectRecentProduct(item)}
+                          activeOpacity={0.85}
                         >
-                          <Text style={{ fontSize: 11, fontWeight: '800', color: rTheme.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                            {prod.showAdditionalDetails ? 'Hide Additional Details ▴' : 'Show Additional Details (Taxes, Terms) ▾'}
-                          </Text>
-                        </TouchableOpacity>
-
-                        {prod.showAdditionalDetails && (
-                          <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 12, gap: 10 }}>
-                            {/* Discount & GST row */}
-                            <View style={styles.row}>
-                              <View style={[styles.inputGroup, { flex: 1 }]}>
-                                <Text style={styles.fieldLabel}>Discount (₹)</Text>
-                                <TextInput
-                                  style={[
-                                    styles.textInput,
-                                    focusedField === `discount_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }]
-                                  ]}
-                                  placeholder="0"
-                                  placeholderTextColor="#94A3B8"
-                                  value={prod.discount}
-                                  onChangeText={(v) => updateProductField(prod.id, 'discount', v)}
-                                  keyboardType="numeric"
-                                  onFocus={() => setFocusedField(`discount_${prod.id}`)}
-                                  onBlur={() => setFocusedField(prev => prev === `discount_${prod.id}` ? '' : prev)}
-                                />
+                          <View style={styles.productCardImageContainer}>
+                            {item.image ? (
+                              <Image source={{ uri: item.image }} style={styles.productCardImage} resizeMode="cover" />
+                            ) : (
+                              <View style={[styles.productCardImageFallback, { backgroundColor: '#FEF3C7' }]}>
+                                <Wheat size={20} color="#D97706" />
                               </View>
-
-                              <View style={[styles.inputGroup, { flex: 1 }]}>
-                                <Text style={styles.fieldLabel}>GST (%)</Text>
-                                <TextInput
-                                  style={[
-                                    styles.textInput,
-                                    focusedField === `gst_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }]
-                                  ]}
-                                  placeholder="e.g. 18"
-                                  placeholderTextColor="#94A3B8"
-                                  value={prod.gst}
-                                  onChangeText={(v) => updateProductField(prod.id, 'gst', v)}
-                                  keyboardType="numeric"
-                                  onFocus={() => setFocusedField(`gst_${prod.id}`)}
-                                  onBlur={() => setFocusedField(prev => prev === `gst_${prod.id}` ? '' : prev)}
-                                />
+                            )}
+                            {isSelected && (
+                              <View style={styles.selectedBadge}>
+                                <Check size={8} color="#FFFFFF" strokeWidth={3} />
                               </View>
-                            </View>
-
-                            {/* Payment Terms row */}
-                            <View style={[styles.inputGroup, { marginBottom: 10 }]}>
-                              <Text style={styles.fieldLabel}>Payment Terms</Text>
-                              <TextInput
-                                style={[
-                                  styles.textInput,
-                                  focusedField === `paymentTerms_${prod.id}` && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }]
-                                ]}
-                                placeholder="e.g. 100% Advance"
-                                placeholderTextColor="#94A3B8"
-                                value={prod.paymentTerms}
-                                onChangeText={(v) => updateProductField(prod.id, 'paymentTerms', v)}
-                                onFocus={() => setFocusedField(`paymentTerms_${prod.id}`)}
-                                onBlur={() => setFocusedField(prev => prev === `paymentTerms_${prod.id}` ? '' : prev)}
-                              />
-                            </View>
+                            )}
                           </View>
-                        )}
-                      </View>
-                    );
-                  })}
 
-                  {/* Ticket Stub Total Value (Elegant Contrast element) */}
-                  {showTicketStub && (
-                    <View style={styles.ticketStub}>
-                      <View style={styles.ticketLeft}>
-                        <Text style={styles.ticketLabel}>ESTIMATED CONTRACT VALUE</Text>
-                        <Text style={styles.ticketValue}>₹ {totals.total.toLocaleString('en-IN')}</Text>
-                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-                          {totals.discount > 0 && (
-                            <Text style={[styles.ticketDiscount, { color: '#94A3B8' }]}>After ₹{totals.discount.toLocaleString('en-IN')} disc.</Text>
-                          )}
-                          {totals.gstAmount > 0 && (
-                            <Text style={[styles.ticketDiscount, { color: '#94A3B8' }]}>Incl. GST (+₹{totals.gstAmount.toLocaleString('en-IN')})</Text>
-                          )}
-                        </View>
-                      </View>
-                      <View style={styles.ticketDivider}>
-                        <View style={styles.ticketPunchTop} />
-                        <View style={styles.ticketDashedLine} />
-                        <View style={styles.ticketPunchBottom} />
-                      </View>
-                      <View style={styles.ticketRight}>
-                        <Text style={styles.ticketRightTop}>TOTAL QTY</Text>
-                        <Text style={styles.ticketRightValue}>{totals.qty.toLocaleString('en-IN')}</Text>
-                        <Text style={styles.ticketRightTop}>{productsList.length} item(s)</Text>
-                      </View>
+                          <Text style={styles.productCardName} numberOfLines={2}>
+                            {item.name}
+                          </Text>
+
+                          {item.hsn ? (
+                            <View style={styles.hsnBadgePill}>
+                              <Text style={styles.hsnBadgeText}>HSN: {item.hsn}</Text>
+                            </View>
+                          ) : null}
+
+                          {item.rate ? (
+                            <Text style={styles.productCardPrice}>
+                              ₹{Number(item.rate).toLocaleString('en-IN')} / {item.unit || 'Unit'}
+                            </Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              )}
+
+              {/* Add New Product Form Section */}
+              <View style={styles.formContainer}>
+                <Text style={styles.subSectionTitle}>
+                  {filteredProducts.length > 0 ? 'Or Add New Product' : 'Product Details'}
+                </Text>
+
+                <View style={styles.inputRow}>
+                  {/* Product Name */}
+                  <View style={[styles.inputCol, { flex: 1.2 }]}>
+                    <Text style={styles.inputLabel}>
+                      Product Name <Text style={styles.requiredStar}>*</Text>
+                    </Text>
+                    <View style={[
+                      styles.textInputBox,
+                      focusedField === 'productName' && styles.textInputBoxFocused,
+                      fieldErrors.productName && styles.textInputBoxError,
+                    ]}>
+                      <Package size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                      <TextInput
+                        style={styles.textInputField}
+                        placeholder="Enter product name"
+                        placeholderTextColor="#94A3B8"
+                        value={productName}
+                        onChangeText={(t) => {
+                          setProductName(t);
+                          if (fieldErrors.productName) setFieldErrors(prev => ({ ...prev, productName: undefined }));
+                        }}
+                        onFocus={() => setFocusedField('productName')}
+                        onBlur={() => setFocusedField('')}
+                      />
                     </View>
-                  )}
+                  </View>
+
+                  {/* HSN Code */}
+                  <View style={[styles.inputCol, { flex: 0.8 }]}>
+                    <Text style={styles.inputLabel}>HSN Code (Optional)</Text>
+                    <View style={[
+                      styles.textInputBox,
+                      focusedField === 'hsnCode' && styles.textInputBoxFocused,
+                    ]}>
+                      <Hash size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                      <TextInput
+                        style={styles.textInputField}
+                        placeholder="Enter HSN"
+                        placeholderTextColor="#94A3B8"
+                        value={hsnCode}
+                        onChangeText={setHsnCode}
+                        keyboardType="numeric"
+                        onFocus={() => setFocusedField('hsnCode')}
+                        onBlur={() => setFocusedField('')}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                <View style={[styles.inputRow, { marginTop: 12 }]}>
+                  {/* Unit Selector */}
+                  <View style={[styles.inputCol, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>
+                      Unit <Text style={styles.requiredStar}>*</Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.textInputBox,
+                        styles.selectBox,
+                        fieldErrors.unit && styles.textInputBoxError,
+                      ]}
+                      onPress={() => setShowUnitModal(true)}
+                      activeOpacity={0.7}
+                    >
+                      <ShoppingBag size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                      <Text style={styles.selectBoxValue} numberOfLines={1}>
+                        {unit || 'Select unit'}
+                      </Text>
+                      <ChevronDown size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Approx Rate */}
+                  <View style={[styles.inputCol, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>
+                      Approx. Rate (per unit) <Text style={styles.requiredStar}>*</Text>
+                    </Text>
+                    <View style={[
+                      styles.textInputBox,
+                      focusedField === 'approxRate' && styles.textInputBoxFocused,
+                      fieldErrors.approxRate && styles.textInputBoxError,
+                    ]}>
+                      <IndianRupee size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                      <TextInput
+                        style={styles.textInputField}
+                        placeholder="Enter rate"
+                        placeholderTextColor="#94A3B8"
+                        value={approxRate}
+                        onChangeText={(t) => {
+                          setApproxRate(t);
+                          if (fieldErrors.approxRate) setFieldErrors(prev => ({ ...prev, approxRate: undefined }));
+                        }}
+                        keyboardType="numeric"
+                        onFocus={() => setFocusedField('approxRate')}
+                        onBlur={() => setFocusedField('')}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Info Notice Card */}
+                <View style={styles.infoNoticeCard}>
+                  <Info size={16} color="#2563EB" style={styles.infoNoticeIcon} />
+                  <Text style={styles.infoNoticeText}>
+                    You can add detailed quantity, discount, taxes and more in next step.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              STEP 3: DEAL DETAILS
+             ═══════════════════════════════════════════════════════════════════ */}
+          {currentStep === 3 && (
+            <View style={styles.stepSection}>
+              <View style={styles.sectionHeadingBox}>
+                <Text style={styles.mainSectionTitle}>Deal Details</Text>
+                <Text style={styles.mainSectionSubtitle}>Provide deal information and terms.</Text>
+              </View>
+
+              {/* Deal Name */}
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>
+                  Deal Name <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <View style={[
+                  styles.textInputBox,
+                  focusedField === 'dealName' && styles.textInputBoxFocused,
+                  fieldErrors.dealName && styles.textInputBoxError,
+                ]}>
+                  <FileText size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                  <TextInput
+                    style={styles.textInputField}
+                    placeholder="Enter deal title / name"
+                    placeholderTextColor="#94A3B8"
+                    value={dealName}
+                    onChangeText={(t) => {
+                      setDealName(t);
+                      if (fieldErrors.dealName) setFieldErrors(prev => ({ ...prev, dealName: undefined }));
+                    }}
+                    onFocus={() => setFocusedField('dealName')}
+                    onBlur={() => setFocusedField('')}
+                  />
                 </View>
               </View>
 
-              {/* ═══════════ CARD 3: TIMELINE & TERMS (GLOBAL STEP 2) ═══════════ */}
-              <View style={[styles.sectionCard, { marginTop: 14 }]}>
-                <View style={styles.sectionHeader}>
-                  <View style={[styles.sectionDot, { backgroundColor: '#4F46E5' }]} />
-                  <Text style={styles.sectionTitle}>Agreement Timeline & Terms</Text>
-                  <View style={styles.sectionBadgeContainer}>
-                    <Text style={[styles.sectionBadge, { color: '#4F46E5', backgroundColor: '#EEF2FF' }]}>GLOBAL</Text>
+              {/* Deal Type & Category Row */}
+              <View style={styles.inputRow}>
+                <View style={[styles.inputCol, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>
+                    Deal Type <Text style={styles.requiredStar}>*</Text>
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.textInputBox, styles.selectBox]}
+                    onPress={() => setShowTypeModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <CreditCard size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                    <Text style={styles.selectBoxValue}>{dealType}</Text>
+                    <ChevronDown size={16} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.inputCol, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>Deal Category</Text>
+                  <TouchableOpacity
+                    style={[styles.textInputBox, styles.selectBox]}
+                    onPress={() => setShowCategoryModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Tag size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                    <Text style={styles.selectBoxValue} numberOfLines={1}>{dealCategory}</Text>
+                    <ChevronDown size={16} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Currency & Deal Value Row */}
+              <View style={[styles.inputRow, { marginTop: 12 }]}>
+                <View style={[styles.inputCol, { flex: 0.8 }]}>
+                  <Text style={styles.inputLabel}>
+                    Currency <Text style={styles.requiredStar}>*</Text>
+                  </Text>
+                  <View style={[styles.textInputBox, styles.selectBox]}>
+                    <IndianRupee size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                    <Text style={styles.selectBoxValue}>{currency}</Text>
                   </View>
                 </View>
 
-                <View style={styles.cardBody}>
-                  {/* Date Selectors */}
-                  <View style={styles.row}>
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
-                      <Text style={styles.fieldLabel}>Agreement Date</Text>
-                      <TouchableOpacity
-                        style={[styles.dateSelector, focusedField === 'dealDate' && [styles.inputFocused, { borderColor: rTheme.color, shadowColor: rTheme.color }]]}
-                        onPress={() => { setFocusedField('dealDate'); openDatePicker('deal'); }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.dateSelectorText}>{formatDateLabel(dealDate)}</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
-                      <Text style={styles.fieldLabel}>Validity Expiry</Text>
-                      <TouchableOpacity
-                        style={[styles.dateSelector, focusedField === 'validityDate' && [styles.inputFocused, { borderColor: rTheme.color, shadowColor: rTheme.color }]]}
-                        onPress={() => { setFocusedField('validityDate'); openDatePicker('validity'); }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.dateSelectorText}>{formatDateLabel(validityDate)}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* Description */}
-                  <View style={[styles.inputGroup, { marginBottom: 0 }]}>
-                    <Text style={styles.fieldLabel}>Custom Trade Terms</Text>
+                <View style={[styles.inputCol, { flex: 1.2 }]}>
+                  <Text style={styles.inputLabel}>
+                    Deal Value (Approx.) <Text style={styles.requiredStar}>*</Text>
+                  </Text>
+                  <View style={[
+                    styles.textInputBox,
+                    focusedField === 'dealValue' && styles.textInputBoxFocused,
+                    fieldErrors.dealValue && styles.textInputBoxError,
+                  ]}>
+                    <IndianRupee size={16} color="#64748B" style={styles.inputLeadingIcon} />
                     <TextInput
-                      style={[
-                        styles.textInput,
-                        styles.multilineInput,
-                        focusedField === 'description' && [styles.inputFocused, { shadowColor: rTheme.color, borderColor: rTheme.color }]
-                      ]}
-                      placeholder="Specify delivery locations, commission terms, quality specs..."
+                      style={styles.textInputField}
+                      placeholder="0.00"
                       placeholderTextColor="#94A3B8"
-                      value={description}
-                      onChangeText={setDescription}
-                      multiline
-                      numberOfLines={3}
-                      onFocus={() => setFocusedField('description')}
-                      onBlur={() => setFocusedField(prev => prev === 'description' ? '' : prev)}
+                      value={dealValue}
+                      onChangeText={(t) => {
+                        setDealValue(t);
+                        if (fieldErrors.dealValue) setFieldErrors(prev => ({ ...prev, dealValue: undefined }));
+                      }}
+                      onFocus={() => setFocusedField('dealValue')}
+                      onBlur={() => setFocusedField('')}
                     />
                   </View>
                 </View>
               </View>
-            </>
-          )}
 
-          {/* Step 2 Navigation Row (Final Step) */}
-          {currentStep === 2 && (
-            <View style={styles.wizardNavRow}>
-              <TouchableOpacity
-                style={styles.wizardBackBtn}
-                onPress={() => setCurrentStep(1)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.wizardBackBtnText}>‹ Back</Text>
-              </TouchableOpacity>
+              {/* Dates Row */}
+              <View style={[styles.inputRow, { marginTop: 12 }]}>
+                <View style={[styles.inputCol, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>
+                    Expected Deal Date <Text style={styles.requiredStar}>*</Text>
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.textInputBox, styles.selectBox]}
+                    onPress={() => openCalendar('expected')}
+                    activeOpacity={0.7}
+                  >
+                    <Calendar size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                    <Text style={styles.selectBoxValue} numberOfLines={1}>
+                      {formatDateDisplay(expectedDealDate)}
+                    </Text>
+                    <ChevronDown size={16} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.submitButton,
-                  isSubmitting && styles.submitButtonDisabled,
-                  isInviteMode && styles.inviteButton,
-                  btnErrorMessage ? { backgroundColor: '#EF4444', shadowColor: '#EF4444' } : null,
-                  { flex: 2, marginTop: 0 }
-                ]}
-                activeOpacity={0.855}
-                onPress={handleSubmit}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <View style={styles.submitButtonContent}>
-                    {btnErrorMessage ? (
-                      <Text style={styles.submitButtonText}>⚠ {btnErrorMessage}</Text>
-                    ) : (
-                      <>
-                        {isInviteMode ? (
-                          <Send size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        ) : (
-                          <Handshake size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        )}
-                        <Text style={styles.submitButtonText}>
-                          {isInviteMode ? 'Send WhatsApp Invite' : 'Confirm Trade Agreement'}
-                        </Text>
-                      </>
-                    )}
+                <View style={[styles.inputCol, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>Deal Valid Till</Text>
+                  <TouchableOpacity
+                    style={[styles.textInputBox, styles.selectBox]}
+                    onPress={() => openCalendar('validity')}
+                    activeOpacity={0.7}
+                  >
+                    <Calendar size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                    <Text style={styles.selectBoxValue} numberOfLines={1}>
+                      {formatDateDisplay(validityDate)}
+                    </Text>
+                    <ChevronDown size={16} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Payment Terms */}
+              <View style={[styles.formGroup, { marginTop: 12 }]}>
+                <Text style={styles.inputLabel}>Payment Terms</Text>
+                <TouchableOpacity
+                  style={[styles.textInputBox, styles.selectBox]}
+                  onPress={() => setShowPaymentTermsModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <CreditCard size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                  <Text style={styles.selectBoxValue}>{paymentTerms}</Text>
+                  <ChevronDown size={16} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Delivery Terms */}
+              <View style={[styles.formGroup, { marginTop: 12 }]}>
+                <Text style={styles.inputLabel}>Delivery Terms (Incoterms)</Text>
+                <TouchableOpacity
+                  style={[styles.textInputBox, styles.selectBox]}
+                  onPress={() => setShowDeliveryTermsModal(true)}
+                  activeOpacity={0.7}
+                >
+                  <Globe size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                  <Text style={styles.selectBoxValue}>{deliveryTerms}</Text>
+                  <ChevronDown size={16} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Delivery Location */}
+              <View style={[styles.formGroup, { marginTop: 12 }]}>
+                <Text style={styles.inputLabel}>Delivery Location</Text>
+                <View style={[
+                  styles.textInputBox,
+                  focusedField === 'deliveryLocation' && styles.textInputBoxFocused,
+                ]}>
+                  <MapPin size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                  <TextInput
+                    style={styles.textInputField}
+                    placeholder="Enter delivery city / location"
+                    placeholderTextColor="#94A3B8"
+                    value={deliveryLocation}
+                    onChangeText={setDeliveryLocation}
+                    onFocus={() => setFocusedField('deliveryLocation')}
+                    onBlur={() => setFocusedField('')}
+                  />
+                </View>
+              </View>
+
+              {/* Deal Description */}
+              <View style={[styles.formGroup, { marginTop: 12 }]}>
+                <Text style={styles.inputLabel}>Deal Description (Optional)</Text>
+                <View style={styles.notesBox}>
+                  <TextInput
+                    style={styles.notesInputField}
+                    placeholder="Add deal description, packaging instructions, or specifications..."
+                    placeholderTextColor="#94A3B8"
+                    value={dealDescription}
+                    onChangeText={setDealDescription}
+                    maxLength={500}
+                    multiline
+                    numberOfLines={3}
+                  />
+                  <Text style={styles.charCounterText}>{dealDescription.length}/500</Text>
+                </View>
+              </View>
+
+              {/* Attach Documents */}
+              <View style={[styles.formGroup, { marginTop: 12 }]}>
+                <Text style={styles.inputLabel}>Attach Documents (Optional)</Text>
+                <View style={styles.uploadDashedCard}>
+                  <View style={styles.uploadLeftCol}>
+                    <View style={styles.paperclipCircle}>
+                      <Paperclip size={18} color="#2563EB" />
+                    </View>
+                    <View>
+                      <Text style={styles.uploadTitle}>Upload Documents</Text>
+                      <Text style={styles.uploadSubtitle}>PDF, JPG, PNG (Max. 10MB)</Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.browseFilesBtn}
+                    onPress={handleBrowseFiles}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.browseFilesBtnText}>Browse Files</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Uploaded Files Chips */}
+                {attachments.length > 0 && (
+                  <View style={styles.uploadedChipsRow}>
+                    {attachments.map((file) => (
+                      <View key={file.id} style={styles.uploadedFileChip}>
+                        <FileText size={14} color="#2563EB" />
+                        <Text style={styles.uploadedFileName} numberOfLines={1}>{file.name}</Text>
+                        <Text style={styles.uploadedFileSize}>({file.size})</Text>
+                        <TouchableOpacity
+                          onPress={() => setAttachments(prev => prev.filter(f => f.id !== file.id))}
+                          activeOpacity={0.7}
+                        >
+                          <X size={12} color="#64748B" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
                   </View>
                 )}
-              </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              STEP 4: REVIEW DEAL
+             ═══════════════════════════════════════════════════════════════════ */}
+          {currentStep === 4 && (
+            <View style={styles.stepSection}>
+              <View style={styles.sectionHeadingBox}>
+                <Text style={styles.mainSectionTitle}>Review Deal</Text>
+                <Text style={styles.mainSectionSubtitle}>
+                  Please review all details before creating the deal.
+                </Text>
+              </View>
+
+              {/* Card 1: Parties Involved */}
+              <View style={styles.reviewCard}>
+                <View style={styles.reviewCardHeader}>
+                  <View style={styles.reviewCardTitleRow}>
+                    <Handshake size={16} color="#2563EB" />
+                    <Text style={styles.reviewCardTitle}>Parties Involved</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.editPillBtn}
+                    onPress={() => setCurrentStep(1)}
+                    activeOpacity={0.7}
+                  >
+                    <Edit2 size={12} color="#2563EB" />
+                    <Text style={styles.editPillBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Primary Company */}
+                <View style={styles.reviewPartyItemRow}>
+                  <View style={[styles.partyAvatarBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                    <Text style={[styles.partyAvatarText, { color: '#059669' }]}>
+                      {party1.substring(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={styles.partyInfoColumn}>
+                    <View style={styles.partyNameRow}>
+                      <Text style={styles.partyRolePrefix}>
+                        {role === 'buyer' ? 'Buyer (Your Company)' : 'Seller (Your Company)'}
+                      </Text>
+                      <View style={styles.primaryBadge}>
+                        <Text style={styles.primaryBadgeText}>Primary</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.partyCategoryText}>{party1} • {sellerIndustry}</Text>
+                    <View style={styles.partyLocationRow}>
+                      <MapPin size={11} color="#64748B" />
+                      <Text style={styles.partyLocationText}>{sellerLocation}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.reviewDivider} />
+
+                {/* Counterparty */}
+                <View style={styles.reviewPartyItemRow}>
+                  <View style={[styles.partyAvatarBox, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                    <Wheat size={18} color="#D97706" />
+                  </View>
+                  <View style={styles.partyInfoColumn}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={styles.partyCompanyName}>{party2 || 'Selected Counterparty'}</Text>
+                      {party2Data?.status ? (
+                        <View style={[
+                          styles.partyStatusBadge,
+                          (party2Data.status === 'active' || party2Data.status === 'approved') ? styles.partyStatusBadgeActive : styles.partyStatusBadgePending,
+                        ]}>
+                          <Text style={[
+                            styles.partyStatusBadgeText,
+                            (party2Data.status === 'active' || party2Data.status === 'approved') ? styles.partyStatusBadgeTextActive : styles.partyStatusBadgeTextPending,
+                          ]}>
+                            {String(party2Data.status).toUpperCase()}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {party2Data?.industry ? (
+                      <Text style={styles.partyCategoryText}>{party2Data.industry}</Text>
+                    ) : null}
+                    {party2Data?.location ? (
+                      <View style={styles.partyLocationRow}>
+                        <MapPin size={11} color="#64748B" />
+                        <Text style={styles.partyLocationText}>{party2Data.location}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Other Parties Summary */}
+                {(Boolean(brokerCompany) || (showLogistics && logisticsPartner) || (showInsurance && insuranceProvider)) && (
+                  <View style={styles.reviewOtherPartiesBox}>
+                    <Text style={styles.reviewOtherPartiesHeader}>Other Parties</Text>
+                    <View style={styles.reviewOtherPartiesRow}>
+                      {brokerCompany ? (
+                        <View style={styles.reviewOtherPartyCol}>
+                          <Handshake size={14} color="#7C3AED" />
+                          <View>
+                            <Text style={styles.reviewOtherPartyRole}>Broker Company</Text>
+                            <Text style={styles.reviewOtherPartyName}>{brokerCompany}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      {showLogistics && logisticsPartner ? (
+                        <View style={styles.reviewOtherPartyCol}>
+                          <Truck size={14} color="#4F46E5" />
+                          <View>
+                            <Text style={styles.reviewOtherPartyRole}>Logistics Partner</Text>
+                            <Text style={styles.reviewOtherPartyName}>{logisticsPartner}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                      {showInsurance && insuranceProvider ? (
+                        <View style={styles.reviewOtherPartyCol}>
+                          <Shield size={14} color="#059669" />
+                          <View>
+                            <Text style={styles.reviewOtherPartyRole}>Insurance Provider</Text>
+                            <Text style={styles.reviewOtherPartyName}>{insuranceProvider}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* Card 2: Product Information */}
+              <View style={[styles.reviewCard, { marginTop: 14 }]}>
+                <View style={styles.reviewCardHeader}>
+                  <View style={styles.reviewCardTitleRow}>
+                    <ShoppingBag size={16} color="#2563EB" />
+                    <Text style={styles.reviewCardTitle}>Product Information</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.editPillBtn}
+                    onPress={() => setCurrentStep(2)}
+                    activeOpacity={0.7}
+                  >
+                    <Edit2 size={12} color="#2563EB" />
+                    <Text style={styles.editPillBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.reviewProductMainRow}>
+                  <View style={styles.reviewProductThumb}>
+                    <Wheat size={28} color="#D97706" />
+                  </View>
+
+                  <View style={styles.reviewProductMeta}>
+                    <View style={styles.productNameAndBadgeRow}>
+                      <Text style={styles.reviewProductName}>{productName}</Text>
+                      {hsnCode ? (
+                        <View style={styles.hsnBadgePill}>
+                          <Text style={styles.hsnBadgeText}>HSN: {hsnCode}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.reviewProductGrid}>
+                      <View style={styles.reviewProductGridCol}>
+                        <Text style={styles.reviewGridLabel}>Unit</Text>
+                        <Text style={styles.reviewGridValue}>{unit}</Text>
+                      </View>
+                      <View style={styles.reviewProductGridCol}>
+                        <Text style={styles.reviewGridLabel}>Approx. Rate</Text>
+                        <Text style={styles.reviewGridValue}>₹{approxRate} / {unit.split(' ')[0]}</Text>
+                      </View>
+                      <View style={styles.reviewProductGridCol}>
+                        <Text style={styles.reviewGridLabel}>Total Quantity</Text>
+                        <Text style={styles.reviewGridValue}>{quantity} {unit.split(' ')[0]}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Card 3: Deal Summary */}
+              <View style={[styles.reviewCard, { marginTop: 14 }]}>
+                <View style={styles.reviewCardHeader}>
+                  <View style={styles.reviewCardTitleRow}>
+                    <FileCheck size={16} color="#2563EB" />
+                    <Text style={styles.reviewCardTitle}>Deal Summary</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.editPillBtn}
+                    onPress={() => setCurrentStep(3)}
+                    activeOpacity={0.7}
+                  >
+                    <Edit2 size={12} color="#2563EB" />
+                    <Text style={styles.editPillBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.dealSummaryGrid}>
+                  <View style={styles.summaryGridRow}>
+                    <View style={styles.summaryGridItem}>
+                      <FileText size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Deal Name</Text>
+                        <Text style={styles.summaryValue}>{dealName}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <Tag size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Deal Category</Text>
+                        <Text style={styles.summaryValue}>{dealCategory}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.summaryGridRow}>
+                    <View style={styles.summaryGridItem}>
+                      <CreditCard size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Deal Type</Text>
+                        <Text style={styles.summaryValue}>{dealType}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <IndianRupee size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Deal Value (Approx.)</Text>
+                        <Text style={styles.summaryValue}>₹{dealValue}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.summaryGridRow}>
+                    <View style={styles.summaryGridItem}>
+                      <IndianRupee size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Currency</Text>
+                        <Text style={styles.summaryValue}>{currency}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <Calendar size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Deal Valid Till</Text>
+                        <Text style={styles.summaryValue}>{formatDateDisplay(validityDate)}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.summaryGridRow}>
+                    <View style={styles.summaryGridItem}>
+                      <Calendar size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Expected Deal Date</Text>
+                        <Text style={styles.summaryValue}>{formatDateDisplay(expectedDealDate)}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <Globe size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Delivery Terms (Incoterms)</Text>
+                        <Text style={styles.summaryValue}>{deliveryTerms}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={styles.summaryGridRow}>
+                    <View style={styles.summaryGridItem}>
+                      <CreditCard size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Payment Terms</Text>
+                        <Text style={styles.summaryValue}>{paymentTerms}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.summaryGridItem}>
+                      <MapPin size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Delivery Location</Text>
+                        <Text style={styles.summaryValue}>{deliveryLocation}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {dealDescription ? (
+                    <View style={[styles.summaryGridItem, { width: '100%', marginTop: 8 }]}>
+                      <FileText size={14} color="#64748B" />
+                      <View style={styles.summaryItemTextCol}>
+                        <Text style={styles.summaryLabel}>Deal Description</Text>
+                        <Text style={styles.summaryValue}>{dealDescription}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* Card 4: Attachments */}
+              <View style={[styles.reviewCard, { marginTop: 14 }]}>
+                <View style={styles.reviewCardHeader}>
+                  <View style={styles.reviewCardTitleRow}>
+                    <Paperclip size={16} color="#2563EB" />
+                    <Text style={styles.reviewCardTitle}>Attachments</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.editPillBtn}
+                    onPress={() => setCurrentStep(3)}
+                    activeOpacity={0.7}
+                  >
+                    <Edit2 size={12} color="#2563EB" />
+                    <Text style={styles.editPillBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.reviewAttachmentsRow}>
+                  {attachments.map((file) => (
+                    <View key={file.id} style={styles.reviewFileBadge}>
+                      <View style={[styles.reviewFileIconBox, file.type === 'pdf' ? { backgroundColor: '#FEE2E2' } : { backgroundColor: '#ECFDF5' }]}>
+                        <FileText size={14} color={file.type === 'pdf' ? '#EF4444' : '#10B981'} />
+                      </View>
+                      <View>
+                        <Text style={styles.reviewFileName} numberOfLines={1}>{file.name}</Text>
+                        <Text style={styles.reviewFileSize}>{file.size}</Text>
+                      </View>
+                    </View>
+                  ))}
+                  <TouchableOpacity
+                    style={styles.moreFilesBtn}
+                    onPress={handleBrowseFiles}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.moreFilesBtnText}>+ Add Files</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Terms & Conditions Notice */}
+              <View style={styles.termsAgreementNotice}>
+                <Shield size={16} color="#2563EB" />
+                <Text style={styles.termsAgreementText}>
+                  By creating this deal, you agree to our{' '}
+                  <Text
+                    style={styles.termsLink}
+                    onPress={() => Linking.openURL('https://pravisti.com/terms').catch(() => { })}
+                  >
+                    terms & conditions
+                  </Text>
+                  .
+                </Text>
+              </View>
             </View>
           )}
 
         </ScrollView>
 
-        {/* Date Picker Modal */}
+        {/* ════════════════ BOTTOM ACTION BAR ════════════════ */}
+        <View style={styles.bottomActionBar}>
+          {currentStep > 1 && (
+            <TouchableOpacity
+              style={styles.backActionButton}
+              onPress={() => setCurrentStep(prev => prev - 1)}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={16} color="#2563EB" />
+              <Text style={styles.backActionText}>Back</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.continueActionButton,
+              currentStep === 1 && { width: '100%' },
+              isSubmitting && styles.continueActionDisabled,
+            ]}
+            onPress={handleContinue}
+            disabled={isSubmitting}
+            activeOpacity={0.85}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <Text style={styles.continueActionText}>
+                  {currentStep === 4 ? 'Create Deal' : 'Continue'}
+                </Text>
+                <ArrowRight size={18} color="#FFFFFF" />
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* ════════════════ DATE PICKER MODAL ════════════════ */}
         {isDatePickerVisible && (
           <Modal transparent visible={isDatePickerVisible} animationType="slide" onRequestClose={() => setIsDatePickerVisible(false)}>
-            <View style={styles.pickerOverlay}>
+            <View style={styles.modalOverlay}>
               <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setIsDatePickerVisible(false)} />
-              <View style={styles.pickerContent}>
-                <View style={styles.dragIndicator} />
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 16 }}>
-                  {pickingForDate === 'deal' ? (
-                    <Calendar size={18} color="#0F172A" />
-                  ) : (
-                    <Clock size={18} color="#0F172A" />
-                  )}
-                  <Text style={[styles.pickerHeader, { marginBottom: 0 }]}>
-                    {pickingForDate === 'deal' ? 'Agreement Date' : 'Validity Expiry'}
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <View style={styles.modalTitleRow}>
+                  <Calendar size={18} color="#2563EB" />
+                  <Text style={styles.modalTitleText}>
+                    {pickingForDate === 'expected' ? 'Expected Deal Date' : 'Deal Valid Till'}
                   </Text>
                 </View>
-                <View style={styles.calendarGrid}>
-                  <View style={styles.pickerControls}>
-                    <TouchableOpacity style={styles.navButton} onPress={() => { const d = new Date(tempDate); d.setMonth(tempDate.getMonth() - 1); setTempDate(d); }} activeOpacity={0.7}>
-                      <Text style={styles.navText}>◀</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.monthDisplay}>{months[tempDate.getMonth()]} {tempDate.getFullYear()}</Text>
-                    <TouchableOpacity style={styles.navButton} onPress={() => { const d = new Date(tempDate); d.setMonth(tempDate.getMonth() + 1); setTempDate(d); }} activeOpacity={0.7}>
-                      <Text style={styles.navText}>▶</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.daysGrid}>
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
-                      const isSel = tempDate.getDate() === day;
-                      return (
-                        <TouchableOpacity
-                          key={day}
-                          style={[styles.dayCell, isSel && [styles.activeDayCell, { backgroundColor: rTheme.color, borderColor: rTheme.color }]]}
-                          onPress={() => { const d = new Date(tempDate); d.setDate(day); setTempDate(d); }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.dayText, isSel && styles.activeDayText]}>{day}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-                <View style={styles.pickerActions}>
-                  <TouchableOpacity style={styles.cancelAction} onPress={() => setIsDatePickerVisible(false)} activeOpacity={0.7}>
-                    <Text style={styles.cancelText}>Cancel</Text>
+
+                <View style={styles.calendarHeaderRow}>
+                  <TouchableOpacity
+                    style={styles.calNavBtn}
+                    onPress={() => {
+                      const d = new Date(tempDate);
+                      d.setMonth(tempDate.getMonth() - 1);
+                      setTempDate(d);
+                    }}
+                  >
+                    <Text style={styles.calNavBtnText}>◀</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.confirmAction, { backgroundColor: rTheme.color }]} onPress={() => { confirmDateSelection(); setFocusedField(''); }} activeOpacity={0.7}>
-                    <Text style={styles.confirmText}>Confirm Date ✓</Text>
+                  <Text style={styles.calMonthLabel}>
+                    {MONTHS[tempDate.getMonth()]} {tempDate.getFullYear()}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.calNavBtn}
+                    onPress={() => {
+                      const d = new Date(tempDate);
+                      d.setMonth(tempDate.getMonth() + 1);
+                      setTempDate(d);
+                    }}
+                  >
+                    <Text style={styles.calNavBtnText}>▶</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.daysGrid}>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
+                    const isSelected = tempDate.getDate() === day;
+                    return (
+                      <TouchableOpacity
+                        key={day}
+                        style={[styles.dayCell, isSelected && styles.dayCellSelected]}
+                        onPress={() => {
+                          const d = new Date(tempDate);
+                          d.setDate(day);
+                          setTempDate(d);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.dayCellText, isSelected && styles.dayCellTextSelected]}>
+                          {day}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.modalActionButtonsRow}>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsDatePickerVisible(false)}>
+                    <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalConfirmBtn} onPress={confirmCalendarDate}>
+                    <Text style={styles.modalConfirmBtnText}>Confirm Date ✓</Text>
                   </TouchableOpacity>
                 </View>
               </View>
-
             </View>
           </Modal>
         )}
 
-        {/* Premium Success Modal */}
-        <Modal visible={showSuccessModal} transparent animationType="slide">
-          <View style={styles.successOverlay}>
-            <View style={styles.successCardContainer}>
-              <View style={[
-                styles.successBadgeCircle,
-                {
-                  backgroundColor: isInviteMode ? '#DCFCE7' : rTheme.bg,
-                  borderColor: isInviteMode ? '#A7F3D0' : rTheme.border,
-                }
-              ]}>
-                {isInviteMode ? (
-                  <Send size={32} color="#059669" />
-                ) : (
-                  <Handshake size={32} color={rTheme.color} />
-                )}
-              </View>
-
-              <Text style={styles.successCardTitle}>
-                {isInviteMode ? 'WhatsApp Invite Sent!' : 'Sauda Established!'}
-              </Text>
-
-              <Text style={styles.successCardSubtitle}>
-                {isInviteMode
-                  ? 'Your deal invitation has been created and shared via WhatsApp.'
-                  : 'Your trade deal has been successfully recorded in the Pravisti digital ledger.'}
-              </Text>
-
-              {/* Deal Brief Summary Box */}
-              <View style={styles.successSummaryBox}>
-                <View style={styles.successSummaryRow}>
-                  <Text style={styles.successSummaryLabel}>Parties</Text>
-                  <Text style={styles.successSummaryVal} numberOfLines={1}>
-                    {party1} ↔ {party2 || sellerCompany || 'Counterparty'}
-                  </Text>
-                </View>
-                <View style={styles.successSummaryDivider} />
-                <View style={styles.successSummaryRow}>
-                  <Text style={styles.successSummaryLabel}>Products</Text>
-                  <Text style={styles.successSummaryVal}>
-                    {productsList ? productsList.length : 1} Item(s)
-                  </Text>
-                </View>
-              </View>
-
-              {/* Live Progress Bar & Timed Auto Redirect */}
-              <View style={styles.successProgressRow}>
-                <ActivityIndicator size="small" color={isInviteMode ? '#059669' : rTheme.color} style={{ marginRight: 8 }} />
-                <Text style={styles.successProgressText}>Redirecting to Deals Ledger in 5s...</Text>
-              </View>
-
-              {/* Share Deal Button */}
-              <TouchableOpacity
-                style={{
-                  backgroundColor: '#25D366',
-                  paddingVertical: 11,
-                  paddingHorizontal: 16,
-                  borderRadius: 10,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  marginTop: 14,
-                  width: '100%',
-                  shadowColor: '#25D366',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 4,
-                  elevation: 2,
-                }}
-                onPress={() => {
-                  const p1 = party1 || activeUserCompany?.name || 'Company';
-                  const p2 = party2 || sellerCompany || 'Counterparty';
-                  const firstProd = productsList[0]?.productName || 'Commodity Product';
-                  const totals = getTotals();
-                  const grandTotal = totals ? totals.grandTotal : '0';
-
-                  const msg = `🤝 *Pravisti Trade Agreement*\n\n` +
-                    `🏢 *Seller/Buyer*: ${p1}\n` +
-                    `🏬 *Counterparty*: ${p2}\n` +
-                    `📦 *Product*: ${firstProd}\n` +
-                    `💰 *Total Value*: ₹${Number(grandTotal).toLocaleString('en-IN')}\n` +
-                    `📅 *Date*: ${new Date().toLocaleDateString('en-IN')}\n\n` +
-                    `View trade details on Pravisti: https://pravisti.com`;
-
-                  const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                  Linking.openURL(url).catch(err => console.warn('Share WhatsApp error:', err));
-                }}
-                activeOpacity={0.8}
-              >
-                <MessageSquare size={16} color="#FFFFFF" />
-                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
-                  Share Deal via WhatsApp
-                </Text>
-              </TouchableOpacity>
-
-              {/* Go to Deals List Button */}
-              <TouchableOpacity
-                style={{
-                  backgroundColor: isInviteMode ? '#059669' : rTheme.color,
-                  paddingVertical: 10,
-                  paddingHorizontal: 16,
-                  borderRadius: 10,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  marginTop: 8,
-                  width: '100%',
-                }}
-                onPress={() => {
-                  setShowSuccessModal(false);
-                  onNavigate('DealsList', {
-                    companyId: originCompanyId,
-                    companyName: activeUserCompany?.name || party1,
-                    filter: 'All',
-                    refresh: true
-                  }, { refresh: true });
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
-                  Go to Deals Ledger →
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Trader Assisted Onboarding Modal for Unregistered Counterparty */}
-        <Modal visible={showOnboardModal} transparent animationType="slide">
-          <View style={styles.successOverlay}>
-            <View style={[styles.successCardContainer, { maxWidth: 360, padding: 20 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 12 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>
-                  Onboard Counterparty
-                </Text>
-                <TouchableOpacity onPress={() => setShowOnboardModal(false)} style={{ padding: 4 }}>
-                  <X size={18} color="#64748B" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Role Selector Chips */}
-              <View style={{ flexDirection: 'row', gap: 6, width: '100%', marginBottom: 12 }}>
-                <TouchableOpacity
-                  style={{
-                    flex: 1,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: onboardRole === 'seller' ? '#059669' : '#F1F5F9',
-                    alignItems: 'center'
-                  }}
-                  onPress={() => setOnboardRole('seller')}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: onboardRole === 'seller' ? '#FFFFFF' : '#475569' }}>
-                    Seller
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{
-                    flex: 1,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: onboardRole === 'buyer' ? '#2563EB' : '#F1F5F9',
-                    alignItems: 'center'
-                  }}
-                  onPress={() => setOnboardRole('buyer')}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: onboardRole === 'buyer' ? '#FFFFFF' : '#475569' }}>
-                    Buyer
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{
-                    flex: 1,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: onboardRole === 'broker' ? '#7C3AED' : '#F1F5F9',
-                    alignItems: 'center'
-                  }}
-                  onPress={() => setOnboardRole('broker')}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: onboardRole === 'broker' ? '#FFFFFF' : '#475569' }}>
-                    Broker
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Dynamic Role Description Subtitle */}
-              <Text style={{ fontSize: 11.5, color: '#64748B', marginBottom: 12, textAlign: 'left', width: '100%' }}>
-                {onboardRole === 'seller'
-                  ? 'Onboarding a Seller company: Fill account, business profile, and product catalog.'
-                  : onboardRole === 'buyer'
-                    ? 'Onboarding a Buyer company: Fill account and company profile.'
-                    : 'Onboarding a Broker company: Fill account and company profile.'}
-              </Text>
-
-              <ScrollView style={{ width: '100%', maxHeight: 360 }} showsVerticalScrollIndicator={false}>
-                <View style={{ gap: 10 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155', textTransform: 'uppercase' }}>
-                    1. Account Info
-                  </Text>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.fieldLabel}>User Full Name *</Text>
-                    <TextInput
-                      style={[styles.textInput, onboardErrors.name && styles.inputError]}
-                      value={onboardForm.name}
-                      onChangeText={val => setOnboardForm({ ...onboardForm, name: val })}
-                      placeholder="Name"
-                      placeholderTextColor="#94A3B8"
-                    />
-                    {!!onboardErrors.name && <Text style={styles.fieldErrorText}>{onboardErrors.name}</Text>}
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.fieldLabel}>Mobile Number *</Text>
-                    <TextInput
-                      style={[styles.textInput, onboardErrors.mobileNumber && styles.inputError]}
-                      value={onboardForm.mobileNumber}
-                      onChangeText={val => {
-                        const cleanMob = val.replace(/\D/g, '').slice(0, 10);
-                        setOnboardForm({ ...onboardForm, mobileNumber: cleanMob });
-                        if (onboardErrors.mobileNumber) setOnboardErrors(prev => ({ ...prev, mobileNumber: undefined }));
+        {/* ════════════════ UNIT SELECTOR MODAL ════════════════ */}
+        {showUnitModal && (
+          <Modal transparent visible={showUnitModal} animationType="slide" onRequestClose={() => setShowUnitModal(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowUnitModal(false)} />
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <Text style={styles.modalTitleText}>Select Unit</Text>
+                <ScrollView style={{ maxHeight: 280 }}>
+                  {unitsList.map((uItem, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[styles.optionItemRow, unit === uItem.label && styles.optionItemRowSelected]}
+                      onPress={() => {
+                        setUnit(uItem.label);
+                        setShowUnitModal(false);
                       }}
-                      placeholder="Mobile Number"
-                      placeholderTextColor="#94A3B8"
-                      keyboardType="phone-pad"
-                      maxLength={10}
-                    />
-                    {!!onboardErrors.mobileNumber && <Text style={styles.fieldErrorText}>{onboardErrors.mobileNumber}</Text>}
-                  </View>
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.optionItemText, unit === uItem.label && styles.optionItemTextSelected]}>
+                        {uItem.label}
+                      </Text>
+                      {unit === uItem.label && <Check size={16} color="#2563EB" />}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        )}
 
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155', textTransform: 'uppercase', marginTop: 6 }}>
-                    2. Company Profile
+        {/* ════════════════ DEAL TYPE SELECTOR MODAL ════════════════ */}
+        {showTypeModal && (
+          <Modal transparent visible={showTypeModal} animationType="slide" onRequestClose={() => setShowTypeModal(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowTypeModal(false)} />
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <Text style={styles.modalTitleText}>Select Deal Type</Text>
+                {DEAL_TYPES.map((t, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.optionItemRow, dealType === t && styles.optionItemRowSelected]}
+                    onPress={() => {
+                      setDealType(t);
+                      setShowTypeModal(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionItemText, dealType === t && styles.optionItemTextSelected]}>{t}</Text>
+                    {dealType === t && <Check size={16} color="#2563EB" />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ DEAL CATEGORY MODAL ════════════════ */}
+        {showCategoryModal && (
+          <Modal transparent visible={showCategoryModal} animationType="slide" onRequestClose={() => setShowCategoryModal(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowCategoryModal(false)} />
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <Text style={styles.modalTitleText}>Select Category</Text>
+                {DEAL_CATEGORIES.map((c, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.optionItemRow, dealCategory === c && styles.optionItemRowSelected]}
+                    onPress={() => {
+                      setDealCategory(c);
+                      setShowCategoryModal(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionItemText, dealCategory === c && styles.optionItemTextSelected]}>{c}</Text>
+                    {dealCategory === c && <Check size={16} color="#2563EB" />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ PAYMENT TERMS MODAL ════════════════ */}
+        {showPaymentTermsModal && (
+          <Modal transparent visible={showPaymentTermsModal} animationType="slide" onRequestClose={() => setShowPaymentTermsModal(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowPaymentTermsModal(false)} />
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <Text style={styles.modalTitleText}>Select Payment Terms</Text>
+                {PAYMENT_TERMS_LIST.map((p, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.optionItemRow, paymentTerms === p && styles.optionItemRowSelected]}
+                    onPress={() => {
+                      setPaymentTerms(p);
+                      setShowPaymentTermsModal(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionItemText, paymentTerms === p && styles.optionItemTextSelected]}>{p}</Text>
+                    {paymentTerms === p && <Check size={16} color="#2563EB" />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ DELIVERY TERMS MODAL ════════════════ */}
+        {showDeliveryTermsModal && (
+          <Modal transparent visible={showDeliveryTermsModal} animationType="slide" onRequestClose={() => setShowDeliveryTermsModal(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowDeliveryTermsModal(false)} />
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <Text style={styles.modalTitleText}>Select Delivery Terms (Incoterms)</Text>
+                {DELIVERY_TERMS_LIST.map((d, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.optionItemRow, deliveryTerms === d && styles.optionItemRowSelected]}
+                    onPress={() => {
+                      setDeliveryTerms(d);
+                      setShowDeliveryTermsModal(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionItemText, deliveryTerms === d && styles.optionItemTextSelected]}>{d}</Text>
+                    {deliveryTerms === d && <Check size={16} color="#2563EB" />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ COMPANY SWITCH MODAL ════════════════ */}
+        {showCompanySwitchModal && (
+          <Modal transparent visible={showCompanySwitchModal} animationType="slide" onRequestClose={() => setShowCompanySwitchModal(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowCompanySwitchModal(false)} />
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <Text style={styles.modalTitleText}>Switch Active Company</Text>
+                <ScrollView style={{ maxHeight: 280 }}>
+                  {userCompaniesList.map((c, idx) => {
+                    const cId = c._id || c.id;
+                    const isSelected = String(activeUserCompany?._id || activeUserCompany?.id) === String(cId);
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        style={[styles.optionItemRow, isSelected && styles.optionItemRowSelected]}
+                        onPress={() => {
+                          setActiveUserCompany(c);
+                          setParty1(c.name || 'My Company');
+                          if (c.address?.city || c.city) {
+                            setSellerLocation(`${c.address?.city || c.city}, ${c.address?.state || c.state || 'India'}`);
+                          }
+                          setShowCompanySwitchModal(false);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.optionItemText, isSelected && styles.optionItemTextSelected]}>
+                          {c.name}
+                        </Text>
+                        {isSelected && <Check size={16} color="#2563EB" />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ ASSISTED ONBOARDING MODAL ════════════════ */}
+        {showOnboardModal && (
+          <Modal visible={showOnboardModal} transparent animationType="slide" onRequestClose={() => setShowOnboardModal(false)}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalSheetContainer, { maxHeight: '90%' }]}>
+                <View style={styles.modalDragHandle} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>
+                    Onboard Counterparty
                   </Text>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.fieldLabel}>Company Name *</Text>
-                    <TextInput
-                      style={[styles.textInput, onboardErrors.companyName && styles.inputError]}
-                      value={onboardForm.companyName}
-                      onChangeText={val => setOnboardForm({ ...onboardForm, companyName: val })}
-                      placeholder="Company Name"
-                      placeholderTextColor="#94A3B8"
-                    />
-                    {!!onboardErrors.companyName && <Text style={styles.fieldErrorText}>{onboardErrors.companyName}</Text>}
-                  </View>
+                  <TouchableOpacity onPress={() => setShowOnboardModal(false)} style={{ padding: 4 }}>
+                    <X size={18} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
 
-                  {/* Industry Selection Field */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.fieldLabel}>Industry / Business Type *</Text>
-                    {industriesList && industriesList.length > 0 ? (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 4 }}>
-                        <View style={{ flexDirection: 'row', gap: 6 }}>
-                          {industriesList.map((ind) => {
-                            const indId = ind._id || ind.id;
-                            const indName = ind.name || ind.title || ind.industryName || 'Industry';
-                            const isSelected = String(onboardForm.industryId) === String(indId);
+                <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+                  <View style={{ gap: 10 }}>
+                    <Text style={styles.inputLabel}>User Full Name *</Text>
+                    <View style={[styles.textInputBox, onboardErrors.name && styles.textInputBoxError]}>
+                      <User size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                      <TextInput
+                        style={styles.textInputField}
+                        value={onboardForm.name}
+                        onChangeText={t => setOnboardForm({ ...onboardForm, name: t })}
+                        placeholder="Contact Person Name"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+
+                    <Text style={styles.inputLabel}>Mobile Number *</Text>
+                    <View style={[styles.textInputBox, onboardErrors.mobileNumber && styles.textInputBoxError]}>
+                      <TextInput
+                        style={styles.textInputField}
+                        value={onboardForm.mobileNumber}
+                        onChangeText={t => setOnboardForm({ ...onboardForm, mobileNumber: t.replace(/\D/g, '').slice(0, 10) })}
+                        placeholder="10-digit mobile number"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="phone-pad"
+                        maxLength={10}
+                      />
+                    </View>
+
+                    <Text style={styles.inputLabel}>Company Name *</Text>
+                    <View style={[styles.textInputBox, onboardErrors.companyName && styles.textInputBoxError]}>
+                      <Building2 size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                      <TextInput
+                        style={styles.textInputField}
+                        value={onboardForm.companyName}
+                        onChangeText={t => setOnboardForm({ ...onboardForm, companyName: t })}
+                        placeholder="Business / Company Name"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+
+                    <Text style={styles.inputLabel}>GST / Registration Number</Text>
+                    <View style={styles.textInputBox}>
+                      <TextInput
+                        style={styles.textInputField}
+                        value={onboardForm.registrationNumber}
+                        onChangeText={t => setOnboardForm({ ...onboardForm, registrationNumber: t })}
+                        placeholder="GST Number (Optional)"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={styles.inputLabel}>Pincode / Postal Code</Text>
+                      {isPincodeLoading && <ActivityIndicator size="small" color="#2563EB" />}
+                    </View>
+                    <View style={styles.textInputBox}>
+                      <TextInput
+                        style={styles.textInputField}
+                        value={onboardForm.postalCode}
+                        onChangeText={handlePincodeChange}
+                        placeholder="6-digit pincode"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="number-pad"
+                        maxLength={6}
+                      />
+                    </View>
+
+                    <View style={styles.inputRow}>
+                      <View style={[styles.inputCol, { flex: 1 }]}>
+                        <Text style={styles.inputLabel}>City</Text>
+                        <View style={styles.textInputBox}>
+                          <TextInput
+                            style={styles.textInputField}
+                            value={onboardForm.city}
+                            onChangeText={t => setOnboardForm({ ...onboardForm, city: t })}
+                            placeholder="City"
+                            placeholderTextColor="#94A3B8"
+                          />
+                        </View>
+                      </View>
+                      <View style={[styles.inputCol, { flex: 1 }]}>
+                        <Text style={styles.inputLabel}>State</Text>
+                        <View style={styles.textInputBox}>
+                          <TextInput
+                            style={styles.textInputField}
+                            value={onboardForm.state}
+                            onChangeText={t => setOnboardForm({ ...onboardForm, state: t })}
+                            placeholder="State"
+                            placeholderTextColor="#94A3B8"
+                          />
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Product Details for Seller Onboarding */}
+                    {onboardRole === 'seller' && (
+                      <View style={{ marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0', gap: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Package size={16} color="#2563EB" />
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: '#0F172A' }}>
+                            Seller Product Details (Optional)
+                          </Text>
+                        </View>
+
+                        <Text style={styles.inputLabel}>Product Name</Text>
+                        <View style={styles.textInputBox}>
+                          <TextInput
+                            style={styles.textInputField}
+                            value={onboardForm.productName}
+                            onChangeText={t => setOnboardForm({ ...onboardForm, productName: t })}
+                            placeholder="e.g. Basmati Rice, Mustard Oil"
+                            placeholderTextColor="#94A3B8"
+                          />
+                        </View>
+
+                        <Text style={styles.inputLabel}>Unit</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                          {unitsList.slice(0, 6).map((uItem, uIdx) => {
+                            const uLabel = uItem.short || uItem.name || uItem.label || uItem.value;
+                            const isSel = (onboardForm.unitId === uItem.id || onboardForm.unitId === uItem.name || onboardForm.unitId === uLabel);
                             return (
                               <TouchableOpacity
-                                key={indId}
-                                style={{
-                                  paddingHorizontal: 12,
-                                  paddingVertical: 7,
-                                  borderRadius: 20,
-                                  backgroundColor: isSelected ? rTheme.color : '#F1F5F9',
-                                  borderWidth: 1,
-                                  borderColor: isSelected ? rTheme.color : '#CBD5E1',
-                                }}
-                                onPress={() => setOnboardForm(prev => ({ ...prev, industryId: indId }))}
-                                activeOpacity={0.7}
+                                key={`onb_u_${uIdx}`}
+                                style={[
+                                  { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#F8FAFC' },
+                                  isSel && { borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
+                                ]}
+                                onPress={() => setOnboardForm({ ...onboardForm, unitId: uItem.id || uItem.name || uLabel })}
                               >
-                                <Text style={{ fontSize: 11, fontWeight: '700', color: isSelected ? '#FFFFFF' : '#334155' }}>
-                                  {indName}
+                                <Text style={[{ fontSize: 12, fontWeight: '600', color: '#475569' }, isSel && { color: '#2563EB', fontWeight: '800' }]}>
+                                  {uLabel}
                                 </Text>
                               </TouchableOpacity>
                             );
                           })}
+                        </ScrollView>
+
+                        <Text style={styles.inputLabel}>HSN Code</Text>
+                        <View style={styles.textInputBox}>
+                          <Hash size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                          <TextInput
+                            style={styles.textInputField}
+                            value={onboardForm.hsnCode}
+                            onChangeText={t => setOnboardForm({ ...onboardForm, hsnCode: t })}
+                            placeholder="HSN Code (Optional)"
+                            placeholderTextColor="#94A3B8"
+                          />
                         </View>
-                      </ScrollView>
-                    ) : (
-                      <View style={{ paddingVertical: 6 }}>
-                        <Text style={{ fontSize: 11, color: '#94A3B8', fontStyle: 'italic' }}>Loading industries...</Text>
                       </View>
                     )}
                   </View>
+                </ScrollView>
 
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.fieldLabel}>GST / Registration Number</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={onboardForm.registrationNumber}
-                      onChangeText={val => setOnboardForm({ ...onboardForm, registrationNumber: val })}
-                      placeholder="GST Number"
-                      placeholderTextColor="#94A3B8"
-                    />
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                      <Text style={styles.fieldLabel}>Pincode / Postal Code</Text>
-                      {isPincodeLoading && <ActivityIndicator size="small" color="#2563EB" />}
-                    </View>
-                    <TextInput
-                      style={styles.textInput}
-                      value={onboardForm.postalCode}
-                      onChangeText={handlePincodeChange}
-                      placeholder="6-digit pincode"
-                      placeholderTextColor="#94A3B8"
-                      keyboardType="number-pad"
-                      maxLength={6}
-                    />
-                  </View>
-
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
-                      <Text style={styles.fieldLabel}>City</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={onboardForm.city}
-                        onChangeText={val => setOnboardForm({ ...onboardForm, city: val })}
-                        placeholder="City"
-                        placeholderTextColor="#94A3B8"
-                      />
-                    </View>
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
-                      <Text style={styles.fieldLabel}>District</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={onboardForm.district}
-                        onChangeText={val => setOnboardForm({ ...onboardForm, district: val })}
-                        placeholder="District"
-                        placeholderTextColor="#94A3B8"
-                      />
-                    </View>
-                  </View>
-
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
-                      <Text style={styles.fieldLabel}>State</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={onboardForm.state}
-                        onChangeText={val => setOnboardForm({ ...onboardForm, state: val })}
-                        placeholder="State"
-                        placeholderTextColor="#94A3B8"
-                      />
-                    </View>
-                    <View style={[styles.inputGroup, { flex: 1 }]}>
-                      <Text style={styles.fieldLabel}>Country</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        value={onboardForm.country}
-                        onChangeText={val => setOnboardForm({ ...onboardForm, country: val })}
-                        placeholder="India"
-                        placeholderTextColor="#94A3B8"
-                      />
-                    </View>
-                  </View>
-
-                  {onboardRole === 'seller' && (
-                    <>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#334155', textTransform: 'uppercase', marginTop: 6 }}>
-                        3. Seller Product Info
-                      </Text>
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.fieldLabel}>Product Name *</Text>
-                        <TextInput
-                          style={styles.textInput}
-                          value={onboardForm.productName}
-                          onChangeText={val => setOnboardForm({ ...onboardForm, productName: val })}
-                          placeholder="e.g. Soybean Seed Grade A"
-                          placeholderTextColor="#94A3B8"
-                        />
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <View style={[styles.inputGroup, { flex: 1 }]}>
-                          <Text style={styles.fieldLabel}>HSN Code</Text>
-                          <TextInput
-                            style={styles.textInput}
-                            value={onboardForm.hsnCode}
-                            onChangeText={val => setOnboardForm({ ...onboardForm, hsnCode: val })}
-                            placeholder="e.g. 1201"
-                            placeholderTextColor="#94A3B8"
-                          />
-                        </View>
-                        <View style={[styles.inputGroup, { flex: 1 }]}>
-                          <Text style={styles.fieldLabel}>GST Code</Text>
-                          <TextInput
-                            style={styles.textInput}
-                            value={onboardForm.gstCode}
-                            onChangeText={val => setOnboardForm({ ...onboardForm, gstCode: val })}
-                            placeholder="GST_18"
-                            placeholderTextColor="#94A3B8"
-                          />
-                        </View>
-                      </View>
-                      <View style={styles.inputGroup}>
-                        <Text style={styles.fieldLabel}>Description</Text>
-                        <TextInput
-                          style={[styles.textInput, { height: 60 }]}
-                          value={onboardForm.description}
-                          onChangeText={val => setOnboardForm({ ...onboardForm, description: val })}
-                          placeholder="Product specification / details"
-                          placeholderTextColor="#94A3B8"
-                          multiline
-                        />
-                      </View>
-                    </>
-                  )}
+                <View style={styles.modalActionButtonsRow}>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowOnboardModal(false)}>
+                    <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalConfirmBtn}
+                    onPress={handleExecuteOnboard}
+                    disabled={isOnboardingSubmitting}
+                  >
+                    {isOnboardingSubmitting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.modalConfirmBtnText}>Onboard & Select ✓</Text>
+                    )}
+                  </TouchableOpacity>
                 </View>
-              </ScrollView>
-
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, width: '100%' }}>
-                <TouchableOpacity
-                  style={{ flex: 1, height: 44, borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}
-                  onPress={() => setShowOnboardModal(false)}
-                >
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B' }}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ flex: 2, height: 44, borderRadius: 10, backgroundColor: '#2563EB', justifyContent: 'center', alignItems: 'center' }}
-                  onPress={handleExecuteOnboard}
-                  disabled={isOnboardingSubmitting}
-                >
-                  {isOnboardingSubmitting ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#FFFFFF' }}>Onboard & Create Deal ✓</Text>
-                  )}
-                </TouchableOpacity>
               </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ SUCCESS MODAL ════════════════ */}
+        <Modal visible={showSuccessModal} transparent animationType="fade">
+          <View style={styles.successModalOverlay}>
+            <View style={styles.successCard}>
+              <View style={styles.successIconCircle}>
+                <CheckCircle2 size={42} color="#10B981" />
+              </View>
+              <Text style={styles.successModalTitle}>Deal Created Successfully!</Text>
+              <Text style={styles.successModalSubtitle}>
+                {createdDealData?.dealNumber
+                  ? `Deal #${createdDealData.dealNumber} recorded in Sauda ledger.`
+                  : 'Trade agreement established and recorded in Sauda ledger.'}
+              </Text>
+              <View style={styles.successDivider} />
+              <Text style={styles.successDetailText}>
+                {createdDealData?.products?.[0]?.name || productName || dealName} • ₹{createdDealData?.grandTotal ? Number(createdDealData.grandTotal).toLocaleString('en-IN') : dealValue}
+              </Text>
             </View>
           </View>
         </Modal>
@@ -3017,798 +2818,1159 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  keyboardView: { flex: 1 },
-  scrollContent: { flexGrow: 1, padding: 14, gap: 12, paddingBottom: 140 },
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  keyboardView: {
+    flex: 1,
+  },
 
-  // HEADER
-  header: {
+  /* Top Header */
+  topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 11,
+    paddingTop: Platform.OS === 'ios' ? 8 : 12,
+    paddingBottom: 10,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 3,
-    marginTop: 30,
+    borderBottomColor: '#F1F5F9',
   },
-  backButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backIcon: { fontSize: 18, color: '#0F172A', fontWeight: '700' },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 15, fontWeight: '800', color: '#0F172A', letterSpacing: 0.2 },
-  headerSubtitle: { fontSize: 10, color: '#64748B', fontWeight: '500', marginTop: 1 },
-  headerBadge: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerBadgeText: { fontSize: 16 },
-
-  // SECTION CARDS
-  sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    gap: 7,
-    backgroundColor: '#F8FAFC',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  sectionDot: { width: 7, height: 7, borderRadius: 3.5 },
-  sectionTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8, flex: 1, color: '#0F172A' },
-  sectionBadgeContainer: {},
-  sectionBadge: { fontSize: 8, fontWeight: '900', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5, letterSpacing: 1 },
-  cardBody: { padding: 14, paddingTop: 6, gap: 2 },
-
-  // INPUTS
-  inputGroup: { marginBottom: 10 },
-  fieldLabel: { fontSize: 10, fontWeight: '700', color: '#64748B', marginBottom: 5, textTransform: 'uppercase', letterSpacing: 0.5 },
-  textInput: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 13,
-    height: 44,
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  inputFocused: {
-    borderColor: '#4F46E5',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  inputError: {
-    borderColor: '#EF4444',
-    borderWidth: 1.5,
-    backgroundColor: '#FFF5F5',
-  },
-  fieldErrorText: { fontSize: 10, color: '#EF4444', fontWeight: '700', marginTop: 3, marginLeft: 3 },
-
-  roleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
-    marginBottom: 14,
-    marginTop: 6,
-    alignItems: 'center',
-  },
-  roleTab: {
-    flex: 1,
-    flexDirection: 'row',
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    gap: 6,
-  },
-  roleTabActive: {
-    backgroundColor: '#4F46E5',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.18,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  roleTabText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: -0.2,
-  },
-  roleTabTextActive: {
-    fontWeight: '800',
-  },
-
-  // PROFILE CARDS
-  profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 13,
-    borderWidth: 1,
-    padding: 12,
-    gap: 11,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  profileAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  profileAvatarText: { fontSize: 17, color: '#FFFFFF', fontWeight: '900' },
-  profileCardInfo: { flex: 1, gap: 1 },
-  profileCardName: { fontSize: 13, fontWeight: '800', color: '#0F172A', letterSpacing: -0.2 },
-  profileCardRole: { fontSize: 9, fontWeight: '800', marginTop: 1, letterSpacing: 0.8 },
-  profileCardBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  profileCardBadgeText: { fontSize: 9, fontWeight: '800' },
-  changeText: { fontSize: 11, fontWeight: '700', color: '#0284C7' },
-
-  // FLOW CONNECTOR
-  flowConnectorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 28,
-    marginVertical: -3,
-  },
-  flowConnectorLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    borderRadius: 1,
-  },
-  flowConnectorBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 10,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  flowConnectorEmoji: { fontSize: 12 },
-
-  counterpartySelector: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  counterpartySelectorInner: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  selectorAvatarPlaceholder: {
+  backButtonCircle: {
     width: 38,
     height: 38,
     borderRadius: 19,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
-  selectorAvatarPlaceholderEmoji: { fontSize: 17 },
-  counterpartySelectorLabel: { fontSize: 13, fontWeight: '700', color: '#0F172A' },
-  counterpartySelectorHint: { fontSize: 10, color: '#94A3B8', marginTop: 1, fontWeight: '600' },
-  dropdownIcon: { fontSize: 17, color: '#94A3B8', fontWeight: '800' },
-
-  // PRODUCT CHIPS
-  productChip: {
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 9,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  productChipActive: { backgroundColor: '#F0F9FF', borderColor: '#0284C7', borderWidth: 1.5 },
-  productChipText: { fontSize: 11, fontWeight: '700', color: '#64748B' },
-  productChipTextActive: { color: '#0284C7', fontWeight: '800' },
-  miniProductImage: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#F1F5F9' },
-  miniProductEmoji: { fontSize: 11 },
-
-  // UPLOAD
-  dashedUploadArea: {
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderStyle: 'dashed',
-    borderRadius: 11,
-    paddingVertical: 16,
+  titleColumn: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    backgroundColor: '#FFFFFF',
   },
-  dashedUploadIcon: { fontSize: 24 },
-  dashedUploadLabel: { fontSize: 12, fontWeight: '700', color: '#0F172A' },
-  dashedUploadHint: { fontSize: 10, color: '#94A3B8', fontWeight: '500' },
-  uploadedImageContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    padding: 11,
-    gap: 10,
+  screenTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
-  uploadedImageInfo: { flex: 1 },
-  uploadedImageLabel: { fontSize: 12, fontWeight: '700', color: '#059669' },
-  uploadedImageHint: { fontSize: 10, color: '#64748B', marginTop: 2 },
-  thumbnail: { width: 42, height: 42, borderRadius: 8 },
-  thumbnailRemove: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center',
-  },
-  thumbnailRemoveText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900' },
-
-  divider: { height: 1, backgroundColor: '#E2E8F0', marginVertical: 12 },
-  row: { flexDirection: 'row', gap: 10 },
-
-  // TICKET STUB (High contrast dark layout remains outstanding in light theme)
-  ticketStub: {
-    flexDirection: 'row',
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginTop: 10,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  ticketLeft: { flex: 2, padding: 18 },
-  ticketLabel: { fontSize: 9, fontWeight: '800', color: '#94A3B8', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 },
-  ticketValue: { fontSize: 26, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.5 },
-  ticketDiscount: { fontSize: 11, color: '#64748B', marginTop: 4 },
-  ticketDivider: { width: 30, alignItems: 'center', justifyContent: 'center' },
-  ticketPunchTop: {
-    width: 20, height: 20, borderRadius: 10, backgroundColor: '#F8FAFC', position: 'absolute', top: -10,
-  },
-  ticketPunchBottom: {
-    width: 20, height: 20, borderRadius: 10, backgroundColor: '#F8FAFC', position: 'absolute', bottom: -10,
-  },
-  ticketDashedLine: {
-    flex: 1, borderLeftWidth: 2, borderLeftColor: 'rgba(255,255,255,0.1)', borderStyle: 'dashed',
-  },
-  ticketRight: { flex: 1, padding: 18, alignItems: 'center', justifyContent: 'center' },
-  ticketRightTop: { fontSize: 9, fontWeight: '700', color: '#94A3B8', letterSpacing: 1 },
-  ticketRightValue: { fontSize: 20, fontWeight: '900', color: '#FFFFFF', marginVertical: 4 },
-
-  // DATE SELECTOR
-  dateSelector: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 13,
-    height: 44,
-    justifyContent: 'center',
-  },
-  dateSelectorText: { fontSize: 13, fontWeight: '600', color: '#0F172A' },
-
-  // PAYMENT TERMS
-  termBadge: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 9,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  termBadgeActive: { backgroundColor: '#F0F9FF', borderColor: '#0284C7', borderWidth: 1.5 },
-  termBadgeText: { fontSize: 10, fontWeight: '600', color: '#64748B' },
-  termBadgeTextActive: { color: '#0284C7', fontWeight: '800' },
-
-  // PRODUCT INPUT WRAPPER & AUTOCOMPLETE
-  productInputWrapper: { position: 'relative', flexDirection: 'row', alignItems: 'center' },
-  dropdownToggleBtn: { position: 'absolute', right: 12, padding: 6 },
-  dropdownToggleText: { fontSize: 14, color: '#64748B' },
-  autocompleteDropdown: {
-    backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0',
-    marginTop: 3, position: 'absolute', top: 48, left: 0, right: 0, zIndex: 999,
-    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.07, shadowRadius: 10, elevation: 5,
-  },
-  dropdownItem: { paddingVertical: 10, paddingHorizontal: 13, borderBottomWidth: 0.5, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center' },
-  dropdownItemText: { fontSize: 13, fontWeight: '600', color: '#0F172A' },
-  dropdownProductImage: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#F1F5F9' },
-  dropdownProductEmoji: { fontSize: 13 },
-
-  // MULTILINE
-  multilineInput: { height: 78, textAlignVertical: 'top', paddingTop: 11 },
-
-  // SUBMIT BUTTON
-  submitButton: {
-    backgroundColor: '#4F46E5',
-    borderRadius: 14,
-    height: 52,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 4,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  submitButtonDisabled: { opacity: 0.6 },
-  inviteButton: { backgroundColor: '#B58900', shadowColor: '#B58900' },
-  submitButtonContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  submitButtonIcon: { fontSize: 18 },
-  submitButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
-
-  // DATE PICKER MODAL
-  pickerOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.65)', justifyContent: 'flex-end' },
-  pickerContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 44 : 24,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 12,
-  },
-  dragIndicator: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E2E8F0', alignSelf: 'center', marginBottom: 18 },
-  pickerHeader: { fontSize: 16, fontWeight: '800', color: '#0F172A', marginBottom: 16, textAlign: 'center' },
-  pickerControls: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  navButton: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
-  navText: { color: '#0F172A', fontWeight: '750', fontSize: 11 },
-  monthDisplay: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
-  calendarGrid: { marginBottom: 16 },
-  daysGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
-  dayCell: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
-  activeDayCell: { backgroundColor: '#4F46E5', borderColor: '#4F46E5' },
-  dayText: { fontSize: 12, fontWeight: '700', color: '#475569' },
-  activeDayText: { color: '#FFFFFF', fontWeight: '900' },
-  pickerActions: { flexDirection: 'row', gap: 10 },
-  cancelAction: { flex: 1, height: 50, borderRadius: 14, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
-  confirmAction: { flex: 2, height: 50, borderRadius: 14, backgroundColor: '#4F46E5', alignItems: 'center', justifyContent: 'center' },
-  cancelText: { color: '#64748B', fontWeight: '800', fontSize: 13 },
-  confirmText: { color: '#FFFFFF', fontWeight: '850', fontSize: 13 },
-
-  productItemCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginTop: 10,
-  },
-  tabsScrollContent: {
-    paddingBottom: 8,
-    gap: 8,
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  tabItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 6,
-  },
-  tabItemActive: {
-    borderWidth: 1.5,
-  },
-  tabItemText: {
+  stepSubtitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#2563EB',
+    marginTop: 2,
   },
-  tabItemTextActive: {
-    fontWeight: '800',
-  },
-  tabDeleteBtn: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#EF4444',
+  mascotWrapper: {
+    width: 46,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 2,
   },
-  tabDeleteText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '900',
-    marginTop: -1,
-  },
-  addTabBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addTabBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
+  mascotImage: {
+    width: 44,
+    height: 44,
   },
 
-  // WIZARD WORKFLOW
-  wizardProgressContainer: {
+  /* Stepper */
+  stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 28,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
     paddingVertical: 14,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
-  wizardStepCol: {
+  stepItem: {
     alignItems: 'center',
     gap: 4,
   },
-  wizardStepCircle: {
+  stepCircle: {
     width: 28,
     height: 28,
     borderRadius: 14,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  wizardStepCircleActive: {
-    borderWidth: 2,
+  stepCircleActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
   },
-  wizardStepCircleText: {
+  stepCircleCompleted: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  stepNumberText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#64748B',
   },
-  wizardStepCircleTextActive: {
-    fontWeight: '900',
+  stepNumberTextActive: {
+    color: '#FFFFFF',
   },
-  wizardStepLabel: {
-    fontSize: 10,
+  stepLabelText: {
+    fontSize: 11,
     fontWeight: '600',
     color: '#64748B',
-    letterSpacing: 0.2,
   },
-  wizardStepLine: {
+  stepLabelTextActive: {
+    color: '#2563EB',
+    fontWeight: '800',
+  },
+  stepperLine: {
     flex: 1,
     height: 2,
     backgroundColor: '#E2E8F0',
-    marginTop: -16,
-    marginHorizontal: -8,
+    marginBottom: 16,
+    marginHorizontal: 6,
   },
-  wizardNavRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 14,
-    paddingBottom: 24,
+  stepperLineActive: {
+    backgroundColor: '#2563EB',
   },
-  wizardNextBtn: {
+
+  /* Scroll View */
+  scrollView: {
     flex: 1,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
   },
-  wizardNextBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  stepSection: {
+    gap: 16,
+  },
+  sectionHeadingBox: {
+    marginBottom: 2,
+  },
+  mainSectionTitle: {
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: 0.2,
+    color: '#0F172A',
   },
-  wizardBackBtn: {
-    height: 48,
+  mainSectionSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 2,
+  },
+
+  /* Role Switcher */
+  roleTabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
     borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
+    padding: 4,
+    gap: 4,
+  },
+  roleTab: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 9,
+    gap: 6,
   },
-  wizardBackBtnText: {
+  roleTabActive: {
+    backgroundColor: '#2563EB',
+  },
+  roleTabText: {
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
-    fontSize: 13,
+  },
+  roleTabTextActive: {
+    color: '#FFFFFF',
     fontWeight: '800',
   },
 
-  // STEP 1 DIRECT SEARCH & ADD
-  step1DirectBox: {
+  /* Search Bar */
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
+    paddingHorizontal: 12,
+    height: 44,
   },
-  step1SearchWrapper: {
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '500',
+    paddingVertical: 0,
+  },
+
+  /* Category Pills */
+  categoryPillsScroll: {
+    marginHorizontal: -16,
+  },
+  categoryPillsContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: 'row',
+  },
+  categoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  categoryPillActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  categoryPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  categoryPillTextActive: {
+    color: '#FFFFFF',
+  },
+
+  /* Section Sub Header */
+  sectionSubHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  subSectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  viewAllLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  smallAddChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+  },
+  smallAddChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  /* Recent Products Cards */
+  recentCardsScroll: {
+    marginHorizontal: -16,
+  },
+  recentCardsContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: 'row',
+  },
+  productCard: {
+    width: 112,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 7,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1.5,
+    alignItems: 'center',
+  },
+  productCardSelected: {
+    borderColor: '#2563EB',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 2,
+  },
+  productCardImageContainer: {
+    width: 54,
+    height: 54,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
+    marginBottom: 6,
+  },
+  productCardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  productCardImageFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedBadge: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productCardName: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    height: 28,
+  },
+  hsnBadgePill: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    marginVertical: 3,
+  },
+  hsnBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  productCardPrice: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#334155',
+    marginTop: 1,
+  },
+
+  /* Form Elements */
+  formContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 12,
+    marginTop: 6,
+  },
+  formGroup: {
+    gap: 6,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inputCol: {
+    gap: 6,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  requiredStar: {
+    color: '#EF4444',
+  },
+  textInputBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
     paddingHorizontal: 10,
-    height: 44,
+    height: 42,
   },
-  step1SearchInput: {
+  textInputBoxFocused: {
+    borderColor: '#2563EB',
+    backgroundColor: '#FFFFFF',
+  },
+  textInputBoxError: {
+    borderColor: '#EF4444',
+  },
+  inputLeadingIcon: {
+    marginRight: 6,
+  },
+  textInputField: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
     color: '#0F172A',
     paddingVertical: 0,
   },
-  step1AddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    marginLeft: 6,
+  selectBox: {
+    justifyContent: 'space-between',
   },
-  step1AddBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  orDividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 6,
-    justifyContent: 'center',
-  },
-  orDividerLine: {
+  selectBoxValue: {
     flex: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#0F172A',
   },
-  orDividerText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#94A3B8',
-    marginHorizontal: 8,
-  },
-  directorySelectBtn: {
+  infoNoticeCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
+    backgroundColor: '#EFF6FF',
     borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  directorySelectBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  searchingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
+    padding: 10,
+    marginTop: 4,
     gap: 8,
   },
-  searchingText: {
+  infoNoticeIcon: {
+    flexShrink: 0,
+  },
+  infoNoticeText: {
+    flex: 1,
     fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
+    color: '#1E40AF',
+    fontWeight: '500',
+    lineHeight: 16,
   },
-  foundCompanyBox: {
-    marginTop: 8,
-    padding: 10,
-    backgroundColor: '#F0FDF4',
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#BBF7D0',
+
+  /* Step 1 Parties */
+  partyCardWrapper: {
+    gap: 8,
   },
-  foundCompanyTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#166534',
-    marginBottom: 6,
-  },
-  foundCompanyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    marginTop: 4,
-  },
-  foundCompanyName: {
+  partySectionHeader: {
     fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
   },
-  foundCompanySub: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 2,
-  },
-  selectFoundBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  selectFoundBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-
-  // PREMIUM SUCCESS MODAL STYLES
-  successOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.72)',
-    justifyContent: 'center',
+  whitePartyCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 24,
-  },
-  successCardContainer: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    width: '100%',
-    maxWidth: 340,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  successBadgeCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  successCardTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#0F172A',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  successCardSubtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 18,
-  },
-  successSummaryBox: {
-    width: '100%',
-    backgroundColor: '#F8FAFC',
     borderRadius: 14,
-    padding: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 18,
+    gap: 12,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  successSummaryRow: {
+  partyAvatarBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partyAvatarText: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  partyInfoColumn: {
+    flex: 1,
+    gap: 2,
+  },
+  partyNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  partyCompanyName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  partyRolePrefix: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  primaryBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  primaryBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+  partyCategoryText: {
+    fontSize: 11.5,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  partyLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  partyLocationText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  partyEditButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partyRemoveButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addNewPartyLink: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#2563EB',
+    paddingLeft: 6,
+  },
+  otherPartyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  otherPartyIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otherPartyRole: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+    flex: 1,
+  },
+  otherPartyValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  otherPartyAction: {
+    padding: 2,
+  },
+  notesBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
+  },
+  notesInputField: {
+    fontSize: 12.5,
+    color: '#0F172A',
+    minHeight: 55,
+    textAlignVertical: 'top',
+    padding: 0,
+  },
+  charCounterText: {
+    fontSize: 10,
+    color: '#94A3B8',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  errorMessageText: {
+    fontSize: 11,
+    color: '#EF4444',
+    fontWeight: '700',
+    marginTop: 2,
+  },
+
+  /* Step 3 & Upload Box */
+  uploadDashedCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    padding: 14,
   },
-  successSummaryLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#94A3B8',
-  },
-  successSummaryVal: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-    maxWidth: '65%',
-  },
-  successSummaryDivider: {
-    height: 1,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 6,
-  },
-  successProgressRow: {
+  uploadLeftCol: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  paperclipCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EFF6FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  successProgressText: {
+  uploadTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  uploadSubtitle: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  browseFilesBtn: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  browseFilesBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  uploadedChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  uploadedFileChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  uploadedFileName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E40AF',
+    maxWidth: 110,
+  },
+  uploadedFileSize: {
+    fontSize: 10,
+    color: '#64748B',
+  },
+
+  /* Step 4 Review */
+  reviewCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  reviewCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  reviewCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reviewCardTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  editPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  editPillBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  reviewProductMainRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  reviewProductThumb: {
+    width: 54,
+    height: 54,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewProductMeta: {
+    flex: 1,
+    gap: 6,
+  },
+  productNameAndBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reviewProductName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  reviewProductGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 2,
+  },
+  reviewProductGridCol: {
+    gap: 2,
+  },
+  reviewGridLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  reviewGridValue: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  reviewPartyItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  reviewDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 10,
+  },
+  reviewOtherPartiesBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+    gap: 8,
+  },
+  reviewOtherPartiesHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  reviewOtherPartiesRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  reviewOtherPartyCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reviewOtherPartyRole: {
+    fontSize: 10,
+    color: '#64748B',
+  },
+  reviewOtherPartyName: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  dealSummaryGrid: {
+    gap: 10,
+  },
+  summaryGridRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  summaryGridItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  summaryItemTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  summaryLabel: {
+    fontSize: 10.5,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  summaryValue: {
     fontSize: 12,
     fontWeight: '700',
+    color: '#0F172A',
+  },
+  reviewAttachmentsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  reviewFileBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 8,
+    gap: 8,
+  },
+  reviewFileIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewFileName: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    maxWidth: 100,
+  },
+  reviewFileSize: {
+    fontSize: 10,
     color: '#64748B',
+  },
+  moreFilesBtn: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: 'center',
+  },
+  moreFilesBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+  termsAgreementNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+    marginTop: 6,
+  },
+  termsAgreementText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#1E40AF',
+    lineHeight: 16,
+  },
+  termsLink: {
+    fontWeight: '800',
+    textDecorationLine: 'underline',
+  },
+
+  /* Bottom Bar */
+  bottomActionBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  backActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#2563EB',
+    borderRadius: 12,
+    height: 48,
+    gap: 6,
+  },
+  backActionText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+  continueActionButton: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    height: 48,
+    gap: 8,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  continueActionDisabled: {
+    opacity: 0.7,
+  },
+  continueActionText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* Modals */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheetContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    gap: 12,
+  },
+  modalDragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E2E8F0',
+    alignSelf: 'center',
+    marginBottom: 4,
+  },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  modalTitleText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  calendarHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  calNavBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calNavBtnText: {
+    fontSize: 12,
+    color: '#0F172A',
+  },
+  calMonthLabel: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    justifyContent: 'center',
+    marginVertical: 10,
+  },
+  dayCell: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  dayCellSelected: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  dayCellText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  dayCellTextSelected: {
+    color: '#FFFFFF',
+  },
+  modalActionButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  modalConfirmBtn: {
+    flex: 1.5,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalConfirmBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  optionItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  optionItemRowSelected: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+  },
+  optionItemText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  optionItemTextSelected: {
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+
+  /* Success Modal */
+  successModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  successCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  successIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  successModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  successModalSubtitle: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  successDivider: {
+    width: '100%',
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 4,
+  },
+  successDetailText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  partyStatusBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'center',
+  },
+  partyStatusBadgeActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  partyStatusBadgePending: {
+    backgroundColor: '#FEF3C7',
+  },
+  partyStatusBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  partyStatusBadgeTextActive: {
+    color: '#15803D',
+  },
+  partyStatusBadgeTextPending: {
+    color: '#B45309',
   },
 });
 

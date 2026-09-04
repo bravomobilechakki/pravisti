@@ -34,15 +34,15 @@ import {
 import { createCompany, getIndustries } from '../../../services/api';
 
 const COLORS = {
-  primaryDark: '#3465EA', // Cobalt Royal Blue Header
-  headerMiddle: '#2554D7',
-  headerEnd: '#1E46C6',
-  primary: '#3465EA',     // Accent
-  primaryLight: '#EEF2FF',
+  primaryDark: '#2327D8',   // Royal Blue (Login & Signup Theme)
+  headerMiddle: '#1B1FA7',  // Hover Blue
+  headerEnd: '#1E1C38',     // Dark Navy
+  primary: '#2327D8',       // Accent Royal Blue
+  primaryLight: '#EEF2FE',
   primaryBorder: '#C7D2FE',
-  cyan: '#06B6D4',
-  indigo: '#6366F1',
-  indigoLight: '#EEF2FF',
+  cyan: '#2327D8',
+  indigo: '#1E1C38',
+  indigoLight: '#EEF2FE',
   success: '#059669',
   successDark: '#15803D',
   successLight: '#DCFCE7',
@@ -50,9 +50,9 @@ const COLORS = {
   textSecondary: '#475569',
   textMuted: '#64748B',
   textPlaceholder: '#94A3B8',
-  bgMain: '#F0F9FF',
+  bgMain: '#F4F6FB',        // Login & Signup background
   cardBg: '#FFFFFF',
-  border: '#E0F2FE',
+  border: '#E2E8F0',
 };
 
 const FIRM_TYPES = [
@@ -211,12 +211,12 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0C4A6E" />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        {/* ─── HERO HEADER SECTION (Broker Dashboard Theme) ─── */}
+        {/* ─── HERO HEADER SECTION ─── */}
         <View style={styles.heroHeader}>
           <View style={styles.topNavRow}>
             <TouchableOpacity
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
   heroHeader: {
     backgroundColor: COLORS.primaryDark,
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 18 : 6,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 24) : 12,
     paddingBottom: 20,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,

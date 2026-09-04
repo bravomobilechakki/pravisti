@@ -7,11 +7,11 @@ import { getUserProfile, getPendingVerificationStatus } from './src/services/api
 import Login from './src/components/login/login';
 import Signup from './src/components/login/Signup';
 import ChooseIndustry from './src/components/login/ChooseIndustry';
-import Footer from './src/components/footer/footer';
 import {
   Dashboard,
   AddCompany,
   CompanyDetails,
+  CompanyProfileDetails,
   DealsList,
   CreateDeal,
   DealDetails,
@@ -22,6 +22,9 @@ import {
   ContactPicker,
   CategoryPage,
   AddProductPage,
+
+
+
   TransactionHistory,
   OnboardedUsers,
 } from './src/components/trader';
@@ -46,6 +49,7 @@ const ChooseIndustryScreen = ChooseIndustry as any;
 const DashboardScreen = Dashboard as any;
 const AddCompanyScreen = AddCompany as any;
 const CompanyDetailsScreen = CompanyDetails as any;
+const CompanyProfileDetailsScreen = CompanyProfileDetails as any;
 const DealsListScreen = DealsList as any;
 const CreateDealScreen = CreateDeal as any;
 const DealDetailsScreen = DealDetails as any;
@@ -162,32 +166,6 @@ function App() {
 
   const replaceScreen = (screen: string, data = {}) => {
     setNavigationStack([{ screen, data }]);
-  };
-
-  const navigateTab = (screen: string) => {
-    const userData = current?.data?.user || {};
-    const isBroker = checkIsUserBroker(userData, current?.data?.role);
-
-    let targetScreen = screen;
-    if (screen === 'Dashboard' || screen === 'BrokerDashboard') {
-      targetScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
-    } else if (screen === 'Profile' || screen === 'BrokerProfile') {
-      targetScreen = isBroker ? 'BrokerProfile' : 'Profile';
-    } else if (screen === 'AddCompany' || screen === 'BrokerAddCompany') {
-      targetScreen = isBroker ? 'BrokerAddCompany' : 'AddCompany';
-    }
-
-    const homeScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
-    const activeData = { ...current?.data, user: userData, role: isBroker ? 'Broker' : 'Trader' };
-
-    if (targetScreen === homeScreen) {
-      setNavigationStack([{ screen: homeScreen, data: activeData }]);
-    } else {
-      setNavigationStack([
-        { screen: homeScreen, data: activeData },
-        { screen: targetScreen, data: activeData }
-      ]);
-    }
   };
 
   const popScreen = React.useCallback(() => {
@@ -335,6 +313,8 @@ function App() {
         ) : (
           <CompanyDetailsScreen onNavigate={onNavigate} routeData={data} />
         );
+      case 'CompanyProfileDetails':
+        return <CompanyProfileDetailsScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerCompanyDetails':
         return <BrokerCompanyDetailsScreen onNavigate={onNavigate} routeData={data} />;
       case 'DealsList':
@@ -406,16 +386,12 @@ function App() {
     }
   };
 
-  const showFooter = current ? ['Dashboard', 'BrokerDashboard', 'MyCompanies', 'Notifications', 'Profile', 'BrokerProfile'].includes(current.screen) : false;
   const isAuthScreen = current && !['Login', 'Signup', 'ChooseIndustry', 'VoicePreferences'].includes(current.screen);
 
   return (
     <SafeAreaProvider>
       <View style={styles.container}>
         {renderScreen()}
-        {showFooter && current && (
-          <Footer onNavigate={navigateTab} activeScreen={current.screen} isBroker={isBrokerUser} />
-        )}
         {isAuthScreen && (
           <FloatingVoiceAssistant
             currentScreen={current.screen}

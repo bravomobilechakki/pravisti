@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
     height: 44,
   },
   searchInput: {
-    flex: 1,  
+    flex: 1,
     fontSize: 13,
     fontWeight: '600',
     color: COLORS.navy,

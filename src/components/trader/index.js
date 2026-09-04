@@ -1,6 +1,7 @@
 import TraderDashboard from './dashboard/TraderDashboard';
 import AddCompany from './dashboard/AddCompany';
 import CompanyDetails from './dashboard/CompanyDetails';
+import CompanyProfileDetails from './dashboard/CompanyProfileDetails';
 import CategoryPage from './dashboard/CategoryPage';
 import AddProductPage from './dashboard/AddProductPage';
 import Profile from './profile/Profile';
@@ -21,6 +22,7 @@ export {
   TraderDashboard,
   AddCompany,
   CompanyDetails,
+  CompanyProfileDetails,
   CategoryPage,
   AddProductPage,
   Profile,

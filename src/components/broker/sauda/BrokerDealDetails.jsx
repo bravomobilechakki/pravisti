@@ -50,7 +50,6 @@ import {
   recreateExpiredDeal,
   deleteDeal,
 } from '../../../services/api';
-import Footer from '../../footer/footer';
 
 const BrokerDealDetails = ({ onNavigate, routeData }) => {
   const passedDeal = routeData?.deal || {};
@@ -850,8 +849,6 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
         )}
 
       </ScrollView>
-
-      <Footer onNavigate={onNavigate} activeScreen="BrokerDealDetails" isBroker={true} />
     </SafeAreaView>
   );
 };
@@ -903,7 +900,7 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     padding: 16,
-    paddingBottom: 120,
+    paddingBottom: 36,
     gap: 14,
   },
 

@@ -274,7 +274,7 @@ class VoiceService {
       if (selectedVoice && selectedVoice.id) {
         this.selectedVoiceId = selectedVoice.id;
         await Tts.setDefaultVoice(selectedVoice.id);
-        const voiceLang = selectedVoice.language || 'hi-IN';
+        const voiceLang = selectedVoice.language || this.currentLanguage || 'en-IN';
         try {
           await Tts.setDefaultLanguage(voiceLang);
         } catch { }
@@ -292,6 +292,7 @@ class VoiceService {
     const normalized = normalizeTtsLanguage(ttsLanguage);
     if (!normalized) return;
 
+    this.currentLanguage = normalized;
     const langPrefix = normalized.split('-')[0]; // e.g. 'gu', 'ta', 'te', 'hi', 'en', 'kn', 'mr', 'bn'
 
     try {
@@ -342,9 +343,13 @@ class VoiceService {
         await Tts.setDefaultLanguage(normalized);
       } catch {
         try {
-          await Tts.setDefaultLanguage(langPrefix);
-        } catch (e) {
-          console.warn(`TTS setDefaultLanguage (${normalized}) notice:`, e?.message || e);
+          await Tts.setDefaultLanguage(normalized.replace('-', '_'));
+        } catch {
+          try {
+            await Tts.setDefaultLanguage(langPrefix);
+          } catch (e) {
+            console.warn(`TTS setDefaultLanguage (${normalized}) notice:`, e?.message || e);
+          }
         }
       }
     } catch (err) {
@@ -368,6 +373,9 @@ class VoiceService {
       if (config.voicePreset || config.voiceId) {
         await this.applyBestIndianVoice(config.voicePreset, config.voiceId);
       }
+      if (config.language || config.ttsLanguage) {
+        await this.applyDynamicTtsLanguage(config.ttsLanguage || config.language);
+      }
       return;
     }
 
@@ -385,17 +393,22 @@ class VoiceService {
       await Tts.setDefaultRate(this.speechRate || 0.50, false);
       await Tts.setDefaultPitch(this.pitch || 1.0);
 
-      // Set default Indian language
+      // Set dynamic language
+      const initLang = this.currentLanguage || 'en-IN';
       try {
-        await Tts.setDefaultLanguage('hi-IN');
+        await Tts.setDefaultLanguage(initLang);
       } catch {
         try {
           await Tts.setDefaultLanguage('en-IN');
         } catch { }
       }
 
-      // Apply best Indian voice
-      await this.applyBestIndianVoice(this.voicePreset, this.selectedVoiceId);
+      // Apply matching voice
+      if (config.language || config.ttsLanguage) {
+        await this.applyDynamicTtsLanguage(config.ttsLanguage || config.language || initLang);
+      } else {
+        await this.applyBestIndianVoice(this.voicePreset, this.selectedVoiceId);
+      }
 
       Tts.addEventListener('tts-start', () => {
         this.isSpeaking = true;
@@ -469,8 +482,8 @@ class VoiceService {
 
       await this.initTts(opts);
 
-      // Dynamically switch TTS language & voice if ttsLanguage or language metadata passed
-      const targetTtsLang = opts.ttsLanguage || opts.language || null;
+      // Dynamically switch TTS language & voice based on target language
+      const targetTtsLang = opts.ttsLanguage || opts.language || this.currentLanguage || 'hi-IN';
       if (targetTtsLang) {
         await this.applyDynamicTtsLanguage(targetTtsLang, opts.voicePreset || this.voicePreset);
       }
@@ -590,16 +603,24 @@ class VoiceService {
       await new Promise((resolve) => setTimeout(resolve, 120));
 
       const selectedLang = lang || this.currentLanguage || 'en-IN';
+      const baseCode = selectedLang.split('-')[0];
 
       try {
         await Voice.start(selectedLang, {
           EXTRA_LANGUAGE_MODEL: 'LANGUAGE_MODEL_FREE_FORM',
           EXTRA_MAX_RESULTS: 5,
           EXTRA_PARTIAL_RESULTS: true,
+          EXTRA_LANGUAGE: selectedLang,
+          EXTRA_LANGUAGE_PREFERENCE: selectedLang,
+          EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE: selectedLang,
         });
       } catch (startErr) {
         console.warn('Retrying Voice.start with simple locale:', startErr);
-        await Voice.start(selectedLang);
+        try {
+          await Voice.start(selectedLang);
+        } catch {
+          await Voice.start(baseCode);
+        }
       }
 
       this.isListening = true;

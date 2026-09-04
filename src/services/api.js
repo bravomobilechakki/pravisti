@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SummaryApi from '../common';
+import { contactsInGroup } from 'react-native-contacts';
 
 const handleResponse = async (response) => {
   const text = await response.text();
@@ -1130,12 +1131,12 @@ export const getBrokerMyDeals = async (companyId = null, token = null) => {
  */
 export const processVoiceCommand = async (payload, token = null) => {
   try {
-    const body = typeof payload === 'string' ? { query: payload, text: payload, sessionId: null, language: 'hi-IN' } : {
+    const body = typeof payload === 'string' ? { query: payload, text: payload, sessionId: null, language: 'en-IN' } : {
       ...payload,
       query: payload.query || payload.text,
       text: payload.text || payload.query,
       sessionId: payload.sessionId || null,
-      language: payload.language || 'hi-IN',
+      language: payload.language || 'en-IN',
     };
     return await postRequest(SummaryApi.processVoiceCommand, body, token);
   } catch (error) {
@@ -1143,7 +1144,6 @@ export const processVoiceCommand = async (payload, token = null) => {
     throw error;
   }
 };
-
 /**
  * Get user voice preferences & phrases
  * Endpoint: GET /api/v1/voice/preferences

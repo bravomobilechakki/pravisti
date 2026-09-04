@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -12,6 +12,10 @@ import {
   ScrollView,
   SafeAreaView,
   FlatList,
+  Platform,
+  KeyboardAvoidingView,
+  StatusBar,
+  RefreshControl,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
@@ -20,13 +24,24 @@ import {
   Plus,
   Tag,
   ChevronDown,
+  ChevronUp,
   Edit3,
   Trash2,
-  Handshake,
   Camera,
   Check,
   X,
   Search,
+  SlidersHorizontal,
+  MoreVertical,
+  Package,
+  CheckCircle2,
+  PauseCircle,
+  Filter,
+  ChevronRight,
+  ShoppingBag,
+  Info,
+  FileText,
+  Layers,
 } from 'lucide-react-native';
 import {
   getCategories,
@@ -39,15 +54,17 @@ import {
 } from '../../../services/api';
 
 let DYNAMIC_UNIT_MAPPING = {
-  'bale': '6a0c118913e627687603da11',
-  'ton': '6a0c118913e627687603da12',
-  'quintal': '6a0c118913e627687603da13',
-  'kg': '6a0eac4cd59663585920f09c',
-  'kilogram': '6a0eac4cd59663585920f09c',
-  'litre': '6a0c118913e627687603da15',
-  'meter': '6a0c118913e627687603da16',
-  'candy': '6a0c118913e627687603da17',
-  'piece': '6a0c118913e627687603da18',
+  bale: '6a0c118913e627687603da11',
+  ton: '6a0c118913e627687603da12',
+  quintal: '6a0c118913e627687603da13',
+  kg: '6a0eac4cd59663585920f09c',
+  kilogram: '6a0eac4cd59663585920f09c',
+  litre: '6a0c118913e627687603da15',
+  meter: '6a0c118913e627687603da16',
+  candy: '6a0c118913e627687603da17',
+  piece: '6a0c118913e627687603da18',
+  bag: '6a0c118913e627687603da19',
+  tin: '6a0c118913e627687603da20',
 };
 
 const getUnitId = (unitName) => {
@@ -56,22 +73,24 @@ const getUnitId = (unitName) => {
 };
 
 const getUnitName = (unitId) => {
-  if (!unitId) return 'Bale';
+  if (!unitId) return 'Bag';
   if (typeof unitId === 'object') {
-    return unitId.shortName || unitId.name || 'Bale';
+    return unitId.shortName || unitId.name || 'Bag';
   }
   const entry = Object.entries(DYNAMIC_UNIT_MAPPING).find(([_, id]) => id === unitId);
-  return entry ? entry[0].charAt(0).toUpperCase() + entry[0].slice(1) : 'Bale';
+  return entry ? entry[0].charAt(0).toUpperCase() + entry[0].slice(1) : 'Bag';
 };
 
 const getProductUnitText = (prod) => {
-  if (!prod) return 'Bale';
+  if (!prod) return 'Bag';
   if (prod.unit) return prod.unit;
   if (prod.unitId && typeof prod.unitId === 'object') {
-    return prod.unitId.shortName || prod.unitId.name || 'Bale';
+    return prod.unitId.shortName || prod.unitId.name || 'Bag';
   }
   return getUnitName(prod.unitId);
 };
+
+
 
 const AddProductPage = ({ onNavigate, routeData }) => {
   const [categories, setCategories] = useState([]);
@@ -79,19 +98,28 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   const [products, setProducts] = useState([]);
   const [units, setUnits] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
-  // Modal Visibility
+  // Search & Filter & Sort state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilterStatus, setSelectedFilterStatus] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE' | 'OUT_OF_STOCK'
+  const [sortOrder, setSortOrder] = useState('DEFAULT'); // 'DEFAULT' | 'NAME_ASC' | 'PRICE_ASC' | 'PRICE_DESC'
+
+  // Modals
+  const [expandedProductId, setExpandedProductId] = useState(null);
   const [isProductModalVisible, setIsProductModalVisible] = useState(false);
   const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
   const [isSubcategoryPickerVisible, setIsSubcategoryPickerVisible] = useState(false);
   const [isUnitPickerVisible, setIsUnitPickerVisible] = useState(false);
+  const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
+  const [actionSheetProduct, setActionSheetProduct] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Edit State
-  const [editingProduct, setEditingProduct] = useState(null); // null means creating
+  // Editing state
+  const [editingProduct, setEditingProduct] = useState(null);
 
   // Form State
   const [productForm, setProductForm] = useState({
@@ -100,8 +128,10 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     categoryName: '',
     subcategoryId: '',
     subcategoryName: '',
-    unit: '',
+    unit: 'Bag',
     unitId: '',
+    price: '',
+    stock: '',
     image: '',
     description: '',
     hsnCode: '',
@@ -109,35 +139,27 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     status: 'active',
   });
 
-  const themeColor = '#4F46E5';
-
   // Fetch Category and Product Data
   const fetchData = useCallback(async () => {
-    setIsLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
+      const companyId = routeData?.company?._id || routeData?.company?.id;
 
       // Load Categories
-      let fetchedCategories = [];
       try {
-        const companyId = routeData?.company?._id || routeData?.company?.id;
         const catRes = await getCategories(companyId, token);
         if (catRes && catRes.success) {
-          fetchedCategories = catRes.data || [];
-          setCategories(fetchedCategories);
+          setCategories(catRes.data || []);
         }
       } catch (catErr) {
         console.warn('Failed to fetch categories:', catErr);
       }
 
       // Load Subcategories
-      let fetchedSubcategories = [];
       try {
-        const companyId = routeData?.company?._id || routeData?.company?.id;
         const subRes = await getSubCategories(companyId, token);
         if (subRes && subRes.success) {
-          fetchedSubcategories = subRes.data || [];
-          setSubcategories(fetchedSubcategories);
+          setSubcategories(subRes.data || []);
         }
       } catch (subErr) {
         console.warn('Failed to fetch subcategories:', subErr);
@@ -149,14 +171,9 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         if (unitRes && unitRes.success && unitRes.data) {
           const fetchedUnits = unitRes.data || [];
           setUnits(fetchedUnits);
-          // Populate dynamic unit mapping
-          fetchedUnits.forEach(u => {
-            if (u.shortName) {
-              DYNAMIC_UNIT_MAPPING[u.shortName.toLowerCase()] = u._id;
-            }
-            if (u.name) {
-              DYNAMIC_UNIT_MAPPING[u.name.toLowerCase()] = u._id;
-            }
+          fetchedUnits.forEach((u) => {
+            if (u.shortName) DYNAMIC_UNIT_MAPPING[u.shortName.toLowerCase()] = u._id;
+            if (u.name) DYNAMIC_UNIT_MAPPING[u.name.toLowerCase()] = u._id;
           });
         }
       } catch (unitErr) {
@@ -165,13 +182,13 @@ const AddProductPage = ({ onNavigate, routeData }) => {
 
       // Load Products
       try {
-        const companyId = routeData?.company?._id || routeData?.company?.id;
         const prodRes = await getProducts(companyId, token);
         if (prodRes && prodRes.success) {
-          const mapped = (prodRes.data || []).map(p => ({
+          const mapped = (prodRes.data || []).map((p) => ({
             ...p,
             unit: getProductUnitText(p),
-            price: p.price || 0,
+            price: p.price !== undefined ? p.price : 0,
+            stock: p.stock !== undefined ? p.stock : (p.quantity !== undefined ? p.quantity : 0),
           }));
           setProducts(mapped);
         } else {
@@ -183,49 +200,37 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       }
     } catch (error) {
       console.error('Fetch error:', error);
-      Alert.alert('Error', 'Unable to fetch categories or products.');
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   }, [routeData?.company?._id, routeData?.company?.id]);
-
-  // Auto-open modal if navigated from subcategory '➕ Product'
-  useEffect(() => {
-    if (routeData?.prefillProduct) {
-      setProductForm(prev => ({
-        ...prev,
-        unit: prev.unit || 'Bale',
-        status: prev.status || 'active',
-        ...routeData.prefillProduct
-      }));
-      setIsProductModalVisible(true);
-    }
-  }, [routeData?.prefillProduct]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData();
+  }, [fetchData]);
+
   // Image Selection
   const handleImagePick = () => {
-    Alert.alert(
-      'Select Image Source',
-      'Choose how you would like to select your product image:',
-      [
-        {
-          text: 'Take Photo (Camera)',
-          onPress: () => launchImagePicker('camera'),
-        },
-        {
-          text: 'Choose from Gallery',
-          onPress: () => launchImagePicker('gallery'),
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
+    Alert.alert('Select Image Source', 'Choose how you would like to select your product image:', [
+      {
+        text: 'Take Photo (Camera)',
+        onPress: () => launchImagePicker('camera'),
+      },
+      {
+        text: 'Choose from Gallery',
+        onPress: () => launchImagePicker('gallery'),
+      },
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+    ]);
   };
 
   const launchImagePicker = (sourceType) => {
@@ -242,7 +247,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       }
       if (response.assets && response.assets.length > 0) {
         const selectedUri = response.assets[0].uri;
-        setProductForm(prev => ({ ...prev, image: selectedUri }));
+        setProductForm((prev) => ({ ...prev, image: selectedUri }));
       }
     };
 
@@ -253,21 +258,11 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     }
   };
 
-  // Get Products for a Specific Category
-  const getProductsForCategory = (catId) => {
-    return products.filter(prod => {
-      const prodCatId = prod.categoryId?._id || prod.categoryId?.id || prod.categoryId;
-      const belongs = String(prodCatId || '') === String(catId);
-      const matchesSearch = String(prod.name || '').toLowerCase().includes(searchQuery.toLowerCase());
-      return belongs && matchesSearch;
-    });
-  };
-
   // Open creation modal
   const openAddProduct = () => {
     setEditingProduct(null);
-    const defaultUnit = units[0] ? (units[0].shortName || units[0].name) : 'Bale';
-    const defaultUnitId = units[0] ? units[0]._id : getUnitId('Bale');
+    const defaultUnit = units[0] ? units[0].shortName || units[0].name : 'Bag';
+    const defaultUnitId = units[0] ? units[0]._id : getUnitId('Bag');
     setProductForm({
       name: '',
       categoryId: categories[0]?._id || '',
@@ -276,6 +271,8 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       subcategoryName: '',
       unit: defaultUnit,
       unitId: defaultUnitId,
+      price: '',
+      stock: '',
       image: '',
       description: '',
       hsnCode: '',
@@ -289,9 +286,15 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   const openEditProduct = (prod) => {
     setEditingProduct(prod);
     const prodCatId = prod.categoryId?._id || prod.categoryId?.id || prod.categoryId;
-    const prodSubCatId = prod.subCategoryId?._id || prod.subCategoryId?.id || prod.subCategoryId || prod.subcategoryId?._id || prod.subcategoryId?.id || prod.subcategoryId;
-    const cat = categories.find(c => String(c._id) === String(prodCatId));
-    const sub = subcategories.find(s => String(s._id) === String(prodSubCatId));
+    const prodSubCatId =
+      prod.subCategoryId?._id ||
+      prod.subCategoryId?.id ||
+      prod.subCategoryId ||
+      prod.subcategoryId?._id ||
+      prod.subcategoryId?.id ||
+      prod.subcategoryId;
+    const cat = categories.find((c) => String(c._id) === String(prodCatId));
+    const sub = subcategories.find((s) => String(s._id) === String(prodSubCatId));
 
     const unitName = prod.unit || getProductUnitText(prod);
     const unitId = prod.unitId?._id || prod.unitId?.id || prod.unitId || getUnitId(unitName);
@@ -299,11 +302,13 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     setProductForm({
       name: prod.name,
       categoryId: prodCatId || '',
-      categoryName: cat ? cat.name : '',
+      categoryName: cat ? cat.name : typeof prod.categoryId === 'object' ? prod.categoryId?.name : '',
       subcategoryId: prodSubCatId || '',
-      subcategoryName: sub ? sub.name : '',
+      subcategoryName: sub ? sub.name : typeof prod.subCategoryId === 'object' ? prod.subCategoryId?.name : '',
       unit: unitName,
       unitId: unitId,
+      price: prod.price !== undefined ? String(prod.price) : '',
+      stock: prod.stock !== undefined ? String(prod.stock) : (prod.quantity !== undefined ? String(prod.quantity) : ''),
       image: prod.image || '',
       description: prod.description || '',
       hsnCode: prod.hsnCode || '',
@@ -338,6 +343,8 @@ const AddProductPage = ({ onNavigate, routeData }) => {
 
       if (productForm.subcategoryId) payload.subCategoryId = productForm.subcategoryId;
       if (productForm.image) payload.image = productForm.image;
+      if (productForm.price) payload.price = Number(productForm.price);
+      if (productForm.stock !== undefined) payload.stock = Number(productForm.stock);
       if (productForm.description) payload.description = productForm.description;
       if (productForm.hsnCode) payload.hsnCode = productForm.hsnCode;
       if (productForm.gstCode) payload.gstCode = productForm.gstCode;
@@ -351,23 +358,17 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       }
 
       if (response && response.success) {
-        setSuccessMessage(editingProduct ? 'Product updated successfully!' : 'Product created successfully!');
-
-        // Close the form modal first to avoid native modal collision
+        setSuccessMessage(editingProduct ? 'Product updated successfully!' : 'Product added successfully!');
+        setShowSuccessModal(true);
         setIsProductModalVisible(false);
-
-        // Show success modal after slide-down transition completes
-        setTimeout(() => {
-          setShowSuccessModal(true);
-          setTimeout(() => setShowSuccessModal(false), 2200);
-        }, 450);
-
         fetchData();
+        setTimeout(() => setShowSuccessModal(false), 2000);
       } else {
-        Alert.alert('Error', response?.message || 'Unable to complete operation.');
+        Alert.alert('Error', response?.message || 'Failed to save product');
       }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Something went wrong.');
+      console.error('Save error:', error);
+      Alert.alert('Error', error.message || 'An error occurred while saving.');
     } finally {
       setIsSaving(false);
     }
@@ -375,1096 +376,1524 @@ const AddProductPage = ({ onNavigate, routeData }) => {
 
   // Delete Product
   const handleDeleteProduct = (prod) => {
-    const prodId = prod._id || prod.id;
-    Alert.alert(
-      'Delete Product',
-      `Are you sure you want to delete "${prod.name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              const token = await AsyncStorage.getItem('userToken');
-              const companyId = routeData?.company?._id || routeData?.company?.id;
-              const response = await deleteProduct(prodId, companyId, token);
-
-              if (response && response.success) {
-                setSuccessMessage('Product deleted successfully!');
-                setShowSuccessModal(true);
-                setTimeout(() => setShowSuccessModal(false), 2500);
-                fetchData();
-              } else {
-                Alert.alert('Error', response?.message || 'Unable to delete product.');
-              }
-            } catch (error) {
-              Alert.alert('Error', error.message || 'Something went wrong.');
-            } finally {
-              setIsLoading(false);
+    Alert.alert('Delete Product', `Are you sure you want to delete "${prod.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const token = await AsyncStorage.getItem('userToken');
+            const companyId = routeData?.company?._id || routeData?.company?.id;
+            const res = await deleteProduct(prod._id || prod.id, companyId, token);
+            if (res && res.success) {
+              fetchData();
+            } else {
+              Alert.alert('Error', res?.message || 'Failed to delete product');
             }
-          },
+          } catch (e) {
+            Alert.alert('Error', e.message || 'Failed to delete');
+          }
         },
-      ]
-    );
-  };
-
-  // Navigate to Sauda Creation Screen pre-filled
-  const handleInitiateSauda = (prod) => {
-    onNavigate('CreateDeal', {
-      prefill: {
-        product: prod.name,
-        price: '',
-        description: prod.description || '',
       },
-      originCompany: routeData?.company
-    });
+    ]);
   };
 
-  // Get matching subcategories based on chosen category
-  const filteredSubcategories = (() => {
-    const seen = new Set();
-    return subcategories.filter(sub => {
-      const subId = sub._id || sub.id;
-      if (!subId || seen.has(String(subId))) {
-        return false;
+  // Toggle Product Status (Active / Inactive)
+  const handleToggleStatus = async (prod) => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const companyId = routeData?.company?._id || routeData?.company?.id;
+      const nextStatus = prod.status === 'active' ? 'inactive' : 'active';
+      const res = await updateProduct(prod._id || prod.id, companyId, { status: nextStatus }, token);
+      if (res && res.success) {
+        fetchData();
       }
-      seen.add(String(subId));
-      const subCatId = sub.categoryId?._id || sub.categoryId?.id || sub.categoryId;
-      return String(subCatId) === String(productForm.categoryId);
-    });
-  })();
+    } catch (e) {
+      console.warn('Failed to toggle status:', e);
+    }
+  };
+
+  // Summary Metrics calculations
+  const totalCount = products.length;
+  const activeCount = useMemo(() => products.filter((p) => p.status !== 'inactive').length, [products]);
+  const inactiveCount = useMemo(() => products.filter((p) => p.status === 'inactive').length, [products]);
+  const outOfStockCount = useMemo(() => products.filter((p) => Number(p.stock || 0) === 0).length, [products]);
+
+  // Filter and Sort Products
+  const filteredProducts = useMemo(() => {
+    let list = [...products];
+
+    // Search query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((p) => {
+        const nameMatch = String(p.name || '').toLowerCase().includes(q);
+        const catMatch = typeof p.categoryId === 'object' && p.categoryId?.name?.toLowerCase().includes(q);
+        return nameMatch || catMatch;
+      });
+    }
+
+    // Status filter
+    if (selectedFilterStatus === 'ACTIVE') {
+      list = list.filter((p) => p.status !== 'inactive');
+    } else if (selectedFilterStatus === 'INACTIVE') {
+      list = list.filter((p) => p.status === 'inactive');
+    } else if (selectedFilterStatus === 'OUT_OF_STOCK') {
+      list = list.filter((p) => Number(p.stock || 0) === 0);
+    }
+
+    // Sort order
+    if (sortOrder === 'NAME_ASC') {
+      list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    } else if (sortOrder === 'PRICE_ASC') {
+      list.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+    } else if (sortOrder === 'PRICE_DESC') {
+      list.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+    }
+
+    return list;
+  }, [products, searchQuery, selectedFilterStatus, sortOrder]);
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* HEADER */}
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* ─── 1. TOP NAVIGATION BAR ─── */}
       <View style={styles.header}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.headerBackBtn}
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={20} color="#0F172A" />
+          <ArrowLeft size={22} color="#1541D8" strokeWidth={2.4} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Trading Inventory</Text>
-        <View style={{ width: 40 }} />
-      </View>
 
-      {/* SEARCH BAR */}
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search products by name..."
-          placeholderTextColor="#94A3B8"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
+        <Text style={styles.headerTitle}>Products</Text>
 
-      {isLoading ? (
-        <View style={styles.loaderContainer}>
-          <ActivityIndicator size="large" color={themeColor} />
-          <Text style={styles.loaderText}>Loading Products...</Text>
+        <View style={styles.headerRightActions}>
+          {/* Search Toggle Button */}
+          <TouchableOpacity
+            style={styles.headerActionBtn}
+            onPress={() => setIsSearchOpen((prev) => !prev)}
+            activeOpacity={0.75}
+          >
+            <Search size={18} color="#2563EB" strokeWidth={2.2} />
+          </TouchableOpacity>
+
+          {/* Filter Pill Button */}
+          <TouchableOpacity
+            style={[styles.filterBtn, selectedFilterStatus !== 'ALL' && styles.filterBtnActive]}
+            onPress={() => setIsFilterModalVisible(true)}
+            activeOpacity={0.75}
+          >
+            <Filter size={14} color="#2563EB" strokeWidth={2.2} />
+            <Text style={styles.filterBtnText}>Filter</Text>
+          </TouchableOpacity>
+
+          {/* + Add Product Blue Button */}
+          <TouchableOpacity
+            style={styles.addProductHeaderBtn}
+            onPress={openAddProduct}
+            activeOpacity={0.85}
+          >
+            <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
+            <Text style={styles.addProductHeaderBtnText}>Add Product</Text>
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={products.filter(p => String(p.name || '').toLowerCase().includes(searchQuery.toLowerCase()))}
-          keyExtractor={(item, index) => item._id || item.id || String(index)}
-          contentContainerStyle={styles.scrollContent}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Tag size={48} color="#94A3B8" style={{ marginBottom: 12 }} />
-              <Text style={styles.emptyTitle}>No Products Found</Text>
-              <Text style={styles.emptySubtitle}>
-                You haven't added any products yet, or none match your search.
-              </Text>
-            </View>
-          }
-          renderItem={({ item: prod }) => {
-            const prodCatId = prod.categoryId?._id || prod.categoryId?.id || prod.categoryId;
-            const prodSubCatId = prod.subCategoryId?._id || prod.subCategoryId?.id || prod.subCategoryId || prod.subcategoryId?._id || prod.subcategoryId?.id || prod.subcategoryId;
-            const cat = categories.find(c => String(c._id) === String(prodCatId));
-            const sub = subcategories.find(s => String(s._id) === String(prodSubCatId));
-            const categoryName = cat ? cat.name : 'Uncategorized';
-            const subName = sub ? sub.name : '';
+      </View>
 
-            return (
-              <View style={styles.productCard}>
-                {/* Compact Floating Trading Unit Badge */}
-                <View style={styles.unitBadgeCompact}>
-                  <Text style={styles.unitBadgeTextCompact}>{prod.unit || 'Bale'}</Text>
-                </View>
-
-                {/* Product Image & Main Info */}
-                <View style={styles.productCardHeader}>
-                  <View style={styles.imageContainer}>
-                    <Image
-                      source={{ uri: prod.image || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d' }}
-                      style={styles.productImageLarge}
-                      resizeMode="cover"
-                    />
-                    <View style={[
-                      styles.imageStatusIndicator,
-                      { backgroundColor: prod.status === 'active' ? '#10B981' : '#64748B' }
-                    ]} />
-                  </View>
-
-                  <View style={styles.productMainDetails}>
-                    <Text style={styles.productTitle} numberOfLines={1}>{prod.name}</Text>
-
-                    <View style={styles.badgeRow}>
-                      <View style={[styles.categoryBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                        <Tag size={10} color="#4F46E5" />
-                        <Text style={styles.categoryBadgeText}>{categoryName}</Text>
-                      </View>
-                      {subName ? (
-                        <View style={styles.subcategoryBadge}>
-                          <Text style={styles.subcategoryBadgeText}>↳ {subName}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-
-                    {/* Metadata Badges: HSN & GST */}
-                    <View style={[styles.badgeRow, { marginTop: 2 }]}>
-                      {prod.hsnCode ? (
-                        <View style={styles.hsnBadge}>
-                          <Text style={styles.hsnText}>
-                            HSN: {prod.hsnCode}
-                          </Text>
-                        </View>
-                      ) : null}
-
-                      {prod.gstCode ? (
-                        <View style={styles.gstBadge}>
-                          <Text style={styles.gstText}>
-                            GST: {prod.gstCode}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                </View>
-
-                <Text style={styles.productDescriptionText} numberOfLines={2}>
-                  {prod.description || 'No description provided.'}
-                </Text>
-
-                {/* Action Buttons */}
-                <View style={styles.productCardActions}>
-                  <TouchableOpacity
-                    style={styles.actionBtnEdit}
-                    onPress={() => openEditProduct(prod)}
-                    activeOpacity={0.7}
-                  >
-                    <Edit3 size={15} color="#475569" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.actionBtnDelete}
-                    onPress={() => handleDeleteProduct(prod)}
-                    activeOpacity={0.7}
-                  >
-                    <Trash2 size={15} color="#EF4444" />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.actionBtnSauda}
-                    onPress={() => handleInitiateSauda(prod)}
-                    activeOpacity={0.8}
-                  >
-                    <Handshake size={15} color="#FFFFFF" />
-                    <Text style={styles.actionTextSauda}>Start Sauda</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          }}
-        />
+      {/* Inline Search Bar */}
+      {isSearchOpen && (
+        <View style={styles.searchBarWrapper}>
+          <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search products or categories..."
+            placeholderTextColor="#94A3B8"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <X size={16} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
-      {/* PRODUCT FORM MODAL */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#1541D8']}
+            tintColor="#1541D8"
+          />
+        }
+      >
+        {/* ─── 2. TOP 4 SUMMARY METRIC CARDS (Exact Reference Match) ─── */}
+        <View style={styles.metricsRow}>
+          {/* 1. Total Products */}
+          <TouchableOpacity
+            style={[styles.metricCard, selectedFilterStatus === 'ALL' && styles.metricCardSelected]}
+            onPress={() => setSelectedFilterStatus('ALL')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.metricIconCircle, { backgroundColor: '#F5F3FF' }]}>
+              <Package size={18} color="#7C3AED" strokeWidth={2.2} />
+            </View>
+            <Text style={styles.metricLabel} numberOfLines={1}>
+              Total Products
+            </Text>
+            <Text style={styles.metricValue}>{totalCount}</Text>
+          </TouchableOpacity>
+
+          {/* 2. Active */}
+          <TouchableOpacity
+            style={[styles.metricCard, selectedFilterStatus === 'ACTIVE' && styles.metricCardSelected]}
+            onPress={() => setSelectedFilterStatus('ACTIVE')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.metricIconCircle, { backgroundColor: '#F0FDF4' }]}>
+              <CheckCircle2 size={18} color="#16A34A" strokeWidth={2.2} />
+            </View>
+            <Text style={styles.metricLabel} numberOfLines={1}>
+              Active
+            </Text>
+            <Text style={[styles.metricValue, { color: '#16A34A' }]}>{activeCount}</Text>
+          </TouchableOpacity>
+
+          {/* 3. Inactive */}
+          <TouchableOpacity
+            style={[styles.metricCard, selectedFilterStatus === 'INACTIVE' && styles.metricCardSelected]}
+            onPress={() => setSelectedFilterStatus('INACTIVE')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.metricIconCircle, { backgroundColor: '#FFF7ED' }]}>
+              <PauseCircle size={18} color="#EA580C" strokeWidth={2.2} />
+            </View>
+            <Text style={styles.metricLabel} numberOfLines={1}>
+              Inactive
+            </Text>
+            <Text style={[styles.metricValue, { color: '#EA580C' }]}>{inactiveCount}</Text>
+          </TouchableOpacity>
+
+          {/* 4. Categories */}
+          <TouchableOpacity
+            style={styles.metricCard}
+            onPress={() => onNavigate('CategoryPage')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.metricIconCircle, { backgroundColor: '#EFF6FF' }]}>
+              <Tag size={18} color="#2563EB" strokeWidth={2.2} />
+            </View>
+            <Text style={styles.metricLabel} numberOfLines={1}>
+              Categories
+            </Text>
+            <Text style={[styles.metricValue, { color: '#2563EB' }]}>{categories.length}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ─── 3. PRODUCTS LIST SECTION ─── */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>
+              Products ({filteredProducts.length})
+            </Text>
+
+            {/* Sort Toggle Button */}
+            <TouchableOpacity
+              style={styles.sortBtn}
+              onPress={() => {
+                setSortOrder((prev) =>
+                  prev === 'DEFAULT' ? 'PRICE_ASC' : prev === 'PRICE_ASC' ? 'PRICE_DESC' : 'DEFAULT'
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sortBtnText}>
+                Sort {sortOrder === 'PRICE_ASC' ? '↑' : sortOrder === 'PRICE_DESC' ? '↓' : ''}
+              </Text>
+              <SlidersHorizontal size={14} color="#2563EB" strokeWidth={2.2} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+          </View>
+
+          {isLoading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color="#1541D8" />
+              <Text style={styles.loadingText}>Loading products catalog...</Text>
+            </View>
+          ) : filteredProducts.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Package size={36} color="#94A3B8" strokeWidth={1.8} />
+              <Text style={styles.emptyTitle}>No Products Found</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchQuery
+                  ? 'No products match your search query.'
+                  : 'Tap "+ Add Product" to add your first product to catalog.'}
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyAddBtn}
+                onPress={openAddProduct}
+                activeOpacity={0.8}
+              >
+                <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
+                <Text style={styles.emptyAddBtnText}>Add Product</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            filteredProducts.map((prod, idx) => {
+              const catName =
+                typeof prod.categoryId === 'object' && prod.categoryId !== null
+                  ? prod.categoryId.name
+                  : categories.find((c) => String(c._id) === String(prod.categoryId))?.name || 'Category';
+
+              const subCatName =
+                typeof prod.subCategoryId === 'object' && prod.subCategoryId !== null
+                  ? prod.subCategoryId.name
+                  : subcategories.find((s) => String(s._id) === String(prod.subCategoryId))?.name ||
+                  prod.subcategoryName ||
+                  '';
+
+              const breadcrumb = subCatName ? `${catName}  ›  ${subCatName}` : catName;
+              const unitText = prod.unit || getProductUnitText(prod);
+              const priceText = prod.price !== undefined && prod.price !== null && prod.price !== ''
+                ? `₹${Number(prod.price).toLocaleString('en-IN')}`
+                : '₹0';
+              const isActive = prod.status !== 'inactive';
+              const stockValue = prod.stock !== undefined ? prod.stock : (prod.quantity !== undefined ? prod.quantity : (isActive ? 0 : 0));
+              const isOutOfStock = Number(stockValue) === 0;
+
+              const pId = prod._id || prod.id || idx;
+              const isExpanded = expandedProductId === pId;
+
+              return (
+                <View key={pId} style={styles.productCardContainer}>
+                  {/* Top Card Header Row (Clickable) */}
+                  <TouchableOpacity
+                    style={styles.productCardHeader}
+                    onPress={() => setExpandedProductId(isExpanded ? null : pId)}
+                    activeOpacity={0.8}
+                  >
+                    {/* Left: Product Image in Rounded Squircle */}
+                    <View style={styles.productImgBox}>
+                      {prod.image ? (
+                        <Image source={{ uri: prod.image }} style={styles.productImg} resizeMode="cover" />
+                      ) : (
+                        <View style={styles.productImgPlaceholder}>
+                          <Package size={24} color="#2563EB" strokeWidth={2} />
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Center: Details */}
+                    <View style={styles.productCenterInfo}>
+                      <Text style={styles.productName} numberOfLines={1}>
+                        {prod.name}
+                      </Text>
+
+                      <Text style={styles.productCategoryPath} numberOfLines={1}>
+                        {breadcrumb}
+                      </Text>
+
+                      <Text style={styles.productUnitInfo}>
+                        Unit: Per {unitText}
+                      </Text>
+                    </View>
+
+                    {/* Right: Status Pill, Expand Chevron & Action Menu */}
+                    <View style={styles.productRightInfo}>
+                      <View
+                        style={[
+                          styles.statusPill,
+                          { backgroundColor: isActive ? '#E8F8F0' : '#FFF7ED' },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusPillText,
+                            { color: isActive ? '#10B981' : '#EA580C' },
+                          ]}
+                        >
+                          {isActive ? 'Active' : 'Inactive'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.cardActionsRightRow}>
+                        <TouchableOpacity
+                          style={styles.chevronExpandBtn}
+                          onPress={() => setExpandedProductId(isExpanded ? null : pId)}
+                          activeOpacity={0.7}
+                        >
+                          {isExpanded ? (
+                            <ChevronUp size={18} color="#1541D8" strokeWidth={2.4} />
+                          ) : (
+                            <ChevronDown size={18} color="#64748B" strokeWidth={2.2} />
+                          )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.moreActionBtn}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setActionSheetProduct(prod);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <MoreVertical size={18} color="#64748B" strokeWidth={2.2} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* ─── Expandable Details Dropdown Drawer ─── */}
+                  {isExpanded && (
+                    <View style={styles.expandedDrawer}>
+                      <View style={styles.drawerDivider} />
+
+                      {/* Specifications Grid */}
+                      <View style={styles.drawerDetailsGrid}>
+                        <View style={styles.drawerDetailItem}>
+                          <Text style={styles.drawerDetailLabel}>HSN Code</Text>
+                          <Text style={styles.drawerDetailValue}>{prod.hsnCode || 'N/A'}</Text>
+                        </View>
+
+                        <View style={styles.drawerDetailItem}>
+                          <Text style={styles.drawerDetailLabel}>GST Rate</Text>
+                          <Text style={styles.drawerDetailValue}>{prod.gstCode ? `${prod.gstCode}%` : 'N/A'}</Text>
+                        </View>
+
+                        <View style={styles.drawerDetailItem}>
+                          <Text style={styles.drawerDetailLabel}>Category</Text>
+                          <Text style={styles.drawerDetailValue}>{catName}</Text>
+                        </View>
+
+                        {subCatName ? (
+                          <View style={styles.drawerDetailItem}>
+                            <Text style={styles.drawerDetailLabel}>Subcategory</Text>
+                            <Text style={styles.drawerDetailValue}>{subCatName}</Text>
+                          </View>
+                        ) : null}
+
+                        <View style={styles.drawerDetailItem}>
+                          <Text style={styles.drawerDetailLabel}>Base Unit</Text>
+                          <Text style={styles.drawerDetailValue}>{unitText}</Text>
+                        </View>
+                      </View>
+
+                      {prod.description ? (
+                        <View style={styles.drawerDescBox}>
+                          <Text style={styles.drawerDetailLabel}>Description</Text>
+                          <Text style={styles.drawerDescText}>{prod.description}</Text>
+                        </View>
+                      ) : null}
+
+                      {/* Action Buttons in Dropdown */}
+                      <View style={styles.drawerActionsRow}>
+                        <TouchableOpacity
+                          style={styles.drawerEditBtn}
+                          onPress={() => openEditProduct(prod)}
+                          activeOpacity={0.75}
+                        >
+                          <Edit3 size={13} color="#1541D8" strokeWidth={2.2} />
+                          <Text style={styles.drawerEditBtnText}>Edit Details</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.drawerToggleBtn}
+                          onPress={() => handleToggleStatus(prod)}
+                          activeOpacity={0.75}
+                        >
+                          <CheckCircle2 size={13} color={isActive ? '#EA580C' : '#10B981'} strokeWidth={2.2} />
+                          <Text
+                            style={[
+                              styles.drawerToggleBtnText,
+                              { color: isActive ? '#EA580C' : '#10B981' },
+                            ]}
+                          >
+                            {isActive ? 'Deactivate' : 'Activate'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.drawerDealBtn}
+                          onPress={() => onNavigate('CreateDeal', { prefillProduct: prod })}
+                          activeOpacity={0.8}
+                        >
+                          <ShoppingBag size={13} color="#FFFFFF" strokeWidth={2.2} />
+                          <Text style={styles.drawerDealBtnText}>Create Sauda</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })
+          )}
+
+          {/* Bottom View All link */}
+          {filteredProducts.length > 0 && (
+            <TouchableOpacity
+              style={styles.viewAllBtn}
+              onPress={() => onNavigate('CategoryPage')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.viewAllBtnText}>View All Categories</Text>
+              <ChevronRight size={16} color="#1541D8" strokeWidth={2.4} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* ─── 4. ACTION SHEET MODAL (Edit / Delete / Toggle Status) ─── */}
+      <Modal
+        visible={actionSheetProduct !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionSheetProduct(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setActionSheetProduct(null)}
+        >
+          <View style={styles.actionSheetCard}>
+            <Text style={styles.actionSheetTitle} numberOfLines={1}>
+              {actionSheetProduct?.name}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.actionSheetItem}
+              onPress={() => {
+                const p = actionSheetProduct;
+                setActionSheetProduct(null);
+                openEditProduct(p);
+              }}
+              activeOpacity={0.7}
+            >
+              <Edit3 size={18} color="#2563EB" />
+              <Text style={styles.actionSheetItemText}>Edit Product</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionSheetItem}
+              onPress={() => {
+                const p = actionSheetProduct;
+                setActionSheetProduct(null);
+                handleToggleStatus(p);
+              }}
+              activeOpacity={0.7}
+            >
+              <CheckCircle2 size={18} color="#10B981" />
+              <Text style={styles.actionSheetItemText}>
+                {actionSheetProduct?.status === 'inactive'
+                  ? 'Set as Active'
+                  : 'Set as Inactive'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionSheetItem}
+              onPress={() => {
+                const p = actionSheetProduct;
+                setActionSheetProduct(null);
+                onNavigate('CreateDeal', { prefillProduct: p });
+              }}
+              activeOpacity={0.7}
+            >
+              <ShoppingBag size={18} color="#1541D8" />
+              <Text style={styles.actionSheetItemText}>Create Sauda with Product</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 6 }} />
+
+            <TouchableOpacity
+              style={styles.actionSheetItem}
+              onPress={() => {
+                const p = actionSheetProduct;
+                setActionSheetProduct(null);
+                handleDeleteProduct(p);
+              }}
+              activeOpacity={0.7}
+            >
+              <Trash2 size={18} color="#DC2626" />
+              <Text style={[styles.actionSheetItemText, { color: '#DC2626', fontWeight: '700' }]}>
+                Delete Product
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ─── 5. FILTER MODAL ─── */}
+      <Modal
+        visible={isFilterModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsFilterModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIndicator} />
+            <Text style={styles.modalHeading}>Filter Products</Text>
+
+            <View style={styles.filterOptionsList}>
+              {[
+                { label: 'All Products', value: 'ALL' },
+                { label: 'Active Only', value: 'ACTIVE' },
+                { label: 'Inactive Only', value: 'INACTIVE' },
+                { label: 'Out of Stock', value: 'OUT_OF_STOCK' },
+              ].map((opt) => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[
+                    styles.filterOptionItem,
+                    selectedFilterStatus === opt.value && styles.filterOptionItemSelected,
+                  ]}
+                  onPress={() => {
+                    setSelectedFilterStatus(opt.value);
+                    setIsFilterModalVisible(false);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[
+                      styles.filterOptionItemText,
+                      selectedFilterStatus === opt.value && styles.filterOptionItemTextSelected,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                  {selectedFilterStatus === opt.value && (
+                    <Check size={16} color="#1541D8" strokeWidth={2.5} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setIsFilterModalVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalCancelBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── 6. ADD / EDIT PRODUCT MODAL ─── */}
       <Modal
         visible={isProductModalVisible}
         transparent
         animationType="slide"
+        onRequestClose={() => setIsProductModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {editingProduct ? 'Update Product' : 'Create Product'}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalIndicator} />
+            <Text style={styles.modalHeading}>
+              {editingProduct ? 'Edit Product' : 'Add New Product'}
             </Text>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
-              <Text style={styles.modalLabel}>Product Name*</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={productForm.name}
-                onChangeText={(text) => setProductForm({ ...productForm, name: text })}
-                placeholder="e.g. Medium Staple Cotton"
-                placeholderTextColor="#94A3B8"
-              />
-
-              <Text style={styles.modalLabel}>Category*</Text>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={styles.modalScroll}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Product Image Selector */}
               <TouchableOpacity
-                style={styles.modalSelector}
-                onPress={() => setIsCategoryPickerVisible(true)}
-              >
-                <Text style={styles.modalSelectorText}>
-                  {productForm.categoryName || 'Select a Category'}
-                </Text>
-                <ChevronDown size={14} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <Text style={styles.modalLabel}>Subcategory (Optional)</Text>
-              <TouchableOpacity
-                style={styles.modalSelector}
-                onPress={() => setIsSubcategoryPickerVisible(true)}
-              >
-                <Text style={styles.modalSelectorText}>
-                  {productForm.subcategoryName || 'Select a Subcategory'}
-                </Text>
-                <ChevronDown size={14} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <Text style={styles.modalLabel}>Trading Unit*</Text>
-              <TouchableOpacity
-                style={styles.modalSelector}
-                onPress={() => setIsUnitPickerVisible(true)}
-              >
-                <Text style={styles.modalSelectorText}>
-                  {productForm.unit || 'Select Trading Unit'}
-                </Text>
-                <ChevronDown size={14} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <View style={styles.twoColumnRow}>
-                <View style={styles.flexHalf}>
-                  <Text style={styles.modalLabel}>HSN Code</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    value={productForm.hsnCode}
-                    onChangeText={(text) => setProductForm({ ...productForm, hsnCode: text })}
-                    placeholder="e.g. 73181510"
-                    placeholderTextColor="#94A3B8"
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={[styles.flexHalf, { marginLeft: 12 }]}>
-                  <Text style={styles.modalLabel}>GST Code</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    value={productForm.gstCode}
-                    onChangeText={(text) => setProductForm({ ...productForm, gstCode: text })}
-                    placeholder="e.g. GST_12"
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.modalLabel}>Product Status</Text>
-              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
-                {[
-                  { key: 'active', label: 'Active', activeBg: '#ECFDF5', activeText: '#10B981', icon: Check },
-                  { key: 'inactive', label: 'Inactive', activeBg: '#FEF2F2', activeText: '#EF4444', icon: X }
-                ].map(s => {
-                  const isSelected = productForm.status === s.key;
-                  const IconComponent = s.icon;
-                  return (
-                    <TouchableOpacity
-                      key={s.key}
-                      style={{
-                        flex: 1,
-                        paddingVertical: 10,
-                        borderRadius: 10,
-                        borderWidth: 1.5,
-                        borderColor: isSelected ? s.activeText : '#E2E8F0',
-                        backgroundColor: isSelected ? s.activeBg : '#F8FAFC',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexDirection: 'row',
-                        gap: 6
-                      }}
-                      onPress={() => setProductForm({ ...productForm, status: s.key })}
-                    >
-                      {isSelected && <IconComponent size={14} color={s.activeText} />}
-                      <Text style={{
-                        color: isSelected ? s.activeText : '#64748B',
-                        fontWeight: '700',
-                        fontSize: 13,
-                      }}>
-                        {s.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <Text style={styles.modalLabel}>Product Image Source</Text>
-              <TouchableOpacity
-                style={styles.imageSelectorBox}
-                activeOpacity={0.8}
+                style={styles.imageUploadBox}
                 onPress={handleImagePick}
+                activeOpacity={0.8}
               >
                 {productForm.image ? (
-                  <View style={styles.imagePreviewContainer}>
-                    <Image source={{ uri: productForm.image }} style={styles.imagePreview} />
-                    <View style={styles.changeOverlay}>
-                      <Text style={styles.changeOverlayText}>Change Image</Text>
-                    </View>
-                  </View>
+                  <Image source={{ uri: productForm.image }} style={styles.uploadedImage} />
                 ) : (
-                  <View style={styles.imagePlaceholderContainer}>
-                    <Camera size={22} color="#64748B" style={{ marginBottom: 4 }} />
-                    <Text style={styles.imagePlaceholderText}>Tap to Capture or Upload Image</Text>
+                  <View style={styles.uploadPlaceholder}>
+                    <Camera size={26} color="#1541D8" />
+                    <Text style={styles.uploadPlaceholderText}>Upload Product Photo</Text>
                   </View>
                 )}
               </TouchableOpacity>
 
-              <Text style={styles.modalLabel}>Description</Text>
+              {/* Product Name */}
+              <Text style={styles.modalFieldLabel}>Product Name*</Text>
               <TextInput
-                style={[styles.modalInput, { height: 64, textAlignVertical: 'top', paddingTop: 8 }]}
+                style={styles.modalInput}
+                value={productForm.name}
+                onChangeText={(text) => setProductForm({ ...productForm, name: text })}
+                placeholder="e.g. Basmati Rice 1121, Wheat, Mustard Oil"
+                placeholderTextColor="#94A3B8"
+              />
+
+              {/* Category Picker */}
+              <Text style={styles.modalFieldLabel}>Category*</Text>
+              <TouchableOpacity
+                style={styles.pickerSelector}
+                onPress={() => setIsCategoryPickerVisible(true)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.pickerSelectorText}>
+                  {productForm.categoryName || 'Select Category'}
+                </Text>
+                <ChevronDown size={18} color="#64748B" />
+              </TouchableOpacity>
+
+              {/* Unit Picker */}
+              <Text style={styles.modalFieldLabel}>Unit*</Text>
+              <TouchableOpacity
+                style={styles.pickerSelector}
+                onPress={() => setIsUnitPickerVisible(true)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.pickerSelectorText}>
+                  {productForm.unit || 'Select Unit (Bag, Ton, Quintal, etc.)'}
+                </Text>
+                <ChevronDown size={18} color="#64748B" />
+              </TouchableOpacity>
+
+              {/* HSN & GST */}
+              <View style={styles.modalRowInputs}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.modalFieldLabel}>HSN Code</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={productForm.hsnCode}
+                    onChangeText={(text) => setProductForm({ ...productForm, hsnCode: text })}
+                    placeholder="e.g. 1006"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalFieldLabel}>GST Rate (%)</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    value={productForm.gstCode}
+                    onChangeText={(text) => setProductForm({ ...productForm, gstCode: text })}
+                    placeholder="e.g. 5%"
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+              </View>
+
+              {/* Description */}
+              <Text style={styles.modalFieldLabel}>Description</Text>
+              <TextInput
+                style={[styles.modalInput, { height: 60, textAlignVertical: 'top' }]}
                 value={productForm.description}
                 onChangeText={(text) => setProductForm({ ...productForm, description: text })}
-                placeholder="Product specifications, grades..."
+                placeholder="Product specs, packaging info..."
                 placeholderTextColor="#94A3B8"
                 multiline
               />
             </ScrollView>
 
-            <View style={styles.modalButtons}>
+            <View style={styles.modalButtonsRow}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: '#F1F5F9' }]}
+                style={styles.modalCancelBtn}
                 onPress={() => setIsProductModalVisible(false)}
+                activeOpacity={0.7}
               >
-                <Text style={{ color: '#475569', fontWeight: '700' }}>Cancel</Text>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: isSaving ? '#94A3B8' : themeColor }]}
+                style={styles.modalSaveBtn}
                 onPress={handleSaveProduct}
+                activeOpacity={0.8}
                 disabled={isSaving}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>
-                  {isSaving ? 'Saving...' : 'Save'}
-                </Text>
+                {isSaving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalSaveBtnText}>Save Product</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
-      {/* CATEGORY PICKER MODAL */}
+      {/* ─── 7. CATEGORY PICKER MODAL ─── */}
       <Modal
         visible={isCategoryPickerVisible}
         transparent
         animationType="fade"
+        onRequestClose={() => setIsCategoryPickerVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Category</Text>
-            <FlatList
-              data={categories}
-              keyExtractor={(item) => item._id || item.id}
-              style={{ maxHeight: 250 }}
-              renderItem={({ item }) => (
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setIsCategoryPickerVisible(false)}
+        >
+          <View style={styles.pickerModalCard}>
+            <Text style={styles.pickerModalTitle}>Select Category</Text>
+            <ScrollView style={{ maxHeight: 280 }}>
+              {categories.map((c) => (
                 <TouchableOpacity
-                  style={styles.pickerItem}
+                  key={c._id}
+                  style={styles.pickerModalItem}
                   onPress={() => {
-                    setProductForm(prev => ({
-                      ...prev,
-                      categoryId: item._id || item.id,
-                      categoryName: item.name,
-                      // Clear subcategory if category changes
-                      subcategoryId: '',
-                      subcategoryName: '',
-                    }));
-                    setIsCategoryPickerVisible(false);
-
-                    // Smart feature: Auto-open Subcategory picker if subcategories exist for this category!
-                    const hasSubs = subcategories.some(sub => {
-                      const subCatId = sub.categoryId?._id || sub.categoryId?.id || sub.categoryId;
-                      return String(subCatId) === String(item._id || item.id);
+                    setProductForm({
+                      ...productForm,
+                      categoryId: c._id,
+                      categoryName: c.name,
                     });
-                    if (hasSubs) {
-                      setTimeout(() => setIsSubcategoryPickerVisible(true), 350);
-                    }
+                    setIsCategoryPickerVisible(false);
                   }}
+                  activeOpacity={0.75}
                 >
-                  <Text style={styles.pickerItemText}>{item.name}</Text>
+                  <Text style={styles.pickerModalItemText}>{c.name}</Text>
+                  {productForm.categoryId === c._id && (
+                    <Check size={16} color="#1541D8" strokeWidth={2.4} />
+                  )}
                 </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity
-              style={[styles.modalButton, { alignSelf: 'flex-end', marginTop: 12 }]}
-              onPress={() => setIsCategoryPickerVisible(false)}
-            >
-              <Text style={{ color: themeColor, fontWeight: '700' }}>Close</Text>
-            </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
 
-      {/* SUBCATEGORY PICKER MODAL */}
-      <Modal
-        visible={isSubcategoryPickerVisible}
-        transparent
-        animationType="fade"
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Subcategory</Text>
-            <FlatList
-              data={filteredSubcategories}
-              keyExtractor={(item) => item._id || item.id}
-              style={{ maxHeight: 250 }}
-              ListEmptyComponent={
-                <Text style={styles.noSubsText}>No subcategories found for selected Category.</Text>
-              }
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.pickerItem}
-                  onPress={() => {
-                    setProductForm(prev => ({
-                      ...prev,
-                      subcategoryId: item._id || item.id,
-                      subcategoryName: item.name,
-                    }));
-                    setIsSubcategoryPickerVisible(false);
-                  }}
-                >
-                  <Text style={styles.pickerItemText}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity
-              style={[styles.modalButton, { alignSelf: 'flex-end', marginTop: 12 }]}
-              onPress={() => setIsSubcategoryPickerVisible(false)}
-            >
-              <Text style={{ color: themeColor, fontWeight: '700' }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* UNIT PICKER MODAL */}
+      {/* ─── 8. UNIT PICKER MODAL ─── */}
       <Modal
         visible={isUnitPickerVisible}
         transparent
         animationType="fade"
+        onRequestClose={() => setIsUnitPickerVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Trading Unit</Text>
-            <FlatList
-              data={units.length > 0 ? units : [
-                { _id: '6a0c118913e627687603da11', name: 'Bale', shortName: 'Bale' },
-                { _id: '6a0c118913e627687603da17', name: 'Candy', shortName: 'Candy' },
-                { _id: '6a0c118913e627687603da12', name: 'Ton', shortName: 'Ton' },
-                { _id: '6a0c118913e627687603da13', name: 'Quintal', shortName: 'Quintal' },
-                { _id: '6a0eac4cd59663585920f09c', name: 'Kilogram', shortName: 'Kg' },
-                { _id: '6a0c118913e627687603da15', name: 'Litre', shortName: 'Litre' },
-                { _id: '6a0c118913e627687603da16', name: 'Meter', shortName: 'Meter' },
-                { _id: '6a0c118913e627687603da18', name: 'Piece', shortName: 'Piece' },
-              ]}
-              keyExtractor={(item) => item._id || item.name}
-              style={{ maxHeight: 250 }}
-              renderItem={({ item }) => (
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setIsUnitPickerVisible(false)}
+        >
+          <View style={styles.pickerModalCard}>
+            <Text style={styles.pickerModalTitle}>Select Unit</Text>
+            <ScrollView style={{ maxHeight: 280 }}>
+              {units.map((u) => (
                 <TouchableOpacity
-                  style={styles.pickerItem}
+                  key={u._id}
+                  style={styles.pickerModalItem}
                   onPress={() => {
-                    setProductForm(prev => ({
-                      ...prev,
-                      unit: item.shortName || item.name,
-                      unitId: item._id,
-                    }));
+                    setProductForm({
+                      ...productForm,
+                      unit: u.shortName || u.name,
+                      unitId: u._id,
+                    });
                     setIsUnitPickerVisible(false);
                   }}
+                  activeOpacity={0.75}
                 >
-                  <Text style={styles.pickerItemText}>
-                    {item.name}{item.shortName && item.shortName !== item.name ? ` (${item.shortName})` : ''}
+                  <Text style={styles.pickerModalItemText}>
+                    {u.shortName || u.name}
                   </Text>
+                  {productForm.unitId === u._id && (
+                    <Check size={16} color="#1541D8" strokeWidth={2.4} />
+                  )}
                 </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity
-              style={[styles.modalButton, { alignSelf: 'flex-end', marginTop: 12 }]}
-              onPress={() => setIsUnitPickerVisible(false)}
-            >
-              <Text style={{ color: themeColor, fontWeight: '700' }}>Close</Text>
-            </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
 
-      {/* Attractive Auto-Closing Success Popup with Checkmark Icon */}
+      {/* ─── 9. SUCCESS TOAST MODAL ─── */}
       <Modal visible={showSuccessModal} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 28, padding: 32, alignItems: 'center', width: '100%', shadowColor: '#10B981', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.2, shadowRadius: 32, elevation: 12, borderWidth: 1, borderColor: '#ECFDF5' }}>
-            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 3, borderColor: '#A7F3D0', shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 4 }}>
-              <Check size={36} color="#10B981" strokeWidth={3.5} />
-            </View>
-            <Text style={{ fontSize: 22, fontWeight: '900', color: '#0F172A', marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 }}>Success!</Text>
-            <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', fontWeight: '600', lineHeight: 20 }}>{successMessage}</Text>
+        <View style={styles.toastOverlay}>
+          <View style={styles.toastCard}>
+            <CheckCircle2 size={32} color="#10B981" />
+            <Text style={styles.toastText}>{successMessage}</Text>
           </View>
         </View>
       </Modal>
-
-      {/* FLOATING ACTION PLUS BUTTON (FAB) */}
-      <TouchableOpacity
-        style={[styles.stickyFab, { backgroundColor: themeColor }]}
-        onPress={openAddProduct}
-        activeOpacity={0.85}
-      >
-        <Plus size={24} color="#FFFFFF" strokeWidth={3} />
-      </TouchableOpacity>
-
     </SafeAreaView>
   );
 };
+
+export default AddProductPage;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 90,
+  },
+
+  /* ── 1. Header ── */
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
+  headerBackBtn: {
+    width: 36,
+    height: 36,
     justifyContent: 'center',
-  },
-  backIcon: {
-    fontSize: 20,
-    color: '#0F172A',
-    fontWeight: '700',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#0F172A',
-    letterSpacing: -0.5,
-  },
-  addButton: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
-  },
-  addButtonText: {
-    color: '#4F46E5',
     fontWeight: '800',
-    fontSize: 12,
-  },
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  searchInput: {
-    height: 46,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    fontWeight: '500',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 100, // Safe padding for FAB
-  },
-  loaderContainer: {
+    color: '#0F172A',
+    marginLeft: 6,
     flex: 1,
+    letterSpacing: -0.3,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loaderText: {
-    marginTop: 12,
-    color: '#64748B',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    padding: 40,
+  filterBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginTop: 20,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 4,
   },
-  emptyIcon: {
-    fontSize: 48,
+  filterBtnActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+  },
+  filterBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  addProductHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1541D8',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    gap: 4,
+    shadowColor: '#1541D8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addProductHeaderBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* Search Bar */
+  searchBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0F172A',
+    paddingVertical: 4,
+  },
+
+  /* ── 2. Summary Metric Cards (4 Tiles) ── */
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1.5,
+    gap: 6,
+  },
+  metricCard: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  metricCardSelected: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+  },
+  metricIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  metricLabel: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  metricValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+
+  /* ── 3. Products List Section ── */
+  sectionContainer: {
+    marginBottom: 20,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  sortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sortBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+
+  /* Product Card */
+  productCardContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 5,
+    elevation: 1.5,
+    overflow: 'hidden',
+  },
+  productCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  productImgBox: {
+    width: 58,
+    height: 58,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginRight: 12,
+  },
+  productImg: {
+    width: '100%',
+    height: '100%',
+  },
+  productImgPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+  },
+  productCenterInfo: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  productName: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  productCategoryPath: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  productUnitInfo: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 3,
+  },
+  productRightInfo: {
+    alignItems: 'flex-end',
+  },
+  cardActionsRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 6,
+  },
+  chevronExpandBtn: {
+    padding: 2,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  moreActionBtn: {
+    padding: 2,
+  },
+
+  /* ── Expandable Dropdown Drawer ── */
+  expandedDrawer: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 0,
+  },
+  drawerDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  drawerDetailsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  drawerDetailItem: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  drawerDetailLabel: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  drawerDetailValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  drawerDescBox: {
+    backgroundColor: '#FFFFFF',
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  drawerDescText: {
+    fontSize: 11.5,
+    color: '#334155',
+    lineHeight: 16,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  drawerActionsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 2,
+  },
+  drawerEditBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    paddingVertical: 7,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  drawerEditBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#1541D8',
+  },
+  drawerToggleBtn: {
+    flex: 1.1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    paddingVertical: 7,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  drawerToggleBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  drawerDealBtn: {
+    flex: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1541D8',
+    borderRadius: 10,
+    paddingVertical: 7,
+    gap: 4,
+  },
+  drawerDealBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  viewAllBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 14,
+    paddingVertical: 12,
+    marginTop: 6,
+    gap: 4,
+  },
+  viewAllBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1541D8',
+  },
+
+  /* Empty State */
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#1E293B',
-    marginBottom: 6,
+    color: '#0F172A',
+    marginTop: 10,
   },
   emptySubtitle: {
-    color: '#94A3B8',
-    fontSize: 14,
+    fontSize: 12.5,
+    color: '#64748B',
     textAlign: 'center',
-    lineHeight: 20,
-    paddingHorizontal: 24,
+    marginTop: 4,
+    lineHeight: 18,
   },
-  frontAddButton: {
-    backgroundColor: '#F5F7FF',
-    borderRadius: 20,
-    padding: 20,
+  emptyAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: '#4F46E533',
-    borderStyle: 'dashed',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: '#1541D8',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginTop: 14,
+    gap: 6,
   },
-  frontAddButtonIcon: {
-    fontSize: 26,
-    marginRight: 16,
-  },
-  frontAddButtonTitle: {
-    fontSize: 16,
+  emptyAddBtnText: {
+    fontSize: 13,
     fontWeight: '800',
-    color: '#4F46E5',
-    marginBottom: 4,
+    color: '#FFFFFF',
   },
-  frontAddButtonSubtitle: {
-    fontSize: 12,
-    color: '#6366F1',
+
+  loadingBox: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 13,
     fontWeight: '600',
+    color: '#64748B',
   },
-  productCard: {
+
+  /* Action Sheet Modal */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  actionSheetCard: {
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 18,
-    marginBottom: 16,
-    shadowColor: '#1E1B4B',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    position: 'relative',
-    overflow: 'hidden',
+    padding: 16,
   },
-  unitBadgeCompact: {
-    position: 'absolute',
-    top: 18,
-    right: 18,
-    backgroundColor: '#EEF2FF',
-    borderColor: '#E0E7FF',
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    zIndex: 10,
-  },
-  unitBadgeTextCompact: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#4F46E5',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  productCardHeader: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  imageContainer: {
-    position: 'relative',
-    marginRight: 14,
-  },
-  productImageLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 14,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  imageStatusIndicator: {
-    position: 'absolute',
-    bottom: -1,
-    right: -1,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 2.2,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 1,
-    elevation: 1,
-  },
-  productMainDetails: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingRight: 56, // Leave space for unit badge
-  },
-  productTitle: {
+  actionSheetTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
-    letterSpacing: -0.1,
-    marginBottom: 6,
+    marginBottom: 12,
   },
-  badgeRow: {
+  actionSheetItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
-    flexWrap: 'wrap',
-    gap: 4,
+    paddingVertical: 11,
+    gap: 10,
   },
-  categoryBadge: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
-  },
-  categoryBadgeText: {
-    fontSize: 9,
-    color: '#4F46E5',
-    fontWeight: '700',
-  },
-  subcategoryBadge: {
-    backgroundColor: '#F5F3FF',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#EDE9FE',
-  },
-  subcategoryBadgeText: {
-    fontSize: 9,
-    color: '#7C3AED',
-    fontWeight: '700',
-  },
-  statusBadgeActive: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-  },
-  statusTextActive: {
-    color: '#059669',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  statusBadgeInactive: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-  },
-  statusTextInactive: {
-    color: '#DC2626',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  hsnBadge: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  hsnText: {
-    color: '#64748B',
-    fontSize: 9,
+  actionSheetItemText: {
+    fontSize: 13.5,
     fontWeight: '600',
+    color: '#1E293B',
   },
-  gstBadge: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  gstText: {
-    color: '#64748B',
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  productPrice: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#10B981',
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    marginTop: 2,
-  },
-  productDescriptionText: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 18,
-    marginBottom: 14,
-    paddingHorizontal: 2,
-  },
-  productCardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    gap: 8,
-  },
-  actionBtnEdit: {
-    backgroundColor: '#F1F5F9',
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  actionBtnDelete: {
-    backgroundColor: '#FFF5F5',
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#FFE3E3',
-  },
-  actionBtnSauda: {
-    backgroundColor: '#4F46E5',
-    flex: 1,
-    height: 40,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  actionTextEdit: {
-    fontSize: 11,
-    color: '#475569',
-    fontWeight: '800',
-  },
-  actionTextDelete: {
-    fontSize: 11,
-    color: '#DC2626',
-    fontWeight: '800',
-  },
-  actionTextSauda: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
+
+  /* Filter Modal */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'center',
-    padding: 24,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'flex-end',
   },
-  modalContent: {
+  modalCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    padding: 20,
+    maxHeight: '85%',
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '900',
+  modalIndicator: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  modalHeading: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  filterOptionsList: {
+    gap: 8,
     marginBottom: 16,
-    color: '#1E293B',
   },
-  modalLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  modalInput: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 14,
-    color: '#1E293B',
-    backgroundColor: '#F8FAFC',
-  },
-  modalSelector: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+  filterOptionItem: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
     backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  modalSelectorText: {
-    fontSize: 13,
-    color: '#1E293B',
+  filterOptionItemSelected: {
+    borderColor: '#1541D8',
+    backgroundColor: '#EFF6FF',
+  },
+  filterOptionItemText: {
+    fontSize: 14,
     fontWeight: '600',
+    color: '#334155',
   },
-  dropdownIcon: {
-    fontSize: 10,
-    color: '#94A3B8',
+  filterOptionItemTextSelected: {
+    fontWeight: '800',
+    color: '#1541D8',
   },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+
+  /* Add / Edit Modal */
+  modalScroll: {
+    marginBottom: 14,
   },
-  imageSelectorBox: {
-    height: 100,
+  imageUploadBox: {
+    width: '100%',
+    height: 110,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
     borderColor: '#CBD5E1',
     borderStyle: 'dashed',
-    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
     overflow: 'hidden',
-    backgroundColor: '#F8FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 4,
+    marginBottom: 10,
   },
-  imagePlaceholderContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imagePlaceholderIcon: {
-    fontSize: 24,
-    marginBottom: 2,
-  },
-  imagePlaceholderText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  imagePreviewContainer: {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-  },
-  imagePreview: {
+  uploadedImage: {
     width: '100%',
     height: '100%',
   },
-  changeOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    paddingVertical: 3,
+  uploadPlaceholder: {
     alignItems: 'center',
+    gap: 6,
   },
-  changeOverlayText: {
-    color: '#FFFFFF',
-    fontSize: 10,
+  uploadPlaceholderText: {
+    fontSize: 12,
     fontWeight: '700',
+    color: '#1541D8',
   },
-  modalButtons: {
+  modalFieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  modalInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13,
+    color: '#0F172A',
+  },
+  modalRowInputs: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 20,
+    justifyContent: 'space-between',
   },
-  modalButton: {
-    paddingHorizontal: 16,
+  pickerSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 10,
   },
-  pickerItem: {
+  pickerSelectorText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  modalSaveBtn: {
+    flex: 1,
+    backgroundColor: '#1541D8',
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  modalSaveBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* Pickers */
+  pickerModalCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+  },
+  pickerModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 12,
+  },
+  pickerModalItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
-  pickerItemText: {
-    fontSize: 14,
-    color: '#1E293B',
+  pickerModalItemText: {
+    fontSize: 13.5,
     fontWeight: '600',
+    color: '#1E293B',
   },
-  stickyFab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 60,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+
+  /* Toast Overlay */
+  toastOverlay: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  toastCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
     shadowRadius: 10,
-    elevation: 8,
+    elevation: 6,
   },
-  stickyFabIcon: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '300',
-    marginTop: -2,
-  },
-  twoColumnRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  flexHalf: {
-    flex: 1,
+  toastText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
   },
 });
-
-export default AddProductPage;
-

@@ -32,20 +32,85 @@ import {
     Globe,
     ChevronDown,
     Check,
+    Hand,
 } from 'lucide-react-native';
 import VoiceService from './VoiceService';
 import { processVoiceCommand } from '../../services/api';
 
+
 export const ASSISTANT_LANGUAGES = [
-    { code: 'hi-IN', ttsCode: 'hi', label: 'हिन्दी (Hindi)', shortName: 'हिन्दी', flag: '🇮🇳', greeting: 'नमस्ते! मैं आपकी क्या सहायता कर सकता हूँ?' },
-    { code: 'en-IN', ttsCode: 'en', label: 'English / Hinglish', shortName: 'Hinglish', flag: '🇮🇳', greeting: 'Hello! How can I assist you with your trades today?' },
-    { code: 'gu-IN', ttsCode: 'gu', label: 'ગુજરાતી (Gujarati)', shortName: 'ગુજરાતી', flag: '🇮🇳', greeting: 'નમસ્તે! પ્રવિષ્ટિમાં આપનું સ્વાગત છે. હું તમારી શું મદદ કરી શકું?' },
-    { code: 'ta-IN', ttsCode: 'ta', label: 'தமிழ் (Tamil)', shortName: 'தமிழ்', flag: '🇮🇳', greeting: 'வணக்கம்! பிரவிஷ்டி உதவி மையத்திற்கு வரவேற்கிறோம்.' },
-    { code: 'te-IN', ttsCode: 'te', label: 'తెలుగు (Telugu)', shortName: 'తెలుగు', flag: '🇮🇳', greeting: 'నమస్కారం! ప్రవిష్టి అసిస్టెంట్‌కు స్వాగతం.' },
-    { code: 'kn-IN', ttsCode: 'kn', label: 'ಕನ್ನಡ (Kannada)', shortName: 'ಕನ್ನಡ', flag: '🇮🇳', greeting: 'ನಮಸ್ಕಾರ! ಪ್ರವಿಷ್ಟಿ ಅಸಿಸ್ಟೆಂಟ್ ಗೆ ಸ್ವಾಗತ.' },
-    { code: 'mr-IN', ttsCode: 'mr', label: 'मराठी (Marathi)', shortName: 'मराठी', flag: '🇮🇳', greeting: 'नमस्कार! प्रविष्टी असिस्टंट मध्ये आपले स्वागत आहे.' },
-    { code: 'bn-IN', ttsCode: 'bn', label: 'বাংলা (Bengali)', shortName: 'বাংলা', flag: '🇮🇳', greeting: 'নমস্কার! প্রবিষ্টি অ্যাসিস্ট্যান্টে আপনাকে স্বাগতম।' },
-    { code: 'pa-IN', ttsCode: 'pa', label: 'ਪੰਜਾਬੀ (Punjabi)', shortName: 'ਪੰਜਾਬੀ', flag: '🇮🇳', greeting: 'ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ! ਪ੍ਰਵਿਸ਼ਟੀ ਅਸਿਸਟੈਂਟ ਵਿੱਚ ਤੁਹਾਡਾ ਸਵਾਗਤ ਹੈ।' },
+    {
+        "code": "hi-IN",
+        "ttsCode": "hi",
+        "langName": "hindi",
+        "label": "हिन्दी (Hindi)",
+        "shortName": "हिन्दी",
+        "flag": "🇮🇳"
+    },
+    {
+        "code": "en-IN",
+        "ttsCode": "en",
+        "langName": "english",
+        "label": "English / Hinglish",
+        "shortName": "Hinglish",
+        "flag": "🇮🇳"
+    },
+    {
+        "code": "gu-IN",
+        "ttsCode": "gu",
+        "langName": "gujarati",
+        "label": "ગુજરાતી (Gujarati)",
+        "shortName": "ગુજરાતી",
+        "flag": "🇮🇳"
+    },
+    {
+        "code": "ta-IN",
+        "ttsCode": "ta",
+        "langName": "tamil",
+        "label": "தமிழ் (Tamil)",
+        "shortName": "தமிழ்",
+        "flag": "🇮🇳"
+    },
+    {
+        "code": "te-IN",
+        "ttsCode": "te",
+        "langName": "telugu",
+        "label": "తెలుగు (Telugu)",
+        "shortName": "తెలుగు",
+        "flag": "🇮🇳"
+    },
+    {
+        "code": "kn-IN",
+        "ttsCode": "kn",
+        "langName": "kannada",
+        "label": "ಕನ್ನಡ (Kannada)",
+        "shortName": "ಕನ್ನಡ",
+        "flag": "🇮🇳"
+    },
+    {
+        "code": "mr-IN",
+        "ttsCode": "mr",
+        "langName": "marathi",
+        "label": "मराठी (Marathi)",
+        "shortName": "मराठी",
+        "flag": "🇮🇳"
+    },
+    {
+        "code": "bn-IN",
+        "ttsCode": "bn",
+        "langName": "bengali",
+        "label": "বাংলা (Bengali)",
+        "shortName": "বাংলা",
+        "flag": "🇮🇳"
+    },
+    {
+        "code": "pa-IN",
+        "ttsCode": "pa",
+        "langName": "punjabi",
+        "label": "ਪੰਜਾਬੀ (Punjabi)",
+        "shortName": "ਪੰਜਾਬੀ",
+        "flag": "🇮🇳"
+    }
 ];
 
 export default function FloatingVoiceAssistant({
@@ -69,7 +134,7 @@ export default function FloatingVoiceAssistant({
     const [options, setOptions] = useState([]);
     const [isCompleted, setIsCompleted] = useState(false);
     const [autoSpeak, setAutoSpeak] = useState(true);
-    const [selectedLang, setSelectedLang] = useState('hi-IN'); // Default to Hindi / Saved Lang
+    const [selectedLang, setSelectedLang] = useState('en-IN'); // Default to Hinglish (en-IN)
     const [langModalVisible, setLangModalVisible] = useState(false);
 
     // Refs for asynchronous event safety
@@ -83,6 +148,7 @@ export default function FloatingVoiceAssistant({
     const spokenTextRef = useRef('');
     const accumulatedSpeechRef = useRef('');
     const currentTtsLangRef = useRef(null);
+    const selectedLangRef = useRef(selectedLang);
 
     // Keep refs synced
     useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
@@ -92,6 +158,7 @@ export default function FloatingVoiceAssistant({
     useEffect(() => { isCompletedRef.current = isCompleted; }, [isCompleted]);
     useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
     useEffect(() => { spokenTextRef.current = spokenText; }, [spokenText]);
+    useEffect(() => { selectedLangRef.current = selectedLang; }, [selectedLang]);
 
     // Siri Dynamic Visualizer Animations
     const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -265,13 +332,10 @@ export default function FloatingVoiceAssistant({
         const exitPhrases = ['cancel', 'band karo', 'band kardo', 'close', 'alvida', 'bye', 'stop', 'ruk jao', 'exit'];
         const lower = cleanText.toLowerCase();
         if (exitPhrases.includes(lower)) {
-            setPromptMessage('Dhanyawad! Voice assistant band kar rahe hain.');
-            if (autoSpeak) {
-                VoiceService.speak('Dhanyawad!');
-            }
+            setPromptMessage('Closing Voice Assistant...');
             setTimeout(() => {
                 if (handleCloseRef.current) handleCloseRef.current();
-            }, 1200);
+            }, 600);
             return;
         }
 
@@ -283,10 +347,18 @@ export default function FloatingVoiceAssistant({
                 token = await AsyncStorage.getItem('userToken');
             }
 
+            const currentLang = selectedLangRef.current || selectedLang;
+            const currentLangObj = ASSISTANT_LANGUAGES.find((l) => l.code === currentLang) || ASSISTANT_LANGUAGES[0];
+            const langCode = currentLangObj?.ttsCode || currentLang.split('-')[0];
             const payload = {
                 text: cleanText,
+                query: cleanText,
                 sessionId: sessionIdRef.current || null,
-                language: selectedLang,
+                language: currentLang,
+                languageCode: langCode,
+                ttsLanguage: langCode,
+                userLanguage: currentLangObj?.langName || currentLang,
+                lang: currentLangObj?.langName || currentLang,
             };
 
             const res = await processVoiceCommand(payload, token);
@@ -328,9 +400,9 @@ export default function FloatingVoiceAssistant({
                 setOptions([]);
             }
 
-            // 5. Speak Backend promptMessage strictly via TTS using backend-provided ttsLanguage
-            const prompt = resData?.promptMessage || resData?.message;
-            const backendTtsLang = resData?.ttsLanguage || resData?.language || null;
+            // 5. Speak Backend promptMessage strictly via TTS using matching language
+            const prompt = resData?.promptMessage || resData?.message || resData?.reply || resData?.response;
+            const backendTtsLang = resData?.ttsLanguage || resData?.languageCode || null;
             if (backendTtsLang) {
                 currentTtsLangRef.current = backendTtsLang;
             }
@@ -341,9 +413,10 @@ export default function FloatingVoiceAssistant({
             const shouldListenNext = isOpenRef.current && !completed;
 
             if (autoSpeak && prompt) {
+                const ttsLangToUse = backendTtsLang || currentTtsLangRef.current || langCode || currentLang;
                 VoiceService.speak(prompt, {
-                    ttsLanguage: backendTtsLang || currentTtsLangRef.current || null,
-                    language: backendTtsLang || currentTtsLangRef.current || selectedLang,
+                    ttsLanguage: ttsLangToUse,
+                    language: ttsLangToUse,
                     onDone: () => {
                         // Auto-start mic when TTS finishes speaking backend promptMessage
                         setIsSpeaking(false);
@@ -351,8 +424,9 @@ export default function FloatingVoiceAssistant({
                         if (shouldListenNext && isOpenRef.current && !isCompletedRef.current) {
                             setTimeout(() => {
                                 if (isOpenRef.current && !isCompletedRef.current && !isListeningRef.current) {
+                                    const activeL = selectedLangRef.current || selectedLang;
                                     if (startListeningSessionRef.current) {
-                                        startListeningSessionRef.current();
+                                        startListeningSessionRef.current(activeL);
                                     }
                                 }
                             }, 350);
@@ -362,7 +436,8 @@ export default function FloatingVoiceAssistant({
             } else if (shouldListenNext && isOpenRef.current) {
                 setTimeout(() => {
                     if (isOpenRef.current && !isCompletedRef.current && !isListeningRef.current) {
-                        if (startListeningSessionRef.current) startListeningSessionRef.current();
+                        const activeL = selectedLangRef.current || selectedLang;
+                        if (startListeningSessionRef.current) startListeningSessionRef.current(activeL);
                     }
                 }, 300);
             }
@@ -376,19 +451,40 @@ export default function FloatingVoiceAssistant({
             }
         } catch (err) {
             console.warn('Voice process error:', err.message || err);
-            const errMsg = 'Kripya dobara boliye, main sun raha hu.';
+            const currentLang = selectedLangRef.current || selectedLang;
+            const currentLangObj = ASSISTANT_LANGUAGES.find((l) => l.code === currentLang) || ASSISTANT_LANGUAGES[0];
+            const errMsg = currentLang.startsWith('mr')
+                ? 'कृपया पुन्हा बोला, मी ऐकत आहे.'
+                : currentLang.startsWith('gu')
+                    ? 'કૃપા કરીને ફરીથી બોલો, હું સાંભળી રહ્યો છું.'
+                    : currentLang.startsWith('ta')
+                        ? 'தயவுசெய்து மீண்டும் பேசுங்கள், நான் கேட்கிறேன்.'
+                        : currentLang.startsWith('te')
+                            ? 'దయచేసి మళ్లీ మాట్లాడండి, నేను వింటున్నాను.'
+                            : currentLang.startsWith('bn')
+                                ? 'অনুগ্রহ করে আবার বলুন, আমি শুনছি।'
+                                : currentLang.startsWith('pa')
+                                    ? 'ਕਿਰਪਾ ਕਰਕੇ ਦੁਬਾਰਾ ਬੋਲੋ, ਮੈਂ ਸੁਣ ਰਿਹਾ ਹਾਂ।'
+                                    : currentLang.startsWith('kn')
+                                        ? 'ದಯವಿಟ್ಟು ಮತ್ತೆ ಮಾತನಾಡಿ, ನಾನು ಕೇಳುತ್ತಿದ್ದೇನೆ.'
+                                        : currentLang.startsWith('hi')
+                                            ? 'कृपया दोबारा बोलिए, मैं सुन रहा हूँ।'
+                                            : 'Please speak again, I am listening.';
+
             setPromptMessage(errMsg);
             if (autoSpeak) {
+                const errLang = currentLangObj?.ttsCode || currentLang;
                 VoiceService.speak(errMsg, {
-                    ttsLanguage: currentTtsLangRef.current || null,
-                    language: currentTtsLangRef.current || selectedLang,
+                    ttsLanguage: errLang,
+                    language: currentLang,
                     onDone: () => {
                         setIsSpeaking(false);
                         isSpeakingRef.current = false;
                         if (isOpenRef.current && !isCompletedRef.current) {
                             setTimeout(() => {
                                 if (isOpenRef.current && !isCompletedRef.current && !isListeningRef.current) {
-                                    if (startListeningSessionRef.current) startListeningSessionRef.current();
+                                    const activeL = selectedLangRef.current || selectedLang;
+                                    if (startListeningSessionRef.current) startListeningSessionRef.current(activeL);
                                 }
                             }, 350);
                         }
@@ -397,7 +493,8 @@ export default function FloatingVoiceAssistant({
             } else {
                 setTimeout(() => {
                     if (isOpenRef.current && !isCompletedRef.current && !isListeningRef.current) {
-                        if (startListeningSessionRef.current) startListeningSessionRef.current();
+                        const activeL = selectedLangRef.current || selectedLang;
+                        if (startListeningSessionRef.current) startListeningSessionRef.current(activeL);
                     }
                 }, 300);
             }
@@ -432,7 +529,7 @@ export default function FloatingVoiceAssistant({
         setIsListening(true);
         isListeningRef.current = true;
 
-        const langToUse = overrideLang || selectedLang || 'en-IN';
+        const langToUse = overrideLang || selectedLangRef.current || selectedLang || 'mr-IN';
 
         try {
             await VoiceService.startListening(
@@ -512,8 +609,9 @@ export default function FloatingVoiceAssistant({
                                     !isCompletedRef.current &&
                                     !isListeningRef.current
                                 ) {
+                                    const activeL = selectedLangRef.current || selectedLang;
                                     if (startListeningSessionRef.current) {
-                                        startListeningSessionRef.current();
+                                        startListeningSessionRef.current(activeL);
                                     }
                                 }
                             }, 350);
@@ -560,7 +658,7 @@ export default function FloatingVoiceAssistant({
         setSpokenText('');
         spokenTextRef.current = '';
         accumulatedSpeechRef.current = '';
-        setPromptMessage('Aap boliye, main sun raha hu...');
+        setPromptMessage('');
         setCurrentStep(null);
         setDraftData(null);
         setMissingFields([]);
@@ -580,9 +678,9 @@ export default function FloatingVoiceAssistant({
                 useNativeDriver: true,
             }),
         ]).start(() => {
-            if (startListeningSessionRef.current) startListeningSessionRef.current();
+            if (startListeningSessionRef.current) startListeningSessionRef.current(selectedLang);
         });
-    }, [fadeAnim, slideAnim]);
+    }, [fadeAnim, slideAnim, selectedLang]);
 
     handleOpenRef.current = handleOpen;
 
@@ -666,7 +764,7 @@ export default function FloatingVoiceAssistant({
         loadSavedLanguage();
     }, []);
 
-    // Switch Language and dynamically apply TTS & STT
+    // Switch Language and dynamically apply TTS & STT without speaking hardcoded greeting
     const handleSelectLanguage = async (langItem) => {
         setLangModalVisible(false);
         setSelectedLang(langItem.code);
@@ -676,21 +774,8 @@ export default function FloatingVoiceAssistant({
         // Apply dynamic TTS language to VoiceService
         await VoiceService.applyDynamicTtsLanguage(langItem.code);
 
-        // Speak greeting in newly selected language
-        setPromptMessage(langItem.greeting);
-        if (autoSpeak) {
-            VoiceService.speak(langItem.greeting, {
-                ttsLanguage: langItem.ttsCode,
-                language: langItem.code,
-                onDone: () => {
-                    if (isOpenRef.current && !isCompletedRef.current) {
-                        if (startListeningSessionRef.current) {
-                            startListeningSessionRef.current(langItem.code);
-                        }
-                    }
-                },
-            });
-        } else {
+        setPromptMessage('');
+        if (isOpenRef.current && !isCompletedRef.current) {
             if (startListeningSessionRef.current) {
                 startListeningSessionRef.current(langItem.code);
             }
@@ -710,8 +795,7 @@ export default function FloatingVoiceAssistant({
         setSpokenText('');
         spokenTextRef.current = '';
         accumulatedSpeechRef.current = '';
-        const currentLangObj = ASSISTANT_LANGUAGES.find((l) => l.code === selectedLang) || ASSISTANT_LANGUAGES[0];
-        setPromptMessage(currentLangObj.greeting);
+        setPromptMessage('');
         startListeningSession(selectedLang);
     };
 
@@ -790,10 +874,10 @@ export default function FloatingVoiceAssistant({
                         <View style={styles.sheetHeader}>
                             <View style={styles.headerLeft}>
                                 <View style={styles.assistantAvatar}>
-                                    <Sparkles size={18} color="#38BDF8" />
+                                    <Hand size={18} color="#e2c627ff" />
                                 </View>
                                 <View>
-                                    <Text style={styles.headerTitle}>Pravisti Siri Voice</Text>
+                                    <Text style={styles.headerTitle}>Hii Pravisti</Text>
                                     <View style={styles.statusRow}>
                                         <View
                                             style={[
@@ -821,17 +905,17 @@ export default function FloatingVoiceAssistant({
                             </View>
 
                             <View style={styles.headerActions}>
-                                {/* Language Pill */}
+                                {/* Language Capsule Pill */}
                                 <TouchableOpacity
                                     style={styles.langPill}
                                     onPress={() => setLangModalVisible(true)}
                                     activeOpacity={0.75}
                                 >
-                                    <Globe size={13} color="#0284C7" style={{ marginRight: 4 }} />
+                                    <Globe size={13} color="#0284C7" />
                                     <Text style={styles.langPillText}>
-                                        {ASSISTANT_LANGUAGES.find((l) => l.code === selectedLang)?.shortName || 'हिन्दी'}
+                                        {ASSISTANT_LANGUAGES.find((l) => l.code === (selectedLangRef.current || selectedLang))?.shortName || 'Hinglish'}
                                     </Text>
-                                    <ChevronDown size={12} color="#64748B" style={{ marginLeft: 3 }} />
+                                    <ChevronDown size={12} color="#64748B" />
                                 </TouchableOpacity>
 
                                 {/* Speaker Toggle */}
@@ -841,11 +925,12 @@ export default function FloatingVoiceAssistant({
                                         if (isSpeaking) VoiceService.stopSpeaking();
                                         setAutoSpeak(!autoSpeak);
                                     }}
+                                    activeOpacity={0.75}
                                 >
                                     {autoSpeak ? (
-                                        <Volume2 size={17} color="#38BDF8" />
+                                        <Volume2 size={16} color="#0284C7" />
                                     ) : (
-                                        <VolumeX size={17} color="#64748B" />
+                                        <VolumeX size={16} color="#94A3B8" />
                                     )}
                                 </TouchableOpacity>
 
@@ -853,8 +938,9 @@ export default function FloatingVoiceAssistant({
                                 <TouchableOpacity
                                     style={styles.headerIconBtn}
                                     onPress={handleResetSession}
+                                    activeOpacity={0.75}
                                 >
-                                    <RotateCcw size={16} color="#94A3B8" />
+                                    <RotateCcw size={15} color="#64748B" />
                                 </TouchableOpacity>
 
                                 {/* Preferences */}
@@ -865,17 +951,19 @@ export default function FloatingVoiceAssistant({
                                             handleClose();
                                             onOpenPreferences();
                                         }}
+                                        activeOpacity={0.75}
                                     >
-                                        <Sliders size={16} color="#94A3B8" />
+                                        <Sliders size={15} color="#64748B" />
                                     </TouchableOpacity>
                                 )}
 
                                 {/* Close */}
                                 <TouchableOpacity
-                                    style={styles.headerIconBtn}
+                                    style={styles.headerCloseBtn}
                                     onPress={handleClose}
+                                    activeOpacity={0.75}
                                 >
-                                    <X size={18} color="#94A3B8" />
+                                    <X size={17} color="#475569" />
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -975,17 +1063,17 @@ export default function FloatingVoiceAssistant({
                                         }}
                                         activeOpacity={0.88}
                                     >
-                                        {/* Inner Fluid Shimmer Layer */}
+                                        {/* Inner Fluid Specular Highlight */}
                                         <View style={styles.siriOrbInnerShimmer} />
 
                                         {isProcessing ? (
                                             <ActivityIndicator size="small" color="#FFFFFF" />
                                         ) : isListening ? (
-                                            <MicOff size={32} color="#FFFFFF" />
+                                            <MicOff size={30} color="#FFFFFF" />
                                         ) : isSpeaking ? (
-                                            <Volume2 size={32} color="#FFFFFF" />
+                                            <Volume2 size={30} color="#FFFFFF" />
                                         ) : (
-                                            <Mic size={32} color="#FFFFFF" />
+                                            <Mic size={30} color="#FFFFFF" />
                                         )}
                                     </TouchableOpacity>
                                 </View>
@@ -1001,18 +1089,24 @@ export default function FloatingVoiceAssistant({
 
                                 <Text style={styles.siriStatusText}>
                                     {isListening
-                                        ? 'Aap boliye, main sun raha hu...'
+                                        ? 'Listening, please speak...'
                                         : isProcessing
-                                            ? 'Processing your request...'
+                                            ? 'Processing with AI...'
                                             : isSpeaking
-                                                ? 'Bol raha hu... (Tap mic to speak)'
-                                                : 'Tap Siri Orb to start speaking'}
+                                                ? 'Speaking...'
+                                                : 'Tap orb to start speaking'}
                                 </Text>
                             </View>
 
-                            {/* ─── 4. LIVE STREAMING SPOKEN TEXT ─── */}
+                            {/* ─── 4. LIVE STREAMING SPOKEN TEXT CARD ─── */}
                             {spokenText ? (
                                 <View style={styles.spokenPreviewBox}>
+                                    <View style={styles.spokenHeaderRow}>
+                                        <View style={styles.spokenLiveBadge}>
+                                            <View style={styles.spokenLiveDot} />
+                                            <Text style={styles.spokenLiveText}>You</Text>
+                                        </View>
+                                    </View>
                                     <Text style={styles.spokenPreviewText}>"{spokenText}"</Text>
                                 </View>
                             ) : null}
@@ -1027,37 +1121,43 @@ export default function FloatingVoiceAssistant({
                                     ]}
                                 >
                                     <View style={styles.promptHeader}>
-                                        {isCompleted ? (
-                                            <CheckCircle2 size={18} color="#10B981" />
-                                        ) : currentStep === 'CANCELLED' ? (
-                                            <XCircle size={18} color="#EF4444" />
-                                        ) : (
-                                            <Sparkles size={16} color="#38BDF8" />
-                                        )}
-                                        <Text style={styles.promptLabel}>
-                                            {isCompleted
-                                                ? 'Sauda Confirmed'
-                                                : currentStep === 'CANCELLED'
-                                                    ? 'Cancelled'
-                                                    : 'Pravisti Siri AI'}
-                                        </Text>
+                                        <View style={styles.promptBadgeRow}>
+                                            {isCompleted ? (
+                                                <CheckCircle2 size={16} color="#059669" />
+                                            ) : currentStep === 'CANCELLED' ? (
+                                                <XCircle size={16} color="#DC2626" />
+                                            ) : (
+                                                <Sparkles size={15} color="#0284C7" />
+                                            )}
+                                            <Text style={styles.promptLabel}>
+                                                {isCompleted
+                                                    ? 'Sauda Confirmed'
+                                                    : currentStep === 'CANCELLED'
+                                                        ? 'Cancelled'
+                                                        : 'Pravisti AI'}
+                                            </Text>
+                                        </View>
 
                                         {isSpeaking ? (
                                             <View style={styles.speakingBadge}>
-                                                <ActivityIndicator size={10} color="#38BDF8" />
+                                                <ActivityIndicator size={10} color="#0284C7" />
                                                 <Text style={styles.speakingBadgeText}>Speaking</Text>
                                             </View>
                                         ) : (
                                             <TouchableOpacity
                                                 style={styles.replayPill}
-                                                onPress={() =>
+                                                onPress={() => {
+                                                    const activeLang = selectedLangRef.current || selectedLang;
+                                                    const activeLangObj = ASSISTANT_LANGUAGES.find((l) => l.code === activeLang) || ASSISTANT_LANGUAGES[0];
+                                                    const ttsLangToUse = currentTtsLangRef.current || activeLangObj?.ttsCode || activeLang;
                                                     VoiceService.speak(promptMessage, {
-                                                        ttsLanguage: currentTtsLangRef.current || null,
-                                                        language: currentTtsLangRef.current || selectedLang,
-                                                    })
-                                                }
+                                                        ttsLanguage: ttsLangToUse,
+                                                        language: ttsLangToUse,
+                                                    });
+                                                }}
+                                                activeOpacity={0.7}
                                             >
-                                                <Volume2 size={13} color="#38BDF8" />
+                                                <Volume2 size={13} color="#0284C7" />
                                                 <Text style={styles.replayPillText}>Listen</Text>
                                             </TouchableOpacity>
                                         )}
@@ -1070,21 +1170,28 @@ export default function FloatingVoiceAssistant({
                             {draftData && (
                                 <View style={styles.draftCard}>
                                     <View style={styles.draftHeader}>
-                                        <Text style={styles.draftTitle}>Live Sauda Draft</Text>
+                                        <View style={styles.draftHeaderLeft}>
+                                            <View style={styles.draftLiveIndicator} />
+                                            <Text style={styles.draftTitle}>Live Sauda Draft</Text>
+                                        </View>
                                         {sessionId && (
-                                            <Text style={styles.sessionBadge}>
-                                                {sessionId.slice(0, 12)}...
-                                            </Text>
+                                            <View style={styles.sessionBadgeBox}>
+                                                <Text style={styles.sessionBadge}>
+                                                    {sessionId.slice(0, 10)}...
+                                                </Text>
+                                            </View>
                                         )}
                                     </View>
 
                                     <View style={styles.draftGrid}>
-                                        {/* Company Name (Shown only when targetCompanyName is explicitly matched by backend AI) */}
+                                        {/* Company Name */}
                                         {draftData.targetCompanyName ? (
                                             <View style={styles.draftRow}>
-                                                <Building2 size={15} color="#0284C7" />
-                                                <Text style={styles.draftFieldLabel}>Company Name:</Text>
-                                                <Text style={styles.draftFieldVal}>
+                                                <View style={styles.draftIconCircle}>
+                                                    <Building2 size={14} color="#0284C7" />
+                                                </View>
+                                                <Text style={styles.draftFieldLabel}>Company:</Text>
+                                                <Text style={styles.draftFieldVal} numberOfLines={1}>
                                                     {draftData.targetCompanyName}
                                                 </Text>
                                             </View>
@@ -1093,9 +1200,11 @@ export default function FloatingVoiceAssistant({
                                         {/* Product / Commodity */}
                                         {draftData.productName || draftData.commodity || draftData.crop ? (
                                             <View style={styles.draftRow}>
-                                                <Package size={15} color="#0284C7" />
+                                                <View style={styles.draftIconCircle}>
+                                                    <Package size={14} color="#0284C7" />
+                                                </View>
                                                 <Text style={styles.draftFieldLabel}>Product:</Text>
-                                                <Text style={styles.draftFieldVal}>
+                                                <Text style={styles.draftFieldVal} numberOfLines={1}>
                                                     {draftData.productName || draftData.commodity || draftData.crop}
                                                 </Text>
                                             </View>
@@ -1104,7 +1213,9 @@ export default function FloatingVoiceAssistant({
                                         {/* Quantity */}
                                         {draftData.quantity ? (
                                             <View style={styles.draftRow}>
-                                                <Layers size={15} color="#0284C7" />
+                                                <View style={styles.draftIconCircle}>
+                                                    <Layers size={14} color="#0284C7" />
+                                                </View>
                                                 <Text style={styles.draftFieldLabel}>Quantity:</Text>
                                                 <Text style={styles.draftFieldVal}>
                                                     {draftData.quantity} {draftData.unit || 'bag'}
@@ -1115,7 +1226,9 @@ export default function FloatingVoiceAssistant({
                                         {/* Rate / Price */}
                                         {draftData.price || draftData.rate ? (
                                             <View style={styles.draftRow}>
-                                                <IndianRupee size={15} color="#0284C7" />
+                                                <View style={styles.draftIconCircle}>
+                                                    <IndianRupee size={14} color="#0284C7" />
+                                                </View>
                                                 <Text style={styles.draftFieldLabel}>Rate / Price:</Text>
                                                 <Text style={styles.draftFieldVal}>
                                                     ₹{draftData.price || draftData.rate} {draftData.rateUnit ? `/${draftData.rateUnit}` : ''}
@@ -1123,10 +1236,12 @@ export default function FloatingVoiceAssistant({
                                             </View>
                                         ) : null}
 
-                                        {/* Subtotal / Total Amount */}
+                                        {/* Total Amount */}
                                         {draftData.subtotal || draftData.totalAmount ? (
                                             <View style={[styles.draftRow, styles.totalRow]}>
-                                                <IndianRupee size={16} color="#059669" />
+                                                <View style={[styles.draftIconCircle, { backgroundColor: '#ECFDF5' }]}>
+                                                    <IndianRupee size={15} color="#059669" />
+                                                </View>
                                                 <Text style={styles.totalLabel}>Total Amount:</Text>
                                                 <Text style={styles.totalVal}>
                                                     ₹{Number(draftData.subtotal || draftData.totalAmount).toLocaleString('en-IN')}
@@ -1138,8 +1253,8 @@ export default function FloatingVoiceAssistant({
                                     {/* Missing Fields Indicators */}
                                     {missingFields.length > 0 && (
                                         <View style={styles.missingBox}>
-                                            <AlertCircle size={14} color="#F59E0B" />
-                                            <Text style={styles.missingLabel}>Missing Info:</Text>
+                                            <AlertCircle size={13} color="#D97706" />
+                                            <Text style={styles.missingLabel}>Required:</Text>
                                             {missingFields.map((f, i) => (
                                                 <View key={i} style={styles.missingTag}>
                                                     <Text style={styles.missingTagText}>{f}</Text>
@@ -1160,6 +1275,7 @@ export default function FloatingVoiceAssistant({
                                                 key={opt.id || index}
                                                 style={styles.optionPill}
                                                 onPress={() => handleSelectOption(opt)}
+                                                activeOpacity={0.7}
                                             >
                                                 <Text style={styles.optionPillText}>
                                                     {opt.label || opt.name || opt.title}
@@ -1176,19 +1292,19 @@ export default function FloatingVoiceAssistant({
                                     <TouchableOpacity
                                         style={styles.confirmBtn}
                                         onPress={handleConfirm}
-                                        activeOpacity={0.8}
+                                        activeOpacity={0.85}
                                     >
                                         <CheckCircle2 size={18} color="#FFFFFF" />
-                                        <Text style={styles.confirmBtnText}>Confirm (Yes / Haan)</Text>
+                                        <Text style={styles.confirmBtnText}>Confirm Deal</Text>
                                     </TouchableOpacity>
 
                                     <TouchableOpacity
                                         style={styles.cancelBtn}
                                         onPress={handleCancel}
-                                        activeOpacity={0.8}
+                                        activeOpacity={0.85}
                                     >
                                         <XCircle size={18} color="#EF4444" />
-                                        <Text style={styles.cancelBtnText}>Cancel (No / Nahi)</Text>
+                                        <Text style={styles.cancelBtnText}>Cancel</Text>
                                     </TouchableOpacity>
                                 </View>
                             )}
@@ -1200,8 +1316,8 @@ export default function FloatingVoiceAssistant({
                                     onPress={handleClose}
                                     activeOpacity={0.85}
                                 >
-                                    <CheckCircle2 size={18} color="#0F172A" />
-                                    <Text style={styles.doneBtnText}>Done</Text>
+                                    <CheckCircle2 size={18} color="#FFFFFF" />
+                                    <Text style={styles.doneBtnText}>Complete & Done</Text>
                                 </TouchableOpacity>
                             )}
                         </ScrollView>
@@ -1260,9 +1376,6 @@ export default function FloatingVoiceAssistant({
                                             >
                                                 {item.label}
                                             </Text>
-                                            <Text style={styles.langOptionGreeting} numberOfLines={1}>
-                                                {item.greeting}
-                                            </Text>
                                         </View>
                                         {isSelected && (
                                             <View style={styles.langSelectedCheck}>
@@ -1281,7 +1394,7 @@ export default function FloatingVoiceAssistant({
 }
 
 const styles = StyleSheet.create({
-    // ─── 1. Floating Siri Action Button ───
+    // ─── 1. Floating Action Button ───
     floatingContainer: {
         position: 'absolute',
         bottom: 92,
@@ -1296,19 +1409,19 @@ const styles = StyleSheet.create({
         width: 74,
         height: 74,
         borderRadius: 37,
-        backgroundColor: 'rgba(2, 132, 199, 0.2)',
+        backgroundColor: 'rgba(2, 132, 199, 0.22)',
     },
     floatingButton: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+        width: 62,
+        height: 62,
+        borderRadius: 31,
         backgroundColor: '#0B2265',
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#0B2265',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.45,
-        shadowRadius: 12,
+        shadowRadius: 14,
         elevation: 12,
         borderWidth: 2.5,
         borderColor: '#38BDF8',
@@ -1338,10 +1451,10 @@ const styles = StyleSheet.create({
         borderColor: '#FFFFFF',
     },
 
-    // ─── 2. Siri Light Theme Modal Backdrop & Sheet ───
+    // ─── 2. Siri Theme Modal Backdrop & Sheet ───
     modalBackdrop: {
         flex: 1,
-        backgroundColor: 'rgba(15, 23, 42, 0.55)',
+        backgroundColor: 'rgba(15, 23, 42, 0.6)',
         justifyContent: 'flex-end',
     },
     backdropTouch: {
@@ -1349,14 +1462,14 @@ const styles = StyleSheet.create({
     },
     modalSheet: {
         backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        maxHeight: '88%',
+        borderTopLeftRadius: 34,
+        borderTopRightRadius: 34,
+        maxHeight: '90%',
         shadowColor: '#000000',
-        shadowOffset: { width: 0, height: -6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 20,
-        elevation: 20,
+        shadowOffset: { width: 0, height: -8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 24,
+        elevation: 24,
         borderWidth: 1,
         borderColor: '#F1F5F9',
         paddingBottom: Platform.OS === 'ios' ? 32 : 16,
@@ -1367,7 +1480,7 @@ const styles = StyleSheet.create({
         paddingBottom: 4,
     },
     dragBar: {
-        width: 40,
+        width: 44,
         height: 4,
         borderRadius: 2,
         backgroundColor: '#CBD5E1',
@@ -1376,8 +1489,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingTop: 8,
+        paddingHorizontal: 16,
+        paddingTop: 6,
         paddingBottom: 12,
         borderBottomWidth: 1,
         borderBottomColor: '#F1F5F9',
@@ -1385,23 +1498,24 @@ const styles = StyleSheet.create({
     headerLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 8,
+        flexShrink: 1,
     },
     assistantAvatar: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        backgroundColor: '#EFF6FF',
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#F0F9FF',
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 1,
+        borderWidth: 1.5,
         borderColor: '#BAE6FD',
     },
     headerTitle: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '800',
         color: '#0B2265',
-        letterSpacing: 0.3,
+        letterSpacing: 0.2,
     },
     statusRow: {
         flexDirection: 'row',
@@ -1437,15 +1551,19 @@ const styles = StyleSheet.create({
     headerActions: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        gap: 5,
+        flexShrink: 0,
     },
     langPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
         backgroundColor: '#F1F5F9',
-        paddingHorizontal: 9,
+        paddingHorizontal: 8,
         paddingVertical: 5,
         borderRadius: 12,
         borderWidth: 1,
         borderColor: '#E2E8F0',
+        gap: 4,
     },
     langPillText: {
         fontSize: 11,
@@ -1453,14 +1571,22 @@ const styles = StyleSheet.create({
         color: '#0B2265',
     },
     headerIconBtn: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 30,
+        height: 30,
+        borderRadius: 15,
         backgroundColor: '#F8FAFC',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: '#F1F5F9',
+    },
+    headerCloseBtn: {
+        width: 30,
+        height: 30,
+        borderRadius: 15,
+        backgroundColor: '#F1F5F9',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 
     // ─── Company Context Bar ───
@@ -1548,20 +1674,20 @@ const styles = StyleSheet.create({
     },
 
     sheetBody: {
-        maxHeight: 540,
+        maxHeight: 560,
     },
     sheetBodyContent: {
-        paddingHorizontal: 20,
+        paddingHorizontal: 18,
         paddingTop: 8,
         paddingBottom: 24,
-        gap: 14,
+        gap: 12,
     },
 
-    // ─── 3. Siri Glowing Orb Visualizer (Light Theme) ───
+    // ─── 3. Siri Glowing Orb Visualizer ───
     siriOrbSection: {
         alignItems: 'center',
         justifyContent: 'center',
-        marginVertical: 10,
+        marginVertical: 8,
     },
     siriOrbContainer: {
         width: 140,
@@ -1571,18 +1697,18 @@ const styles = StyleSheet.create({
     },
     siriRing: {
         position: 'absolute',
-        width: 80,
-        height: 80,
-        borderRadius: 40,
+        width: 82,
+        height: 82,
+        borderRadius: 41,
     },
     siriRing1: {
-        backgroundColor: 'rgba(2, 132, 199, 0.35)', // Cyan Aura
+        backgroundColor: 'rgba(2, 132, 199, 0.35)', // Sky Cyan Aura
     },
     siriRing2: {
-        backgroundColor: 'rgba(124, 58, 237, 0.28)', // Violet Aura
+        backgroundColor: 'rgba(124, 58, 237, 0.28)', // Indigo Aura
     },
     siriRing3: {
-        backgroundColor: 'rgba(219, 39, 119, 0.22)', // Pink Aura
+        backgroundColor: 'rgba(236, 72, 153, 0.22)', // Pink Aura
     },
     siriCoreOrb: {
         width: 78,
@@ -1590,57 +1716,57 @@ const styles = StyleSheet.create({
         borderRadius: 39,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 10,
+        shadowOffset: { width: 0, height: 6 },
+        elevation: 12,
     },
     siriCoreOrbListening: {
         backgroundColor: '#0284C7',
         shadowColor: '#0284C7',
-        shadowRadius: 18,
-        shadowOpacity: 0.6,
+        shadowRadius: 20,
+        shadowOpacity: 0.65,
         borderWidth: 2.5,
         borderColor: '#38BDF8',
     },
     siriCoreOrbSpeaking: {
         backgroundColor: '#059669',
         shadowColor: '#059669',
-        shadowRadius: 18,
-        shadowOpacity: 0.6,
+        shadowRadius: 20,
+        shadowOpacity: 0.65,
         borderWidth: 2.5,
         borderColor: '#34D399',
     },
     siriCoreOrbProcessing: {
         backgroundColor: '#D97706',
         shadowColor: '#D97706',
-        shadowRadius: 18,
-        shadowOpacity: 0.6,
+        shadowRadius: 20,
+        shadowOpacity: 0.65,
         borderWidth: 2.5,
         borderColor: '#FCD34D',
     },
     siriCoreOrbIdle: {
         backgroundColor: '#0B2265',
         shadowColor: '#0B2265',
-        shadowRadius: 12,
-        shadowOpacity: 0.4,
+        shadowRadius: 14,
+        shadowOpacity: 0.45,
         borderWidth: 2,
         borderColor: '#38BDF8',
     },
     siriOrbInnerShimmer: {
         position: 'absolute',
-        width: 50,
-        height: 50,
-        borderRadius: 25,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+        backgroundColor: 'rgba(255, 255, 255, 0.22)',
     },
 
-    // ─── Real-time Siri Spectrum Waves ───
+    // ─── Sound Spectrum Waves ───
     siriSpectrumRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
-        height: 48,
-        marginTop: 8,
+        height: 44,
+        marginTop: 6,
     },
     spectrumBar: {
         width: 5,
@@ -1648,7 +1774,7 @@ const styles = StyleSheet.create({
     },
     barCyan: { backgroundColor: '#0284C7' },
     barViolet: { backgroundColor: '#7C3AED' },
-    barPink: { backgroundColor: '#DB2777' },
+    barPink: { backgroundColor: '#EC4899' },
     barBlue: { backgroundColor: '#2563EB' },
     barEmerald: { backgroundColor: '#059669' },
 
@@ -1656,7 +1782,7 @@ const styles = StyleSheet.create({
         marginTop: 4,
         fontSize: 13,
         fontWeight: '700',
-        color: '#334155',
+        color: '#475569',
         textAlign: 'center',
     },
 
@@ -1664,39 +1790,68 @@ const styles = StyleSheet.create({
     spokenPreviewBox: {
         backgroundColor: '#F0F9FF',
         borderRadius: 16,
-        paddingVertical: 14,
+        paddingVertical: 12,
         paddingHorizontal: 16,
         borderWidth: 1.5,
         borderColor: '#BAE6FD',
-        alignItems: 'center',
-        justifyContent: 'center',
         shadowColor: '#0284C7',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.08,
         shadowRadius: 6,
         elevation: 2,
+        gap: 4,
+    },
+    spokenHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    spokenLiveBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        backgroundColor: '#E0F2FE',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 8,
+    },
+    spokenLiveDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#0284C7',
+    },
+    spokenLiveText: {
+        fontSize: 10,
+        fontWeight: '800',
+        color: '#0284C7',
+        textTransform: 'uppercase',
     },
     spokenPreviewText: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '700',
         color: '#0B2265',
         textAlign: 'center',
-        lineHeight: 23,
+        lineHeight: 22,
         letterSpacing: 0.2,
     },
 
     // ─── 5. Assistant Prompt Message Card ───
     promptCard: {
-        backgroundColor: '#FAF5FF',
-        borderRadius: 18,
+        backgroundColor: '#F8FAFC',
+        borderRadius: 16,
         padding: 14,
         borderWidth: 1.5,
-        borderColor: '#E9D5FF',
+        borderColor: '#E2E8F0',
         gap: 8,
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
+        elevation: 1,
     },
     promptCardSuccess: {
-        backgroundColor: '#ECFDF5',
-        borderColor: '#A7F3D0',
+        backgroundColor: '#F0FDF4',
+        borderColor: '#BBF7D0',
     },
     promptCardDanger: {
         backgroundColor: '#FEF2F2',
@@ -1705,19 +1860,23 @@ const styles = StyleSheet.create({
     promptHeader: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    promptBadgeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 6,
     },
     promptLabel: {
         fontSize: 12,
         fontWeight: '800',
         color: '#0B2265',
-        flex: 1,
     },
     speakingBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: '#EFF6FF',
+        backgroundColor: '#E0F2FE',
         paddingHorizontal: 8,
         paddingVertical: 3,
         borderRadius: 10,
@@ -1731,26 +1890,26 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: '#EFF6FF',
+        backgroundColor: '#F0F9FF',
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: '#BFDBFE',
+        borderColor: '#BAE6FD',
     },
     replayPillText: {
         fontSize: 11,
         fontWeight: '700',
-        color: '#0B2265',
+        color: '#0284C7',
     },
     promptMessageText: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '600',
-        color: '#0F172A',
-        lineHeight: 22,
+        color: '#1E293B',
+        lineHeight: 21,
     },
 
-    // ─── 6. Live Draft HUD Card ───
+    // ─── 6. Live Sauda Draft HUD Card ───
     draftCard: {
         backgroundColor: '#FFFFFF',
         borderRadius: 18,
@@ -1759,7 +1918,7 @@ const styles = StyleSheet.create({
         borderColor: '#E2E8F0',
         shadowColor: '#0B2265',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
+        shadowOpacity: 0.06,
         shadowRadius: 8,
         elevation: 2,
         gap: 10,
@@ -1772,39 +1931,60 @@ const styles = StyleSheet.create({
         borderBottomColor: '#F1F5F9',
         paddingBottom: 8,
     },
+    draftHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    draftLiveIndicator: {
+        width: 7,
+        height: 7,
+        borderRadius: 3.5,
+        backgroundColor: '#0284C7',
+    },
     draftTitle: {
         fontSize: 13,
         fontWeight: '800',
         color: '#0B2265',
     },
+    sessionBadgeBox: {
+        backgroundColor: '#F1F5F9',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+    },
     sessionBadge: {
         fontSize: 10,
         fontWeight: '700',
-        color: '#94A3B8',
+        color: '#64748B',
     },
     draftGrid: {
-        gap: 8,
+        gap: 7,
     },
     draftRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
     },
+    draftIconCircle: {
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        backgroundColor: '#F0F9FF',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     draftFieldLabel: {
         fontSize: 12,
         fontWeight: '600',
         color: '#64748B',
-        width: 100,
+        width: 80,
     },
     draftFieldVal: {
         fontSize: 13,
         fontWeight: '700',
         color: '#0F172A',
         flex: 1,
-    },
-    roleFieldVal: {
-        textTransform: 'capitalize',
-        color: '#0284C7',
     },
     totalRow: {
         marginTop: 4,
@@ -1816,7 +1996,7 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '800',
         color: '#059669',
-        width: 100,
+        width: 90,
     },
     totalVal: {
         fontSize: 15,
@@ -1876,8 +2056,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         paddingVertical: 8,
         borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#CBD5E1',
+        borderWidth: 1.5,
+        borderColor: '#E2E8F0',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
@@ -1940,13 +2120,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: '#0B2265',
+        backgroundColor: '#059669',
         paddingVertical: 14,
         borderRadius: 14,
         marginTop: 4,
-        shadowColor: '#0B2265',
+        shadowColor: '#059669',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
+        shadowOpacity: 0.25,
         shadowRadius: 8,
         elevation: 4,
     },
@@ -2028,10 +2208,6 @@ const styles = StyleSheet.create({
     langOptionLabelSelected: {
         color: '#0284C7',
         fontWeight: '800',
-    },
-    langOptionGreeting: {
-        fontSize: 11,
-        color: '#64748B',
     },
     langSelectedCheck: {
         width: 22,

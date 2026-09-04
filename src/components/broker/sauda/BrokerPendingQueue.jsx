@@ -60,7 +60,7 @@ const COLORS = {
   cardBg: '#FFFFFF',      // Clean white cards
   border: '#D8EFE2',      // Crisp light mint border
   borderHover: '#B2E2C7',
-  primary: '#2563EB',     // Royal Blue
+  primary: '#2a38f4ff',     // Royal Blue
   primaryBg: '#EFF6FF',
   emerald: '#059669',     // Emerald Green (Approved)
   emeraldBg: '#ECFDF5',
@@ -1408,7 +1408,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 14,
-    backgroundColor: '#3274d1ff',
+    backgroundColor: '#1427d2ff',
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -1662,7 +1662,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
   },
@@ -1670,6 +1670,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '900',
+    textAlign: 'center',
+    includeFontPadding: false,
   },
   companyNameCol: {
     flex: 1,
@@ -1764,18 +1766,19 @@ const styles = StyleSheet.create({
   footerActionsBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   viewDetailsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#F1F5F9',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    height: 32,
     borderRadius: 8,
   },
   viewDetailsBtnText: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '700',
     color: COLORS.text600,
   },
@@ -1785,13 +1788,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   iconActionBtn: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     borderRadius: 8,
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
     borderColor: '#BFDBFE',
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'center',
   },
 
@@ -2049,7 +2052,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },

@@ -15,7 +15,7 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
-import Svg, { Rect, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
+import Svg, { Rect, Defs, LinearGradient as SvgGradient, Stop, Path } from 'react-native-svg';
 import {
   Bell,
   Building2,
@@ -37,6 +37,11 @@ import { fontSize, moderateScale, scale, SCREEN_WIDTH } from '../../utils/respon
 
 const width = SCREEN_WIDTH;
 
+const THEME = '#2327D8';
+const THEME_HOVER = '#1B1FA7';
+const DARK_NAVY = '#1E1C38';
+const BG_COLOR = '#F4F6FB';
+
 const BrokerDashboard = ({ onNavigate, routeData }) => {
   const [refreshing, setRefreshing] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -48,12 +53,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
   const slideAnim = React.useRef(new Animated.Value(width)).current;
 
   const openProfileDrawer = () => {
-    setIsProfileSliderOpen(true);
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: 280,
-      useNativeDriver: true,
-    }).start();
+    onNavigate('BrokerProfile', { user: currentUser || routeData?.user, role: 'Broker' });
   };
 
   const closeProfileDrawer = () => {
@@ -67,8 +67,8 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
   };
 
   const fetchDashboardData = async () => {
+    let fetchedDeals = [];
     try {
-      // 1. INSTANT LOCAL HYDRATION (0.001s)
       const storedCompStr = await AsyncStorage.getItem('broker_companies_cache');
       if (storedCompStr) {
         try {
@@ -79,15 +79,8 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
         } catch (e) { }
       }
 
-      const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
-      const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
-      if (localDeals.length > 0) {
-        setBrokerDeals(localDeals);
-      }
-
       const token = await AsyncStorage.getItem('userToken');
 
-      // 2. PARALLEL BACKGROUND API FETCH
       const [compRes, userRes, brokerDealsRes, dealsRes] = await Promise.allSettled([
         getCompanies(1, 20),
         token ? getUserProfile(token) : Promise.resolve(null),
@@ -125,8 +118,6 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
         setCurrentUser(mergedProfile);
         await AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedProfile));
       }
-
-      let fetchedDeals = [];
 
       if (brokerDealsRes.status === 'fulfilled' && brokerDealsRes.value?.success) {
         const brokerRes = brokerDealsRes.value;
@@ -170,7 +161,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
         });
       }
 
-      const combined = [...localDeals];
+      const combined = [];
       fetchedDeals.forEach(fD => {
         if (!combined.some(c => (c.id === fD.id || c._id === fD.id || c._id === fD._id))) {
           combined.push(fD);
@@ -219,9 +210,9 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
   const activeSaudasCount = totalSaudasCount;
 
   const roleTheme = {
-    bg: 'rgba(6, 182, 212, 0.2)',
-    border: '#06B6D4',
-    text: '#38BDF8',
+    bg: 'rgba(35, 39, 216, 0.15)',
+    border: THEME,
+    text: '#C7D2FE',
     label: '⚡ LICENSED BROKER',
   };
 
@@ -230,28 +221,28 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
       id: 'deals',
       label: 'Saudas',
       icon: <Handshake size={22} color="#FFFFFF" />,
-      circleBg: '#0284C7',
+      circleBg: THEME,
       onPress: () => onNavigate('BrokerCreatedDeals', { user: routeData?.user }),
     },
     {
       id: 'chat',
       label: 'Messages',
       icon: <Users size={22} color="#FFFFFF" />,
-      circleBg: '#06B6D4',
+      circleBg: THEME_HOVER,
       onPress: () => onNavigate('ChatList', { user: routeData?.user }),
     },
     {
       id: 'broker_company',
       label: 'Add Company',
       icon: <Building2 size={22} color="#FFFFFF" />,
-      circleBg: '#2563EB',
+      circleBg: THEME,
       onPress: () => onNavigate('BrokerAddCompany', { user: routeData?.user }),
     },
     {
       id: 'profile',
       label: 'View Profile',
       icon: <User size={22} color="#FFFFFF" />,
-      circleBg: '#6366F1',
+      circleBg: THEME_HOVER,
       onPress: openProfileDrawer,
     },
   ];
@@ -260,10 +251,10 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
     {
       label: 'Active Saudas',
       value: activeSaudasCount.toString(),
-      icon: <TrendingUp size={16} color="#0284C7" />,
+      icon: <TrendingUp size={16} color={THEME} />,
       trend: `${totalSaudasCount} Total`,
-      accent: '#0284C7',
-      bg: '#E0F2FE',
+      accent: THEME,
+      bg: '#EEF2FE',
     },
     {
       label: 'Pending Saudas',
@@ -276,17 +267,70 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
     {
       label: 'Linked Firms',
       value: companies.length.toString(),
-      icon: <Building2 size={16} color="#2563EB" />,
+      icon: <Building2 size={16} color={THEME} />,
       trend: 'Verified',
-      accent: '#2563EB',
-      bg: '#EEF2FF',
+      accent: THEME,
+      bg: '#EEF2FE',
     },
   ];
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0284C7" />
+      <StatusBar barStyle="light-content" backgroundColor={THEME} />
 
+      {/* ─── FIXED TOP HEADER ─── */}
+      <View style={styles.heroSection}>
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            style={styles.glassActionBtn}
+            onPress={() => onNavigate('ChatList')}
+            activeOpacity={0.75}>
+            <Bell size={20} color="#FFFFFF" />
+            <View style={styles.notifRoseDot} />
+          </TouchableOpacity>
+
+          <View style={styles.brandContainer}>
+            <Image
+              source={require('../../images/logo/new_logo.png')}
+              style={styles.brandLogo}
+              resizeMode="contain"
+            />
+          </View>
+
+          <View style={styles.profileSection}>
+            <TouchableOpacity
+              style={styles.avatarGlassBtn}
+              onPress={openProfileDrawer}
+              activeOpacity={0.75}>
+              <Text style={styles.avatarText}>
+                {userName.trim().charAt(0).toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.welcomeBanner}>
+          <Text style={styles.welcomeHelloText}>Hello & Welcome,</Text>
+
+          <View style={styles.nameAndRoleRow}>
+            <Text
+              style={styles.userNameStylish}
+              numberOfLines={1}
+              adjustsFontSizeToFit={true}
+              minimumFontScale={0.7}
+            >
+              {userName}
+            </Text>
+
+            <View style={styles.emeraldSyncBadge}>
+              <ShieldCheck size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.emeraldSyncBadgeText}>BROKER PARTNER</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* ─── SCROLLABLE BODY ─── */}
       <ScrollView
         style={styles.scrollArea}
         contentContainerStyle={styles.scrollContent}
@@ -296,81 +340,10 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#0284C7']}
-            tintColor="#0284C7"
+            colors={[THEME]}
+            tintColor={THEME}
           />
         }>
-
-        <View style={styles.heroSection}>
-          {/* Ambient Glow Orbs */}
-          <View style={styles.glowOrbWhiteTop} />
-          <View style={styles.glowOrbIndigoBottom} />
-
-          <View style={styles.topBar}>
-            <TouchableOpacity
-              style={styles.glassActionBtn}
-              onPress={() => onNavigate('ChatList')}
-              activeOpacity={0.75}>
-              <Bell size={20} color="#FFFFFF" />
-              <View style={styles.notifRoseDot} />
-            </TouchableOpacity>
-
-            <View style={styles.brandContainer}>
-              <Image
-                source={require('../../images/logo/new_logo.png')}
-                style={styles.brandLogo}
-                resizeMode="contain"
-              />
-            </View>
-
-            {/* create broekr company  */}
-
-
-
-
-
-
-            <View style={styles.profileSection}>
-              <TouchableOpacity
-                style={styles.avatarGlassBtn}
-                onPress={openProfileDrawer}
-                activeOpacity={0.75}>
-                <Text style={styles.avatarText}>
-                  {userName.trim().charAt(0).toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.welcomeBanner}>
-            <Text style={styles.welcomeHelloText}>Hello & Welcome,</Text>
-
-            <View style={styles.nameAndRoleRow}>
-              <Text
-                style={styles.userNameStylish}
-                numberOfLines={1}
-                adjustsFontSizeToFit={true}
-                minimumFontScale={0.7}
-              >
-                {userName}
-              </Text>
-
-              <View style={styles.emeraldSyncBadge}>
-                <ShieldCheck size={12} color="#34D399" style={{ marginRight: 4 }} />
-                <Text style={styles.emeraldSyncBadgeText}>BROKER PARTNER</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.registerPromptBtn}
-              onPress={() => onNavigate('BrokerAddCompany')}
-              activeOpacity={0.8}
-            >
-              <Plus size={14} color="#3B3CFF" />
-              <Text style={styles.registerPromptText}>Link Your Brokerage Company</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         {/* ─── ULTRA-MODERN 3D GLOWING CARD BUTTON ─── */}
         <View style={styles.sectionContainer}>
@@ -381,7 +354,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
           >
             {/* Left Dark Icon Circle */}
             <View style={styles.heroAddIconDisk}>
-              <Building2 size={20} color="#38BDF8" />
+              <Building2 size={20} color="#FFFFFF" />
               <View style={styles.heroAddPlusDot}>
                 <Plus size={10} color="#FFFFFF" strokeWidth={3.5} />
               </View>
@@ -409,9 +382,6 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Registered Brokerage Companies</Text>
-            <TouchableOpacity onPress={() => onNavigate('BrokerAddCompany')}>
-
-            </TouchableOpacity>
           </View>
 
           {companies.length === 0 ? (
@@ -420,7 +390,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
               onPress={() => onNavigate('BrokerAddCompany')}
               activeOpacity={0.85}
             >
-              <Building2 size={24} color="#4F46E5" style={{ marginBottom: 6 }} />
+              <Building2 size={24} color={THEME} style={{ marginBottom: 6 }} />
               <Text style={styles.emptyCompanyTitle}>Link Your Brokerage Company</Text>
               <Text style={styles.emptyCompanySub}>
                 Add your APMC registered company to issue official trade contracts.
@@ -436,7 +406,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
               >
                 <View style={styles.firmHeaderRow}>
                   <View style={styles.firmIconCircle}>
-                    <Building2 size={18} color="#4F46E5" />
+                    <Building2 size={18} color={THEME} />
                   </View>
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <Text style={styles.firmName}>{firm.name || firm.companyName}</Text>
@@ -445,9 +415,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
                     </Text>
                   </View>
                   <View style={styles.verifiedFirmBadge}>
-
-
-                    <ShieldCheck size={12} color="#16A34A" style={{ marginRight: 4 }} />
+                    <ShieldCheck size={12} color={THEME} style={{ marginRight: 4 }} />
                     <Text style={styles.verifiedFirmText}>Verified APMC</Text>
                   </View>
                 </View>
@@ -466,8 +434,6 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
             ))
           )}
         </View>
-
-
 
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
@@ -493,40 +459,6 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
         </View>
 
       </ScrollView>
-
-      {/* ─── RIGHT-SIDE PROFILE SLIDER DRAWER ─── */}
-      <Modal
-        visible={isProfileSliderOpen}
-        animationType="none"
-        transparent={true}
-        onRequestClose={closeProfileDrawer}
-      >
-        <View style={styles.rightSliderOverlay}>
-          <TouchableOpacity
-            style={styles.rightSliderBackdrop}
-            activeOpacity={1}
-            onPress={closeProfileDrawer}
-          />
-          <Animated.View
-            style={[
-              styles.rightSliderContainer,
-              { transform: [{ translateX: slideAnim }] },
-            ]}
-          >
-            <BrokerProfile
-              onNavigate={(screen, data, options) => {
-                if (screen === 'pop' || screen === 'Back') {
-                  closeProfileDrawer();
-                } else {
-                  closeProfileDrawer();
-                  onNavigate(screen, data, options);
-                }
-              }}
-              routeData={routeData}
-            />
-          </Animated.View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -534,7 +466,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: BG_COLOR,
   },
   rightSliderOverlay: {
     flex: 1,
@@ -552,7 +484,7 @@ const styles = StyleSheet.create({
   rightSliderContainer: {
     width: '90%',
     height: '100%',
-    backgroundColor: '#F5F7FB',
+    backgroundColor: BG_COLOR,
     elevation: 12,
     shadowColor: '#000',
     shadowOffset: { width: -4, height: 0 },
@@ -564,42 +496,37 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 110,
+    paddingBottom: 32,
   },
   heroSection: {
-    backgroundColor: '#0284C7',
+    backgroundColor: THEME,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 32 : 20,
+    paddingTop: Platform.OS === 'android' ? 16 : 12,
     paddingBottom: 24,
     marginBottom: 20,
-    marginTop: 6,
+    marginTop: 0,
     position: 'relative',
     overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
   },
-  glowOrbWhiteTop: {
+  ambientGlowTopRight: {
     position: 'absolute',
-    top: -40,
+    top: -60,
     right: -40,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(35, 39, 216, 0.25)',
+  },
+  ambientGlowBottomLeft: {
+    position: 'absolute',
+    bottom: -40,
+    left: -30,
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  glowOrbIndigoBottom: {
-    position: 'absolute',
-    bottom: -40,
-    left: -40,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(129, 140, 248, 0.20)',
+    backgroundColor: 'rgba(27, 31, 167, 0.22)',
   },
   topBar: {
     flexDirection: 'row',
@@ -628,7 +555,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#F43F5E',
     borderWidth: 1.5,
-    borderColor: '#3B3CFF',
+    borderColor: THEME,
   },
   brandContainer: {
     alignItems: 'center',
@@ -662,14 +589,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 12,
-    backgroundColor: 'rgba(52, 211, 153, 0.20)',
+    backgroundColor: 'rgba(35, 39, 216, 0.20)',
     borderWidth: 1,
-    borderColor: 'rgba(52, 211, 153, 0.35)',
+    borderColor: 'rgba(35, 39, 216, 0.35)',
   },
   emeraldSyncBadgeText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#34D399',
+    color: '#C7D2FE',
     letterSpacing: 0.4,
   },
   welcomeBanner: {
@@ -677,7 +604,7 @@ const styles = StyleSheet.create({
   },
   welcomeHelloText: {
     fontSize: 13,
-    color: '#7DD3FC',
+    color: '#A5B4FC',
     fontWeight: '500',
     marginBottom: 2,
   },
@@ -722,7 +649,7 @@ const styles = StyleSheet.create({
   registerPromptText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#0284C7',
+    color: THEME,
     marginLeft: 6,
   },
   sectionContainer: {
@@ -744,19 +671,19 @@ const styles = StyleSheet.create({
   seeAllText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#0284C7',
+    color: THEME,
   },
   // ULTRA-MODERN 3D GLOWING CARD BUTTON
   heroAddCompanyCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0284C7',
+    backgroundColor: THEME,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderWidth: 1.5,
-    borderColor: '#38BDF8',
-    shadowColor: '#0284C7',
+    borderColor: THEME_HOVER,
+    shadowColor: THEME,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
@@ -766,12 +693,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: '#0F172A',
+    backgroundColor: DARK_NAVY,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
     borderWidth: 1.5,
-    borderColor: '#38BDF8',
+    borderColor: '#4338CA',
   },
   heroAddPlusDot: {
     position: 'absolute',
@@ -780,11 +707,11 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#059669',
+    backgroundColor: '#10B981',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#0284C7',
+    borderColor: THEME,
   },
   heroAddTextBox: {
     flex: 1,
@@ -827,7 +754,7 @@ const styles = StyleSheet.create({
   heroAddPillText: {
     fontSize: 12,
     fontWeight: '900',
-    color: '#0284C7',
+    color: THEME,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -839,9 +766,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E0F2FE',
+    borderColor: '#EEF2FE',
     elevation: 3,
-    shadowColor: '#0284C7',
+    shadowColor: THEME,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -881,9 +808,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E0F2FE',
+    borderColor: '#EEF2FE',
     elevation: 3,
-    shadowColor: '#0284C7',
+    shadowColor: THEME,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -892,7 +819,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: '#0284C7',
+    backgroundColor: THEME,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -917,9 +844,9 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#E0F2FE',
+    borderColor: '#E2E8F0',
     elevation: 2,
-    shadowColor: '#0284C7',
+    shadowColor: THEME,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
@@ -932,7 +859,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#EEF2FE',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -949,7 +876,7 @@ const styles = StyleSheet.create({
   verifiedFirmBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#EEF2FE',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
@@ -957,7 +884,7 @@ const styles = StyleSheet.create({
   verifiedFirmText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#0369A1',
+    color: THEME,
   },
   firmDetailsRow: {
     flexDirection: 'row',
@@ -978,13 +905,13 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#7DD3FC',
+    borderColor: THEME,
     borderStyle: 'dashed',
   },
   emptyCompanyTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#0369A1',
+    color: THEME,
   },
   emptyCompanySub: {
     fontSize: 11,

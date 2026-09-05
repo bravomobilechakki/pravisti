@@ -380,29 +380,22 @@ export const createDeal = async (dealData, token) => {
   try {
     return await postRequest(SummaryApi.createDeal, dealData, token);
   } catch (error) {
-    console.warn('Backend createDeal failed:', error.message || error);
+    console.warn('Backend createDeal initial attempt failed:', error.message || error);
 
-    // If permission error for myCompanyId, try removing myCompanyId and retrying
-    if (dealData.myCompanyId) {
+    // If error related to myCompanyId or extra fields, retry with cleaned payload
+    if (dealData.myCompanyId || dealData.targetCompanyId) {
       try {
         const cleanedData = { ...dealData };
         delete cleanedData.myCompanyId;
+        delete cleanedData.targetCompanyId;
         return await postRequest(SummaryApi.createDeal, cleanedData, token);
       } catch (retryErr) {
-        console.warn('Retry createDeal without myCompanyId also failed:', retryErr);
+        console.error('Retry createDeal without company ids also failed:', retryErr);
+        throw retryErr;
       }
     }
 
-    // Fallback response for offline / unverified permission mode
-    return {
-      success: true,
-      message: 'Deal created successfully',
-      data: {
-        _id: 'DEAL-' + Math.floor(1000 + Math.random() * 9000),
-        status: 'pending',
-        ...dealData,
-      },
-    };
+    throw error;
   }
 };
 
@@ -555,10 +548,20 @@ export const createCategory = async (categoryData, token) => {
 
 export const getCategories = async (companyId, token, status) => {
   try {
-    return await getRequest(SummaryApi.getCategories(companyId, status), token);
+    let cId = companyId;
+    let authTok = token;
+    let stat = status;
+
+    if (typeof companyId === 'object' && companyId !== null) {
+      cId = companyId.companyId || companyId._id || companyId.id;
+      stat = stat || companyId.status;
+    }
+
+    const config = SummaryApi.getCategories(cId, stat);
+    return await getRequest(config, authTok);
   } catch (error) {
-    console.error('Error fetching categories:', error.message || error);
-    throw error;
+    console.warn('Notice fetching categories:', error.message || error);
+    return { success: false, data: [], message: error.message || 'Failed to fetch categories' };
   }
 };
 
@@ -610,10 +613,22 @@ export const createSubCategory = async (subCategoryData, token) => {
 
 export const getSubCategories = async (companyId, token, categoryId, status) => {
   try {
-    return await getRequest(SummaryApi.getSubCategories(companyId, categoryId, status), token);
+    let cId = companyId;
+    let authTok = token;
+    let catId = categoryId;
+    let stat = status;
+
+    if (typeof companyId === 'object' && companyId !== null) {
+      cId = companyId.companyId || companyId._id || companyId.id;
+      catId = catId || companyId.categoryId;
+      stat = stat || companyId.status;
+    }
+
+    const config = SummaryApi.getSubCategories(cId, catId, stat);
+    return await getRequest(config, authTok);
   } catch (error) {
-    console.error('Error fetching subcategories:', error.message || error);
-    throw error;
+    console.warn('Notice fetching subcategories:', error.message || error);
+    return { success: false, data: [], message: error.message || 'Failed to fetch subcategories' };
   }
 };
 
@@ -1196,5 +1211,16 @@ export const resetVoicePreferences = async (token = null) => {
     throw error;
   }
 };
+
+/* ================= UPLOAD SERVICE ================= */
+export {
+  uploadService,
+  uploadImage,
+  uploadMultipleImages,
+  resolveImageUrl,
+  deleteImage,
+  validateImage,
+} from './uploadService';
+
 
 

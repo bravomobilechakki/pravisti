@@ -49,6 +49,7 @@ import {
   completeBrokerDraftDeal,
   recreateExpiredDeal,
   deleteDeal,
+  resolveImageUrl,
 } from '../../../services/api';
 
 const BrokerDealDetails = ({ onNavigate, routeData }) => {
@@ -607,7 +608,11 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
               ) : (
                 <View style={styles.productSummaryRow}>
                   {productImg ? (
-                    <Image source={{ uri: productImg }} style={styles.productImageThumb} resizeMode="cover" />
+                    <Image
+                      source={{ uri: resolveImageUrl(productImg) }}
+                      style={styles.productImageThumb}
+                      resizeMode="cover"
+                    />
                   ) : (
                     <View style={styles.productFallbackBox}>
                       <Package size={32} color="#2563EB" />

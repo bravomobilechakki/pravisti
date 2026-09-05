@@ -165,8 +165,14 @@ const SummaryApi = {
   },
 
   getCategories: (companyId, status) => {
-    let query = `?companyId=${companyId}`;
-    if (status) query += `&status=${status}`;
+    const params = [];
+    if (companyId && companyId !== 'all' && companyId !== 'undefined' && companyId !== 'null') {
+      params.push(`companyId=${companyId}`);
+    }
+    if (status && status !== 'undefined' && status !== 'null') {
+      params.push(`status=${status}`);
+    }
+    const query = params.length > 0 ? `?${params.join('&')}` : '';
     return {
       url: `${backendDomain}/api/categories${query}`,
       method: "get",
@@ -195,9 +201,17 @@ const SummaryApi = {
   },
 
   getSubCategories: (companyId, categoryId, status) => {
-    let query = `?companyId=${companyId}`;
-    if (categoryId) query += `&categoryId=${categoryId}`;
-    if (status) query += `&status=${status}`;
+    const params = [];
+    if (companyId && companyId !== 'all' && companyId !== 'undefined' && companyId !== 'null') {
+      params.push(`companyId=${companyId}`);
+    }
+    if (categoryId && categoryId !== 'all' && categoryId !== 'undefined' && categoryId !== 'null') {
+      params.push(`categoryId=${categoryId}`);
+    }
+    if (status && status !== 'undefined' && status !== 'null') {
+      params.push(`status=${status}`);
+    }
+    const query = params.length > 0 ? `?${params.join('&')}` : '';
     return {
       url: `${backendDomain}/api/subcategories${query}`,
       method: "get",
@@ -233,10 +247,20 @@ const SummaryApi = {
   },
 
   getProducts: (companyId, categoryId, subCategoryId, status) => {
-    let query = `?companyId=${companyId}`;
-    if (categoryId) query += `&categoryId=${categoryId}`;
-    if (subCategoryId) query += `&subCategoryId=${subCategoryId}`;
-    if (status) query += `&status=${status}`;
+    const params = [];
+    if (companyId && companyId !== 'all' && companyId !== 'undefined' && companyId !== 'null') {
+      params.push(`companyId=${companyId}`);
+    }
+    if (categoryId && categoryId !== 'all' && categoryId !== 'undefined' && categoryId !== 'null') {
+      params.push(`categoryId=${categoryId}`);
+    }
+    if (subCategoryId && subCategoryId !== 'all' && subCategoryId !== 'undefined' && subCategoryId !== 'null') {
+      params.push(`subCategoryId=${subCategoryId}`);
+    }
+    if (status && status !== 'undefined' && status !== 'null') {
+      params.push(`status=${status}`);
+    }
+    const query = params.length > 0 ? `?${params.join('&')}` : '';
     return {
       url: `${backendDomain}/api/products${query}`,
       method: "get",
@@ -493,10 +517,23 @@ const SummaryApi = {
     method: "put",
   },
 
-  resetVoicePreferences: {
-    url: `${backendDomain}/api/v1/voice/preferences`,
-    method: "delete",
+  /* ================= UPLOAD APIs ================= */
+  uploadSingle: {
+    url: `${backendDomain}/api/upload/single`,
+    method: "post",
   },
+
+  uploadMultiple: {
+    url: `${backendDomain}/api/upload/multiple`,
+    method: "post",
+  },
+
+  deleteUpload: (filename) => ({
+    url: `${backendDomain}/api/upload/${filename}`,
+    method: "delete",
+  }),
 };
 
+export { backendDomain };
 export default SummaryApi;
+

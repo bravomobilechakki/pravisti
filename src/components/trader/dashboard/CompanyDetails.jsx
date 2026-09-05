@@ -68,6 +68,7 @@ import {
   getBrokerMyDeals,
   getBrokerPendingQueue,
   getPendingInvitations,
+  resolveImageUrl,
 } from '../../../services/api';
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
 
@@ -76,15 +77,15 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // Reusable SVG Sparkline Wave Component matching reference image
 const SparklineWave = ({ color, gradientId, pathD, fillD }) => (
   <View style={styles.sparklineContainer}>
-    <Svg width="100%" height={36} viewBox="0 0 100 36">
+    <Svg width="100%" height="100%" viewBox="0 0 100 24" preserveAspectRatio="none">
       <Defs>
         <LinearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={color} stopOpacity="0.28" />
+          <Stop offset="0%" stopColor={color} stopOpacity="0.25" />
           <Stop offset="100%" stopColor={color} stopOpacity="0.0" />
         </LinearGradient>
       </Defs>
       <Path d={fillD} fill={`url(#${gradientId})`} />
-      <Path d={pathD} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   </View>
 );
@@ -284,6 +285,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const fetchDealsList = React.useCallback(async () => {
     const id = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
     if (!id) {
+      setFetchedDeals([]);
       setIsDealsLoading(false);
       return;
     }
@@ -295,7 +297,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           setFetchedDeals(parsed);
           setIsDealsLoading(false);
         }
@@ -307,7 +309,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       const token = await AsyncStorage.getItem('userToken');
       if (!token) return;
 
-      const activeRes = await getDeals(token, 1, 10, id);
+      const activeRes = await getDeals(token, 1, 50, id);
       let allDeals = [];
 
       if (activeRes && activeRes.success) {
@@ -315,33 +317,45 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         allDeals = Array.isArray(d) ? d : [];
       }
 
-      // If active deals are less than 5, grab a few expired deals quickly
-      if (allDeals.length < 5) {
-        try {
-          const expiredRes = await getExpiredDeals(token, 1, 5, id);
-          if (expiredRes && expiredRes.success) {
-            const expD = expiredRes.data?.deals || expiredRes.data || [];
-            if (Array.isArray(expD)) {
-              allDeals = [...allDeals, ...expD];
-            }
+      // Also grab expired/general deals to ensure full completeness
+      try {
+        const generalRes = await getDeals(token, 1, 50);
+        const generalList = Array.isArray(generalRes?.data?.deals)
+          ? generalRes.data.deals
+          : Array.isArray(generalRes?.data)
+            ? generalRes.data
+            : [];
+        const seen = new Set(allDeals.map((d) => String(d._id || d.id)));
+        generalList.forEach((d) => {
+          const did = String(d._id || d.id);
+          if (!seen.has(did)) {
+            seen.add(did);
+            allDeals.push(d);
           }
-        } catch (ee) {}
-      }
+        });
+      } catch (ge) {}
 
-      const filtered = allDeals.filter((deal) => {
-        const sellerCid = deal.sellerCompanyId?._id || deal.sellerCompanyId?.id || deal.sellerCompanyId;
-        const buyerCid = deal.buyerCompanyId?._id || deal.buyerCompanyId?.id || deal.buyerCompanyId;
-        const brokerCid = deal.brokerCompanyId?._id || deal.brokerCompanyId?.id || deal.brokerCompanyId;
-        const p1Cid = deal.party1?.companyId?._id || deal.party1?.companyId || deal.party1?.company?._id || deal.party1?.company?.id;
-        const p2Cid = deal.party2?.companyId?._id || deal.party2?.companyId || deal.party2?.company?._id || deal.party2?.company?.id;
+      const isDealForThisCompany = (deal) => {
+        const tId = String(id);
+        const sellerCid = String(deal.sellerCompanyId?._id || deal.sellerCompanyId?.id || deal.sellerCompanyId || '');
+        const buyerCid = String(deal.buyerCompanyId?._id || deal.buyerCompanyId?.id || deal.buyerCompanyId || '');
+        const brokerCid = String(deal.brokerCompanyId?._id || deal.brokerCompanyId?.id || deal.brokerCompanyId || '');
+        const p1Cid = String(deal.party1?.companyId?._id || deal.party1?.companyId || deal.party1?.company?._id || deal.party1?.company?.id || '');
+        const p2Cid = String(deal.party2?.companyId?._id || deal.party2?.companyId || deal.party2?.company?._id || deal.party2?.company?.id || '');
+        const creatorCid = String(deal.creatorCompanyId?._id || deal.creatorCompanyId?.id || deal.creatorCompanyId || '');
+        const targetCid = String(deal.targetCompanyId?._id || deal.targetCompanyId?.id || deal.targetCompanyId || '');
         return (
-          String(sellerCid) === String(id) ||
-          String(buyerCid) === String(id) ||
-          String(brokerCid) === String(id) ||
-          String(p1Cid) === String(id) ||
-          String(p2Cid) === String(id)
+          sellerCid === tId ||
+          buyerCid === tId ||
+          brokerCid === tId ||
+          p1Cid === tId ||
+          p2Cid === tId ||
+          creatorCid === tId ||
+          targetCid === tId
         );
-      });
+      };
+
+      const filtered = allDeals.filter(isDealForThisCompany);
 
       setFetchedDeals(filtered);
       AsyncStorage.setItem(cacheKey, JSON.stringify(filtered)).catch(() => {});
@@ -534,27 +548,25 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   };
 
   const deals = React.useMemo(() => {
-    if (fetchedDeals.length > 0) return fetchedDeals;
-    return company?.recentDeals || [];
-  }, [fetchedDeals, company]);
+    return Array.isArray(fetchedDeals) ? fetchedDeals : [];
+  }, [fetchedDeals]);
 
   const confirmedDealsCount = React.useMemo(() => {
-    const list = deals.filter((d) => d.status === 'confirmed' || d.status === 'active' || d.status === 'completed');
-    return list.length || 2;
+    return deals.filter((d) => ['confirmed', 'active', 'completed', 'approved'].includes((d.status || '').toLowerCase())).length;
   }, [deals]);
 
   const pendingDealsCount = React.useMemo(() => {
-    const list = deals.filter((d) => d.status === 'pending' || !d.status);
-    return list.length || 11;
+    return deals.filter((d) => ['pending', 'in progress', 'inprogress', 'created'].includes((d.status || '').toLowerCase()) || !d.status).length;
   }, [deals]);
 
   const totalDealsCount = React.useMemo(() => {
-    return deals.length > 0 ? deals.length : 13;
+    return deals.length;
   }, [deals]);
 
-  const userName = currentUser?.name || routeData?.user?.name || 'monu';
-  const displayCompanyName = company?.name || 'Nokha Kaur';
-  const avatarLetter = (userName || 'M').charAt(0).toUpperCase();
+  const userName = currentUser?.name || routeData?.user?.name || 'Trader';
+  const displayCompanyName = company?.name || 'Company';
+  const companyFirstLetter = (company?.name || displayCompanyName || 'C').trim().charAt(0).toUpperCase();
+  const userInitial = (userName || 'U').charAt(0).toUpperCase();
 
   // 8 Quick Action Items (Row 1: Trading & Catalog, Row 2: Parties, Comms, Finance & Reports)
   const quickActions = [
@@ -653,14 +665,22 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             )}
           </TouchableOpacity>
 
-          {/* Profile Avatar Circle */}
+          {/* Right Corner Company Avatar (shows Company Logo or Company First Letter) */}
           <TouchableOpacity
             style={styles.headerAvatarBtn}
             onPress={() => onNavigate('CompanyProfileDetails', { company })}
             activeOpacity={0.8}
           >
             <View style={styles.headerAvatarCircle}>
-              <Text style={styles.headerAvatarText}>{avatarLetter}</Text>
+              {(company?.logo || company?.logoUrl || company?.image || company?.companyLogo) ? (
+                <Image
+                  source={{ uri: resolveImageUrl(company.logo || company.logoUrl || company.image || company.companyLogo) }}
+                  style={{ width: 38, height: 38, borderRadius: 19 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.headerAvatarText}>{companyFirstLetter}</Text>
+              )}
             </View>
           </TouchableOpacity>
         </View>
@@ -688,7 +708,15 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             activeOpacity={0.8}
           >
             <View style={styles.companyIconBox}>
-              <Building2 size={18} color="#1E3A8A" strokeWidth={2.2} />
+              {company?.logo ? (
+                <Image
+                  source={{ uri: resolveImageUrl(company.logo) }}
+                  style={{ width: '100%', height: '100%', borderRadius: 10 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Building2 size={18} color="#1E3A8A" strokeWidth={2.2} />
+              )}
             </View>
 
             <View style={styles.companyNameRow}>
@@ -798,12 +826,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Total Deals</Text>
               <Text style={styles.statValue}>{totalDealsCount}</Text>
-              <Text style={styles.statSubtext}>All Saudas</Text>
               <SparklineWave
                 color="#2563EB"
                 gradientId="blueGrad"
-                pathD="M0,24 Q15,30 30,22 T60,18 T80,26 T100,12"
-                fillD="M0,24 Q15,30 30,22 T60,18 T80,26 T100,12 L100,36 L0,36 Z"
+                pathD="M0,18 C20,18 35,9 55,12 C72,15 85,5 100,3"
+                fillD="M0,18 C20,18 35,9 55,12 C72,15 85,5 100,3 L100,24 L0,24 Z"
               />
             </View>
 
@@ -811,12 +838,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Confirmed Deals</Text>
               <Text style={styles.statValue}>{confirmedDealsCount}</Text>
-              <Text style={styles.statSubtext}>Active & Done</Text>
               <SparklineWave
                 color="#10B981"
                 gradientId="greenGrad"
-                pathD="M0,26 Q20,20 40,24 T70,16 T100,10"
-                fillD="M0,26 Q20,20 40,24 T70,16 T100,10 L100,36 L0,36 Z"
+                pathD="M0,19 C25,20 40,11 65,11 C80,11 90,4 100,2"
+                fillD="M0,19 C25,20 40,11 65,11 C80,11 90,4 100,2 L100,24 L0,24 Z"
               />
             </View>
 
@@ -824,12 +850,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             <View style={styles.statCard}>
               <Text style={styles.statLabel}>Pending Deals</Text>
               <Text style={styles.statValue}>{pendingDealsCount}</Text>
-              <Text style={styles.statSubtext}>Queue</Text>
               <SparklineWave
                 color="#F97316"
                 gradientId="orangeGrad"
-                pathD="M0,28 Q20,24 40,26 T75,18 T100,14"
-                fillD="M0,28 Q20,24 40,26 T75,18 T100,14 L100,36 L0,36 Z"
+                pathD="M0,16 C20,12 35,20 55,14 C75,8 88,15 100,9"
+                fillD="M0,16 C20,12 35,20 55,14 C75,8 88,15 100,9 L100,24 L0,24 Z"
               />
             </View>
           </View>
@@ -841,7 +866,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             <Text style={styles.sectionTitle}>Recent Deals</Text>
             <TouchableOpacity
               style={styles.viewAllBtn}
-              onPress={() => onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name })}
+              onPress={() => onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name, company })}
               activeOpacity={0.7}
             >
               <Text style={styles.viewAllBtnText}>View All</Text>
@@ -944,7 +969,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                   <View style={styles.recentDealIconBox}>
                     {productImage ? (
                       <Image
-                        source={{ uri: productImage }}
+                        source={{ uri: resolveImageUrl(productImage) }}
                         style={styles.recentDealProductImg}
                         resizeMode="cover"
                       />
@@ -1058,7 +1083,15 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                     }}
                     activeOpacity={0.75}
                   >
-                    <Building2 size={18} color={isSelected ? '#2563EB' : '#64748B'} />
+                    {comp.logo ? (
+                      <Image
+                        source={{ uri: resolveImageUrl(comp.logo) }}
+                        style={{ width: 22, height: 22, borderRadius: 6, marginRight: 8 }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Building2 size={18} color={isSelected ? '#2563EB' : '#64748B'} />
+                    )}
                     <Text
                       style={[styles.companyModalItemText, isSelected && styles.companyModalItemTextActive]}
                       numberOfLines={1}
@@ -1111,7 +1144,15 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
               <View style={styles.drawerAvatarWrapper}>
                 <View style={styles.drawerAvatarCircle}>
-                  <Text style={styles.drawerAvatarText}>{avatarLetter}</Text>
+                  {currentUser?.profilePicture || currentUser?.avatar ? (
+                    <Image
+                      source={{ uri: resolveImageUrl(currentUser.profilePicture || currentUser.avatar) }}
+                      style={{ width: '100%', height: '100%', borderRadius: 34 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Text style={styles.drawerAvatarText}>{userInitial}</Text>
+                  )}
                 </View>
                 <View style={styles.drawerAvatarCheckBadge}>
                   <ShieldCheck size={12} color="#FFFFFF" strokeWidth={3} />
@@ -1152,7 +1193,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 style={styles.drawerMenuItem}
                 onPress={() => {
                   setIsDrawerOpen(false);
-                  onNavigate('DealsList');
+                  onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name, company });
                 }}
                 activeOpacity={0.7}
               >
@@ -1522,6 +1563,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.5,
     borderColor: '#2563EB',
+    overflow: 'hidden',
   },
   headerAvatarText: {
     fontSize: 16,
@@ -1762,45 +1804,46 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 6,
   },
   statCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 12,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: '#F1F5F9',
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1.5,
+    shadowRadius: 3,
+    elevation: 1,
     overflow: 'hidden',
   },
   statLabel: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontWeight: '600',
     color: '#64748B',
   },
   statValue: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '800',
     color: '#0F172A',
-    marginTop: 4,
-    letterSpacing: -0.4,
+    marginTop: 2,
+    letterSpacing: -0.3,
   },
   statSubtext: {
-    fontSize: 9.5,
+    fontSize: 8.5,
     fontWeight: '500',
     color: '#94A3B8',
     marginTop: 1,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   sparklineContainer: {
     width: '100%',
-    height: 36,
-    marginTop: 2,
+    height: 24,
+    marginTop: 4,
   },
 
   /* ── 6. Recent Deals ── */

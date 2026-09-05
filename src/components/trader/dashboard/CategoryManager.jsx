@@ -35,13 +35,16 @@ import {
   getSubCategories,
   updateSubCategory,
   deleteSubCategory,
+  uploadService,
+  resolveImageUrl,
 } from '../../services/api';
 
 const SafeImage = ({ uri, style, fallbackUri }) => {
   const [failed, setFailed] = useState(false);
+  const resolvedUri = resolveImageUrl(uri);
   return (
     <Image
-      source={{ uri: failed || !uri ? fallbackUri : uri }}
+      source={{ uri: failed || !resolvedUri ? fallbackUri : resolvedUri }}
       style={style}
       resizeMode="cover"
       onError={() => setFailed(true)}
@@ -77,8 +80,10 @@ const CategoryManager = ({ onNavigate, routeData }) => {
   const [isSubCategoryModalVisible, setIsSubCategoryModalVisible] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  const [editingCategory, setEditingCategory] = useState(null); // null means creating
-  const [editingSubCategory, setEditingSubCategory] = useState(null); // null means creating
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editingSubCategory, setEditingSubCategory] = useState(null);
+  const [isUploadingCat, setIsUploadingCat] = useState(false);
+  const [isUploadingSub, setIsUploadingSub] = useState(false); // null means creating
 
   // Forms states
   const [categoryForm, setCategoryForm] = useState({
@@ -123,18 +128,33 @@ const CategoryManager = ({ onNavigate, routeData }) => {
       quality: 0.8,
     };
 
-    const callback = (response) => {
+    const callback = async (response) => {
       if (response.didCancel) return;
       if (response.errorCode) {
         Alert.alert('Error', response.errorMessage || 'Failed to pick image');
         return;
       }
       if (response.assets && response.assets.length > 0) {
-        const selectedUri = response.assets[0].uri;
-        if (target === 'category') {
-          setCategoryForm(prev => ({ ...prev, image: selectedUri }));
-        } else {
-          setSubcategoryForm(prev => ({ ...prev, image: selectedUri }));
+        const asset = response.assets[0];
+        const isCat = target === 'category';
+        try {
+          if (isCat) {
+            setCategoryForm(prev => ({ ...prev, image: asset.uri }));
+            setIsUploadingCat(true);
+            const uploadedUrl = await uploadService.uploadImage(asset);
+            setCategoryForm(prev => ({ ...prev, image: uploadedUrl }));
+          } else {
+            setSubcategoryForm(prev => ({ ...prev, image: asset.uri }));
+            setIsUploadingSub(true);
+            const uploadedUrl = await uploadService.uploadImage(asset);
+            setSubcategoryForm(prev => ({ ...prev, image: uploadedUrl }));
+          }
+        } catch (uploadErr) {
+          console.error('Image upload failed in CategoryManager:', uploadErr);
+          Alert.alert('Upload Failed', uploadErr.message || 'Could not upload image. Please try again.');
+        } finally {
+          if (isCat) setIsUploadingCat(false);
+          else setIsUploadingSub(false);
         }
       }
     };
@@ -151,24 +171,35 @@ const CategoryManager = ({ onNavigate, routeData }) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       const companyId = routeData?.company?._id || routeData?.company?.id;
+      let fetchedCategories = [];
       const catRes = await getCategories(companyId, token);
 
-      if (catRes && catRes.success) {
-        setCategories(catRes.data || []);
+      if (catRes && catRes.success && Array.isArray(catRes.data)) {
+        fetchedCategories = catRes.data;
+        setCategories(fetchedCategories);
       }
 
-      // Gracefully handle subcategories if the endpoint is not fully registered or returns an error
+      // Gracefully handle subcategories
       try {
+        let allSubs = [];
         if (companyId) {
           const subRes = await getSubCategories(companyId, token);
-          if (subRes && subRes.success) {
-            setSubcategories(subRes.data || []);
+          if (subRes && subRes.success && Array.isArray(subRes.data) && subRes.data.length > 0) {
+            allSubs = subRes.data;
+          } else if (fetchedCategories.length > 0) {
+            const subPromises = fetchedCategories.map((cat) =>
+              getSubCategories(companyId, token, cat._id || cat.id).catch(() => null)
+            );
+            const subResults = await Promise.all(subPromises);
+            subResults.forEach((res) => {
+              if (res && res.success && Array.isArray(res.data)) {
+                allSubs = [...allSubs, ...res.data];
+              }
+            });
           }
-        } else {
-          setSubcategories([]);
         }
+        setSubcategories(allSubs);
       } catch (subErr) {
-        console.warn('Subcategories endpoint load bypassed:', subErr.message || subErr);
         setSubcategories([]);
       }
     } catch (error) {
@@ -193,16 +224,24 @@ const CategoryManager = ({ onNavigate, routeData }) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       let response;
+      const companyId = routeData?.company?._id || routeData?.company?.id;
+      const payload = { ...categoryForm };
+      if (payload.image) {
+        if (payload.image.startsWith('file://') || payload.image.startsWith('content://')) {
+          try {
+            payload.image = await uploadService.uploadImage(payload.image);
+          } catch (imgErr) {
+            console.warn('Category image upload fallback failed:', imgErr);
+          }
+        }
+      } else {
+        delete payload.image;
+      }
+      if (!payload.description) delete payload.description;
+
       if (editingCategory) {
-        const companyId = routeData?.company?._id || routeData?.company?.id;
-        const payload = { ...categoryForm };
-        if (!payload.image) delete payload.image;
-        if (!payload.description) delete payload.description;
         response = await updateCategory(editingCategory._id || editingCategory.id, companyId, payload, token);
       } else {
-        const payload = { ...categoryForm };
-        if (!payload.image) delete payload.image;
-        if (!payload.description) delete payload.description;
         response = await createCategory(payload, token);
       }
 
@@ -276,7 +315,17 @@ const CategoryManager = ({ onNavigate, routeData }) => {
         ...subcategoryForm,
         categoryId: subcategoryForm.categoryId?._id || subcategoryForm.categoryId?.id || subcategoryForm.categoryId
       };
-      if (!payload.image) delete payload.image;
+      if (payload.image) {
+        if (payload.image.startsWith('file://') || payload.image.startsWith('content://')) {
+          try {
+            payload.image = await uploadService.uploadImage(payload.image);
+          } catch (imgErr) {
+            console.warn('Subcategory image upload fallback failed:', imgErr);
+          }
+        }
+      } else {
+        delete payload.image;
+      }
       if (!payload.description) delete payload.description;
 
       if (editingSubCategory) {
@@ -633,10 +682,20 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                 style={styles.imageSelectorBox}
                 activeOpacity={0.8}
                 onPress={() => handleImagePick('category')}
+                disabled={isUploadingCat}
               >
-                {categoryForm.image ? (
+                {isUploadingCat ? (
+                  <View style={styles.imagePlaceholderContainer}>
+                    <ActivityIndicator size="small" color="#4F46E5" />
+                    <Text style={[styles.imagePlaceholderText, { marginTop: 6 }]}>Uploading image...</Text>
+                  </View>
+                ) : categoryForm.image ? (
                   <View style={styles.imagePreviewContainer}>
-                    <Image source={{ uri: categoryForm.image }} style={styles.imagePreview} />
+                    <Image
+                      source={{ uri: resolveImageUrl(categoryForm.image) }}
+                      style={styles.imagePreview}
+                      resizeMode="cover"
+                    />
                     <View style={styles.changeOverlay}>
                       <Text style={styles.changeOverlayText}>Change Image</Text>
                     </View>
@@ -705,10 +764,20 @@ const CategoryManager = ({ onNavigate, routeData }) => {
                 style={styles.imageSelectorBox}
                 activeOpacity={0.8}
                 onPress={() => handleImagePick('subcategory')}
+                disabled={isUploadingSub}
               >
-                {subcategoryForm.image ? (
+                {isUploadingSub ? (
+                  <View style={styles.imagePlaceholderContainer}>
+                    <ActivityIndicator size="small" color="#4F46E5" />
+                    <Text style={[styles.imagePlaceholderText, { marginTop: 6 }]}>Uploading image...</Text>
+                  </View>
+                ) : subcategoryForm.image ? (
                   <View style={styles.imagePreviewContainer}>
-                    <Image source={{ uri: subcategoryForm.image }} style={styles.imagePreview} />
+                    <Image
+                      source={{ uri: resolveImageUrl(subcategoryForm.image) }}
+                      style={styles.imagePreview}
+                      resizeMode="cover"
+                    />
                     <View style={styles.changeOverlay}>
                       <Text style={styles.changeOverlayText}>Change Image</Text>
                     </View>

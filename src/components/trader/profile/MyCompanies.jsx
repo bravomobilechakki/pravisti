@@ -11,7 +11,7 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
-import { getCompanies, getUserProfile } from '../../../services/api';
+import { getCompanies, getUserProfile, resolveImageUrl } from '../../../services/api';
 import {
   ArrowLeft,
   Plus,
@@ -27,6 +27,52 @@ import {
   TrendingUp,
   Award,
 } from 'lucide-react-native';
+
+const CompanyLogoAvatar = ({ logo, name, size = 46, radius = 14, textColor, bgColor, borderColor }) => {
+  const [imageError, setImageError] = React.useState(false);
+  const initials = name
+    ? name.trim().split(/\s+/).map(w => w[0]).join('').substring(0, 2).toUpperCase()
+    : '??';
+
+  const rawLogo = logo || '';
+  const uri = rawLogo && !imageError ? resolveImageUrl(rawLogo) : null;
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: radius,
+        backgroundColor: bgColor || '#EFF6FF',
+        borderColor: borderColor || '#BFDBFE',
+        borderWidth: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+        overflow: 'hidden',
+      }}
+    >
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size, borderRadius: radius }}
+          resizeMode="cover"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <Text
+          style={{
+            fontSize: Math.max(12, Math.floor(size * 0.36)),
+            fontWeight: '800',
+            color: textColor || '#1A56DB',
+          }}
+        >
+          {initials}
+        </Text>
+      )}
+    </View>
+  );
+};
 
 const MyCompanies = ({ onNavigate }) => {
   const [companies, setCompanies] = React.useState([]);
@@ -257,12 +303,16 @@ const MyCompanies = ({ onNavigate }) => {
                   activeOpacity={0.88}
                   onPress={() => onNavigate('CompanyDetails', { company: item, user: currentUser })}
                 >
-                  {/* Left Company Initial Circle */}
-                  <View style={styles.companyInitialsBox}>
-                    <Text style={styles.companyInitialsText}>
-                      {item.name ? item.name.trim().charAt(0).toUpperCase() : 'B'}
-                    </Text>
-                  </View>
+                  {/* Left Company Logo / Initial Circle */}
+                  <CompanyLogoAvatar
+                    logo={item.logo || item.logoUrl || item.image || item.companyLogo || item.avatar}
+                    name={item.name}
+                    size={46}
+                    radius={14}
+                    textColor="#1A56DB"
+                    bgColor="#EFF6FF"
+                    borderColor="#BFDBFE"
+                  />
 
                   {/* Middle Info */}
                   <View style={styles.cardMainInfo}>

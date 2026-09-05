@@ -51,6 +51,8 @@ import {
   updateProduct,
   deleteProduct,
   getUnits,
+  uploadService,
+  resolveImageUrl,
 } from '../../../services/api';
 
 let DYNAMIC_UNIT_MAPPING = {
@@ -100,6 +102,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   // Search & Filter & Sort state
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -139,17 +142,41 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     status: 'active',
   });
 
+  // Helper to reliably get companyId with multi-level fallbacks
+  const getEffectiveCompanyId = async () => {
+    let compId =
+      routeData?.company?._id ||
+      routeData?.company?.id ||
+      routeData?.companyId ||
+      (typeof routeData?.company === 'string' ? routeData.company : null);
+
+    if (!compId) {
+      try {
+        const cachedCompStr = await AsyncStorage.getItem('trader_companies_cache');
+        if (cachedCompStr) {
+          const parsed = JSON.parse(cachedCompStr);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            compId = parsed[0]._id || parsed[0].id;
+          }
+        }
+      } catch (e) {}
+    }
+    return compId;
+  };
+
   // Fetch Category and Product Data
   const fetchData = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const companyId = routeData?.company?._id || routeData?.company?.id;
+      const companyId = await getEffectiveCompanyId();
 
-      // Load Categories
+      // Load Categories & Subcategories
+      let fetchedCategories = [];
       try {
         const catRes = await getCategories(companyId, token);
-        if (catRes && catRes.success) {
-          setCategories(catRes.data || []);
+        if (catRes && catRes.success && Array.isArray(catRes.data)) {
+          fetchedCategories = catRes.data;
+          setCategories(fetchedCategories);
         }
       } catch (catErr) {
         console.warn('Failed to fetch categories:', catErr);
@@ -157,12 +184,25 @@ const AddProductPage = ({ onNavigate, routeData }) => {
 
       // Load Subcategories
       try {
+        let allSubs = [];
         const subRes = await getSubCategories(companyId, token);
-        if (subRes && subRes.success) {
-          setSubcategories(subRes.data || []);
+        if (subRes && subRes.success && Array.isArray(subRes.data) && subRes.data.length > 0) {
+          allSubs = subRes.data;
+        } else if (fetchedCategories.length > 0) {
+          const subPromises = fetchedCategories.map((cat) =>
+            getSubCategories(companyId, token, cat._id || cat.id).catch(() => null)
+          );
+          const subResults = await Promise.all(subPromises);
+          subResults.forEach((res) => {
+            if (res && res.success && Array.isArray(res.data)) {
+              allSubs = [...allSubs, ...res.data];
+            }
+          });
         }
+        setSubcategories(allSubs);
       } catch (subErr) {
-        console.warn('Failed to fetch subcategories:', subErr);
+        console.warn('Notice loading subcategories:', subErr);
+        setSubcategories([]);
       }
 
       // Load Units
@@ -204,11 +244,31 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [routeData?.company?._id, routeData?.company?.id]);
+  }, [routeData?.company?._id, routeData?.company?.id, routeData?.companyId]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Handle prefillProduct from navigation (e.g. from CategoryPage subcategory click)
+  useEffect(() => {
+    if (routeData?.prefillProduct) {
+      const prefill = routeData.prefillProduct;
+      const defaultUnit = units[0] ? units[0].shortName || units[0].name : 'Bag';
+      const defaultUnitId = units[0] ? units[0]._id : getUnitId('Bag');
+      setEditingProduct(null);
+      setProductForm((prev) => ({
+        ...prev,
+        categoryId: prefill.categoryId || prev.categoryId,
+        categoryName: prefill.categoryName || prev.categoryName,
+        subcategoryId: prefill.subcategoryId || prev.subcategoryId,
+        subcategoryName: prefill.subcategoryName || prev.subcategoryName,
+        unit: prev.unit || defaultUnit,
+        unitId: prev.unitId || defaultUnitId,
+      }));
+      setIsProductModalVisible(true);
+    }
+  }, [routeData?.prefillProduct, units]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -239,15 +299,28 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       quality: 0.8,
     };
 
-    const callback = (response) => {
+    const callback = async (response) => {
       if (response.didCancel) return;
       if (response.errorCode) {
         Alert.alert('Error', response.errorMessage || 'Failed to pick image');
         return;
       }
       if (response.assets && response.assets.length > 0) {
-        const selectedUri = response.assets[0].uri;
-        setProductForm((prev) => ({ ...prev, image: selectedUri }));
+        const asset = response.assets[0];
+        try {
+          // Immediate local preview
+          setProductForm((prev) => ({ ...prev, image: asset.uri }));
+          setIsUploadingImage(true);
+
+          // Upload to backend
+          const uploadedUrl = await uploadService.uploadImage(asset);
+          setProductForm((prev) => ({ ...prev, image: uploadedUrl }));
+        } catch (uploadErr) {
+          console.error('Failed to upload product image:', uploadErr);
+          Alert.alert('Image Upload Failed', uploadErr.message || 'Could not upload image. Please try again.');
+        } finally {
+          setIsUploadingImage(false);
+        }
       }
     };
 
@@ -329,10 +402,10 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     setIsSaving(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const companyId = routeData?.company?._id || routeData?.company?.id;
+      const companyId = await getEffectiveCompanyId();
 
       const payload = {
-        name: productForm.name,
+        name: productForm.name.trim(),
         categoryId: productForm.categoryId,
         unitId: productForm.unitId || getUnitId(productForm.unit),
       };
@@ -342,13 +415,21 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       }
 
       if (productForm.subcategoryId) payload.subCategoryId = productForm.subcategoryId;
-      if (productForm.image) payload.image = productForm.image;
-      if (productForm.price) payload.price = Number(productForm.price);
-      if (productForm.stock !== undefined) payload.stock = Number(productForm.stock);
-      if (productForm.description) payload.description = productForm.description;
-      if (productForm.hsnCode) payload.hsnCode = productForm.hsnCode;
-      if (productForm.gstCode) payload.gstCode = productForm.gstCode;
-      if (editingProduct) payload.status = productForm.status;
+      if (productForm.image) {
+        let finalImageUrl = productForm.image;
+        if (finalImageUrl.startsWith('file://') || finalImageUrl.startsWith('content://')) {
+          try {
+            finalImageUrl = await uploadService.uploadImage(finalImageUrl);
+          } catch (imgErr) {
+            console.warn('Image upload before save failed, proceeding:', imgErr);
+          }
+        }
+        payload.image = finalImageUrl;
+      }
+      if (productForm.description?.trim()) payload.description = productForm.description.trim();
+      if (productForm.hsnCode?.trim()) payload.hsnCode = productForm.hsnCode.trim();
+      if (productForm.gstCode?.trim()) payload.gstCode = productForm.gstCode.trim();
+      if (editingProduct && productForm.status) payload.status = productForm.status;
 
       let response;
       if (editingProduct) {
@@ -384,7 +465,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         onPress: async () => {
           try {
             const token = await AsyncStorage.getItem('userToken');
-            const companyId = routeData?.company?._id || routeData?.company?.id;
+            const companyId = await getEffectiveCompanyId();
             const res = await deleteProduct(prod._id || prod.id, companyId, token);
             if (res && res.success) {
               fetchData();
@@ -403,7 +484,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   const handleToggleStatus = async (prod) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const companyId = routeData?.company?._id || routeData?.company?.id;
+      const companyId = await getEffectiveCompanyId();
       const nextStatus = prod.status === 'active' ? 'inactive' : 'active';
       const res = await updateProduct(prod._id || prod.id, companyId, { status: nextStatus }, token);
       if (res && res.success) {
@@ -682,7 +763,11 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                     {/* Left: Product Image in Rounded Squircle */}
                     <View style={styles.productImgBox}>
                       {prod.image ? (
-                        <Image source={{ uri: prod.image }} style={styles.productImg} resizeMode="cover" />
+                        <Image
+                          source={{ uri: resolveImageUrl(prod.image) }}
+                          style={styles.productImg}
+                          resizeMode="cover"
+                        />
                       ) : (
                         <View style={styles.productImgPlaceholder}>
                           <Package size={24} color="#2563EB" strokeWidth={2} />
@@ -1013,9 +1098,19 @@ const AddProductPage = ({ onNavigate, routeData }) => {
                 style={styles.imageUploadBox}
                 onPress={handleImagePick}
                 activeOpacity={0.8}
+                disabled={isUploadingImage}
               >
-                {productForm.image ? (
-                  <Image source={{ uri: productForm.image }} style={styles.uploadedImage} />
+                {isUploadingImage ? (
+                  <View style={styles.uploadPlaceholder}>
+                    <ActivityIndicator size="small" color="#1541D8" />
+                    <Text style={[styles.uploadPlaceholderText, { marginTop: 8 }]}>Uploading image...</Text>
+                  </View>
+                ) : productForm.image ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(productForm.image) }}
+                    style={styles.uploadedImage}
+                    resizeMode="cover"
+                  />
                 ) : (
                   <View style={styles.uploadPlaceholder}>
                     <Camera size={26} color="#1541D8" />

@@ -22,6 +22,7 @@ import {
   deleteDeal,
   getUserProfile,
   getCompanyDetails,
+  resolveImageUrl,
 } from '../../../services/api';
 
 import {
@@ -48,6 +49,28 @@ import {
   Trash2,
 } from 'lucide-react-native';
 
+const isDealMatchingCompany = (deal, companyId) => {
+  if (!companyId) return true;
+  const target = String(companyId);
+  const sellerCid = String(deal.sellerCompanyId?._id || deal.sellerCompanyId?.id || deal.sellerCompanyId || '');
+  const buyerCid = String(deal.buyerCompanyId?._id || deal.buyerCompanyId?.id || deal.buyerCompanyId || '');
+  const brokerCid = String(deal.brokerCompanyId?._id || deal.brokerCompanyId?.id || deal.brokerCompanyId || '');
+  const p1Cid = String(deal.party1?.companyId?._id || deal.party1?.companyId || deal.party1?.company?._id || deal.party1?.company?.id || '');
+  const p2Cid = String(deal.party2?.companyId?._id || deal.party2?.companyId || deal.party2?.company?._id || deal.party2?.company?.id || '');
+  const creatorCid = String(deal.creatorCompanyId?._id || deal.creatorCompanyId?.id || deal.creatorCompanyId || '');
+  const targetCid = String(deal.targetCompanyId?._id || deal.targetCompanyId?.id || deal.targetCompanyId || '');
+
+  return (
+    sellerCid === target ||
+    buyerCid === target ||
+    brokerCid === target ||
+    p1Cid === target ||
+    p2Cid === target ||
+    creatorCid === target ||
+    targetCid === target
+  );
+};
+
 const DealsList = ({ onNavigate, routeData }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilterTab, setSelectedFilterTab] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED' | 'DRAFT' | 'CANCELLED'
@@ -66,6 +89,13 @@ const DealsList = ({ onNavigate, routeData }) => {
     routeData?.companyId || routeData?.company?._id || routeData?.company?.id || null
   );
   const [companyNames, setCompanyNames] = useState({});
+
+  React.useEffect(() => {
+    const id = routeData?.companyId || routeData?.company?._id || routeData?.company?.id || null;
+    if (id !== activeCompanyId) {
+      setActiveCompanyId(id);
+    }
+  }, [routeData?.companyId, routeData?.company?._id, routeData?.company?.id, activeCompanyId]);
 
   const resolveName = useCallback(
     (company, fallback = 'Company') => {
@@ -149,24 +179,59 @@ const DealsList = ({ onNavigate, routeData }) => {
         try {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setDeals(parsed);
+            const filteredCached = activeCompanyId
+              ? parsed.filter((d) => isDealMatchingCompany(d, activeCompanyId))
+              : parsed;
+            setDeals(filteredCached);
             setIsLoading(false);
           }
         } catch (e) { }
       }
 
       const response = await getDeals(token, 1, 100, activeCompanyId);
-      if (response && response.success) {
-        const dealList = Array.isArray(response.data?.deals)
-          ? response.data.deals
-          : Array.isArray(response.data)
-            ? response.data
-            : [];
-        setDeals(dealList);
-        if (dealList.length > 0) {
-          AsyncStorage.setItem(cacheKey, JSON.stringify(dealList)).catch(() => { });
+      let dealList = [];
+      if (Array.isArray(response?.data?.deals)) {
+        dealList = response.data.deals;
+      } else if (Array.isArray(response?.data?.data)) {
+        dealList = response.data.data;
+      } else if (Array.isArray(response?.data)) {
+        dealList = response.data;
+      } else if (Array.isArray(response?.deals)) {
+        dealList = response.deals;
+      }
+
+      // If filtering by company, combine with general deals to guarantee full completeness and filter strictly
+      if (activeCompanyId) {
+        try {
+          const generalRes = await getDeals(token, 1, 100);
+          const generalList = Array.isArray(generalRes?.data?.deals)
+            ? generalRes.data.deals
+            : Array.isArray(generalRes?.data?.data)
+              ? generalRes.data.data
+              : Array.isArray(generalRes?.data)
+                ? generalRes.data
+                : Array.isArray(generalRes?.deals)
+                  ? generalRes.deals
+                  : [];
+
+          const combined = [...dealList];
+          const seen = new Set(dealList.map((d) => String(d._id || d.id)));
+          generalList.forEach((d) => {
+            const id = String(d._id || d.id);
+            if (!seen.has(id)) {
+              seen.add(id);
+              combined.push(d);
+            }
+          });
+
+          dealList = combined.filter((d) => isDealMatchingCompany(d, activeCompanyId));
+        } catch (e) {
+          dealList = dealList.filter((d) => isDealMatchingCompany(d, activeCompanyId));
         }
       }
+
+      setDeals(dealList);
+      AsyncStorage.setItem(cacheKey, JSON.stringify(dealList)).catch(() => { });
     } catch (error) {
       console.error('Error fetching deals:', error);
     } finally {
@@ -307,7 +372,14 @@ const DealsList = ({ onNavigate, routeData }) => {
           <ArrowLeft size={22} color="#1541D8" strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Deals</Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={styles.headerTitle}>Deals</Text>
+          {(routeData?.companyName || routeData?.company?.name) && (
+            <Text style={{ fontSize: 11, color: '#1541D8', fontWeight: '700', marginTop: 1 }} numberOfLines={1}>
+              {routeData?.companyName || routeData?.company?.name}
+            </Text>
+          )}
+        </View>
 
         <View style={styles.headerRightActions}>
           <TouchableOpacity
@@ -587,13 +659,17 @@ const DealsList = ({ onNavigate, routeData }) => {
                 <TouchableOpacity
                   key={dealId}
                   style={styles.dealCard}
-                  onPress={() => onNavigate('DealChat', { dealId: deal._id || deal.id, deal })}
+                  onPress={() => onNavigate('DealDetails', { dealId: deal._id || deal.id, deal })}
                   activeOpacity={0.85}
                 >
                   {/* Left: Commodity Avatar */}
                   <View style={[styles.dealAvatarCircle, { backgroundColor: themeColor.bg }]}>
                     {prodObj?.image ? (
-                      <Image source={{ uri: prodObj.image }} style={styles.dealAvatarImg} />
+                      <Image
+                        source={{ uri: resolveImageUrl(prodObj.image) }}
+                        style={styles.dealAvatarImg}
+                        resizeMode="cover"
+                      />
                     ) : (
                       <Package size={22} color={themeColor.icon} strokeWidth={2.2} />
                     )}

@@ -30,7 +30,53 @@ import {
   MessageSquare,
   Menu,
 } from 'lucide-react-native';
-import { getCompanies, getUserProfile, getPendingInvitations } from '../../../services/api';
+import { getCompanies, getUserProfile, getPendingInvitations, resolveImageUrl } from '../../../services/api';
+
+const CompanyLogoAvatar = ({ logo, name, size = 38, radius = 19, textColor, bgColor, borderColor }) => {
+  const [imageError, setImageError] = React.useState(false);
+  const initials = name
+    ? name.trim().split(/\s+/).map(w => w[0]).join('').substring(0, 2).toUpperCase()
+    : '??';
+
+  const rawLogo = logo || '';
+  const uri = rawLogo && !imageError ? resolveImageUrl(rawLogo) : null;
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: radius,
+        backgroundColor: bgColor || '#EEF2FF',
+        borderColor: borderColor || '#C7D2FE',
+        borderWidth: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+        overflow: 'hidden',
+      }}
+    >
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size, borderRadius: radius }}
+          resizeMode="cover"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <Text
+          style={{
+            fontSize: Math.max(11, Math.floor(size * 0.35)),
+            fontWeight: '800',
+            color: textColor || '#4F46E5',
+          }}
+        >
+          {initials}
+        </Text>
+      )}
+    </View>
+  );
+};
 
 const TraderDashboard = ({ onNavigate, routeData }) => {
   const [refreshing, setRefreshing] = React.useState(false);
@@ -42,23 +88,33 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await getCompanies(1, 20);
-      if (response && response.success) {
-        setCompanies(response.data.companies || []);
-      }
-
-      // Fetch user profile dynamically to keep name and roles fully responsive & up-to-date
       const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       const token = await AsyncStorage.getItem('userToken');
+
+      const requests = [getCompanies(1, 20)];
       if (token) {
-        const userRes = await getUserProfile(token);
-        if (userRes && userRes.success) {
-          // Load cached profile first to avoid overwriting edits
-          const storedProfile = await AsyncStorage.getItem('user_completed_profile');
-          let mergedProfile = { ...userRes.data };
-          if (storedProfile) {
+        requests.push(getUserProfile(token));
+        requests.push(getPendingInvitations(token));
+      }
+
+      const results = await Promise.allSettled(requests);
+
+      // Handle companies response
+      const compResResult = results[0];
+      if (compResResult?.status === 'fulfilled' && compResResult.value?.success) {
+        const compList = compResResult.value.data?.companies || [];
+        setCompanies(compList);
+        AsyncStorage.setItem('trader_companies_cache', JSON.stringify(compList)).catch(() => {});
+      }
+
+      // Handle profile response
+      if (results[1]?.status === 'fulfilled' && results[1].value?.success) {
+        const userRes = results[1].value;
+        const storedProfile = await AsyncStorage.getItem('user_completed_profile');
+        let mergedProfile = { ...userRes.data };
+        if (storedProfile) {
+          try {
             const parsed = JSON.parse(storedProfile);
-            // Merge fields that can be updated in profile edit modal
             mergedProfile = {
               ...userRes.data,
               name: parsed.name !== undefined ? parsed.name : userRes.data.name,
@@ -67,20 +123,17 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
               gstin: parsed.gstin !== undefined ? parsed.gstin : userRes.data.gstin,
               address: parsed.address !== undefined ? parsed.address : userRes.data.address,
             };
-          }
-          setCurrentUser(mergedProfile);
-          // Sync with local profile storage key (shared with Profile.jsx)
-          await AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedProfile));
+          } catch (e) {}
         }
+        setCurrentUser(mergedProfile);
+        AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedProfile)).catch(() => {});
+      }
 
-        // Fetch pending invitations count for notification badge
-        try {
-          const invRes = await getPendingInvitations(token);
-          if (invRes && invRes.success && Array.isArray(invRes.data)) {
-            setUnreadNotifCount(invRes.data.length);
-          }
-        } catch (ie) {
-          console.warn('Failed to fetch pending invitations count:', ie);
+      // Handle notifications
+      if (results[2]?.status === 'fulfilled' && results[2].value?.success) {
+        const invData = results[2].value.data;
+        if (Array.isArray(invData)) {
+          setUnreadNotifCount(invData.length);
         }
       }
     } catch (error) {
@@ -92,30 +145,78 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
   };
 
   React.useEffect(() => {
-    const loadCachedProfile = async () => {
+    let isMounted = true;
+    const loadCachedData = async () => {
       try {
         const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        const storedProfile = await AsyncStorage.getItem('user_completed_profile');
-        if (storedProfile) {
-          setCurrentUser(JSON.parse(storedProfile));
+        const [storedProfile, storedCompanies] = await Promise.all([
+          AsyncStorage.getItem('user_completed_profile'),
+          AsyncStorage.getItem('trader_companies_cache'),
+        ]);
+
+        if (isMounted) {
+          let hasCached = false;
+          if (storedProfile) {
+            try {
+              setCurrentUser(JSON.parse(storedProfile));
+              hasCached = true;
+            } catch (e) {}
+          }
+          if (storedCompanies) {
+            try {
+              const parsed = JSON.parse(storedCompanies);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setCompanies(parsed);
+                hasCached = true;
+              }
+            } catch (e) {}
+          }
+          if (hasCached) {
+            setIsLoading(false);
+          }
         }
       } catch (e) {
-        console.warn('Failed to load cached profile:', e);
+        console.warn('Failed to load cached dashboard data:', e);
       }
     };
-    loadCachedProfile();
+
+    loadCachedData();
     fetchDashboardData();
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [routeData?.refresh, routeData?.company, routeData?.updatedAt, routeData?.timestamp]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     fetchDashboardData();
   }, []);
 
+  const [userImgError, setUserImgError] = React.useState(false);
+
+  React.useEffect(() => {
+    setUserImgError(false);
+  }, [currentUser]);
+
   const recentDeals = currentUser?.recentDeals || routeData?.user?.recentDeals || [];
   const hasCompany = companies.length > 0 || isLoading;
   const userName = currentUser?.name || routeData?.user?.name || 'Trader';
   const userRole = routeData?.role || currentUser?.userType || routeData?.user?.userType || currentUser?.roles?.[0] || routeData?.user?.roles?.[0] || 'Member';
+
+  const userLogoUri =
+    currentUser?.profilePicture ||
+    currentUser?.avatar ||
+    currentUser?.logo ||
+    currentUser?.image ||
+    currentUser?.photo ||
+    currentUser?.profileImage ||
+    currentUser?.logoUrl ||
+    routeData?.user?.profilePicture ||
+    routeData?.user?.avatar ||
+    routeData?.user?.logo ||
+    routeData?.user?.image ||
+    (companies && companies.length > 0 && (companies[0]?.logo || companies[0]?.logoUrl || companies[0]?.image || companies[0]?.companyLogo));
 
   const isTrader = userRole.toLowerCase() === 'trader';
   const roleTheme = {
@@ -221,12 +322,26 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
               />
             </View>
 
-            {/* Right: 3-Line Menu Icon (Opens Side Drawer Slider) */}
+            {/* Right: User Logo / Profile Avatar in place of Menu Icon (taps open the slider drawer) */}
             <TouchableOpacity
               style={styles.menuBtn}
               onPress={() => setIsDrawerOpen(true)}
-              activeOpacity={0.75}>
-              <Menu size={22} color="#FFFFFF" strokeWidth={2.4} />
+              activeOpacity={0.8}
+            >
+              {userLogoUri && !userImgError ? (
+                <Image
+                  source={{ uri: resolveImageUrl(userLogoUri) }}
+                  style={styles.topBarUserLogoImg}
+                  resizeMode="cover"
+                  onError={() => setUserImgError(true)}
+                />
+              ) : (
+                <View style={styles.topBarInitialsCircle}>
+                  <Text style={styles.topBarInitialsText}>
+                    {userName ? userName.trim().charAt(0).toUpperCase() : 'U'}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -316,10 +431,6 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
           ) : (
             <View style={styles.companyListContainer}>
               {companies.map((company, index) => {
-                const initials = company.name
-                  ? company.name.trim().split(/\s+/).map(w => w[0]).join('').substring(0, 2).toUpperCase()
-                  : '??';
-
                 const isActive = company.status === 'active' || company.status === 'Active';
                 const isTraderCompany = company.type === 'trader';
                 const companyTheme = {
@@ -328,18 +439,25 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
                   text: isTraderCompany ? '#10B981' : '#4F46E5',
                   leftBorder: isTraderCompany ? '#10B981' : '#4F46E5',
                 };
+                const companyLogo = company.logo || company.logoUrl || company.image || company.companyLogo || company.avatar || company.photo;
 
                 return (
                   <TouchableOpacity
-                    key={company._id}
+                    key={company._id || company.id || index}
                     style={styles.companyRow}
                     onPress={() => onNavigate('CompanyDetails', { company, user: routeData?.user })}
                     activeOpacity={0.75}>
 
-                    {/* Left: Initials Circle */}
-                    <View style={[styles.rowInitialsCircle, { backgroundColor: companyTheme.bg, borderColor: companyTheme.border }]}>
-                      <Text style={[styles.rowInitialsText, { color: companyTheme.text }]}>{initials}</Text>
-                    </View>
+                    {/* Left: Logo or Initials Circle */}
+                    <CompanyLogoAvatar
+                      logo={companyLogo}
+                      name={company.name}
+                      size={38}
+                      radius={19}
+                      textColor={companyTheme.text}
+                      bgColor={companyTheme.bg}
+                      borderColor={companyTheme.border}
+                    />
 
                     {/* Middle: Details */}
                     <View style={styles.rowMiddle}>
@@ -452,9 +570,17 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
                     onPress={() => { setIsDrawerOpen(false); onNavigate('Profile'); }}
                     activeOpacity={0.85}
                   >
-                    <Text style={styles.drawerAvatarText}>
-                      {userName.trim().charAt(0).toUpperCase()}
-                    </Text>
+                    {currentUser?.profilePicture || currentUser?.avatar ? (
+                      <Image
+                        source={{ uri: resolveImageUrl(currentUser.profilePicture || currentUser.avatar) }}
+                        style={{ width: '100%', height: '100%', borderRadius: 32 }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={styles.drawerAvatarText}>
+                        {userName.trim().charAt(0).toUpperCase()}
+                      </Text>
+                    )}
                   </TouchableOpacity>
                   <View style={styles.drawerAvatarCheckBadge}>
                     <ShieldCheck size={12} color="#FFFFFF" />
@@ -641,14 +767,46 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.5)',
   },
   menuBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
+    borderColor: 'rgba(255, 255, 255, 0.45)',
+    overflow: 'hidden',
+  },
+  topBarUserLogoImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+  },
+  topBarInitialsCircle: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  topBarInitialsText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  topBarCompanyLogoBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#FFFFFF',
+  },
+  topBarCompanyLogoImg: {
+    width: '100%',
+    height: '100%',
   },
   avatarText: {
     color: '#FFFFFF',
@@ -953,6 +1111,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderWidth: 1,
     borderColor: '#C7D2FE',
+    overflow: 'hidden',
   },
   rowInitialsText: {
     fontSize: 13,

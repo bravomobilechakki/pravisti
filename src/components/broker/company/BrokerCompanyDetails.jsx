@@ -32,7 +32,7 @@ import {
   FileText,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getCompanyDetails, getBrokerMyDeals, getDeals, getBrokerProductAccessRequests, getBrokerPendingQueue } from '../../../services/api';
+import { getCompanyDetails, getBrokerMyDeals, getDeals, getBrokerProductAccessRequests, getBrokerPendingQueue, resolveImageUrl } from '../../../services/api';
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
 
 const COLORS = {
@@ -406,7 +406,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
             <View style={styles.firmAvatarBox}>
               {companyLogo ? (
                 <Image
-                  source={{ uri: companyLogo }}
+                  source={{ uri: resolveImageUrl(companyLogo) }}
                   style={styles.firmLogoImage}
                   resizeMode="cover"
                 />

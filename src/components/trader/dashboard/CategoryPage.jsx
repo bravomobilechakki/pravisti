@@ -49,6 +49,8 @@ import {
   updateSubCategory,
   deleteSubCategory,
   getProducts,
+  uploadService,
+  resolveImageUrl,
 } from '../../../services/api';
 
 /* ── Dynamic Category Color Themes ── */
@@ -86,6 +88,8 @@ const CategoryPage = ({ onNavigate, routeData }) => {
   const [isSubCategoryModalVisible, setIsSubCategoryModalVisible] = useState(false);
   const [actionSheetCategory, setActionSheetCategory] = useState(null);
   const [isParentCatPickerVisible, setIsParentCatPickerVisible] = useState(false);
+  const [isUploadingCatImage, setIsUploadingCatImage] = useState(false);
+  const [isUploadingSubImage, setIsUploadingSubImage] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -117,14 +121,33 @@ const CategoryPage = ({ onNavigate, routeData }) => {
 
   const launchImagePicker = (sourceType, target) => {
     const options = { mediaType: 'photo', quality: 0.8 };
-    const callback = (response) => {
-      if (response.didCancel || response.errorCode) return;
+    const callback = async (response) => {
+      if (response.didCancel) return;
+      if (response.errorCode) {
+        Alert.alert('Error', response.errorMessage || 'Failed to pick image');
+        return;
+      }
       if (response.assets?.length > 0) {
-        const uri = response.assets[0].uri;
-        if (target === 'category') {
-          setCategoryForm((prev) => ({ ...prev, image: uri }));
-        } else {
-          setSubcategoryForm((prev) => ({ ...prev, image: uri }));
+        const asset = response.assets[0];
+        const isCat = target === 'category';
+        try {
+          if (isCat) {
+            setCategoryForm((prev) => ({ ...prev, image: asset.uri }));
+            setIsUploadingCatImage(true);
+            const uploadedUrl = await uploadService.uploadImage(asset);
+            setCategoryForm((prev) => ({ ...prev, image: uploadedUrl }));
+          } else {
+            setSubcategoryForm((prev) => ({ ...prev, image: asset.uri }));
+            setIsUploadingSubImage(true);
+            const uploadedUrl = await uploadService.uploadImage(asset);
+            setSubcategoryForm((prev) => ({ ...prev, image: uploadedUrl }));
+          }
+        } catch (uploadErr) {
+          console.error('Image upload failed:', uploadErr);
+          Alert.alert('Upload Failed', uploadErr.message || 'Could not upload image. Please try again.');
+        } finally {
+          if (isCat) setIsUploadingCatImage(false);
+          else setIsUploadingSubImage(false);
         }
       }
     };
@@ -141,15 +164,33 @@ const CategoryPage = ({ onNavigate, routeData }) => {
       const token = await AsyncStorage.getItem('userToken');
 
       // 1. Categories
+      let fetchedCategories = [];
       const catRes = await getCategories(companyId, token);
-      if (catRes?.success) setCategories(catRes.data || []);
+      if (catRes?.success && Array.isArray(catRes.data)) {
+        fetchedCategories = catRes.data;
+        setCategories(fetchedCategories);
+      }
 
       // 2. Subcategories
       try {
+        let allSubs = [];
         if (companyId) {
           const subRes = await getSubCategories(companyId, token);
-          if (subRes?.success) setSubcategories(subRes.data || []);
+          if (subRes?.success && Array.isArray(subRes.data) && subRes.data.length > 0) {
+            allSubs = subRes.data;
+          } else if (fetchedCategories.length > 0) {
+            const subPromises = fetchedCategories.map((cat) =>
+              getSubCategories(companyId, token, cat._id || cat.id).catch(() => null)
+            );
+            const subResults = await Promise.all(subPromises);
+            subResults.forEach((res) => {
+              if (res && res.success && Array.isArray(res.data)) {
+                allSubs = [...allSubs, ...res.data];
+              }
+            });
+          }
         }
+        setSubcategories(allSubs);
       } catch (e) {
         setSubcategories([]);
       }
@@ -208,7 +249,17 @@ const CategoryPage = ({ onNavigate, routeData }) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       const payload = { ...categoryForm };
-      if (!payload.image) delete payload.image;
+      if (payload.image) {
+        if (payload.image.startsWith('file://') || payload.image.startsWith('content://')) {
+          try {
+            payload.image = await uploadService.uploadImage(payload.image);
+          } catch (imgErr) {
+            console.warn('Category image upload fallback failed:', imgErr);
+          }
+        }
+      } else {
+        delete payload.image;
+      }
       if (!payload.description) delete payload.description;
 
       let response;
@@ -307,7 +358,17 @@ const CategoryPage = ({ onNavigate, routeData }) => {
         name: subcategoryForm.name,
         categoryId: subcategoryForm.categoryId?._id || subcategoryForm.categoryId?.id || subcategoryForm.categoryId,
       };
-      if (subcategoryForm.image) payload.image = subcategoryForm.image;
+      if (subcategoryForm.image) {
+        let subImg = subcategoryForm.image;
+        if (subImg.startsWith('file://') || subImg.startsWith('content://')) {
+          try {
+            subImg = await uploadService.uploadImage(subImg);
+          } catch (imgErr) {
+            console.warn('Subcategory image upload fallback failed:', imgErr);
+          }
+        }
+        payload.image = subImg;
+      }
       if (subcategoryForm.description) payload.description = subcategoryForm.description;
 
       let response;
@@ -621,7 +682,11 @@ const CategoryPage = ({ onNavigate, routeData }) => {
                       {/* Left: Thumbnail / Initials */}
                       <View style={styles.categoryImgBox}>
                         {cat.image ? (
-                          <Image source={{ uri: cat.image }} style={styles.categoryImg} resizeMode="cover" />
+                          <Image
+                            source={{ uri: resolveImageUrl(cat.image) }}
+                            style={styles.categoryImg}
+                            resizeMode="cover"
+                          />
                         ) : (
                           <View style={[styles.categoryInitialsBox, { backgroundColor: catTheme.light }]}>
                             <Text style={[styles.categoryInitialsText, { color: catTheme.primary }]}>
@@ -728,6 +793,7 @@ const CategoryPage = ({ onNavigate, routeData }) => {
                                     style={styles.subAddProdBtn}
                                     onPress={() =>
                                       onNavigate('AddProductPage', {
+                                        company: routeData?.company || { _id: companyId },
                                         prefillProduct: {
                                           categoryId: catId,
                                           categoryName: cat.name,
@@ -828,7 +894,11 @@ const CategoryPage = ({ onNavigate, routeData }) => {
                       {/* Left: Thumbnail / Initials */}
                       <View style={styles.subCardImgBox}>
                         {sub.image ? (
-                          <Image source={{ uri: sub.image }} style={styles.subCardImg} resizeMode="cover" />
+                          <Image
+                            source={{ uri: resolveImageUrl(sub.image) }}
+                            style={styles.subCardImg}
+                            resizeMode="cover"
+                          />
                         ) : (
                           <View style={[styles.subCardInitialsBox, { backgroundColor: theme.light }]}>
                             <Text style={[styles.subCardInitialsText, { color: theme.primary }]}>
@@ -867,6 +937,7 @@ const CategoryPage = ({ onNavigate, routeData }) => {
                           style={styles.subAddProdBtn}
                           onPress={() =>
                             onNavigate('AddProductPage', {
+                              company: routeData?.company || { _id: companyId },
                               prefillProduct: {
                                 categoryId: parentCatId,
                                 categoryName: parentCatName,
@@ -992,9 +1063,19 @@ const CategoryPage = ({ onNavigate, routeData }) => {
                 style={styles.imageUploadBox}
                 onPress={() => handleImagePick('category')}
                 activeOpacity={0.8}
+                disabled={isUploadingCatImage}
               >
-                {categoryForm.image ? (
-                  <Image source={{ uri: categoryForm.image }} style={styles.uploadedImage} />
+                {isUploadingCatImage ? (
+                  <View style={styles.uploadPlaceholder}>
+                    <ActivityIndicator size="small" color="#1541D8" />
+                    <Text style={[styles.uploadPlaceholderText, { marginTop: 8 }]}>Uploading icon...</Text>
+                  </View>
+                ) : categoryForm.image ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(categoryForm.image) }}
+                    style={styles.uploadedImage}
+                    resizeMode="cover"
+                  />
                 ) : (
                   <View style={styles.uploadPlaceholder}>
                     <Camera size={26} color="#1541D8" />
@@ -1087,9 +1168,19 @@ const CategoryPage = ({ onNavigate, routeData }) => {
                 style={styles.imageUploadBox}
                 onPress={() => handleImagePick('subcategory')}
                 activeOpacity={0.8}
+                disabled={isUploadingSubImage}
               >
-                {subcategoryForm.image ? (
-                  <Image source={{ uri: subcategoryForm.image }} style={styles.uploadedImage} />
+                {isUploadingSubImage ? (
+                  <View style={styles.uploadPlaceholder}>
+                    <ActivityIndicator size="small" color="#1541D8" />
+                    <Text style={[styles.uploadPlaceholderText, { marginTop: 8 }]}>Uploading photo...</Text>
+                  </View>
+                ) : subcategoryForm.image ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(subcategoryForm.image) }}
+                    style={styles.uploadedImage}
+                    resizeMode="cover"
+                  />
                 ) : (
                   <View style={styles.uploadPlaceholder}>
                     <Camera size={26} color="#1541D8" />

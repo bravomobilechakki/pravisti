@@ -20,14 +20,17 @@ import {
   ArrowLeft,
   Phone,
   Building2,
-  AlertTriangle,
   Users,
   Search,
   Mail,
   ChevronRight,
+  ChevronDown,
   UserPlus,
   X,
   PlusCircle,
+  SlidersHorizontal,
+  MoreVertical,
+  Handshake,
 } from 'lucide-react-native';
 
 interface CompanyInfo {
@@ -62,6 +65,18 @@ const LOCAL_ADDRESS_BOOK = [
   { name: 'Rahul Singh', phone: '+917061901464' },
 ];
 
+const getAvatarTheme = (name: string, index: number) => {
+  const themes = [
+    { bg: '#DCFCE7', text: '#15803D' }, // green
+    { bg: '#DBEAFE', text: '#1D4ED8' }, // blue
+    { bg: '#FCE7F3', text: '#BE185D' }, // pink
+    { bg: '#EDE9FE', text: '#6D28D9' }, // purple
+    { bg: '#FEF3C7', text: '#B45309' }, // amber
+  ];
+  const charCode = name ? name.charCodeAt(0) : index;
+  return themes[charCode % themes.length];
+};
+
 const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -86,6 +101,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
   const [searchingNumber, setSearchingNumber] = useState(false);
   const [lookupContact, setLookupContact] = useState<Contact | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'invite'>('active');
+  const [manualInputError, setManualInputError] = useState('');
 
   // Check existing permission state on mount
   useEffect(() => {
@@ -134,9 +150,8 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     try {
       const token = await AsyncStorage.getItem('userToken');
 
-      let contactsToSend = LOCAL_ADDRESS_BOOK; // fallback initially
+      let contactsToSend = LOCAL_ADDRESS_BOOK;
 
-      // If we have permission, read actual contacts from device address book
       try {
         const nativeContacts = await Contacts.getAll();
         if (nativeContacts && nativeContacts.length > 0) {
@@ -144,68 +159,85 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
             .filter(c => c.phoneNumbers && c.phoneNumbers.length > 0)
             .map(c => {
               const rawPhone = c.phoneNumbers[0].number || '';
-              // Clean phone numbers: strip space, dashes, parentheses
-              let cleanPhone = rawPhone.replace(/[\s\-\(\)]/g, '');
+              let cleanPhone = rawPhone.replace(/[\s\-()]/g, '');
               if (cleanPhone.length === 10) {
                 cleanPhone = '+91' + cleanPhone;
               } else if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
                 cleanPhone = '+' + cleanPhone;
+              } else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+                cleanPhone = '+91' + cleanPhone.substring(1);
               }
+              const fullName = [c.givenName, c.familyName].filter(Boolean).join(' ') || c.displayName || 'Unknown Contact';
               return {
-                name: `${c.givenName || ''} ${c.familyName || ''}`.trim() || 'Pravisti Contact',
+                name: fullName,
                 phone: cleanPhone,
               };
             })
-            .filter(c => c.phone.startsWith('+')); // only keep valid mobile formats
+            .filter(c => c.phone.startsWith('+91') && c.phone.length === 13);
 
           if (parsed.length > 0) {
             contactsToSend = parsed;
           }
         }
       } catch (nativeErr) {
-        console.warn('Could not read native contacts, falling back:', nativeErr);
+        console.warn('Native contacts fetch failed or permission blocked, using fallback:', nativeErr);
+      }
+
+      if (!token) {
+        const fallback: Contact[] = LOCAL_ADDRESS_BOOK.map((c, i) => ({
+          id: String(i),
+          name: c.name,
+          mobile: c.phone,
+          isRegistered: i === 0,
+          companies: i === 0 ? [{ companyId: 'demo_1', companyName: 'Demo Traders Pvt Ltd', companyType: 'trader', logo: null }] : undefined,
+        }));
+        setContacts(fallback);
+        setIsLoading(false);
+        return;
       }
 
       const response = await filterContacts(contactsToSend, token);
       if (response && response.success && response.data) {
-        const mappedContacts: Contact[] = response.data.map((item: any) => {
-          const hasCompany = item.companies && item.companies.length > 0;
-          return {
-            id: item.userId || `unreg_${item.phone}`,
-            name: item.name || item.registeredName || 'Pravisti User',
-            mobile: item.phone,
-            isRegistered: item.isRegistered || false,
-            companies: item.companies || [],
-            company: hasCompany ? item.companies[0].companyName : undefined,
-            companyId: hasCompany ? item.companies[0].companyId : undefined,
-          };
-        });
+        const mappedContacts: Contact[] = response.data.map((item: any, idx: number) => ({
+          id: item.contactId || item._id || item.id || `contact_${idx}`,
+          name: item.name || item.contactName || 'Unnamed Contact',
+          mobile: item.mobile || item.phone || item.mobileNumber || '',
+          isRegistered: !!item.isRegistered,
+          companies: item.companies?.map((co: any) => ({
+            companyId: co.companyId || co._id || co.id,
+            companyName: co.companyName || co.name || 'Company',
+            companyType: co.companyType || co.type || 'Trader',
+            logo: co.logo || null,
+          })) || [],
+          company: item.company || (item.companies && item.companies[0]?.companyName),
+          companyId: item.companyId || (item.companies && item.companies[0]?.companyId),
+        }));
         setContacts(mappedContacts);
       } else {
-        setFallbackData();
+        const fallback: Contact[] = LOCAL_ADDRESS_BOOK.map((c, i) => ({
+          id: String(i),
+          name: c.name,
+          mobile: c.phone,
+          isRegistered: i === 0,
+          companies: i === 0 ? [{ companyId: 'demo_1', companyName: 'Demo Traders Pvt Ltd', companyType: 'trader', logo: null }] : undefined,
+        }));
+        setContacts(fallback);
       }
-    } catch (err) {
-      console.warn('Sync contacts failed, using fallback data:', err);
-      setFallbackData();
+    } catch (error) {
+      console.warn('Sync contacts failed:', error);
+      const fallback: Contact[] = LOCAL_ADDRESS_BOOK.map((c, i) => ({
+        id: String(i),
+        name: c.name,
+        mobile: c.phone,
+        isRegistered: i === 0,
+        companies: i === 0 ? [{ companyId: 'demo_1', companyName: 'Demo Traders Pvt Ltd', companyType: 'trader', logo: null }] : undefined,
+      }));
+      setContacts(fallback);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const setFallbackData = () => {
-    const fallback: Contact[] = LOCAL_ADDRESS_BOOK.map((c, i) => ({
-      id: String(i + 1),
-      name: c.name,
-      mobile: c.phone,
-      isRegistered: true,
-      company: i === 0 ? 'Mobile chakki' : undefined,
-      companyId: i === 0 ? '6a0d784381e9215467e6d3e2' : undefined,
-      companies: i === 0 ? [{ companyId: '6a0d784381e9215467e6d3e2', companyName: 'Mobile chakki', companyType: 'broker', logo: null }] : [],
-    }));
-    setContacts(fallback);
-  };
-
-  // Request Access Flow
   const handleRequestAccess = async () => {
     try {
       if (Platform.OS === 'android') {
@@ -213,10 +245,9 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
           {
             title: 'Contacts Access Permission',
-            message: 'Pravisti needs access to your contacts to check if your business partners are already on the platform.',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
+            message: 'Pravisti requires contact access to locate your business counterparties and suppliers.',
+            buttonPositive: 'Allow',
+            buttonNegative: 'Deny',
           }
         );
         if (granted === PermissionsAndroid.RESULTS.GRANTED) {
@@ -225,11 +256,8 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           syncContacts();
         } else {
           setHasPermission('denied');
-          // Direct fallback to show mock list directly so they aren't blocked
-          syncContacts();
         }
       } else {
-        // iOS Native Request using react-native-contacts
         Contacts.requestPermission().then(async (permission) => {
           if (permission === 'authorized') {
             await AsyncStorage.setItem('contact_permission_granted', 'true');
@@ -237,66 +265,64 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
             syncContacts();
           } else {
             setHasPermission('denied');
-            syncContacts();
           }
         });
       }
-    } catch (err) {
-      console.warn('Contacts request permission error:', err);
+    } catch (e) {
+      console.warn('Error requesting contacts permission:', e);
+      setHasPermission('denied');
     }
   };
 
   const handleSkipPermission = () => {
     setHasPermission('denied');
-    syncContacts(); // Fallback gracefully
+    syncContacts();
   };
 
-  // Live lookup when a valid 10-digit number is typed
+  // Live query debouncing for searching custom numbers
   useEffect(() => {
-    const performLookup = async () => {
-      const trimmed = searchQuery.replace(/\D/g, ''); // strip non-digits
-      if (trimmed.length >= 10) {
-        setSearchingNumber(true);
-        try {
-          const token = await AsyncStorage.getItem('userToken');
-          const formattedNumber = trimmed.startsWith('91') && trimmed.length > 10 ? `+${trimmed}` : `+91${trimmed.slice(-10)}`;
+    const cleanDigits = searchQuery.replace(/\D/g, '');
+    if (cleanDigits.length < 10) {
+      setLookupContact(null);
+      return;
+    }
 
-          const response = await getCompaniesByNumber(formattedNumber, token);
-          if (response && response.success && response.data && response.data.length > 0) {
-            const companyList: CompanyInfo[] = response.data.map((c: any) => ({
-              companyId: c.companyId,
-              companyName: c.companyName,
-              companyType: c.companyType || 'broker',
-              logo: c.logo || null,
-            }));
+    const timer = setTimeout(async () => {
+      setSearchingNumber(true);
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        const formattedMobile = '+91' + cleanDigits.slice(-10);
+        const res = await getCompaniesByNumber(formattedMobile, token);
 
-            const foundContact: Contact = {
-              id: `lookup_${Date.now()}`,
-              name: response.data[0].contactPersonName || `User (${formattedNumber})`,
-              mobile: formattedNumber,
-              isRegistered: true,
-              companies: companyList,
-              company: companyList[0].companyName,
-              companyId: companyList[0].companyId,
-            };
-            setLookupContact(foundContact);
-          } else {
-            setLookupContact(null);
-          }
-        } catch (e) {
-          console.warn('Number lookup failed:', e);
-          setLookupContact(null);
-        } finally {
-          setSearchingNumber(false);
+        if (res && res.success && res.data && res.data.length > 0) {
+          const companiesList: CompanyInfo[] = res.data.map((c: any) => ({
+            companyId: c.companyId || c._id || c.id,
+            companyName: c.companyName || c.name,
+            companyType: c.companyType || c.type || 'Trader',
+            logo: c.logo || null,
+          }));
+
+          setLookupContact({
+            id: `lookup_${Date.now()}`,
+            name: res.data[0].userName || res.data[0].contactPerson || `User (${formattedMobile.slice(-4)})`,
+            mobile: formattedMobile,
+            isRegistered: true,
+            companies: companiesList,
+          });
+        } else {
+          setLookupContact({
+            id: `lookup_${Date.now()}`,
+            name: `Contact (${formattedMobile.slice(-4)})`,
+            mobile: formattedMobile,
+            isRegistered: false,
+          });
         }
-      } else {
-        setLookupContact(null);
+      } catch (err) {
+        console.warn('Live number lookup failed:', err);
+      } finally {
+        setSearchingNumber(false);
       }
-    };
-
-    const timer = setTimeout(() => {
-      performLookup();
-    }, 600); // debounce API call
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
@@ -356,13 +382,10 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     });
   };
 
-  const [manualInputError, setManualInputError] = useState('');
-
   const handleAddManualNumber = () => {
     if (!searchQuery.trim()) return;
     const cleanDigits = searchQuery.replace(/\D/g, '');
 
-    // If digits are entered, enforce 10-digit mobile validation
     if (cleanDigits.length > 0) {
       if (cleanDigits.length !== 10) {
         setManualInputError(`Please enter full 10-digit mobile number (${cleanDigits.length}/10 digits)`);
@@ -400,15 +423,10 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     });
   };
 
-  // Categorize synced contacts defensively based on guide schema:
-  // - Category A (Active): Registered & has active companies
-  // - Category B (Pending): Registered but has no companies (setup pending)
-  // - Category C (Invite): Unregistered
   const activeMembers = contacts.filter(c => c.isRegistered && c.companies && c.companies.length > 0);
   const pendingMembers = contacts.filter(c => c.isRegistered && (!c.companies || c.companies.length === 0));
   const inviteContacts = contacts.filter(c => !c.isRegistered);
 
-  // Select the list corresponding to the active category tab
   const getTabContacts = () => {
     switch (activeTab) {
       case 'active': return activeMembers;
@@ -418,14 +436,12 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     }
   };
 
-  // Filter based on search query
   const tabContacts = getTabContacts();
   const filteredContacts = tabContacts.filter(contact =>
     contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     contact.mobile.includes(searchQuery)
   );
 
-  // Combine synced tab contacts and live lookup results (if it matches the tab filter category)
   const dataToRender = [...filteredContacts];
   if (lookupContact) {
     const isLookupActive = lookupContact.companies && lookupContact.companies.length > 0;
@@ -442,149 +458,232 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     }
   }
 
-  const renderContactItem = ({ item }: { item: Contact }) => {
-    // 🟢 Category A: Active Members
+  const renderContactItem = ({ item, index }: { item: Contact; index: number }) => {
     const isActiveMember = item.isRegistered && item.companies && item.companies.length > 0;
-    // 🟡 Category B: Setup Pending
     const isSetupPending = item.isRegistered && (!item.companies || item.companies.length === 0);
-    // ⚪ Category C: Invite Contacts
     const isInviteContact = !item.isRegistered;
 
-    const handleWhatsAppRedirect = (mobileNumber: string, message: string) => {
+    const avTheme = getAvatarTheme(item.name || 'P', index);
+
+    const handleCall = (mobileNumber: string) => {
+      const clean = mobileNumber.replace(/[^\d+]/g, '');
+      Linking.openURL(`tel:${clean}`).catch(e => console.warn('Cannot open phone dialer', e));
+    };
+
+    const handleMailOrChat = (mobileNumber: string, name: string) => {
       const formatted = mobileNumber.replace(/\D/g, '');
-      const url = `https://wa.me/${formatted}?text=${encodeURIComponent(message)}`;
+      const url = `https://wa.me/${formatted}?text=${encodeURIComponent(`Hi ${name}, let's create a deal on Pravisti!`)}`;
       Linking.openURL(url).catch((e: any) => console.warn('Could not launch WhatsApp', e));
     };
+
+    const primaryCompany = item.companies && item.companies.length > 0 ? item.companies[0] : null;
+    const moreCompaniesCount = item.companies && item.companies.length > 1 ? item.companies.length - 1 : 0;
 
     return (
       <View
         style={[
           styles.contactCard,
-          item.id.toString().startsWith('lookup_') && [
-            styles.lookupMatchCard,
-            { borderColor: rTheme.color, backgroundColor: rTheme.bg }
-          ]
+          item.id.toString().startsWith('lookup_') && styles.lookupMatchCard,
         ]}
       >
-        <View style={[
-          styles.avatarContainer,
-          isActiveMember ? styles.activeAvatarBg : isSetupPending ? styles.pendingAvatarBg : styles.inviteAvatarBg
-        ]}>
-          <Text style={[
-            styles.avatarText,
-            isActiveMember ? styles.activeAvatarText : isSetupPending ? styles.pendingAvatarText : styles.inviteAvatarText
-          ]}>
-            {item.name.charAt(0).toUpperCase()}
-          </Text>
+        {/* Top Row: Avatar + Details + Call/Mail/More */}
+        <View style={styles.cardTopRow}>
+          {/* Avatar Circle */}
+          <View style={[styles.avatarCircle, { backgroundColor: avTheme.bg }]}>
+            <Text style={[styles.avatarText, { color: avTheme.text }]}>
+              {item.name ? item.name.charAt(0).toUpperCase() : 'U'}
+            </Text>
+          </View>
+
+          {/* Center Details */}
+          <View style={styles.cardDetailsBox}>
+            <View style={styles.cardNameStatusRow}>
+              <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
+              {isActiveMember && (
+                <View style={styles.statusBadgeGreen}>
+                  <View style={styles.statusDotGreen} />
+                  <Text style={styles.statusBadgeGreenText}>On Pravisti</Text>
+                </View>
+              )}
+              {isSetupPending && (
+                <View style={styles.statusBadgeOrange}>
+                  <View style={styles.statusDotOrange} />
+                  <Text style={styles.statusBadgeOrangeText}>Pending</Text>
+                </View>
+              )}
+              {isInviteContact && (
+                <View style={styles.statusBadgeBlue}>
+                  <View style={styles.statusDotBlue} />
+                  <Text style={styles.statusBadgeBlueText}>Invite Sent</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.phoneRow}>
+              <Phone size={12} color="#64748B" />
+              <Text style={styles.phoneText}>{item.mobile}</Text>
+            </View>
+          </View>
+
+          {/* Right Action Icons */}
+          <View style={styles.cardActionsRow}>
+            <TouchableOpacity
+              style={styles.iconCircleBtnGreen}
+              onPress={() => handleCall(item.mobile)}
+              activeOpacity={0.7}
+            >
+              <Phone size={13} color="#059669" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.iconCircleBtnSlate}
+              onPress={() => handleMailOrChat(item.mobile, item.name)}
+              activeOpacity={0.7}
+            >
+              <Mail size={13} color="#475569" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.iconBtnMore}
+              onPress={() => handleSelectContact(item)}
+              activeOpacity={0.7}
+            >
+              <MoreVertical size={16} color="#64748B" />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <View style={styles.contactDetails}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
-            {isActiveMember && (
-              <View style={styles.badgeActive}>
-                <Text style={styles.badgeActiveText}>On Pravisti</Text>
+        {/* Bottom Row: Company Info & Create Deal Button */}
+        <View style={styles.cardBottomRow}>
+          {/* Company Column */}
+          <View style={styles.cardCompanyColumn}>
+            {primaryCompany ? (
+              <TouchableOpacity
+                style={styles.companyPillBox}
+                onPress={() => handleSelectContact(item)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.companyPillLeft}>
+                  <Building2 size={13} color="#334155" />
+                  <Text style={styles.companyNameText} numberOfLines={1}>
+                    {primaryCompany.companyName}
+                  </Text>
+                  {primaryCompany.companyType && (
+                    <Text style={styles.companyRoleTag}>
+                      ({primaryCompany.companyType.toLowerCase()})
+                    </Text>
+                  )}
+                </View>
+                <ChevronDown size={14} color="#0284C7" />
+              </TouchableOpacity>
+            ) : isSetupPending ? (
+              <View style={styles.companyPillPending}>
+                <Building2 size={13} color="#D97706" />
+                <Text style={styles.companyPendingText} numberOfLines={1}>
+                  Company registration pending
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.companyPillInvite}>
+                <Building2 size={13} color="#64748B" />
+                <Text style={styles.companyInviteText} numberOfLines={1}>
+                  Not registered yet
+                </Text>
               </View>
             )}
-            {isSetupPending && (
-              <View style={styles.badgePending}>
-                <Text style={styles.badgePendingText}>Registered</Text>
-              </View>
-            )}
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-            <Phone size={12} color="#64748B" />
-            <Text style={styles.contactMobile}>{item.mobile}</Text>
-          </View>
 
-          {isActiveMember && item.companies && (
-            <View style={styles.companiesList}>
-              {item.companies.map((co) => (
-                <View key={co.companyId} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                  <Building2 size={11} color="#64748B" />
-                  <Text style={styles.companySubName}>
-                    {co.companyName} ({co.companyType})
+            {/* If contact has multiple companies */}
+            {moreCompaniesCount > 0 && (
+              <TouchableOpacity
+                style={styles.moreCompaniesPillBox}
+                onPress={() => {
+                  setSelectedContactForModal(item);
+                  setIsCompanyModalVisible(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.companyPillLeft}>
+                  <Building2 size={13} color="#0284C7" />
+                  <Text style={styles.moreCompaniesText}>
+                    +{moreCompaniesCount} more {moreCompaniesCount > 1 ? 'companies' : 'company'}
                   </Text>
                 </View>
-              ))}
-            </View>
-          )}
+                <ChevronDown size={14} color="#0284C7" />
+              </TouchableOpacity>
+            )}
+          </View>
 
-          {isSetupPending && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
-              <AlertTriangle size={12} color="#D97706" />
-              <Text style={styles.warningMessage}>Company Registration Pending</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Dynamic Action Button based on category tab */}
-        {isActiveMember && (
+          {/* Create Deal Button */}
           <TouchableOpacity
-            style={[styles.actionBtnActive, { backgroundColor: rTheme.color }]}
+            style={styles.createDealBtn}
             onPress={() => handleSelectContact(item)}
-            activeOpacity={0.7}
+            activeOpacity={0.85}
           >
-            <Text style={styles.actionBtnActiveText}>Create Deal</Text>
+            <Handshake size={15} color="#FFFFFF" />
+            <Text style={styles.createDealBtnText}>Create Deal</Text>
           </TouchableOpacity>
-        )}
-
-        {isSetupPending && (
-          <TouchableOpacity
-            style={styles.actionBtnPending}
-            onPress={() => handleWhatsAppRedirect(
-              item.mobile,
-              `Hi ${item.name}, please complete your company profile setup on Pravisti so we can establish digital Sauda deals together!`
-            )}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionBtnPendingText}>Nudge Setup</Text>
-          </TouchableOpacity>
-        )}
-
-        {isInviteContact && (
-          <TouchableOpacity
-            style={styles.actionBtnInvite}
-            onPress={() => handleWhatsAppRedirect(
-              item.mobile,
-              `Hi ${item.name}, join me on Pravisti to do deals together and view my deals! Download the app: https://pravisti.com/download`
-            )}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionBtnInviteText}>Invite WhatsApp</Text>
-          </TouchableOpacity>
-        )}
+        </View>
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: '#F8FAFC' }]}>
+    <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => onNavigate('CreateDeal', {
-          companyId: routeData?.companyId,
-          companyName: routeData?.companyName,
-          role: routeData?.role,
-          originCompany: routeData?.originCompany,
-          company: routeData?.company,
-          prefill: routeData?.prefill,
-          existingParty2: routeData?.existingParty2,
-          existingParty2Name: routeData?.existingParty2Name,
-          existingSellerCompany: routeData?.existingSellerCompany,
-          existingSellerCompanyName: routeData?.existingSellerCompanyName,
-          existingBrokerCompany: routeData?.existingBrokerCompany,
-          existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
-        })}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => onNavigate('CreateDeal', {
+            companyId: routeData?.companyId,
+            companyName: routeData?.companyName,
+            role: routeData?.role,
+            originCompany: routeData?.originCompany,
+            company: routeData?.company,
+            prefill: routeData?.prefill,
+            existingParty2: routeData?.existingParty2,
+            existingParty2Name: routeData?.existingParty2Name,
+            existingSellerCompany: routeData?.existingSellerCompany,
+            existingSellerCompanyName: routeData?.existingSellerCompanyName,
+            existingBrokerCompany: routeData?.existingBrokerCompany,
+            existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
+          })}
+          activeOpacity={0.7}
+        >
           <ArrowLeft size={18} color="#0F172A" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Contact</Text>
-        <View style={{ width: 40 }} />
+
+        <View style={styles.headerTitleBox}>
+          <Text style={styles.headerTitle}>Select Contact</Text>
+          <Text style={styles.headerSubtitle}>Choose a contact to create a deal</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.addContactHeaderBtn}
+          onPress={() => onNavigate('CreateDeal', {
+            companyId: routeData?.companyId,
+            companyName: routeData?.companyName,
+            role: routeData?.role,
+            originCompany: routeData?.originCompany,
+            company: routeData?.company,
+            prefill: routeData?.prefill,
+            existingParty2: routeData?.existingParty2,
+            existingParty2Name: routeData?.existingParty2Name,
+            existingSellerCompany: routeData?.existingSellerCompany,
+            existingSellerCompanyName: routeData?.existingSellerCompanyName,
+            existingBrokerCompany: routeData?.existingBrokerCompany,
+            existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
+            openOnboard: true,
+          })}
+          activeOpacity={0.7}
+        >
+          <UserPlus size={14} color="#059669" />
+          <Text style={styles.addContactHeaderBtnText}>+ Add Contact</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Permission Landing Block */}
       {hasPermission === 'undetermined' ? (
-        <View style={[styles.permissionContainer, { backgroundColor: '#F8FAFC' }]}>
+        <View style={styles.permissionContainer}>
           <View style={styles.permissionCard}>
             <View style={[styles.permissionIconCircle, { backgroundColor: rTheme.bg }]}>
               <Users size={32} color={rTheme.color} />
@@ -613,13 +712,13 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
         </View>
       ) : (
         <>
-          {/* Search Bar & Direct Search Button */}
-          <View style={styles.searchContainer}>
+          {/* Search Bar & Filter Button */}
+          <View style={styles.searchRowContainer}>
             <View style={[
               styles.searchInputWrapper,
-              isSearchFocused && { borderColor: rTheme.color, borderWidth: 1.5, shadowColor: rTheme.color, shadowOpacity: 0.1 }
+              isSearchFocused && { borderColor: '#059669', borderWidth: 1.5 }
             ]}>
-              <Search size={16} color={isSearchFocused ? rTheme.color : "#94A3B8"} style={{ marginRight: 6 }} />
+              <Search size={17} color="#94A3B8" style={{ marginRight: 8 }} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search name or mobile number..."
@@ -645,30 +744,32 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                   <X size={14} color="#64748B" />
                 </TouchableOpacity>
               )}
-              {searchingNumber ? (
-                <ActivityIndicator size="small" color={rTheme.color} style={{ marginLeft: 6 }} />
-              ) : (
-                <TouchableOpacity
-                  style={[styles.searchActionButton, { backgroundColor: rTheme.color }]}
-                  onPress={handleAddManualNumber}
-                  activeOpacity={0.8}
-                >
-                  <Search size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                  <Text style={styles.searchActionButtonText}>Search</Text>
-                </TouchableOpacity>
+              {searchingNumber && (
+                <ActivityIndicator size="small" color="#059669" style={{ marginLeft: 6 }} />
               )}
             </View>
+
+            <TouchableOpacity
+              style={styles.filterIconButton}
+              onPress={handleAddManualNumber}
+              activeOpacity={0.7}
+            >
+              <SlidersHorizontal size={18} color="#334155" />
+            </TouchableOpacity>
           </View>
 
-          {/* Quick Add Banner for Trader / Broker Manual Number */}
+          {/* Quick Add Banner for Manual Number */}
           {searchQuery.trim().length > 0 && (
             <View style={styles.quickAddBanner}>
               <TouchableOpacity
-                style={[styles.quickAddCard, { borderColor: manualInputError ? '#EF4444' : rTheme.color, backgroundColor: manualInputError ? '#FEF2F2' : rTheme.bg }]}
+                style={[
+                  styles.quickAddCard,
+                  { borderColor: manualInputError ? '#EF4444' : '#059669', backgroundColor: manualInputError ? '#FEF2F2' : '#F0FDF4' }
+                ]}
                 onPress={handleAddManualNumber}
                 activeOpacity={0.8}
               >
-                <View style={[styles.quickAddIconCircle, { backgroundColor: manualInputError ? '#EF4444' : rTheme.color }]}>
+                <View style={[styles.quickAddIconCircle, { backgroundColor: manualInputError ? '#EF4444' : '#059669' }]}>
                   <UserPlus size={18} color="#FFFFFF" />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -679,7 +780,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                     {manualInputError ? `⚠ ${manualInputError}` : 'Add as new contact number for deal'}
                   </Text>
                 </View>
-                <View style={[styles.quickAddBadge, { backgroundColor: manualInputError ? '#EF4444' : rTheme.color }]}>
+                <View style={[styles.quickAddBadge, { backgroundColor: manualInputError ? '#EF4444' : '#059669' }]}>
                   <PlusCircle size={12} color="#FFFFFF" style={{ marginRight: 3 }} />
                   <Text style={styles.quickAddBadgeText}>+ Add New</Text>
                 </View>
@@ -687,22 +788,18 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
             </View>
           )}
 
-          {/* Category Tabs Selector Bar */}
+          {/* Status Filter Tabs (Active, Pending, Invite) */}
           <View style={styles.tabsContainer}>
             <TouchableOpacity
               style={[
                 styles.tabButton,
-                activeTab === 'active' && { backgroundColor: '#DCFCE7' },
-                { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }
+                activeTab === 'active' && styles.tabButtonActiveGreen,
               ]}
               onPress={() => setActiveTab('active')}
               activeOpacity={0.7}
             >
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' }} />
-              <Text style={[
-                styles.tabButtonText,
-                activeTab === 'active' && { color: '#166534', fontWeight: '800' }
-              ]}>
+              <View style={styles.activeDot} />
+              <Text style={[styles.tabButtonText, activeTab === 'active' && styles.tabButtonTextActiveGreen]}>
                 Active ({activeMembers.length})
               </Text>
             </TouchableOpacity>
@@ -710,17 +807,13 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
             <TouchableOpacity
               style={[
                 styles.tabButton,
-                activeTab === 'pending' && { backgroundColor: '#FEF3C7' },
-                { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }
+                activeTab === 'pending' && styles.tabButtonActiveYellow,
               ]}
               onPress={() => setActiveTab('pending')}
               activeOpacity={0.7}
             >
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#F59E0B' }} />
-              <Text style={[
-                styles.tabButtonText,
-                activeTab === 'pending' && { color: '#92400E', fontWeight: '800' }
-              ]}>
+              <View style={styles.pendingDot} />
+              <Text style={[styles.tabButtonText, activeTab === 'pending' && styles.tabButtonTextActiveYellow]}>
                 Pending ({pendingMembers.length})
               </Text>
             </TouchableOpacity>
@@ -728,17 +821,13 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
             <TouchableOpacity
               style={[
                 styles.tabButton,
-                activeTab === 'invite' && { backgroundColor: rTheme.bg },
-                { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }
+                activeTab === 'invite' && styles.tabButtonActiveSlate,
               ]}
               onPress={() => setActiveTab('invite')}
               activeOpacity={0.7}
             >
-              <Mail size={12} color={activeTab === 'invite' ? rTheme.color : '#64748B'} />
-              <Text style={[
-                styles.tabButtonText,
-                activeTab === 'invite' && { color: rTheme.color, fontWeight: '800' }
-              ]}>
+              <Mail size={13} color={activeTab === 'invite' ? '#1E293B' : '#64748B'} />
+              <Text style={[styles.tabButtonText, activeTab === 'invite' && styles.tabButtonTextActiveSlate]}>
                 Invite ({inviteContacts.length})
               </Text>
             </TouchableOpacity>
@@ -747,7 +836,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           {/* Contacts List */}
           {isLoading ? (
             <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color={rTheme.color} />
+              <ActivityIndicator size="large" color="#059669" />
               <Text style={styles.loaderText}>Syncing contacts from address book...</Text>
             </View>
           ) : (
@@ -759,13 +848,13 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No contacts found</Text>
+                  <Text style={styles.emptyText}>No contacts found in this list</Text>
                   <TouchableOpacity
-                    style={[styles.addManualButton, { borderColor: rTheme.color }]}
+                    style={[styles.addManualButton, { borderColor: '#059669' }]}
                     onPress={handleAddManualNumber}
                     disabled={!searchQuery.trim()}
                   >
-                    <Text style={[styles.addManualText, { color: rTheme.color }]}>
+                    <Text style={[styles.addManualText, { color: '#059669' }]}>
                       {searchQuery.trim() ? `+ Use "${searchQuery}" Manually` : '+ Add Number Manually'}
                     </Text>
                   </TouchableOpacity>
@@ -802,16 +891,16 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                 {selectedContactForModal.companies?.map((co) => (
                   <TouchableOpacity
                     key={co.companyId}
-                    style={styles.companyCard}
+                    style={styles.companyModalCard}
                     onPress={() => handleSelectCompanyFromModal(co)}
                     activeOpacity={0.7}
                   >
-                    <View style={[styles.companyIconBg, { backgroundColor: rTheme.bg }]}>
-                      <Building2 size={18} color={rTheme.color} />
+                    <View style={styles.companyIconBg}>
+                      <Building2 size={18} color="#059669" />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.companyNameText}>{co.companyName}</Text>
-                      <Text style={[styles.companyTypeText, { color: rTheme.color }]}>{co.companyType.toUpperCase()}</Text>
+                      <Text style={styles.companyModalNameText}>{co.companyName}</Text>
+                      <Text style={styles.companyModalTypeText}>{co.companyType.toUpperCase()}</Text>
                     </View>
                     <ChevronRight size={18} color="#94A3B8" />
                   </TouchableOpacity>
@@ -838,124 +927,77 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
+  /* Top App Bar */
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 11,
+    paddingTop: Platform.OS === 'android' ? 12 : 8,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 3,
-    marginTop: Platform.OS === 'android' ? 30 : 0,
+    borderBottomColor: '#F1F5F9',
   },
   backButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backIcon: {
-    fontSize: 18,
-    color: '#0F172A',
-    fontWeight: '700',
+  headerTitleBox: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 8,
   },
   headerTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
-    letterSpacing: 0.2,
   },
-  searchContainer: {
-    padding: 20,
+  headerSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  addContactHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1.5,
+    borderColor: '#059669',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  addContactHeaderBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#059669',
+  },
+
+  /* Search & Filter Row */
+  searchRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
     paddingBottom: 10,
+    gap: 10,
   },
   searchInputWrapper: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 10,
-    height: 46,
-  },
-  clearSearchBtn: {
-    padding: 5,
-    marginRight: 2,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
-  },
-  searchActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    marginLeft: 6,
-  },
-  searchActionButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  quickAddBanner: {
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  quickAddCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-  },
-  quickAddIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  quickAddTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  quickAddSubtitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 2,
-  },
-  quickAddBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  quickAddBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 10,
+    height: 44,
   },
   searchInput: {
     flex: 1,
@@ -964,121 +1006,412 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     paddingVertical: 0,
   },
+  clearSearchBtn: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  filterIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Quick Add Banner */
+  quickAddBanner: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  quickAddCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  quickAddIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  quickAddTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  quickAddSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  quickAddBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  quickAddBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+
+  /* Status Filter Tabs */
+  tabsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    gap: 8,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  tabButtonActiveGreen: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  tabButtonActiveYellow: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  tabButtonActiveSlate: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#CBD5E1',
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  pendingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#F59E0B',
+  },
+  tabButtonText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  tabButtonTextActiveGreen: {
+    color: '#065F46',
+    fontWeight: '800',
+  },
+  tabButtonTextActiveYellow: {
+    color: '#92400E',
+    fontWeight: '800',
+  },
+  tabButtonTextActiveSlate: {
+    color: '#1E293B',
+    fontWeight: '800',
+  },
+
+  /* Contacts List */
   listContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
   contactCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 16,
     marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.04,
     shadowRadius: 8,
     elevation: 2,
+    gap: 12,
   },
   lookupMatchCard: {
-    borderColor: '#4F46E5',
+    borderColor: '#059669',
     borderWidth: 1.5,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#F0FDF4',
   },
-  avatarContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
+
+  /* Card Top Row */
+  cardTopRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 15,
   },
-  registeredAvatarBg: {
-    backgroundColor: '#E0EEFF',
-  },
-  unregisteredAvatarBg: {
-    backgroundColor: '#FFEBEB',
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   avatarText: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  registeredAvatarText: {
-    color: '#4F46E5',
-  },
-  unregisteredAvatarText: {
-    color: '#EF4444',
-  },
-  contactDetails: {
-    flex: 1,
-  },
-  contactName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  lookupBadgeText: {
-    color: '#4F46E5',
-    fontSize: 11,
+    fontSize: 18,
     fontWeight: '800',
   },
-  contactMobile: {
-    fontSize: 13,
-    color: '#64748B',
-    marginBottom: 4,
+  cardDetailsBox: {
+    flex: 1,
   },
-  registeredSection: {
+  cardNameStatusRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 6,
-    marginTop: 2,
+    flexWrap: 'wrap',
   },
-  registeredBadge: {
+  contactName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  statusBadgeGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-    borderWidth: 0.5,
-    borderColor: '#A7F3D0',
+    borderRadius: 12,
+    gap: 4,
   },
-  registeredText: {
+  statusDotGreen: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#15803D',
+  },
+  statusBadgeGreenText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  statusBadgeOrange: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+    gap: 4,
+  },
+  statusDotOrange: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#B45309',
+  },
+  statusBadgeOrangeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  statusBadgeBlue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+    gap: 4,
+  },
+  statusDotBlue: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#1D4ED8',
+  },
+  statusBadgeBlueText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1D4ED8',
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 3,
+  },
+  phoneText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+
+  /* Top Right Action Icons */
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  iconCircleBtnGreen: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconCircleBtnSlate: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconBtnMore: {
+    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Card Bottom Row */
+  cardBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  cardCompanyColumn: {
+    flex: 1,
+    gap: 6,
+  },
+  companyPillBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  companyPillLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flex: 1,
+  },
+  companyNameText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+    flexShrink: 1,
+  },
+  companyRoleTag: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#166534',
+    color: '#0284C7',
   },
-  unregisteredText: {
+  companyPillPending: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  companyPendingText: {
     fontSize: 11,
-    color: '#EF4444',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#D97706',
   },
-  selectIcon: {
-    fontSize: 20,
-    color: '#CBD5E1',
-    marginLeft: 10,
+  companyPillInvite: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
+  companyInviteText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  moreCompaniesPillBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0F9FF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  moreCompaniesText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+
+  /* Create Deal Button */
+  createDealBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#059669',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 6,
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  createDealBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  /* Empty & Loading States */
   emptyContainer: {
     alignItems: 'center',
     marginTop: 50,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#64748B',
     marginBottom: 15,
   },
   addManualButton: {
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#4F46E5',
+    borderRadius: 10,
+    borderWidth: 1.5,
   },
   addManualText: {
-    color: '#4F46E5',
-    fontWeight: '600',
+    fontWeight: '700',
+    fontSize: 13,
   },
   loaderContainer: {
     flex: 1,
@@ -1088,14 +1421,15 @@ const styles = StyleSheet.create({
   },
   loaderText: {
     marginTop: 15,
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
     fontWeight: '600',
   },
-  // Modal Bottom Sheet Styling
+
+  /* Modal Bottom Sheet */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'flex-end',
   },
   modalContent: {
@@ -1103,78 +1437,69 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 40 : 25,
     maxHeight: '75%',
   },
   dragIndicator: {
-    width: 32,
+    width: 36,
     height: 4,
     borderRadius: 2,
     backgroundColor: '#E2E8F0',
     alignSelf: 'center',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 6,
+    marginBottom: 4,
     textAlign: 'center',
   },
   modalSubtitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#64748B',
-    fontWeight: '500',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
     lineHeight: 18,
   },
   companyList: {
-    gap: 12,
+    gap: 10,
   },
-  companyCard: {
+  companyModalCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 14,
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     backgroundColor: '#F8FAFC',
   },
   companyIconBg: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: 10,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#ECFDF5',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  companyIconEmoji: {
-    fontSize: 16,
-  },
-  companyNameText: {
-    fontSize: 15,
+  companyModalNameText: {
+    fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
     marginBottom: 2,
   },
-  companyTypeText: {
+  companyModalTypeText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#4F46E5',
+    fontWeight: '800',
+    color: '#059669',
     letterSpacing: 0.4,
   },
-  selectCompanyArrow: {
-    fontSize: 22,
-    color: '#94A3B8',
-    marginLeft: 10,
-  },
   cancelBtn: {
-    marginTop: 20,
-    height: 48,
-    borderRadius: 14,
+    marginTop: 16,
+    height: 46,
+    borderRadius: 12,
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1182,15 +1507,16 @@ const styles = StyleSheet.create({
   cancelBtnText: {
     color: '#475569',
     fontWeight: '800',
-    fontSize: 14,
+    fontSize: 13.5,
   },
-  // Permission Request Styles
+
+  /* Permission Block */
   permissionContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
-    backgroundColor: '#F5F7FF',
+    backgroundColor: '#F8FAFC',
   },
   permissionCard: {
     backgroundColor: '#FFFFFF',
@@ -1198,66 +1524,58 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
     width: '100%',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 10 },
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.06,
-    shadowRadius: 20,
+    shadowRadius: 16,
     elevation: 4,
     borderWidth: 1,
-    borderColor: '#ECEEF6',
+    borderColor: '#E2E8F0',
   },
   permissionIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#EEF2FF',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-  },
-  permissionIconEmoji: {
-    fontSize: 36,
+    marginBottom: 16,
   },
   permissionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 10,
+    marginBottom: 8,
     textAlign: 'center',
-    letterSpacing: -0.3,
   },
   permissionSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
-    lineHeight: 20,
-    fontWeight: '500',
+    lineHeight: 18,
     textAlign: 'center',
-    marginBottom: 28,
-    paddingHorizontal: 10,
+    marginBottom: 24,
+    paddingHorizontal: 8,
   },
   grantButton: {
-    backgroundColor: '#4F46E5',
     width: '100%',
-    height: 52,
-    borderRadius: 16,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: '#4F46E5',
+    marginBottom: 10,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 3,
   },
   grantButtonText: {
     color: '#FFFFFF',
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 14,
   },
   skipButton: {
     width: '100%',
-    height: 48,
-    borderRadius: 16,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F1F5F9',
@@ -1265,134 +1583,7 @@ const styles = StyleSheet.create({
   skipButtonText: {
     color: '#475569',
     fontWeight: '800',
-    fontSize: 14,
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 4,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-  },
-  tabButtonActive: {
-    backgroundColor: '#F1F5F9',
-  },
-  tabButtonText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  tabButtonTextActive: {
-    color: '#0F172A',
-    fontWeight: '800',
-  },
-  activeAvatarBg: {
-    backgroundColor: '#DCFCE7',
-  },
-  activeAvatarText: {
-    color: '#166534',
-  },
-  pendingAvatarBg: {
-    backgroundColor: '#FEF3C7',
-  },
-  pendingAvatarText: {
-    color: '#92400E',
-  },
-  inviteAvatarBg: {
-    backgroundColor: '#F1F5F9',
-  },
-  inviteAvatarText: {
-    color: '#475569',
-  },
-  badgeActive: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 0.5,
-    borderColor: '#86EFAC',
-  },
-  badgeActiveText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#166534',
-  },
-  badgePending: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 0.5,
-    borderColor: '#FDE68A',
-  },
-  badgePendingText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#92400E',
-  },
-  companiesList: {
-    marginTop: 4,
-    gap: 2,
-  },
-  companySubName: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  warningMessage: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#D97706',
-    marginTop: 4,
-  },
-  actionBtnActive: {
-    backgroundColor: '#4F46E5',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionBtnActiveText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  actionBtnPending: {
-    backgroundColor: '#D97706',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionBtnPendingText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  actionBtnInvite: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionBtnInviteText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 13,
   },
 });
 

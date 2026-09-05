@@ -7,10 +7,11 @@ import {
   Image,
   Platform,
 } from 'react-native';
-import { Bell, User, Mic } from 'lucide-react-native';
+import { Bell, User } from 'lucide-react-native';
+// import { Mic } from 'lucide-react-native';
 
 import { fontSize, moderateScale, scale } from '../../utils/responsive';
-import VoiceService from '../../modules/voice/VoiceService';
+// import VoiceService from '../../modules/voice/VoiceService';
 
 const Navbar = ({ onNavigate, user }) => {
   return (
@@ -26,15 +27,15 @@ const Navbar = ({ onNavigate, user }) => {
 
       {/* Right: Voice Mic, Notifications & Profile Icon */}
       <View style={styles.actionsRow}>
-        {/* Voice Assistant Mic Button */}
-        <TouchableOpacity
+        {/* Voice Assistant Mic Button - Commented out for now */}
+        {/* <TouchableOpacity
           style={styles.voiceIconBtn}
           onPress={() => VoiceService.emit('open-voice-modal')}
           activeOpacity={0.75}
         >
           <Mic size={19} color="#0B2265" />
           <View style={styles.voiceDot} />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         <TouchableOpacity
           style={styles.iconBtn}

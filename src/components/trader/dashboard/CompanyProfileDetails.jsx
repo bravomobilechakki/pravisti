@@ -15,8 +15,10 @@ import {
   StatusBar,
   RefreshControl,
   Linking,
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {
   ArrowLeft,
   Edit3,
@@ -43,6 +45,7 @@ import {
   Layers,
   X,
   CheckCircle2,
+  Camera,
 } from 'lucide-react-native';
 import {
   getCompanyDetails,
@@ -51,6 +54,8 @@ import {
   getDeals,
   getExpiredDeals,
   getUserProfile,
+  uploadService,
+  resolveImageUrl,
 } from '../../../services/api';
 
 const CompanyProfileDetails = ({ onNavigate, routeData }) => {
@@ -63,9 +68,11 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isMenuModalVisible, setIsMenuModalVisible] = useState(false);
   const [currentUser, setCurrentUser] = useState(routeData?.user || null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   const [editData, setEditData] = useState({
     name: '',
+    logo: '',
     email: '',
     phone: '',
     type: '',
@@ -122,6 +129,7 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
 
         setEditData({
           name: data.name || '',
+          logo: data.logo || '',
           email: data.email || '',
           phone: data.phone || '',
           type: data.type || '',
@@ -253,6 +261,18 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
         description: editData.description,
       };
 
+      if (editData.logo) {
+        let finalLogo = editData.logo;
+        if (finalLogo.startsWith('file://') || finalLogo.startsWith('content://')) {
+          try {
+            finalLogo = await uploadService.uploadImage(finalLogo);
+          } catch (upErr) {
+            console.warn('Company logo upload before save failed:', upErr);
+          }
+        }
+        payload.logo = finalLogo;
+      }
+
       const response = await updateCompany(id, payload, token);
       if (response && response.success) {
         Alert.alert('Success', 'Company profile updated successfully!');
@@ -275,6 +295,96 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
       } else {
         Alert.alert('Error', errMsg);
       }
+    }
+  };
+
+  const handleLogoPick = (isDirectUpload = false) => {
+    const options = [
+      {
+        text: 'Take Photo',
+        onPress: () => processImagePicker('camera', isDirectUpload),
+      },
+      {
+        text: 'Choose from Gallery',
+        onPress: () => processImagePicker('gallery', isDirectUpload),
+      },
+    ];
+
+    if ((isDirectUpload ? company?.logo : editData.logo)) {
+      options.push({
+        text: 'Remove Logo',
+        style: 'destructive',
+        onPress: async () => {
+          if (isDirectUpload) {
+            try {
+              const token = await AsyncStorage.getItem('userToken');
+              const id = company?._id || company?.id;
+              await updateCompany(id, { logo: '' }, token);
+              setCompany(prev => ({ ...prev, logo: '' }));
+              setEditData(prev => ({ ...prev, logo: '' }));
+              Alert.alert('Success', 'Company logo removed.');
+            } catch (e) {
+              Alert.alert('Error', 'Failed to remove logo.');
+            }
+          } else {
+            setEditData(prev => ({ ...prev, logo: '' }));
+          }
+        },
+      });
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert('Company Logo', 'Select an option to update company logo:', options);
+  };
+
+  const processImagePicker = (sourceType, isDirectUpload) => {
+    const pickerOptions = {
+      mediaType: 'photo',
+      quality: 0.8,
+    };
+
+    const callback = async (response) => {
+      if (response.didCancel) return;
+      if (response.errorCode) {
+        Alert.alert('Error', response.errorMessage || 'Failed to pick image');
+        return;
+      }
+      if (response.assets && response.assets.length > 0) {
+        const asset = response.assets[0];
+        try {
+          setIsUploadingLogo(true);
+          // Immediate preview
+          setEditData(prev => ({ ...prev, logo: asset.uri }));
+          if (isDirectUpload) {
+            setCompany(prev => ({ ...prev, logo: asset.uri }));
+          }
+
+          const uploadedUrl = await uploadService.uploadImage(asset);
+          setEditData(prev => ({ ...prev, logo: uploadedUrl }));
+
+          if (isDirectUpload) {
+            const token = await AsyncStorage.getItem('userToken');
+            const id = company?._id || company?.id;
+            const res = await updateCompany(id, { logo: uploadedUrl }, token);
+            if (res?.success) {
+              setCompany(prev => ({ ...prev, logo: uploadedUrl }));
+              Alert.alert('Success', 'Company logo updated successfully!');
+            }
+          }
+        } catch (uploadErr) {
+          console.error('Company logo upload error:', uploadErr);
+          Alert.alert('Upload Failed', uploadErr.message || 'Could not upload company logo. Please try again.');
+        } finally {
+          setIsUploadingLogo(false);
+        }
+      }
+    };
+
+    if (sourceType === 'camera') {
+      launchCamera(pickerOptions, callback);
+    } else {
+      launchImageLibrary(pickerOptions, callback);
     }
   };
 
@@ -419,10 +529,27 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
       >
         {/* ─── 2. COMPANY HEADER CARD ─── */}
         <View style={styles.companyCard}>
-          {/* Left: Building Icon in Mint Green Squircle */}
-          <View style={styles.companyIconBox}>
-            <Building2 size={32} color="#10B981" strokeWidth={2} />
-          </View>
+          {/* Left: Building Icon / Logo in Mint Green Squircle */}
+          <TouchableOpacity
+            style={styles.companyIconBox}
+            onPress={() => handleLogoPick(true)}
+            activeOpacity={0.8}
+          >
+            {isUploadingLogo ? (
+              <ActivityIndicator size="small" color="#10B981" />
+            ) : company?.logo ? (
+              <Image
+                source={{ uri: resolveImageUrl(company.logo) }}
+                style={styles.companyLogoImg}
+                resizeMode="cover"
+              />
+            ) : (
+              <Building2 size={32} color="#10B981" strokeWidth={2} />
+            )}
+            <View style={styles.cameraIconBadge}>
+              <Camera size={10} color="#FFFFFF" strokeWidth={2.5} />
+            </View>
+          </TouchableOpacity>
 
           {/* Center Info */}
           <View style={styles.companyMainInfo}>
@@ -885,6 +1012,40 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
               style={styles.modalScroll}
               keyboardShouldPersistTaps="handled"
             >
+              {/* Company Logo Upload Box */}
+              <Text style={styles.modalFieldLabel}>Company Logo</Text>
+              <TouchableOpacity
+                style={styles.logoUploadBox}
+                onPress={() => handleLogoPick(false)}
+                activeOpacity={0.8}
+                disabled={isUploadingLogo}
+              >
+                {isUploadingLogo ? (
+                  <View style={styles.uploadPlaceholder}>
+                    <ActivityIndicator size="small" color="#2563EB" />
+                    <Text style={[styles.uploadPlaceholderText, { marginTop: 8 }]}>Uploading logo...</Text>
+                  </View>
+                ) : editData.logo ? (
+                  <View style={styles.logoPreviewWrapper}>
+                    <Image
+                      source={{ uri: resolveImageUrl(editData.logo) }}
+                      style={styles.logoPreviewImg}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.changeLogoOverlay}>
+                      <Camera size={14} color="#FFFFFF" />
+                      <Text style={styles.changeLogoText}>Change Logo</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.uploadPlaceholder}>
+                    <Camera size={26} color="#2563EB" />
+                    <Text style={styles.uploadPlaceholderText}>Upload Company Logo</Text>
+                    <Text style={styles.uploadSubtext}>JPG, PNG, WebP (Max 5MB)</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
               <Text style={styles.modalFieldLabel}>Company Name*</Text>
               <TextInput
                 style={[styles.modalInput, editErrors.name && styles.modalInputError]}
@@ -1578,5 +1739,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+
+  /* Company Logo & Upload Styles */
+  companyLogoImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+  },
+  cameraIconBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: '#2563EB',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  logoUploadBox: {
+    height: 120,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  logoPreviewWrapper: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
+  logoPreviewImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
+  },
+  changeLogoOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+  },
+  changeLogoText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  uploadPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadPlaceholderText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 6,
+  },
+  uploadSubtext: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
   },
 });

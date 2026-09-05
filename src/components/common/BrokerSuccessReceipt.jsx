@@ -25,6 +25,7 @@ import {
   Clock,
   ArrowLeft,
 } from 'lucide-react-native';
+import { resolveImageUrl } from '../../services/api';
 
 const COLORS = {
   headerStart: '#3465EA',
@@ -327,7 +328,7 @@ const BrokerSuccessReceipt = ({
               <View style={styles.partyCardRow}>
                 {partyInfo.avatarUri ? (
                   <Image
-                    source={{ uri: partyInfo.avatarUri }}
+                    source={{ uri: resolveImageUrl(partyInfo.avatarUri) }}
                     style={styles.partyAvatarImage}
                     resizeMode="cover"
                   />

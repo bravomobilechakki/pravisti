@@ -34,7 +34,7 @@ import {
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BrokerSuccessReceipt from '../../common/BrokerSuccessReceipt';
-import { getUserProfile, getCompanies, logoutUser } from '../../../services/api';
+import { getUserProfile, getCompanies, logoutUser, resolveImageUrl } from '../../../services/api';
 
 const THEME = '#2327D8';
 const THEME_HOVER = '#1B1FA7';
@@ -230,7 +230,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
           <View style={[styles.avatarCircle, !userAvatarUri && { backgroundColor: THEME }]}>
             {userAvatarUri ? (
               <Image
-                source={{ uri: userAvatarUri }}
+                source={{ uri: resolveImageUrl(userAvatarUri) }}
                 style={styles.userAvatarCustomImage}
                 resizeMode="cover"
               />

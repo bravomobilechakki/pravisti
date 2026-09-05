@@ -41,7 +41,7 @@ import {
   BrokerPendingQueue,
   OwnershipConfirmationModal,
 } from './src/components/broker';
-import { FloatingVoiceAssistant, VoicePreferencesScreen } from './src/modules/voice';
+import { VoicePreferencesScreen } from './src/modules/voice';
 
 const LoginScreen = Login as any;
 const SignupScreen = Signup as any;
@@ -386,20 +386,21 @@ function App() {
     }
   };
 
-  const isAuthScreen = current && !['Login', 'Signup', 'ChooseIndustry', 'VoicePreferences'].includes(current.screen);
+  // const isAuthScreen = current && !['Login', 'Signup', 'ChooseIndustry', 'VoicePreferences'].includes(current.screen);
 
   return (
     <SafeAreaProvider>
       <View style={styles.container}>
         {renderScreen()}
-        {isAuthScreen && (
+        {/* Voice Assistant - Commented out for now */}
+        {/* {isAuthScreen && (
           <FloatingVoiceAssistant
             currentScreen={current.screen}
             userToken={current.data?.token}
             onNavigate={onNavigate}
             onOpenPreferences={() => onNavigate('VoicePreferences')}
           />
-        )}
+        )} */}
         <OwnershipConfirmationModal
           visible={showOwnershipModal}
           onClose={() => setShowOwnershipModal(false)}

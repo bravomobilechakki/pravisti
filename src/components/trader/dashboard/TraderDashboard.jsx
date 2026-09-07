@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,24 +18,44 @@ import {
   Building2,
   Handshake,
   Plus,
-  Users,
-  TrendingUp,
-  TrendingDown,
   User,
   ChevronRight,
-  Clock,
   X,
   ShieldCheck,
   LogOut,
-  MessageSquare,
-  Menu,
+  PackageCheck,
 } from 'lucide-react-native';
-import { getCompanies, getUserProfile, getPendingInvitations, resolveImageUrl } from '../../../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  getCompanies,
+  getUserProfile,
+  getPendingInvitations,
+  getDeals,
+  resolveImageUrl,
+} from '../../../services/api';
 
-const CompanyLogoAvatar = ({ logo, name, size = 38, radius = 19, textColor, bgColor, borderColor }) => {
-  const [imageError, setImageError] = React.useState(false);
+// Solid Login Page Theme Colors
+const THEME = '#2327D8';
+const BG_COLOR = '#F4F6FB';
+
+const CompanyLogoAvatar = ({
+  logo,
+  name,
+  size = 44,
+  radius = 22,
+  textColor = THEME,
+  bgColor = '#EEF2FF',
+  borderColor = '#C7D2FE',
+}) => {
+  const [imageError, setImageError] = useState(false);
   const initials = name
-    ? name.trim().split(/\s+/).map(w => w[0]).join('').substring(0, 2).toUpperCase()
+    ? name
+        .trim()
+        .split(/\s+/)
+        .map((w) => w[0])
+        .join('')
+        .substring(0, 2)
+        .toUpperCase()
     : '??';
 
   const rawLogo = logo || '';
@@ -47,9 +67,9 @@ const CompanyLogoAvatar = ({ logo, name, size = 38, radius = 19, textColor, bgCo
         width: size,
         height: size,
         borderRadius: radius,
-        backgroundColor: bgColor || '#EEF2FF',
-        borderColor: borderColor || '#C7D2FE',
-        borderWidth: 1,
+        backgroundColor: bgColor,
+        borderColor: borderColor,
+        borderWidth: 1.2,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
@@ -66,9 +86,9 @@ const CompanyLogoAvatar = ({ logo, name, size = 38, radius = 19, textColor, bgCo
       ) : (
         <Text
           style={{
-            fontSize: Math.max(11, Math.floor(size * 0.35)),
+            fontSize: Math.max(12, Math.floor(size * 0.36)),
             fontWeight: '800',
-            color: textColor || '#4F46E5',
+            color: textColor,
           }}
         >
           {initials}
@@ -79,19 +99,22 @@ const CompanyLogoAvatar = ({ logo, name, size = 38, radius = 19, textColor, bgCo
 };
 
 const TraderDashboard = ({ onNavigate, routeData }) => {
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [companies, setCompanies] = React.useState([]);
-  const [currentUser, setCurrentUser] = React.useState(routeData?.user || null);
-  const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
-  const [unreadNotifCount, setUnreadNotifCount] = React.useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [companies, setCompanies] = useState([]);
+  const [companyDealCounts, setCompanyDealCounts] = useState({});
+  const [totalDealsCount, setTotalDealsCount] = useState(0);
+  const [currentUser, setCurrentUser] = useState(routeData?.user || null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [userImgError, setUserImgError] = useState(false);
 
+  // Fetch dashboard data
   const fetchDashboardData = async () => {
     try {
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       const token = await AsyncStorage.getItem('userToken');
 
-      const requests = [getCompanies(1, 20)];
+      const requests = [getCompanies(1, 30)];
       if (token) {
         requests.push(getUserProfile(token));
         requests.push(getPendingInvitations(token));
@@ -99,15 +122,16 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
 
       const results = await Promise.allSettled(requests);
 
-      // Handle companies response
-      const compResResult = results[0];
-      if (compResResult?.status === 'fulfilled' && compResResult.value?.success) {
-        const compList = compResResult.value.data?.companies || [];
-        setCompanies(compList);
-        AsyncStorage.setItem('trader_companies_cache', JSON.stringify(compList)).catch(() => {});
+      // 1. Companies Response
+      let fetchedCompanies = [];
+      const compRes = results[0];
+      if (compRes?.status === 'fulfilled' && compRes.value?.success) {
+        fetchedCompanies = compRes.value.data?.companies || [];
+        setCompanies(fetchedCompanies);
+        AsyncStorage.setItem('trader_companies_cache', JSON.stringify(fetchedCompanies)).catch(() => {});
       }
 
-      // Handle profile response
+      // 2. Profile Response
       if (results[1]?.status === 'fulfilled' && results[1].value?.success) {
         const userRes = results[1].value;
         const storedProfile = await AsyncStorage.getItem('user_completed_profile');
@@ -115,51 +139,154 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
         if (storedProfile) {
           try {
             const parsed = JSON.parse(storedProfile);
-            mergedProfile = {
-              ...userRes.data,
-              name: parsed.name !== undefined ? parsed.name : userRes.data.name,
-              email: parsed.email !== undefined ? parsed.email : userRes.data.email,
-              company: parsed.company !== undefined ? parsed.company : userRes.data.company,
-              gstin: parsed.gstin !== undefined ? parsed.gstin : userRes.data.gstin,
-              address: parsed.address !== undefined ? parsed.address : userRes.data.address,
-            };
+            mergedProfile = { ...userRes.data, ...parsed };
           } catch (e) {}
         }
         setCurrentUser(mergedProfile);
         AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedProfile)).catch(() => {});
       }
 
-      // Handle notifications
+      // 3. Unread Notifications Count
       if (results[2]?.status === 'fulfilled' && results[2].value?.success) {
         const invData = results[2].value.data;
         if (Array.isArray(invData)) {
           setUnreadNotifCount(invData.length);
         }
       }
+
+      // 4. Fetch Sauda Counts for Each Company (Same logic and API as CompanyDetails.jsx)
+      if (token && fetchedCompanies.length > 0) {
+        const countsMap = {};
+        let allUserDeals = [];
+
+        // Fetch general user deals (same as CompanyDetails: getDeals(token, 1, 50))
+        try {
+          const generalRes = await getDeals(token, 1, 50);
+          if (generalRes && generalRes.success) {
+            allUserDeals = generalRes.data?.deals || (Array.isArray(generalRes.data) ? generalRes.data : []);
+          }
+        } catch (e) {
+          console.warn('General deals fetch notice in dashboard:', e);
+        }
+
+        const isDealForThisCompany = (deal, id, compName) => {
+          const tId = String(id || '');
+          const sellerCid = String(deal.sellerCompanyId?._id || deal.sellerCompanyId?.id || deal.sellerCompanyId || '');
+          const buyerCid = String(deal.buyerCompanyId?._id || deal.buyerCompanyId?.id || deal.buyerCompanyId || '');
+          const brokerCid = String(deal.brokerCompanyId?._id || deal.brokerCompanyId?.id || deal.brokerCompanyId || '');
+          const p1Cid = String(deal.party1?.companyId?._id || deal.party1?.companyId || deal.party1?.company?._id || deal.party1?.company?.id || '');
+          const p2Cid = String(deal.party2?.companyId?._id || deal.party2?.companyId || deal.party2?.company?._id || deal.party2?.company?.id || '');
+          const creatorCid = String(deal.creatorCompanyId?._id || deal.creatorCompanyId?.id || deal.creatorCompanyId || '');
+          const targetCid = String(deal.targetCompanyId?._id || deal.targetCompanyId?.id || deal.targetCompanyId || '');
+          const directCid = String(deal.companyId?._id || deal.companyId?.id || deal.companyId || '');
+
+          const idMatches = (
+            sellerCid === tId ||
+            buyerCid === tId ||
+            brokerCid === tId ||
+            p1Cid === tId ||
+            p2Cid === tId ||
+            creatorCid === tId ||
+            targetCid === tId ||
+            directCid === tId
+          );
+
+          if (idMatches) return true;
+
+          // Also check by company name (as used in CompanyDetails)
+          const targetName = (compName || '').trim().toLowerCase();
+          if (targetName) {
+            const sName = String(deal.sellerCompany?.name || deal.sellerCompanyId?.companyName || deal.sellerCompanyId?.name || '').trim().toLowerCase();
+            const bName = String(deal.buyerCompany?.name || deal.buyerCompanyId?.companyName || deal.buyerCompanyId?.name || '').trim().toLowerCase();
+            const p1Name = String(deal.party1?.company?.name || deal.party1?.name || '').trim().toLowerCase();
+            const p2Name = String(deal.party2?.company?.name || deal.party2?.name || '').trim().toLowerCase();
+            const dName = String(deal.companyName || deal.company?.name || '').trim().toLowerCase();
+            if (sName === targetName || bName === targetName || p1Name === targetName || p2Name === targetName || dName === targetName) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        const dealRequests = fetchedCompanies.map(async (comp) => {
+          const compId = comp._id || comp.id;
+          if (!compId) return;
+          const compName = comp.name || comp.companyName || '';
+
+          // Check local company deals cache first (populated by CompanyDetails)
+          try {
+            const localCached = await AsyncStorage.getItem(`company_deals_cache_${compId}`);
+            if (localCached) {
+              const parsed = JSON.parse(localCached);
+              if (Array.isArray(parsed)) {
+                countsMap[compId] = parsed.length;
+              }
+            }
+          } catch (e) {}
+
+          let allDeals = [];
+
+          try {
+            // Exactly matching CompanyDetails.jsx: getDeals(token, 1, 50, id)
+            const activeRes = await getDeals(token, 1, 50, compId);
+            if (activeRes && activeRes.success) {
+              const d = activeRes.data?.deals || (Array.isArray(activeRes.data) ? activeRes.data : []);
+              allDeals = Array.isArray(d) ? [...d] : [];
+            }
+          } catch (dealErr) {
+            console.warn(`Failed deals fetch for company ${compId}:`, dealErr?.message || dealErr);
+          }
+
+          // Combine with general deals and deduplicate by deal ID (exact same as CompanyDetails.jsx)
+          const seen = new Set(allDeals.map((d) => String(d._id || d.id)));
+          allUserDeals.forEach((d) => {
+            const did = String(d._id || d.id);
+            if (did && !seen.has(did)) {
+              seen.add(did);
+              allDeals.push(d);
+            }
+          });
+
+          // Filter exactly as CompanyDetails.jsx does
+          const filtered = allDeals.filter((d) => isDealForThisCompany(d, compId, compName));
+
+          countsMap[compId] = filtered.length;
+
+          // Keep company_deals_cache in sync
+          AsyncStorage.setItem(`company_deals_cache_${compId}`, JSON.stringify(filtered)).catch(() => {});
+        });
+
+        await Promise.allSettled(dealRequests);
+
+        setCompanyDealCounts(countsMap);
+        AsyncStorage.setItem('trader_company_deal_counts', JSON.stringify(countsMap)).catch(() => {});
+
+        const totalAcrossCompanies = Object.values(countsMap).reduce((sum, val) => sum + (Number(val) || 0), 0);
+        setTotalDealsCount(totalAcrossCompanies);
+      }
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      console.error('Error fetching trader dashboard data:', error);
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
   };
 
-  React.useEffect(() => {
+  // Cached loading on mount
+  useEffect(() => {
     let isMounted = true;
     const loadCachedData = async () => {
       try {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        const [storedProfile, storedCompanies] = await Promise.all([
+        const [storedProfile, storedCompanies, storedCounts] = await Promise.all([
           AsyncStorage.getItem('user_completed_profile'),
           AsyncStorage.getItem('trader_companies_cache'),
+          AsyncStorage.getItem('trader_company_deal_counts'),
         ]);
 
         if (isMounted) {
-          let hasCached = false;
           if (storedProfile) {
             try {
               setCurrentUser(JSON.parse(storedProfile));
-              hasCached = true;
             } catch (e) {}
           }
           if (storedCompanies) {
@@ -167,12 +294,45 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
               const parsed = JSON.parse(storedCompanies);
               if (Array.isArray(parsed) && parsed.length > 0) {
                 setCompanies(parsed);
-                hasCached = true;
+                setIsLoading(false);
               }
             } catch (e) {}
           }
-          if (hasCached) {
-            setIsLoading(false);
+
+          if (storedCounts || storedCompanies) {
+            try {
+              let parsedCounts = {};
+              if (storedCounts) {
+                try {
+                  parsedCounts = JSON.parse(storedCounts) || {};
+                } catch (e) {}
+              }
+
+              // Also check individual company deals caches saved by CompanyDetails.jsx
+              if (storedCompanies) {
+                try {
+                  const compList = JSON.parse(storedCompanies);
+                  if (Array.isArray(compList)) {
+                    for (const c of compList) {
+                      const cid = c._id || c.id;
+                      if (cid && parsedCounts[cid] === undefined) {
+                        const localCache = await AsyncStorage.getItem(`company_deals_cache_${cid}`);
+                        if (localCache) {
+                          const parsedArr = JSON.parse(localCache);
+                          if (Array.isArray(parsedArr)) {
+                            parsedCounts[cid] = parsedArr.length;
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (e) {}
+              }
+
+              setCompanyDealCounts(parsedCounts);
+              const totalAcrossCompanies = Object.values(parsedCounts).reduce((sum, val) => sum + (Number(val) || 0), 0);
+              setTotalDealsCount(totalAcrossCompanies);
+            } catch (e) {}
           }
         }
       } catch (e) {
@@ -188,21 +348,18 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
     };
   }, [routeData?.refresh, routeData?.company, routeData?.updatedAt, routeData?.timestamp]);
 
-  const onRefresh = React.useCallback(async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    fetchDashboardData();
+    await fetchDashboardData();
   }, []);
 
-  const [userImgError, setUserImgError] = React.useState(false);
-
-  React.useEffect(() => {
-    setUserImgError(false);
-  }, [currentUser]);
-
-  const recentDeals = currentUser?.recentDeals || routeData?.user?.recentDeals || [];
-  const hasCompany = companies.length > 0 || isLoading;
   const userName = currentUser?.name || routeData?.user?.name || 'Trader';
-  const userRole = routeData?.role || currentUser?.userType || routeData?.user?.userType || currentUser?.roles?.[0] || routeData?.user?.roles?.[0] || 'Member';
+  const userRole =
+    routeData?.role ||
+    currentUser?.userType ||
+    routeData?.user?.userType ||
+    currentUser?.roles?.[0] ||
+    'Trader';
 
   const userLogoUri =
     currentUser?.profilePicture ||
@@ -211,328 +368,286 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
     currentUser?.image ||
     currentUser?.photo ||
     currentUser?.profileImage ||
-    currentUser?.logoUrl ||
-    routeData?.user?.profilePicture ||
-    routeData?.user?.avatar ||
-    routeData?.user?.logo ||
-    routeData?.user?.image ||
-    (companies && companies.length > 0 && (companies[0]?.logo || companies[0]?.logoUrl || companies[0]?.image || companies[0]?.companyLogo));
-
-  const isTrader = userRole.toLowerCase() === 'trader';
-  const roleTheme = {
-    bg: isTrader ? 'rgba(250, 204, 21, 0.15)' : 'rgba(99, 102, 241, 0.15)', // Gold/Indigo tint
-    border: isTrader ? '#F59E0B' : '#6366F1',
-    text: isTrader ? '#F59E0B' : '#6366F1',
-    label: isTrader ? '👑 TRADER ACCOUNT' : '⚡ BROKER ACCOUNT',
-  };
-
-  // Modern styled quick actions
-  const quickActions = [
-    {
-      id: 'deals',
-      label: 'Sauda',
-      icon: <Handshake size={22} color="#FFFFFF" />,
-      circleBg: '#4F46E5', // Deep Indigo
-      onPress: () => onNavigate('DealsList', { user: routeData?.user }),
-    },
-    {
-      id: 'chat',
-      label: 'Messages',
-      icon: <Users size={22} color="#FFFFFF" />,
-      circleBg: '#10B981', // Emerald Green
-      onPress: () => onNavigate('ChatList', { user: routeData?.user }),
-    },
-    {
-      id: 'my_companies',
-      label: 'My Companies',
-      icon: <Building2 size={22} color="#FFFFFF" />,
-      circleBg: '#06B6D4', // Cyan
-      onPress: () => onNavigate('MyCompanies', { user: routeData?.user }),
-    },
-    {
-      id: 'profile',
-      label: 'View Profile',
-      icon: <User size={22} color="#FFFFFF" />,
-      circleBg: '#F59E0B', // Amber
-      onPress: () => onNavigate('Profile', { user: routeData?.user }),
-    },
-  ];
-
-  // Stats data
-  const statCards = [
-    {
-      label: 'Active Deals',
-      value: (recentDeals && Array.isArray(recentDeals)) ? recentDeals.filter(d => d.status === 'Active' || d.status === 'Approved').length.toString() : '0',
-      icon: <TrendingUp size={16} color="#059669" />,
-      trend: 'Live',
-      accent: '#059669',
-      bg: '#ECFDF5',
-    },
-    {
-      label: 'Pending Approval',
-      value: (recentDeals && Array.isArray(recentDeals)) ? recentDeals.filter(d => d.status === 'Pending').length.toString() : '0',
-      icon: <Clock size={16} color="#D97706" />,
-      trend: 'Queue',
-      accent: '#D97706',
-      bg: '#FFFBEB',
-    },
-    {
-      label: 'My Companies',
-      value: (companies && Array.isArray(companies)) ? companies.length.toString() : '0',
-      icon: <Building2 size={16} color="#2563EB" />,
-      trend: 'Verified',
-      accent: '#2563EB',
-      bg: '#EFF6FF',
-    },
-  ];
+    routeData?.user?.profilePicture;
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A56DB" />
+      <StatusBar barStyle="light-content" backgroundColor={THEME} />
 
-      {/* ─── SCROLLABLE BODY ─── */}
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#4F46E5']}
-            tintColor="#4F46E5"
-          />
-        }>
-
-        {/* ─── ROYAL BLUE HERO HEADER ─── */}
+      <View style={styles.mainWrapper}>
+        {/* ─── FIXED TOP SECTION (HEADER + REGISTER COMPANY BUTTON) ─── */}
         <View style={styles.heroSection}>
-          {/* Decorative circles in bg */}
-          <View style={styles.heroBgCircle1} />
-          <View style={styles.heroBgCircle2} />
-          <View style={styles.heroBgCircle3} />
-
           {/* Top Bar */}
           <View style={styles.topBar}>
-            {/* Left: Brand Logo */}
+            {/* Left: Notifications Icon */}
+            <TouchableOpacity
+              style={styles.topBarActionBtn}
+              onPress={() => onNavigate('Notifications', { user: currentUser || routeData?.user })}
+              activeOpacity={0.8}
+            >
+              <Bell size={20} color="#FFFFFF" />
+              {unreadNotifCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Center: Brand Logo */}
             <View style={styles.brandContainer}>
               <Image
-                source={require('../../../images/logo/new_logo.png')}
+                source={require('../../../images/new_logo_pravisti.png')}
                 style={styles.brandLogo}
                 resizeMode="contain"
               />
             </View>
 
-            {/* Right: User Logo / Profile Avatar in place of Menu Icon (taps open the slider drawer) */}
+            {/* Right: User Avatar / Drawer Trigger */}
             <TouchableOpacity
-              style={styles.menuBtn}
+              style={styles.avatarBtn}
               onPress={() => setIsDrawerOpen(true)}
               activeOpacity={0.8}
             >
               {userLogoUri && !userImgError ? (
                 <Image
                   source={{ uri: resolveImageUrl(userLogoUri) }}
-                  style={styles.topBarUserLogoImg}
+                  style={styles.avatarImg}
                   resizeMode="cover"
                   onError={() => setUserImgError(true)}
                 />
               ) : (
-                <View style={styles.topBarInitialsCircle}>
-                  <Text style={styles.topBarInitialsText}>
-                    {userName ? userName.trim().charAt(0).toUpperCase() : 'U'}
+                <View style={styles.avatarInitialsCircle}>
+                  <Text style={styles.avatarInitialsText}>
+                    {userName ? userName.trim().charAt(0).toUpperCase() : 'T'}
                   </Text>
                 </View>
               )}
             </TouchableOpacity>
           </View>
 
-          {/* Welcome Banner */}
+          {/* Welcome User Banner */}
           <View style={styles.welcomeBanner}>
-            <Text style={styles.welcomeHelloText}>Hello & Welcome,</Text>
-
-            <View style={styles.nameAndRoleRow}>
-              <Text
-                style={styles.userNameStylish}
-                numberOfLines={1}
-                adjustsFontSizeToFit={true}
-                minimumFontScale={0.7}
-              >
-                {userName}
-              </Text>
-
-              <View style={[
-                styles.premiumRoleBadge,
-                {
-                  backgroundColor: roleTheme.bg,
-                  borderColor: roleTheme.border
-                }
-              ]}>
-                <Text style={[
-                  styles.premiumRoleText,
-                  { color: roleTheme.text }
-                ]}>
-                  {roleTheme.label}
+            <View style={styles.welcomeTopRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.welcomeGreeting}>Welcome back,</Text>
+                <Text style={styles.welcomeUserName} numberOfLines={1}>
+                  {userName}
                 </Text>
               </View>
-            </View>
 
+              <View style={styles.traderVerifiedBadge}>
+                <ShieldCheck size={12} color="#FDE68A" />
+                <Text style={styles.traderVerifiedBadgeText}>VERIFIED TRADER</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ─── FIXED REGISTER COMPANY BUTTON (WITH RICH COLOR) ─── */}
+          <View style={styles.createCompanyBannerWrapper}>
             <TouchableOpacity
-              style={styles.registerPromptBtn}
-              onPress={() => onNavigate('AddCompany')}
-              activeOpacity={0.8}
+              style={styles.createCompanyBannerCard}
+              onPress={() => onNavigate('AddCompany', { user: currentUser || routeData?.user })}
+              activeOpacity={0.88}
             >
-              <Plus size={14} color="#1A56DB" />
-              <Text style={styles.registerPromptText}>Add Your Business Company</Text>
+              {/* Mascot 3D Character Graphic Container */}
+              <View style={styles.createCompanyMascotWrapper}>
+                <Image
+                  source={require('../../../images/createdeal.png')}
+                  style={styles.createCompanyMascotImg}
+                  resizeMode="contain"
+                />
+              </View>
+
+              {/* Middle Title & Subtitle */}
+              <View style={styles.createCompanyTextContainer}>
+                <View style={styles.createCompanyTagRow}>
+                  <View style={styles.createCompanyTag}>
+                    <Text style={styles.createCompanyTagText}>⚡ COMPANY ONBOARDING</Text>
+                  </View>
+                </View>
+                <Text style={styles.createCompanyBannerTitle}>Register Company</Text>
+                <Text style={styles.createCompanyBannerSubtitle}>
+                  Add your company details to trade commodities & create Saudas
+                </Text>
+              </View>
+
+              {/* Right Plus Action Box */}
+              <View style={styles.createCompanyPlusBtnBox}>
+                <Plus size={20} color="#FFFFFF" strokeWidth={3} />
+              </View>
             </TouchableOpacity>
           </View>
         </View>
 
-
-
-        {/* ── STATS SECTION (Analytics) ── */}
-        <View style={styles.bodyContent}>
-          {/* ── MY COMPANIES (Paytm Recharge grid style list) ── */}
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionTitle}>My Companies</Text>
-              <View style={styles.countPill}>
-                <Text style={styles.countPillText}>{companies.length}</Text>
+        {/* ─── SCROLLABLE BODY ─── */}
+        <ScrollView
+          style={styles.scrollArea}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[THEME]}
+              tintColor={THEME}
+            />
+          }
+        >
+          {/* ─── BODY CONTENT ─── */}
+          <View style={styles.bodyContent}>
+            {/* ─── MY REGISTERED COMPANIES (WITH SAUDA COUNT) ─── */}
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Building2 size={16} color={THEME} />
+                <Text style={styles.sectionTitle}>My Companies</Text>
+                <View style={styles.countPill}>
+                  <Text style={styles.countPillText}>{companies.length}</Text>
+                </View>
               </View>
+
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => onNavigate('CreateDeal', { user: currentUser || routeData?.user })}
+                activeOpacity={0.8}
+              >
+                <Handshake size={13} color={THEME} />
+                <Text style={styles.addBtnText}>+ New Sauda</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.addBtn}
-              onPress={() => onNavigate('AddCompany')}
-              activeOpacity={0.8}>
-              <Plus size={12} color="#4F46E5" />
-              <Text style={styles.addBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
 
           {isLoading ? (
-            <ActivityIndicator size="small" color="#4F46E5" style={{ marginVertical: 24 }} />
-          ) : !hasCompany ? (
+            <ActivityIndicator size="small" color={THEME} style={{ marginVertical: 20 }} />
+          ) : companies.length === 0 ? (
             <TouchableOpacity
               style={styles.emptyCard}
-              onPress={() => onNavigate('AddCompany')}
-              activeOpacity={0.85}>
-              <View style={styles.emptyDot1} />
-              <View style={styles.emptyDot2} />
+              onPress={() => onNavigate('AddCompany', { user: currentUser })}
+              activeOpacity={0.85}
+            >
               <View style={styles.emptyIconCircle}>
-                <Building2 size={28} color="#4F46E5" />
+                <Building2 size={28} color={THEME} />
               </View>
-              <Text style={styles.emptyTitle}>No Business Linked Yet</Text>
+              <Text style={styles.emptyTitle}>No Company Linked Yet</Text>
               <Text style={styles.emptySubtitle}>
-                Add your company details to start generating Saudais, managing deals, and sending invoices.
+                Link or register your trading company to create formal Saudas, manage commodities, and issue contracts.
               </Text>
               <View style={styles.emptyBtn}>
-                <Plus size={16} color="#FFFFFF" />
-                <Text style={styles.emptyBtnText}>Link Your Business</Text>
+                <Plus size={15} color="#FFFFFF" />
+                <Text style={styles.emptyBtnText}>Link Company</Text>
               </View>
             </TouchableOpacity>
           ) : (
             <View style={styles.companyListContainer}>
               {companies.map((company, index) => {
+                const compId = company._id || company.id;
+                const saudaCount = companyDealCounts[compId] ?? 0;
                 const isActive = company.status === 'active' || company.status === 'Active';
-                const isTraderCompany = company.type === 'trader';
-                const companyTheme = {
-                  bg: isTraderCompany ? '#E8F8EE' : '#EEF2FF',
-                  border: isTraderCompany ? '#A7F3D0' : '#C7D2FE',
-                  text: isTraderCompany ? '#10B981' : '#4F46E5',
-                  leftBorder: isTraderCompany ? '#10B981' : '#4F46E5',
-                };
-                const companyLogo = company.logo || company.logoUrl || company.image || company.companyLogo || company.avatar || company.photo;
+                const companyLogo =
+                  company.logo ||
+                  company.logoUrl ||
+                  company.image ||
+                  company.companyLogo ||
+                  company.avatar;
 
                 return (
                   <TouchableOpacity
-                    key={company._id || company.id || index}
-                    style={styles.companyRow}
-                    onPress={() => onNavigate('CompanyDetails', { company, user: routeData?.user })}
-                    activeOpacity={0.75}>
-
-                    {/* Left: Logo or Initials Circle */}
+                    key={compId || index}
+                    style={styles.companyCard}
+                    onPress={() =>
+                      onNavigate('CompanyDetails', {
+                        company,
+                        companyId: compId,
+                        user: currentUser,
+                      })
+                    }
+                    activeOpacity={0.82}
+                  >
+                    {/* Left: Avatar */}
                     <CompanyLogoAvatar
                       logo={companyLogo}
                       name={company.name}
-                      size={38}
-                      radius={19}
-                      textColor={companyTheme.text}
-                      bgColor={companyTheme.bg}
-                      borderColor={companyTheme.border}
+                      size={44}
+                      radius={22}
                     />
 
-                    {/* Middle: Details */}
-                    <View style={styles.rowMiddle}>
+                    {/* Middle: Details & Sauda Count Badge */}
+                    <View style={styles.companyMiddleCol}>
+                      {/* Name & Owner Pill */}
                       <View style={styles.companyNameRow}>
-                        <Text style={styles.rowName} numberOfLines={1}>{company.name}</Text>
+                        <Text style={styles.companyNameText} numberOfLines={1}>
+                          {company.name || company.companyName || 'Company Name'}
+                        </Text>
                         <View style={styles.ownerBadge}>
                           <Text style={styles.ownerBadgeText}>OWNER</Text>
                         </View>
                       </View>
-                      <Text style={styles.rowIndustry} numberOfLines={1}>
-                        {typeof company.industry === 'object' ? company.industry.name : company.industry || 'General'}
-                      </Text>
+
+                      {/* Sauda Count & Industry Row */}
+                      <View style={styles.companyMetaRow}>
+                        {/* Live Sauda count for this exact company */}
+                        <View style={styles.saudaCountBadge}>
+                          <Handshake size={11} color={THEME} />
+                          <Text style={styles.saudaCountBadgeText}>
+                            {saudaCount} {saudaCount === 1 ? 'Sauda' : 'Saudas'}
+                          </Text>
+                        </View>
+
+                        <Text style={styles.companyIndustryText} numberOfLines={1}>
+                          • {typeof company.industry === 'object' ? company.industry.name : company.industry || 'General Trade'}
+                        </Text>
+                      </View>
                     </View>
 
-                    {/* Right: Badge & Chevron */}
-                    <View style={styles.rowRight}>
-                      <View style={[styles.rowTypeBadge, { backgroundColor: isTraderCompany ? '#E8F8EE' : '#EEF2FF' }]}>
-                        <Text style={[styles.rowTypeBadgeText, { color: isTraderCompany ? '#10B981' : '#4F46E5' }]}>
-                          {isTraderCompany ? 'Trader' : 'Broker'}
-                        </Text>
-                      </View>
-                      <View style={styles.rowStatusWrap}>
-                        <View style={[styles.rowStatusDot, { backgroundColor: isActive ? '#2FC25B' : '#FF9E00' }]} />
-                        <Text style={[styles.rowStatusText, { color: isActive ? '#2FC25B' : '#FF9E00' }]}>
+                    {/* Right: Status & Chevron */}
+                    <View style={styles.companyRightCol}>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          { backgroundColor: isActive ? '#ECFDF5' : '#FFFBEB' },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.statusDot,
+                            { backgroundColor: isActive ? '#10B981' : '#F59E0B' },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.statusText,
+                            { color: isActive ? '#059669' : '#D97706' },
+                          ]}
+                        >
                           {isActive ? 'Active' : 'Pending'}
                         </Text>
-                        <ChevronRight size={14} color="#94A3B8" />
                       </View>
+                      <ChevronRight size={16} color="#94A3B8" />
                     </View>
                   </TouchableOpacity>
                 );
               })}
 
-              {/* Add New Company Button */}
+              {/* Add New Company CTA Button */}
               <TouchableOpacity
                 style={styles.addCompanyRowBtn}
-                onPress={() => onNavigate('AddCompany')}
-                activeOpacity={0.75}>
+                onPress={() => onNavigate('AddCompany', { user: currentUser })}
+                activeOpacity={0.78}
+              >
                 <View style={styles.addCompanyRowIconCircle}>
-                  <Plus size={14} color="#4F46E5" />
+                  <Plus size={14} color={THEME} />
                 </View>
-                <Text style={styles.addCompanyRowBtnText}>Link New Business Company</Text>
+                <Text style={styles.addCompanyRowBtnText}>Link Another Company</Text>
               </TouchableOpacity>
             </View>
           )}
-
-          {/* ── STATS SECTION (Analytics) ── */}
-          <View style={[styles.sectionHeader, { marginTop: 24 }]}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionTitle}>Trade Analytics</Text>
-            </View>
-          </View>
-
-          <View style={styles.statsRow}>
-            {statCards.map((s, i) => (
-              <View key={i} style={styles.statCard}>
-                <View style={styles.statCardTop}>
-                  <View style={[styles.statCardIconBg, { backgroundColor: s.bg }]}>
-                    {s.icon}
-                  </View>
-                  <View style={[styles.trendPill, { backgroundColor: s.bg }]}>
-                    <Text style={[styles.trendText, { color: s.accent }]}>{s.trend}</Text>
-                  </View>
-                </View>
-                <Text style={styles.statCardVal}>{s.value}</Text>
-                <Text style={styles.statCardLabel}>{s.label}</Text>
-              </View>
-            ))}
-          </View>
         </View>
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 60 }} />
       </ScrollView>
+      </View>
 
-      {/* ─── LEFT SIDE DRAWER / SLIDER MODAL ─── */}
+      {/* ─── SIDE DRAWER / SLIDER MODAL ─── */}
       <Modal
         visible={isDrawerOpen}
         transparent={true}
@@ -540,102 +655,128 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
         onRequestClose={() => setIsDrawerOpen(false)}
       >
         <View style={styles.drawerOverlay}>
-          {/* Backdrop (Tapping closes drawer) */}
+          {/* Backdrop */}
           <TouchableOpacity
             style={styles.drawerBackdrop}
             activeOpacity={1}
             onPress={() => setIsDrawerOpen(false)}
           />
 
-          {/* Drawer Container (Left 80% width) */}
+          {/* Drawer Body (Left/Slide container) */}
           <View style={styles.drawerContainer}>
-            {/* Drawer Header (Royal Blue - Ultra Attractive Centered Profile Header) */}
+            {/* Drawer Header (Solid Login Theme Color) */}
             <View style={styles.drawerHeader}>
-              {/* Glowing Background Elements */}
-              <View style={styles.drawerHeaderGlow1} />
-              <View style={styles.drawerHeaderGlow2} />
 
               <TouchableOpacity
                 style={styles.drawerCloseBtn}
                 onPress={() => setIsDrawerOpen(false)}
-                activeOpacity={0.7}
+                activeOpacity={0.75}
               >
                 <X size={18} color="#FFFFFF" />
               </TouchableOpacity>
 
-              <View style={styles.drawerHeaderCenterContent}>
-                <View style={styles.drawerAvatarWrapper}>
-                  <TouchableOpacity
-                    style={styles.drawerAvatarCircle}
-                    onPress={() => { setIsDrawerOpen(false); onNavigate('Profile'); }}
-                    activeOpacity={0.85}
-                  >
-                    {currentUser?.profilePicture || currentUser?.avatar ? (
-                      <Image
-                        source={{ uri: resolveImageUrl(currentUser.profilePicture || currentUser.avatar) }}
-                        style={{ width: '100%', height: '100%', borderRadius: 32 }}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Text style={styles.drawerAvatarText}>
-                        {userName.trim().charAt(0).toUpperCase()}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                  <View style={styles.drawerAvatarCheckBadge}>
-                    <ShieldCheck size={12} color="#FFFFFF" />
+              <View style={styles.drawerHeaderContent}>
+                <TouchableOpacity
+                  style={styles.drawerAvatarWrapper}
+                  onPress={() => {
+                    setIsDrawerOpen(false);
+                    onNavigate('Profile');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  {userLogoUri && !userImgError ? (
+                    <Image
+                      source={{ uri: resolveImageUrl(userLogoUri) }}
+                      style={{ width: '100%', height: '100%', borderRadius: 34 }}
+                      resizeMode="cover"
+                      onError={() => setUserImgError(true)}
+                    />
+                  ) : (
+                    <Text style={styles.drawerAvatarText}>
+                      {userName.trim().charAt(0).toUpperCase()}
+                    </Text>
+                  )}
+                  <View style={styles.drawerCheckBadge}>
+                    <ShieldCheck size={11} color="#FFFFFF" />
                   </View>
-                </View>
+                </TouchableOpacity>
 
-                <Text style={styles.drawerUserName} numberOfLines={1}>{userName}</Text>
+                <Text style={styles.drawerUserName} numberOfLines={1}>
+                  {userName}
+                </Text>
                 <Text style={styles.drawerUserPhone} numberOfLines={1}>
                   {currentUser?.mobileNumber || currentUser?.phone || 'Trader Account'}
                 </Text>
 
-                <View style={styles.drawerHeaderBadgeRow}>
-                  <View style={styles.drawerRolePill}>
-                    <View style={styles.drawerActiveDot} />
-                    <Text style={styles.drawerRoleText}>{userRole.toUpperCase()} • VERIFIED</Text>
-                  </View>
+                <View style={styles.drawerRolePill}>
+                  <View style={styles.drawerActiveDot} />
+                  <Text style={styles.drawerRoleText}>{userRole.toUpperCase()} • VERIFIED</Text>
                 </View>
 
-                {/* Header Mini Quick Stats Bar */}
-                <View style={styles.drawerQuickStatsRow}>
-                  <View style={styles.drawerQuickStatCol}>
-                    <Text style={styles.drawerQuickStatVal}>{companies.length}</Text>
-                    <Text style={styles.drawerQuickStatLabel}>Company</Text>
+                {/* Drawer Quick Metrics Bar */}
+                <View style={styles.drawerStatsBar}>
+                  <View style={styles.drawerStatCol}>
+                    <Text style={styles.drawerStatVal}>{companies.length}</Text>
+                    <Text style={styles.drawerStatLabel}>Companies</Text>
                   </View>
-                  <View style={styles.drawerQuickStatDivider} />
-                  <View style={styles.drawerQuickStatCol}>
-                    <Text style={styles.drawerQuickStatVal}>
-                      {companies.reduce((sum, c) => sum + (c.recentDeals?.length || c.deals || 0), 0)}
-                    </Text>
-                    <Text style={styles.drawerQuickStatLabel}>Saudas</Text>
+                  <View style={styles.drawerStatDivider} />
+                  <View style={styles.drawerStatCol}>
+                    <Text style={styles.drawerStatVal}>{totalDealsCount}</Text>
+                    <Text style={styles.drawerStatLabel}>Saudas</Text>
                   </View>
                 </View>
               </View>
             </View>
 
-            {/* Drawer Items List */}
+            {/* Drawer Menu Items */}
             <ScrollView style={styles.drawerBody} showsVerticalScrollIndicator={false}>
-              <Text style={styles.drawerSectionTitle}>MAIN MENU</Text>
+              <Text style={styles.drawerSectionHeader}>QUICK NAVIGATION</Text>
 
               {[
-                { label: 'Profile Details', icon: User, screen: 'Profile', color: '#1A56DB' },
-                { label: 'My Companies', icon: Building2, screen: 'MyCompanies', color: '#10B981', badge: companies.length },
-                { label: 'Sauda', icon: Handshake, screen: 'DealsList', color: '#8B5CF6' },
-                { label: 'Notifications', icon: Bell, screen: 'Notifications', color: '#F59E0B', badge: unreadNotifCount > 0 ? unreadNotifCount : undefined },
-                { label: 'Add New Company', icon: Plus, screen: 'AddCompany', color: '#1A56DB' },
+                { label: 'Profile Details', icon: User, screen: 'Profile', color: THEME },
+                {
+                  label: 'My Companies',
+                  icon: Building2,
+                  screen: 'MyCompanies',
+                  color: '#059669',
+                  badge: companies.length,
+                },
+                {
+                  label: 'Sauda Ledger',
+                  icon: Handshake,
+                  screen: 'DealsList',
+                  color: '#7C3AED',
+                  badge: totalDealsCount,
+                },
+                {
+                  label: 'Product Catalog',
+                  icon: PackageCheck,
+                  screen: 'CategoryPage',
+                  color: '#0284C7',
+                },
+                {
+                  label: 'Notifications',
+                  icon: Bell,
+                  screen: 'Notifications',
+                  color: '#D97706',
+                  badge: unreadNotifCount > 0 ? unreadNotifCount : undefined,
+                },
+                {
+                  label: 'Add New Company',
+                  icon: Plus,
+                  screen: 'AddCompany',
+                  color: THEME,
+                },
               ].map((item, idx) => {
                 const ItemIcon = item.icon;
                 return (
                   <TouchableOpacity
                     key={idx}
                     style={styles.drawerMenuItem}
-                    activeOpacity={0.75}
+                    activeOpacity={0.72}
                     onPress={() => {
                       setIsDrawerOpen(false);
-                      onNavigate(item.screen);
+                      onNavigate(item.screen, { user: currentUser });
                     }}
                   >
                     <View style={[styles.drawerMenuIconBg, { backgroundColor: item.color + '15' }]}>
@@ -647,18 +788,18 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
                         <Text style={styles.drawerBadgeText}>{item.badge}</Text>
                       </View>
                     )}
-                    <ChevronRight size={16} color="#94A3B8" />
+                    <ChevronRight size={15} color="#94A3B8" />
                   </TouchableOpacity>
                 );
               })}
 
               <View style={styles.drawerDivider} />
 
-              <Text style={styles.drawerSectionTitle}>ACCOUNT & VERIFICATION</Text>
-
-              <View style={styles.drawerInfoRow}>
-                <ShieldCheck size={16} color="#10B981" />
-                <Text style={styles.drawerInfoText}>Status: Verified Trader</Text>
+              <View style={styles.drawerVerifiedCard}>
+                <ShieldCheck size={16} color="#059669" />
+                <Text style={styles.drawerVerifiedCardText}>
+                  Verified Trader Account • Ready for Bilateral Sauda
+                </Text>
               </View>
 
               <TouchableOpacity
@@ -667,10 +808,9 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
                 onPress={async () => {
                   setIsDrawerOpen(false);
                   try {
-                    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
                     await AsyncStorage.removeItem('userToken');
                     await AsyncStorage.removeItem('user_completed_profile');
-                  } catch (e) { }
+                  } catch (e) {}
                   onNavigate('Login');
                 }}
               >
@@ -679,9 +819,9 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
               </TouchableOpacity>
             </ScrollView>
 
-            {/* Drawer Footer */}
+            {/* Footer */}
             <View style={styles.drawerFooter}>
-              <Text style={styles.drawerVersionText}>Pravisti Trade Ledger • v1.0.0</Text>
+              <Text style={styles.drawerFooterText}>Pravisti B2B Trading • v1.0.3</Text>
             </View>
           </View>
         </View>
@@ -690,330 +830,267 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
   );
 };
 
-/* ─────────────── PAYTM STYLES ─────────────── */
+/* ────────────── STYLES ────────────── */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A', // Deep Obsidian Dark
+    backgroundColor: THEME, // Single Pure Royal Blue (#2327D8)
+  },
+  mainWrapper: {
+    flex: 1,
+    backgroundColor: BG_COLOR,
   },
   scrollArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: BG_COLOR,
   },
   scrollContent: {
+    paddingTop: 14,
     paddingBottom: 40,
   },
-  bodyContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
 
-  /* ── Hero Section ── */
+  /* ─── Fixed Top Section (Header + Register Company Button) ─── */
   heroSection: {
-    // Royal Blue gradient-feel hero
-    backgroundColor: '#1A56DB',
-    paddingBottom: 28,
+    backgroundColor: THEME, // Single Pure Royal Blue (#2327D8)
+    paddingTop: Platform.OS === 'android' ? 10 : 6,
+    paddingBottom: 16,
     paddingHorizontal: 16,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  heroBgCircle1: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    top: -80,
-    right: -60,
-  },
-  heroBgCircle2: {
-    position: 'absolute',
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    bottom: -40,
-    left: -40,
-  },
-  heroBgCircle3: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    top: 60,
-    left: 80,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    zIndex: 100,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'android' ? 18 : 14,
-    paddingBottom: 18,
-    marginVertical: 4,
+    paddingTop: Platform.OS === 'android' ? 10 : 6,
+    paddingBottom: 10,
   },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  menuBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
-    overflow: 'hidden',
-  },
-  topBarUserLogoImg: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 22,
-  },
-  topBarInitialsCircle: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  topBarInitialsText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  topBarCompanyLogoBtn: {
+  topBarActionBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    backgroundColor: '#FFFFFF',
-  },
-  topBarCompanyLogoImg: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  brandContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  brandLogo: {
-    width: 130,
-    height: 38,
-  },
-  notifBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
-  notifDot: {
-    position: 'absolute',
-    top: 9,
-    right: 9,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#F59E0B',
-    borderWidth: 1.5,
-    borderColor: '#1A56DB',
-  },
-  notifBadgePill: {
+  notifBadge: {
     position: 'absolute',
     top: -2,
     right: -2,
     backgroundColor: '#EF4444',
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
     borderRadius: 10,
-    minWidth: 18,
+    paddingHorizontal: 4.5,
+    paddingVertical: 1.5,
+    minWidth: 17,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: '#1A56DB',
+    borderColor: THEME,
   },
   notifBadgeText: {
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '900',
   },
+  brandContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandLogo: {
+    width: 135,
+    height: 40,
+  },
+  avatarBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+  },
+  avatarInitialsCircle: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitialsText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
 
   /* Welcome Banner */
   welcomeBanner: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.22)',
-    marginTop: 8,
+    paddingHorizontal: 2,
+    marginBottom: 10,
   },
-  nameAndRoleRow: {
+  welcomeTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
-    marginBottom: 14,
   },
-  welcomeUserCol: {
-    flex: 1,
+  welcomeGreeting: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  welcomeUserName: {
+    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '900',
+    marginTop: 1,
+    letterSpacing: -0.2,
+  },
+  traderVerifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(245, 158, 11, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  traderVerifiedBadgeText: {
+    color: '#FDE68A',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+
+  /* ─── FIXED REGISTER COMPANY BANNER CARD (WITH COLOR) ─── */
+  createCompanyBannerWrapper: {
+    marginTop: 2,
+  },
+  createCompanyBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF4FF', // Soft luminous light blue tint
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE', // Bright sky-blue border accent
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  createCompanyMascotWrapper: {
+    width: 54,
+    height: 54,
+    borderRadius: 15,
+    backgroundColor: '#DBEAFE', // Soft vibrant blue circle disk
+    borderWidth: 1.2,
+    borderColor: '#93C5FD',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 10,
   },
-  welcomeHelloText: {
-    color: '#f8fbffff',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.2,
+  createCompanyMascotImg: {
+    width: 44,
+    height: 44,
   },
-  userNameStylish: {
+  createCompanyTextContainer: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  createCompanyTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  createCompanyTag: {
+    backgroundColor: THEME,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  createCompanyTagText: {
     color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-    textTransform: 'capitalize',
-    marginTop: 2,
-    flex: 1,
-  },
-  premiumRoleBadge: {
-    borderWidth: 1.2,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-    alignSelf: 'center',
-  },
-  premiumRoleText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.6,
-  },
-  registerPromptBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    height: 46,
-    borderRadius: 14,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  registerPromptText: {
-    color: '#1A56DB',
-    fontSize: 13,
+    fontSize: 8.5,
     fontWeight: '800',
+    letterSpacing: 0.5,
   },
-
-  /* ── Overlapping Shortcuts Card ── */
-  shortcutsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    paddingHorizontal: 12,
-    marginHorizontal: 16,
-    marginTop: -32,
-    marginBottom: 20,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: '#EAECEF',
+  createCompanyBannerTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+    marginBottom: 1,
   },
-  shortcutsTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6F7E94',
-    marginBottom: 16,
-    paddingHorizontal: 4,
-    letterSpacing: 0.2,
-  },
-  shortcutsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  shortcutItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  shortcutCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  shortcutLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#1E293B',
-    textAlign: 'center',
+  createCompanyBannerSubtitle: {
+    fontSize: 10.5,
+    fontWeight: '500',
+    color: '#475569',
     lineHeight: 14,
   },
+  createCompanyPlusBtnBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: THEME,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: THEME,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 4,
+  },
 
-  /* Section headers */
+  /* ─── Body Content ─── */
+  bodyContent: {
+    paddingHorizontal: 16,
+  },
+
+  /* Section Header */
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
     marginBottom: 12,
   },
   sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1E1B4B', // Midnight Indigo headers
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0F172A',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   countPill: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#EFF6FF',
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
   countPillText: {
-    color: '#4F46E5',
+    color: THEME,
     fontSize: 11,
     fontWeight: '800',
   },
@@ -1021,268 +1098,194 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 20,
-    paddingHorizontal: 12,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 16,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderWidth: 1,
-    borderColor: '#C7D2FE',
+    borderColor: '#BFDBFE',
   },
   addBtnText: {
-    color: '#4F46E5',
+    color: THEME,
     fontSize: 11,
     fontWeight: '700',
   },
 
-  /* Stats cards */
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#EAECEF',
-  },
-  statCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statCardIconBg: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  trendPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  trendText: {
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  statCardVal: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  statCardLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#6F7E94',
-  },
-
-  /* Company list card items */
+  /* ─── Company Card List ─── */
   companyListContainer: {
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  companyRow: {
+  companyCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 12,
-    marginBottom: 8,
+    marginBottom: 10,
     borderWidth: 1.2,
-    borderColor: '#E0E7FF', // Premium light indigo border
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
+    borderColor: '#E2E8F0',
+    shadowColor: THEME,
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 2,
   },
-  rowInitialsCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#EEF2FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-    overflow: 'hidden',
-  },
-  rowInitialsText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#4F46E5',
-  },
-  rowMiddle: {
+  companyMiddleCol: {
     flex: 1,
     justifyContent: 'center',
+    marginRight: 6,
   },
   companyNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 2,
+    marginBottom: 3,
+  },
+  companyNameText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    flexShrink: 1,
   },
   ownerBadge: {
-    backgroundColor: '#FFFBEB',
+    backgroundColor: '#FEF3C7',
     borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+  },
+  ownerBadgeText: {
+    color: '#B45309',
+    fontSize: 8.5,
+    fontWeight: '800',
+  },
+  companyMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  saudaCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  ownerBadgeText: {
-    color: '#D97706',
-    fontSize: 9,
+  saudaCountBadgeText: {
+    color: THEME,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.3,
   },
-  rowName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1E293B',
+  companyIndustryText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
     flexShrink: 1,
   },
-  rowIndustry: {
-    fontSize: 11,
-    color: '#6F7E94',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  rowRight: {
+  companyRightCol: {
     alignItems: 'flex-end',
-    gap: 4,
+    gap: 6,
   },
-  rowTypeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  rowTypeBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  rowStatusWrap: {
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
   },
-  rowStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  statusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
-  rowStatusText: {
-    fontSize: 10,
-    fontWeight: '600',
+  statusText: {
+    fontSize: 9.5,
+    fontWeight: '700',
   },
-
-  /* Add Company Flat Button */
   addCompanyRowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     gap: 8,
-    marginTop: 8,
+    marginTop: 4,
     borderWidth: 1.5,
-    borderColor: '#C7D2FE',
+    borderColor: '#BFDBFE',
     borderStyle: 'dashed',
   },
   addCompanyRowIconCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#EEF2FF',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
   addCompanyRowBtnText: {
-    color: '#4F46E5',
-    fontSize: 13,
+    color: THEME,
+    fontSize: 12.5,
     fontWeight: '700',
   },
 
-  /* Empty states */
+  /* Empty Company State */
   emptyCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 18,
+    padding: 22,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#C7D2FE',
+    borderColor: '#BFDBFE',
     borderStyle: 'dashed',
-    marginBottom: 16,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  emptyDot1: {
-    position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#EEF2FF',
-    top: -35,
-    right: -35,
-    opacity: 0.8,
-  },
-  emptyDot2: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#E8F8EE',
-    bottom: -25,
-    left: -25,
-    opacity: 0.8,
+    marginBottom: 14,
   },
   emptyIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#EEF2FF',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   emptyTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4F46E5',
+    fontSize: 15,
+    fontWeight: '800',
+    color: THEME,
     marginBottom: 4,
     textAlign: 'center',
   },
   emptySubtitle: {
-    fontSize: 12,
-    color: '#6F7E94',
+    fontSize: 11.5,
+    color: '#64748B',
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
+    lineHeight: 16,
+    marginBottom: 14,
     paddingHorizontal: 8,
   },
   emptyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#00B9F1',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    backgroundColor: THEME,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     borderRadius: 12,
     gap: 6,
   },
   emptyBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
 
-  /* ─── RIGHT SIDE DRAWER STYLES ─── */
+  /* ─── Side Drawer ─── */
   drawerOverlay: {
     flex: 1,
     flexDirection: 'row-reverse',
@@ -1296,47 +1299,27 @@ const styles = StyleSheet.create({
     right: 0,
   },
   drawerContainer: {
-    width: '80%',
+    width: '82%',
     maxWidth: 320,
     backgroundColor: '#FFFFFF',
     height: '100%',
     elevation: 20,
     shadowColor: '#000',
     shadowOffset: { width: -4, height: 0 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 16,
   },
   drawerHeader: {
-    backgroundColor: '#1A56DB',
+    backgroundColor: THEME, // Pure Solid Login Theme Color
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 26 : 44,
+    paddingTop: Platform.OS === 'android' ? 24 : 44,
     paddingBottom: 20,
-    position: 'relative',
-    overflow: 'hidden',
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
-  drawerHeaderGlow1: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    top: -50,
-    right: -40,
-  },
-  drawerHeaderGlow2: {
-    position: 'absolute',
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    bottom: -30,
-    left: -30,
-  },
   drawerCloseBtn: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 16 : 36,
+    top: Platform.OS === 'android' ? 16 : 38,
     right: 16,
     width: 32,
     height: 32,
@@ -1346,16 +1329,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
-  drawerHeaderCenterContent: {
+  drawerHeaderContent: {
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
   },
   drawerAvatarWrapper: {
-    position: 'relative',
-    marginBottom: 10,
-  },
-  drawerAvatarCircle: {
     width: 68,
     height: 68,
     borderRadius: 34,
@@ -1364,134 +1343,126 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
+    marginBottom: 8,
+    position: 'relative',
   },
   drawerAvatarText: {
     color: '#FFFFFF',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
   },
-  drawerAvatarCheckBadge: {
+  drawerCheckBadge: {
     position: 'absolute',
-    bottom: 2,
-    right: 2,
+    bottom: 0,
+    right: 0,
     width: 20,
     height: 20,
     borderRadius: 10,
     backgroundColor: '#10B981',
     borderWidth: 2,
-    borderColor: '#1A56DB',
+    borderColor: THEME,
     justifyContent: 'center',
     alignItems: 'center',
   },
   drawerUserName: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '900',
     textAlign: 'center',
-    letterSpacing: -0.3,
   },
   drawerUserPhone: {
     color: 'rgba(255, 255, 255, 0.85)',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
     marginTop: 2,
     marginBottom: 8,
     textAlign: 'center',
   },
-  drawerHeaderBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
   drawerRolePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
+    marginBottom: 12,
   },
   drawerActiveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: '#10B981',
   },
   drawerRoleText: {
     color: '#FFFFFF',
     fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
   },
-  drawerQuickStatsRow: {
+  drawerStatsBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
     borderRadius: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 7,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     width: '100%',
     justifyContent: 'space-around',
   },
-  drawerQuickStatCol: {
+  drawerStatCol: {
     alignItems: 'center',
   },
-  drawerQuickStatVal: {
-    fontSize: 15,
+  drawerStatVal: {
+    fontSize: 14,
     fontWeight: '900',
     color: '#FFFFFF',
   },
-  drawerQuickStatLabel: {
-    fontSize: 10,
+  drawerStatLabel: {
+    fontSize: 9.5,
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 1,
   },
-  drawerQuickStatDivider: {
+  drawerStatDivider: {
     width: 1,
-    height: 24,
+    height: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
   },
   drawerBody: {
     flex: 1,
     padding: 16,
   },
-  drawerSectionTitle: {
-    fontSize: 10,
+  drawerSectionHeader: {
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#94A3B8',
     letterSpacing: 0.8,
-    marginBottom: 12,
-    marginTop: 8,
+    marginBottom: 10,
+    marginTop: 6,
   },
   drawerMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 12,
-    marginBottom: 4,
+    marginBottom: 3,
   },
   drawerMenuIconBg: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   drawerMenuLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#1E293B',
     flex: 1,
@@ -1500,61 +1471,63 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     borderColor: '#BFDBFE',
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 7,
+    paddingVertical: 1.5,
     borderRadius: 10,
     marginRight: 6,
   },
   drawerBadgeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
-    color: '#1A56DB',
+    color: THEME,
   },
   drawerDivider: {
     height: 1,
     backgroundColor: '#E2E8F0',
-    marginVertical: 14,
+    marginVertical: 12,
   },
-  drawerInfoRow: {
+  drawerVerifiedCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: '#ECFDF5',
-    padding: 12,
+    padding: 10,
     borderRadius: 12,
-    marginBottom: 14,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#A7F3D0',
   },
-  drawerInfoText: {
-    fontSize: 12,
+  drawerVerifiedCardText: {
+    fontSize: 11,
     fontWeight: '700',
     color: '#059669',
+    flex: 1,
+    lineHeight: 15,
   },
   drawerLogoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     backgroundColor: '#FEF2F2',
-    padding: 14,
-    borderRadius: 14,
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#FCA5A5',
-    marginTop: 6,
+    marginTop: 4,
   },
   drawerLogoutText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#EF4444',
   },
   drawerFooter: {
-    padding: 16,
+    padding: 14,
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     alignItems: 'center',
   },
-  drawerVersionText: {
-    fontSize: 11,
+  drawerFooterText: {
+    fontSize: 10.5,
     fontWeight: '600',
     color: '#94A3B8',
   },

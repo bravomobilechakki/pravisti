@@ -43,11 +43,8 @@ import {
   BookOpen,
   SlidersHorizontal,
   Bell,
-  IndianRupee,
   Truck,
-  PieChart,
   Receipt,
-  Mic,
   X,
   LogOut,
   ShieldCheck,
@@ -219,7 +216,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             if (invRes && invRes.success && Array.isArray(invRes.data)) {
               setUnreadNotifCount(invRes.data.length || 1);
             }
-          } catch (e) {}
+          } catch (e) { }
         }
       } catch (ue) {
         console.warn('Failed to fetch user profile in CompanyDetails:', ue);
@@ -302,7 +299,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           setIsDealsLoading(false);
         }
       }
-    } catch (ce) {}
+    } catch (ce) { }
 
     // 2. Fetch fresh deals from API
     try {
@@ -333,7 +330,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             allDeals.push(d);
           }
         });
-      } catch (ge) {}
+      } catch (ge) { }
 
       const isDealForThisCompany = (deal) => {
         const tId = String(id);
@@ -344,27 +341,43 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         const p2Cid = String(deal.party2?.companyId?._id || deal.party2?.companyId || deal.party2?.company?._id || deal.party2?.company?.id || '');
         const creatorCid = String(deal.creatorCompanyId?._id || deal.creatorCompanyId?.id || deal.creatorCompanyId || '');
         const targetCid = String(deal.targetCompanyId?._id || deal.targetCompanyId?.id || deal.targetCompanyId || '');
-        return (
+        const directCid = String(deal.companyId?._id || deal.companyId?.id || deal.companyId || '');
+        const idMatches = (
           sellerCid === tId ||
           buyerCid === tId ||
           brokerCid === tId ||
           p1Cid === tId ||
           p2Cid === tId ||
           creatorCid === tId ||
-          targetCid === tId
+          targetCid === tId ||
+          directCid === tId
         );
+        if (idMatches) return true;
+
+        const compName = (company?.name || company?.companyName || routeData?.company?.name || '').trim().toLowerCase();
+        if (compName) {
+          const sName = String(deal.sellerCompany?.name || deal.sellerCompanyId?.companyName || deal.sellerCompanyId?.name || '').trim().toLowerCase();
+          const bName = String(deal.buyerCompany?.name || deal.buyerCompanyId?.companyName || deal.buyerCompanyId?.name || '').trim().toLowerCase();
+          const p1Name = String(deal.party1?.company?.name || deal.party1?.name || '').trim().toLowerCase();
+          const p2Name = String(deal.party2?.company?.name || deal.party2?.name || '').trim().toLowerCase();
+          const dName = String(deal.companyName || deal.company?.name || '').trim().toLowerCase();
+          if (sName === compName || bName === compName || p1Name === compName || p2Name === compName || dName === compName) {
+            return true;
+          }
+        }
+        return false;
       };
 
       const filtered = allDeals.filter(isDealForThisCompany);
 
       setFetchedDeals(filtered);
-      AsyncStorage.setItem(cacheKey, JSON.stringify(filtered)).catch(() => {});
+      AsyncStorage.setItem(cacheKey, JSON.stringify(filtered)).catch(() => { });
     } catch (e) {
       console.warn('Failed to fetch deals for company details:', e);
     } finally {
       setIsDealsLoading(false);
     }
-  }, [company?._id, company?.id, routeData?.company?._id, routeData?.company?.id]);
+  }, [company?._id, company?.id, company?.name, company?.companyName, routeData?.company?._id, routeData?.company?.id, routeData?.company?.name]);
 
   const fetchOnboardedUsers = React.useCallback(async () => {
     const currentCompanyId = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
@@ -380,7 +393,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           setOnboardedUsers(parsed);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -420,7 +433,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       });
 
       setOnboardedUsers(filteredList);
-      AsyncStorage.setItem(cacheKey, JSON.stringify(filteredList)).catch(() => {});
+      AsyncStorage.setItem(cacheKey, JSON.stringify(filteredList)).catch(() => { });
     } catch (e) {
       console.warn('Failed to fetch onboarded users for company details:', e);
     }
@@ -588,7 +601,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     },
     {
       id: 'categories',
-      title: 'Categories',
+      title: 'Add Categories',
       subtitle: 'All Catalog',
       icon: <Layers size={19} color="#E11D48" strokeWidth={2.2} />,
       bgColor: '#FFF1F2',
@@ -596,7 +609,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     },
     {
       id: 'sub_categories',
-      title: 'Sub Categories',
+      title: 'Add Sub Categories',
       subtitle: 'Segments',
       icon: <FolderTree size={19} color="#2563EB" strokeWidth={2.2} />,
       bgColor: '#EFF6FF',
@@ -604,35 +617,19 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     },
     {
       id: 'parties',
-      title: 'Parties',
-      subtitle: 'Customers/Ven...',
+      title: 'Onboarded',
+      subtitle: 'Onboarded Users',
       icon: <Users size={19} color="#16A34A" strokeWidth={2.2} />,
       bgColor: '#F0FDF4',
       onPress: () => onNavigate('OnboardedUsers', { companyId: company?._id || company?.id, companyName: company?.name }),
     },
     {
       id: 'messages',
-      title: 'Messages',
+      title: 'View Chats',
       subtitle: 'Chat/Inbox',
       icon: <MessageSquare size={19} color="#EA580C" strokeWidth={2.2} />,
       bgColor: '#FFF7ED',
-      onPress: () => onNavigate('ChatList', { company }),
-    },
-    {
-      id: 'record_pay',
-      title: 'Record Pay...',
-      subtitle: 'Receive/Pay',
-      icon: <IndianRupee size={19} color="#0D9488" strokeWidth={2.2} />,
-      bgColor: '#F0FDFA',
-      onPress: () => onNavigate('TransactionHistory', { companyId: company?._id || company?.id }),
-    },
-    {
-      id: 'reports',
-      title: 'Reports',
-      subtitle: 'Firm Details',
-      icon: <PieChart size={19} color="#8B5CF6" strokeWidth={2.2} />,
-      bgColor: '#F5F3FF',
-      onPress: () => onNavigate('CompanyProfileDetails', { company }),
+      onPress: () => onNavigate('ChatList', { company, companyId: company?._id || company?.id }),
     },
   ];
 
@@ -759,8 +756,8 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               onPress={() => onNavigate('CreateDeal', { originCompany: company, company })}
               activeOpacity={0.88}
             >
-              <Mic size={16} color="#1541D8" strokeWidth={2.4} />
-              <Text style={styles.heroMicBtnText}>Tap Mic to create deal by voice</Text>
+              <Plus size={16} color="#1541D8" strokeWidth={2.4} />
+              <Text style={styles.heroMicBtnText}>Click and create deal</Text>
             </TouchableOpacity>
           </View>
 
@@ -823,7 +820,18 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
           <View style={styles.statsRow}>
             {/* 1. Total Deals */}
-            <View style={styles.statCard}>
+            <TouchableOpacity
+              style={styles.statCard}
+              activeOpacity={0.75}
+              onPress={() =>
+                onNavigate('DealsList', {
+                  companyId: company?._id || company?.id,
+                  companyName: company?.name,
+                  company,
+                  initialTab: 'ALL',
+                })
+              }
+            >
               <Text style={styles.statLabel}>Total Deals</Text>
               <Text style={styles.statValue}>{totalDealsCount}</Text>
               <SparklineWave
@@ -832,10 +840,21 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 pathD="M0,18 C20,18 35,9 55,12 C72,15 85,5 100,3"
                 fillD="M0,18 C20,18 35,9 55,12 C72,15 85,5 100,3 L100,24 L0,24 Z"
               />
-            </View>
+            </TouchableOpacity>
 
             {/* 2. Confirmed Deals */}
-            <View style={styles.statCard}>
+            <TouchableOpacity
+              style={styles.statCard}
+              activeOpacity={0.75}
+              onPress={() =>
+                onNavigate('DealsList', {
+                  companyId: company?._id || company?.id,
+                  companyName: company?.name,
+                  company,
+                  initialTab: 'ACTIVE',
+                })
+              }
+            >
               <Text style={styles.statLabel}>Confirmed Deals</Text>
               <Text style={styles.statValue}>{confirmedDealsCount}</Text>
               <SparklineWave
@@ -844,10 +863,21 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 pathD="M0,19 C25,20 40,11 65,11 C80,11 90,4 100,2"
                 fillD="M0,19 C25,20 40,11 65,11 C80,11 90,4 100,2 L100,24 L0,24 Z"
               />
-            </View>
+            </TouchableOpacity>
 
             {/* 3. Pending Deals */}
-            <View style={styles.statCard}>
+            <TouchableOpacity
+              style={styles.statCard}
+              activeOpacity={0.75}
+              onPress={() =>
+                onNavigate('DealsList', {
+                  companyId: company?._id || company?.id,
+                  companyName: company?.name,
+                  company,
+                  initialTab: 'IN_PROGRESS',
+                })
+              }
+            >
               <Text style={styles.statLabel}>Pending Deals</Text>
               <Text style={styles.statValue}>{pendingDealsCount}</Text>
               <SparklineWave
@@ -856,7 +886,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 pathD="M0,16 C20,12 35,20 55,14 C75,8 88,15 100,9"
                 fillD="M0,16 C20,12 35,20 55,14 C75,8 88,15 100,9 L100,24 L0,24 Z"
               />
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -949,10 +979,10 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               // Date
               const formattedDate = deal.createdAt
                 ? new Date(deal.createdAt).toLocaleDateString('en-IN', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
-                  })
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                })
                 : 'Recent';
 
               const isConfirmed =
@@ -1172,7 +1202,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             </View>
 
             <ScrollView style={styles.drawerBody} showsVerticalScrollIndicator={false}>
-              <Text style={styles.drawerSectionTitle}>COMMERCE & FIRM</Text>
+              <Text style={styles.drawerSectionTitle}>COMMERCE & COMPANY</Text>
 
               <TouchableOpacity
                 style={styles.drawerMenuItem}
@@ -1464,7 +1494,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               activeOpacity={0.8}
             >
               <Trash2 size={15} color="#DC2626" strokeWidth={2.2} />
-              <Text style={styles.modalDeleteBtnText}>Delete Firm</Text>
+              <Text style={styles.modalDeleteBtnText}>Delete Company</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -1761,14 +1791,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 9,
+    rowGap: 10,
   },
   quickActionCard: {
-    width: '23%',
+    width: '31.5%',
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    paddingVertical: 9,
-    paddingHorizontal: 2,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#F1F5F9',

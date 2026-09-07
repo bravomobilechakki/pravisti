@@ -241,7 +241,7 @@ const MyCompanies = ({ onNavigate }) => {
               </View>
               <View>
                 <Text style={[styles.statNumber, { color: '#1A56DB' }]}>{companies.length}</Text>
-                <Text style={styles.statLabel}>Total Firms</Text>
+                <Text style={styles.statLabel}>Total Companies</Text>
               </View>
             </View>
 

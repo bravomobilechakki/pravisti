@@ -91,8 +91,8 @@ const SummaryApi = {
     method: "put",
   }),
 
-  getDeals: (page = 1, limit = 10, companyId = null, status = null) => {
-    let url = `${backendDomain}/api/deals?page=${page}&limit=${limit}`;
+  getDeals: (page = 1, limit = 50, companyId = null, status = null) => {
+    let url = `${backendDomain}/api/v1/deals?page=${page}&limit=${limit}`;
     if (companyId) {
       url += `&companyId=${encodeURIComponent(companyId)}`;
     }
@@ -322,8 +322,10 @@ const SummaryApi = {
   },
 
   /* ================= CHAT APIs ================= */
-  getConversations: (page = 1, limit = 10) => ({
-    url: `${backendDomain}/api/chat/conversations?page=${page}&limit=${limit}`,
+  getConversations: (page = 1, limit = 10, companyId = '') => ({
+    url: companyId
+      ? `${backendDomain}/api/chat/conversations?page=${page}&limit=${limit}&companyId=${companyId}`
+      : `${backendDomain}/api/chat/conversations?page=${page}&limit=${limit}`,
     method: "get",
   }),
 

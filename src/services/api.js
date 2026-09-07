@@ -19,23 +19,30 @@ const handleResponse = async (response) => {
   }
 };
 
-/**
- * Fetch with timeout — prevents infinite hang on slow/cold-start server
- * Default: 30 seconds
- */
-const fetchWithTimeout = async (url, options, timeoutMs = 30000) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(timer);
-    return res;
-  } catch (err) {
-    clearTimeout(timer);
-    if (err.name === 'AbortError') {
-      throw new Error('Request timed out. Server may be waking up — please try again in a few seconds.');
+const fetchWithTimeout = async (url, options, timeoutMs = 45000, maxRetries = 1) => {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      return res;
+    } catch (err) {
+      clearTimeout(timer);
+      const isTimeout = err.name === 'AbortError';
+      const isNetworkFailed = err.message && err.message.toLowerCase().includes('network request failed');
+
+      if ((isTimeout || isNetworkFailed) && attempt < maxRetries) {
+        console.warn(`[API] Request to ${url} timed out/failed on attempt ${attempt + 1}. Retrying in 1.5s after server wake up...`);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
+
+      if (isTimeout) {
+        throw new Error('Request timed out. Server may be waking up — please tap again now.');
+      }
+      throw err;
     }
-    throw err;
   }
 };
 
@@ -772,9 +779,9 @@ export const getPendingInvitations = async (token) => {
 
 // --- CHAT APIs ---
 
-export const getConversations = async (token, page = 1, limit = 10) => {
+export const getConversations = async (token, page = 1, limit = 10, companyId = '') => {
   try {
-    return await getRequest(SummaryApi.getConversations(page, limit), token);
+    return await getRequest(SummaryApi.getConversations(page, limit, companyId), token);
   } catch (error) {
     console.error('Error fetching conversations:', error.message || error);
     throw error;

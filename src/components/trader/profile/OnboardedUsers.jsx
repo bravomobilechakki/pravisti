@@ -72,7 +72,7 @@ const OnboardedUsers = ({ onNavigate, routeData }) => {
     if (!compId || compId === 'null' || compId === 'undefined') {
       try {
         compId = (await AsyncStorage.getItem('selectedCompanyId')) || (await AsyncStorage.getItem('activeCompanyId')) || null;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const cacheKey = `onboarded_users_cache_${compId || 'default'}`;
@@ -87,7 +87,7 @@ const OnboardedUsers = ({ onNavigate, routeData }) => {
           setLoading(false);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 2. Parallel Background Sync
     try {
@@ -125,7 +125,7 @@ const OnboardedUsers = ({ onNavigate, routeData }) => {
       }
 
       setOnboardedUsers(combined);
-      AsyncStorage.setItem(cacheKey, JSON.stringify(combined)).catch(() => {});
+      AsyncStorage.setItem(cacheKey, JSON.stringify(combined)).catch(() => { });
     } catch (err) {
       console.warn('Error fetching onboarded users:', err);
     } finally {
@@ -233,7 +233,7 @@ const OnboardedUsers = ({ onNavigate, routeData }) => {
         try {
           const res = await resendWhatsAppInvite(itemId, token);
           if (res && res.data?.whatsappUrl) {
-            Linking.openURL(res.data.whatsappUrl).catch(() => {});
+            Linking.openURL(res.data.whatsappUrl).catch(() => { });
           }
         } catch (e) {
           console.warn('API resend notice:', e);

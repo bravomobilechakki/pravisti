@@ -71,9 +71,22 @@ const isDealMatchingCompany = (deal, companyId) => {
   );
 };
 
+const parseFilterTab = (raw) => {
+  if (!raw) return 'ALL';
+  const upper = String(raw).toUpperCase().trim();
+  if (['ACTIVE', 'CONFIRMED', 'APPROVED'].includes(upper)) return 'ACTIVE';
+  if (['IN_PROGRESS', 'PENDING', 'PROCESSING', 'NEGOTIATION', 'CREATED'].includes(upper)) return 'IN_PROGRESS';
+  if (['COMPLETED', 'SETTLED', 'DELIVERED'].includes(upper)) return 'COMPLETED';
+  if (['DRAFT'].includes(upper)) return 'DRAFT';
+  if (['CANCELLED', 'REJECTED', 'EXPIRED'].includes(upper)) return 'CANCELLED';
+  return 'ALL';
+};
+
 const DealsList = ({ onNavigate, routeData }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilterTab, setSelectedFilterTab] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED' | 'DRAFT' | 'CANCELLED'
+  const [selectedFilterTab, setSelectedFilterTab] = useState(() =>
+    parseFilterTab(routeData?.initialTab || routeData?.filterTab || routeData?.tab || routeData?.status)
+  ); // 'ALL' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED' | 'DRAFT' | 'CANCELLED'
   const [sortOrder, setSortOrder] = useState('LATEST'); // 'LATEST' | 'PRICE_HIGH' | 'PRICE_LOW' | 'NAME'
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -89,6 +102,7 @@ const DealsList = ({ onNavigate, routeData }) => {
     routeData?.companyId || routeData?.company?._id || routeData?.company?.id || null
   );
   const [companyNames, setCompanyNames] = useState({});
+  const fetchedCompanyIdsRef = React.useRef(new Set());
 
   React.useEffect(() => {
     const id = routeData?.companyId || routeData?.company?._id || routeData?.company?.id || null;
@@ -96,6 +110,13 @@ const DealsList = ({ onNavigate, routeData }) => {
       setActiveCompanyId(id);
     }
   }, [routeData?.companyId, routeData?.company?._id, routeData?.company?.id, activeCompanyId]);
+
+  React.useEffect(() => {
+    const rawTab = routeData?.initialTab || routeData?.filterTab || routeData?.tab || routeData?.status;
+    if (rawTab) {
+      setSelectedFilterTab(parseFilterTab(rawTab));
+    }
+  }, [routeData?.initialTab, routeData?.filterTab, routeData?.tab, routeData?.status]);
 
   const resolveName = useCallback(
     (company, fallback = 'Company') => {
@@ -123,25 +144,27 @@ const DealsList = ({ onNavigate, routeData }) => {
   React.useEffect(() => {
     const fetchMissingCompanyNames = async () => {
       try {
-        const missingIds = new Set();
+        const missingIds = [];
         deals.forEach((deal) => {
           const bId = deal.buyerCompanyId?._id || deal.buyerCompanyId;
           const sId = deal.sellerCompanyId?._id || deal.sellerCompanyId;
 
-          if (typeof bId === 'string' && bId.match(/^[0-9a-fA-F]{24}$/) && !companyNames[bId]) {
-            missingIds.add(bId);
+          if (typeof bId === 'string' && bId.match(/^[0-9a-fA-F]{24}$/) && !fetchedCompanyIdsRef.current.has(bId)) {
+            fetchedCompanyIdsRef.current.add(bId);
+            missingIds.push(bId);
           }
-          if (typeof sId === 'string' && sId.match(/^[0-9a-fA-F]{24}$/) && !companyNames[sId]) {
-            missingIds.add(sId);
+          if (typeof sId === 'string' && sId.match(/^[0-9a-fA-F]{24}$/) && !fetchedCompanyIdsRef.current.has(sId)) {
+            fetchedCompanyIdsRef.current.add(sId);
+            missingIds.push(sId);
           }
         });
 
-        if (missingIds.size === 0) return;
-        const newNames = { ...companyNames };
+        if (missingIds.length === 0) return;
+        const newNames = {};
         let updated = false;
 
         await Promise.all(
-          Array.from(missingIds).map(async (id) => {
+          missingIds.map(async (id) => {
             try {
               const res = await getCompanyDetails(id);
               if (res && res.success && res.data) {
@@ -155,7 +178,7 @@ const DealsList = ({ onNavigate, routeData }) => {
         );
 
         if (updated) {
-          setCompanyNames(newNames);
+          setCompanyNames((prev) => ({ ...prev, ...newNames }));
         }
       } catch (err) {
         console.warn('Error fetching missing company names:', err);
@@ -165,13 +188,17 @@ const DealsList = ({ onNavigate, routeData }) => {
     if (deals && deals.length > 0) {
       fetchMissingCompanyNames();
     }
-  }, [deals, companyNames]);
+  }, [deals]);
 
   // Fetch Deals
   const fetchDeals = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      if (!token) return;
+      if (!token) {
+        setIsLoading(false);
+        setRefreshing(false);
+        return;
+      }
 
       const cacheKey = `trader_deals_cache_${activeCompanyId || 'all'}`;
       const cached = await AsyncStorage.getItem(cacheKey);
@@ -188,7 +215,17 @@ const DealsList = ({ onNavigate, routeData }) => {
         } catch (e) { }
       }
 
-      const response = await getDeals(token, 1, 100, activeCompanyId);
+      // Fetch company deals and general deals in parallel instead of sequentially
+      const [response, generalRes] = await Promise.all([
+        getDeals(token, 1, 100, activeCompanyId).catch((e) => {
+          console.warn('Error fetching deals:', e);
+          return null;
+        }),
+        activeCompanyId
+          ? getDeals(token, 1, 100).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
       let dealList = [];
       if (Array.isArray(response?.data?.deals)) {
         dealList = response.data.deals;
@@ -201,9 +238,8 @@ const DealsList = ({ onNavigate, routeData }) => {
       }
 
       // If filtering by company, combine with general deals to guarantee full completeness and filter strictly
-      if (activeCompanyId) {
+      if (activeCompanyId && generalRes) {
         try {
-          const generalRes = await getDeals(token, 1, 100);
           const generalList = Array.isArray(generalRes?.data?.deals)
             ? generalRes.data.deals
             : Array.isArray(generalRes?.data?.data)
@@ -230,7 +266,9 @@ const DealsList = ({ onNavigate, routeData }) => {
         }
       }
 
-      setDeals(dealList);
+      if (dealList.length > 0 || !cached) {
+        setDeals(dealList);
+      }
       AsyncStorage.setItem(cacheKey, JSON.stringify(dealList)).catch(() => { });
     } catch (error) {
       console.error('Error fetching deals:', error);
@@ -325,9 +363,9 @@ const DealsList = ({ onNavigate, routeData }) => {
       );
     } else if (selectedFilterTab === 'IN_PROGRESS') {
       list = list.filter((d) =>
-        ['in progress', 'inprogress', 'pending', 'negotiation', 'processing'].includes(
+        ['in progress', 'inprogress', 'pending', 'negotiation', 'processing', 'created'].includes(
           (d.status || '').toLowerCase()
-        )
+        ) || !d.status
       );
     } else if (selectedFilterTab === 'COMPLETED') {
       list = list.filter((d) =>
@@ -556,7 +594,7 @@ const DealsList = ({ onNavigate, routeData }) => {
 
         {/* ─── 5. DEALS LIST SECTION ─── */}
         <View style={styles.dealsSection}>
-          {isLoading ? (
+          {isLoading && deals.length === 0 ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator size="large" color="#1541D8" />
               <Text style={styles.loadingText}>Loading deals and contracts...</Text>

@@ -39,6 +39,7 @@ import {
   Truck,
   X,
   MessageSquare,
+  Users,
   Percent,
   Mic,
   PieChart,
@@ -409,6 +410,21 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
   const isExpired = String(deal?.status || '').toLowerCase() === 'expired';
   const isPending = String(deal?.status || '').toLowerCase() === 'pending';
+
+
+  // const statusLower = String(deal?.status || '')
+  //   .trim()
+  //   .toLowerCase()
+  //   .replace(/[\s-]+/g, '_');
+  // const isPending = [
+  //   'pending',
+  //   'pending_approval',
+  //   'pendingapproval',
+  //   'awaiting_approval',
+  //   'awaitingapproval',
+  // ].includes(statusLower);
+
+
   const isActive =
     String(deal?.status || '').toLowerCase() === 'active' ||
     String(deal?.status || '').toLowerCase() === 'approved' ||
@@ -547,14 +563,15 @@ const DealDetails = ({ onNavigate, routeData }) => {
     })
     : '';
 
-  const deliveryDateRaw = deal?.deliveryDate || deal?.expiryDate || deal?.validityDate;
-  const formattedDeliveryDate = deliveryDateRaw
-    ? new Date(deliveryDateRaw).toLocaleDateString('en-GB', {
+  const expiryDateRaw = deal?.expiryDate || deal?.validityDate || deal?.deliveryDate;
+  const formattedExpiryDate = expiryDateRaw
+    ? new Date(expiryDateRaw).toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
     })
     : '';
+  const formattedDeliveryDate = formattedExpiryDate;
 
   // Deal ID display
   const dealIdStr =
@@ -701,8 +718,13 @@ const DealDetails = ({ onNavigate, routeData }) => {
         : '';
 
   // Commodity variety, HSN, location & terms
-  const firstProd = deal?.products?.[0] || deal?.product || {};
-  const prodObj = firstProd.productId || firstProd || {};
+  const productsList = Array.isArray(deal?.products) && deal.products.length > 0
+    ? deal.products
+    : (deal?.product ? [deal.product] : []);
+  const hasMultipleProducts = productsList.length > 1;
+
+  const firstProd = productsList[0] || {};
+  const prodObj = firstProd.productId && typeof firstProd.productId === 'object' ? firstProd.productId : firstProd;
   const productImageUri =
     prodObj?.image ||
     prodObj?.imageUrl ||
@@ -948,9 +970,10 @@ const DealDetails = ({ onNavigate, routeData }) => {
       const token = await AsyncStorage.getItem('userToken');
       const response = await acceptDeal(id, role, token);
       if (response && response.success) {
-        Alert.alert('Success', 'Deal approved successfully', [
-          { text: 'OK', onPress: () => fetchDealDetails() },
-        ]);
+        if (response.data) {
+          setDeal(response.data);
+        }
+        await fetchDealDetails();
       }
     } catch (error) {
       Alert.alert('Error', error.message || 'Failed to approve deal');
@@ -1162,6 +1185,21 @@ const DealDetails = ({ onNavigate, routeData }) => {
         <View style={styles.headerRightActions}>
           <TouchableOpacity
             style={styles.headerCircleBtn}
+            onPress={() => {
+              const activeCid =
+                (isSeller ? sellerCid : buyerCid) ||
+                currentUserCompanyIds[0] ||
+                deal?.sellerCompanyId?._id ||
+                deal?.buyerCompanyId?._id;
+              onNavigate('ChatList', { companyId: activeCid, deal });
+            }}
+            activeOpacity={0.7}
+          >
+            <MessageSquare size={18} color="#1541D8" strokeWidth={2.2} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.headerCircleBtn, { marginLeft: 8 }]}
             onPress={() => Alert.alert('Share Deal', `Sharing agreement ${dealIdStr}`)}
             activeOpacity={0.7}
           >
@@ -1290,48 +1328,153 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
         {/* ─── 4. COMMODITY & DETAILS CARD ─── */}
         <View style={styles.commodityCard}>
-          {/* Header with Product Image and Name */}
-          <View style={styles.commodityHeaderRow}>
-            {productImageUri && !productImgError ? (
-              <Image
-                source={{ uri: resolveImageUrl(productImageUri) }}
-                style={styles.commodityImage}
-                resizeMode="cover"
-                onError={() => setProductImgError(true)}
-              />
-            ) : (
-              <View style={[styles.commodityImage, styles.commodityImagePlaceholder]}>
-                <Package size={26} color="#2563EB" strokeWidth={2.2} />
-              </View>
-            )}
-
-            <View style={styles.commodityTitleBox}>
-              <Text style={styles.commodityTitleText} numberOfLines={1}>
-                {productName}
-              </Text>
-              {varietyText ? (
-                <Text style={styles.commodityVarietyText}>{varietyText}</Text>
-              ) : null}
-              {hsnCode ? (
-                <View style={styles.hsnBadge}>
-                  <Text style={styles.hsnText}>HSN: {hsnCode}</Text>
+          {hasMultipleProducts ? (
+            <View style={styles.multiProductsContainer}>
+              <View style={styles.multiProductsHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Package size={18} color="#2563EB" strokeWidth={2.2} style={{ marginRight: 6 }} />
+                  <Text style={styles.multiProductsSectionTitle}>
+                    Deal Products ({productsList.length} Items)
+                  </Text>
                 </View>
-              ) : null}
-            </View>
-
-            {qty > 0 ? (
-              <View style={styles.quantityBox}>
-                <Text style={styles.quantityValText}>
-                  {qty} {unitName}
-                </Text>
-                <Text style={styles.quantitySubLabel}>Quantity</Text>
+                <View style={styles.multiProductsTotalBadge}>
+                  <Text style={styles.multiProductsTotalBadgeText}>
+                    {qty} {unitName} Total
+                  </Text>
+                </View>
               </View>
-            ) : null}
-          </View>
 
-          {/* Key Value Rows with Light-Blue Icon Circles */}
-          {/* Row 1: Rate */}
-          {rateFormatted && rateFormatted !== '0' ? (
+              {productsList.map((p, idx) => {
+                const pObj = p?.productId && typeof p?.productId === 'object' ? p.productId : {};
+                const pName = p?.name || pObj?.name || p?.productName || `Product #${idx + 1}`;
+                const pImgCandidate =
+                  p?.image ||
+                  p?.imageUrl ||
+                  pObj?.image ||
+                  pObj?.imageUrl ||
+                  p?.productImage;
+                const pImg = pImgCandidate ? resolveImageUrl(pImgCandidate) : null;
+                const pQty = Number(p?.quantity || p?.qty || 0);
+                const pUnit = p?.unitShortName || p?.unit || p?.unitName || pObj?.unitId?.shortName || pObj?.unitId?.name || pObj?.unit || unitName;
+                const pRate = Number(p?.price || p?.rate || pObj?.price || 0);
+                const pSubtotal = Number(p?.subtotal || (pQty && pRate ? pQty * pRate : 0));
+                const pGst = Number(p?.gst || 0);
+                const pGstAmount = Number(p?.gstAmount || 0);
+                const pTotal = Number(p?.totalAmount || pSubtotal + pGstAmount);
+                const pTerms = p?.paymentTerms || '';
+                const pVariety = p?.grade || p?.variety || pObj?.grade || pObj?.variety || '';
+                const pHsn = p?.hsnCode || p?.hsn || pObj?.hsnCode || '';
+
+                return (
+                  <View key={p?._id || p?.id || `deal_prod_${idx}`} style={[styles.multiProductItem, idx > 0 && styles.multiProductItemBorder]}>
+                    <View style={styles.multiProductItemHeader}>
+                      {pImg ? (
+                        <Image
+                          source={{ uri: pImg }}
+                          style={styles.multiProductImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={[styles.multiProductImage, styles.commodityImagePlaceholder]}>
+                          <Package size={22} color="#2563EB" strokeWidth={2.2} />
+                        </View>
+                      )}
+
+                      <View style={styles.multiProductInfo}>
+                        <Text style={styles.multiProductNameText} numberOfLines={1}>{pName}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                          {pVariety ? (
+                            <Text style={styles.commodityVarietyText}>{pVariety}</Text>
+                          ) : null}
+                          {pHsn ? (
+                            <View style={styles.hsnBadge}>
+                              <Text style={styles.hsnText}>HSN: {pHsn}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <Text style={styles.multiProductQtyRateText}>
+                          {pQty} {pUnit} × ₹{pRate.toLocaleString('en-IN')}
+                        </Text>
+                      </View>
+
+                      <View style={styles.multiProductSubtotalCol}>
+                        <Text style={styles.multiProductSubtotalVal}>₹{pTotal.toLocaleString('en-IN')}</Text>
+                        {pGst > 0 ? (
+                          <Text style={styles.multiProductGstSub}>Incl. {pGst}% GST</Text>
+                        ) : (
+                          <Text style={styles.multiProductGstSub}>Subtotal: ₹{pSubtotal.toLocaleString('en-IN')}</Text>
+                        )}
+                        {pTerms ? (
+                          <Text style={styles.multiProductTermsSub}>Terms: {pTerms}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <>
+              {/* Header with Product Image and Name */}
+              <View style={styles.commodityHeaderRow}>
+                {productImageUri && !productImgError ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(productImageUri) }}
+                    style={styles.commodityImage}
+                    resizeMode="cover"
+                    onError={() => setProductImgError(true)}
+                  />
+                ) : (
+                  <View style={[styles.commodityImage, styles.commodityImagePlaceholder]}>
+                    <Package size={26} color="#2563EB" strokeWidth={2.2} />
+                  </View>
+                )}
+
+                <View style={styles.commodityTitleBox}>
+                  <Text style={styles.commodityTitleText} numberOfLines={1}>
+                    {productName}
+                  </Text>
+                  {varietyText ? (
+                    <Text style={styles.commodityVarietyText}>{varietyText}</Text>
+                  ) : null}
+                  {hsnCode ? (
+                    <View style={styles.hsnBadge}>
+                      <Text style={styles.hsnText}>HSN: {hsnCode}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {qty > 0 ? (
+                  <View style={styles.quantityBox}>
+                    <Text style={styles.quantityValText}>
+                      {qty} {unitName}
+                    </Text>
+                    <Text style={styles.quantitySubLabel}>Quantity</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Key Value Rows with Light-Blue Icon Circles */}
+              {/* Row 1: Rate */}
+              {rateFormatted && rateFormatted !== '0' ? (
+                <>
+                  <View style={styles.cardDivider} />
+                  <View style={styles.specRow}>
+                    <View style={styles.specLeft}>
+                      <View style={styles.specIconCircle}>
+                        <Text style={styles.rupeeIconText}>₹</Text>
+                      </View>
+                      <Text style={styles.specLabel}>Rate (per Unit)</Text>
+                    </View>
+                    <Text style={styles.specValueBold}>₹ {rateFormatted}</Text>
+                  </View>
+                </>
+              ) : null}
+            </>
+          )}
+
+          {/* Subtotal & GST rows if deal has totalGSTAmount */}
+          {deal?.totalGSTAmount > 0 ? (
             <>
               <View style={styles.cardDivider} />
               <View style={styles.specRow}>
@@ -1339,9 +1482,20 @@ const DealDetails = ({ onNavigate, routeData }) => {
                   <View style={styles.specIconCircle}>
                     <Text style={styles.rupeeIconText}>₹</Text>
                   </View>
-                  <Text style={styles.specLabel}>Rate (per Unit)</Text>
+                  <Text style={styles.specLabel}>Products Subtotal</Text>
                 </View>
-                <Text style={styles.specValueBold}>₹ {rateFormatted}</Text>
+                <Text style={styles.specValueBold}>₹ {Number(deal.totalSubtotal || 0).toLocaleString('en-IN')}</Text>
+              </View>
+
+              <View style={styles.cardDivider} />
+              <View style={styles.specRow}>
+                <View style={styles.specLeft}>
+                  <View style={[styles.specIconCircle, { backgroundColor: '#ECFDF5' }]}>
+                    <Text style={[styles.rupeeIconText, { color: '#059669' }]}>%</Text>
+                  </View>
+                  <Text style={styles.specLabel}>Total GST</Text>
+                </View>
+                <Text style={[styles.specValueBold, { color: '#059669' }]}>+ ₹ {Number(deal.totalGSTAmount || 0).toLocaleString('en-IN')}</Text>
               </View>
             </>
           ) : null}
@@ -1362,8 +1516,8 @@ const DealDetails = ({ onNavigate, routeData }) => {
             </>
           ) : null}
 
-          {/* Row 3: Delivery Date */}
-          {formattedDeliveryDate ? (
+          {/* Row 3: Expiry Date */}
+          {formattedExpiryDate ? (
             <>
               <View style={styles.cardDivider} />
               <View style={styles.specRow}>
@@ -1371,9 +1525,9 @@ const DealDetails = ({ onNavigate, routeData }) => {
                   <View style={styles.specIconCircle}>
                     <Calendar size={16} color="#2563EB" strokeWidth={2.2} />
                   </View>
-                  <Text style={styles.specLabel}>Delivery Date</Text>
+                  <Text style={styles.specLabel}>Expiry Date</Text>
                 </View>
-                <Text style={styles.specValueBold}>{formattedDeliveryDate}</Text>
+                <Text style={styles.specValueBold}>{formattedExpiryDate}</Text>
               </View>
             </>
           ) : null}
@@ -1585,15 +1739,15 @@ const DealDetails = ({ onNavigate, routeData }) => {
           </View>
         )}
 
-        {/* ─── 8. PRIMARY ACTION BUTTONS: EDIT DEAL & VIEW INVOICE ─── */}
+        {/* ─── 8. PRIMARY ACTION BUTTONS: CHAT & VIEW INVOICE ─── */}
         <View style={styles.actionButtonsRow}>
           <TouchableOpacity
-            style={styles.editDealBtn}
-            onPress={() => onNavigate('CreateDeal', { prefillDeal: deal, prefill: deal })}
+            style={styles.chatDealBtn}
+            onPress={() => onNavigate('DealChat', { dealId: deal._id || deal.id, deal })}
             activeOpacity={0.85}
           >
-            <Edit3 size={18} color="#1541D8" style={{ marginRight: 8 }} />
-            <Text style={styles.editDealBtnText}>Edit Deal</Text>
+            <MessageSquare size={18} color="#1541D8" style={{ marginRight: 8 }} />
+            <Text style={styles.chatDealBtnText}>Deal Chat</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1709,7 +1863,23 @@ const DealDetails = ({ onNavigate, routeData }) => {
               }}
             >
               <MessageSquare size={18} color="#1541D8" />
-              <Text style={styles.actionSheetItemText}>Open Deal Chat & Ledger</Text>
+              <Text style={styles.actionSheetItemText}>Current Deal Chat & Ledger</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionSheetItem}
+              onPress={() => {
+                setIsMoreMenuVisible(false);
+                const activeCid =
+                  (isSeller ? sellerCid : buyerCid) ||
+                  currentUserCompanyIds[0] ||
+                  deal?.sellerCompanyId?._id ||
+                  deal?.buyerCompanyId?._id;
+                onNavigate('ChatList', { companyId: activeCid, deal });
+              }}
+            >
+              <Users size={18} color="#2563EB" />
+              <Text style={styles.actionSheetItemText}>All Active Sauda Chats</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -2233,6 +2403,97 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
+  multiProductsContainer: {
+    paddingTop: 2,
+  },
+  multiProductsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    marginBottom: 8,
+  },
+  multiProductsSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  multiProductsTotalBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  multiProductsTotalBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  multiProductItem: {
+    paddingVertical: 10,
+  },
+  multiProductItemBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 12,
+    marginTop: 4,
+  },
+  multiProductItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  multiProductImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    marginRight: 12,
+    flexShrink: 0,
+  },
+  multiProductInfo: {
+    flex: 1,
+    justifyContent: 'center',
+    minWidth: 0,
+    marginRight: 8,
+  },
+  multiProductNameText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  multiProductQtyRateText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  multiProductTermsText: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  multiProductSubtotalCol: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
+  },
+  multiProductSubtotalVal: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  multiProductGstSub: {
+    fontSize: 10.5,
+    color: '#059669',
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  multiProductTermsSub: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 1,
+  },
   cardDivider: {
     height: 1,
     backgroundColor: '#F1F5F9',
@@ -2463,6 +2724,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  chatDealBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatDealBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1541D8',
   },
   editDealBtnText: {
     fontSize: 14,

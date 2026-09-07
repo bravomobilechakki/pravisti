@@ -55,22 +55,13 @@ const ModernHeader = React.memo(({ width, height }) => {
         </View>
       </View>
 
-      {/* Logo Container: Stationary Pravisti Logo + Stationary Photo on Right */}
+      {/* Logo Container: Pravisti New Logo */}
       <View style={styles.logoBadgeContainer}>
-        <View style={styles.logoRowContainer}>
-          <Image
-            source={require('../../images/logo/new_logo.png')}
-            style={{ width: width * 0.50, height: 60 }}
-            resizeMode="contain"
-          />
-          <View>
-            <Image
-              source={require('../../images/logo/photo22.png')}
-              style={styles.miniPhoto22Icon}
-              resizeMode="contain"
-            />
-          </View>
-        </View>
+        <Image
+          source={require('../../images/new_logo_pravisti.png')}
+          style={{ width: width * 0.72, height: 68 }}
+          resizeMode="contain"
+        />
       </View>
     </View>
   );
@@ -95,14 +86,21 @@ const Login = ({ onNavigate, routeData }) => {
 
   useEffect(() => {
     let slowTimer;
+    let wakeTimer;
     if (isLoading) {
       slowTimer = setTimeout(() => {
-        setLoadingMsg('Connecting to server…');
-      }, 5000);
+        setLoadingMsg('Connecting to secure server…');
+      }, 3500);
+      wakeTimer = setTimeout(() => {
+        setLoadingMsg('Server is waking up from idle, please hold on…');
+      }, 8000);
     } else {
       setLoadingMsg('');
     }
-    return () => clearTimeout(slowTimer);
+    return () => {
+      clearTimeout(slowTimer);
+      clearTimeout(wakeTimer);
+    };
   }, [isLoading]);
 
   useEffect(() => {
@@ -263,8 +261,12 @@ const Login = ({ onNavigate, routeData }) => {
       const errMsg = error?.message || 'OTP verification failed. Please try again.';
       console.error('OTP verify error:', error);
       setErrorMessage(errMsg);
-      setOtp(['', '', '', '']);
-      setTimeout(() => otpRefs.current[0]?.focus(), 100);
+      // Only clear input if it was NOT a timeout/network hiccup
+      const isTransient = errMsg.toLowerCase().includes('timed out') || errMsg.toLowerCase().includes('network') || errMsg.toLowerCase().includes('server');
+      if (!isTransient) {
+        setOtp(['', '', '', '']);
+        setTimeout(() => otpRefs.current[0]?.focus(), 100);
+      }
     } finally {
       setIsLoading(false);
       isVerifyingRef.current = false;

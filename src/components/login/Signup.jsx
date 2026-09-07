@@ -58,22 +58,13 @@ const ModernHeader = React.memo(({ width, height }) => {
         </View>
       </View>
 
-      {/* Logo Container: Stationary Pravisti Logo + Stationary Photo on Right */}
+      {/* Logo Container: Pravisti New Logo */}
       <View style={styles.logoBadgeContainer}>
-        <View style={styles.logoRowContainer}>
-          <Image
-            source={require('../../images/logo/new_logo.png')}
-            style={{ width: width * 0.50, height: 60 }}
-            resizeMode="contain"
-          />
-          <View>
-            <Image
-              source={require('../../images/logo/photo22.png')}
-              style={styles.miniPhoto22Icon}
-              resizeMode="contain"
-            />
-          </View>
-        </View>
+        <Image
+          source={require('../../images/new_logo_pravisti.png')}
+          style={{ width: width * 0.72, height: 68 }}
+          resizeMode="contain"
+        />
       </View>
     </View>
   );

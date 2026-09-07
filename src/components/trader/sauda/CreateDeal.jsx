@@ -82,13 +82,12 @@ import {
 } from '../../../services/api';
 
 const STANDARD_UNITS = [
-  { label: 'Bag (25 Kg)', value: 'Bag (25 Kg)', short: 'Bag' },
-  { label: 'Bag (50 Kg)', value: 'Bag (50 Kg)', short: 'Bag' },
-  { label: 'Quintal (100 Kg)', value: 'Quintal', short: 'Qtl' },
-  { label: 'Metric Ton (MT)', value: 'Metric Ton', short: 'MT' },
-  { label: 'Tin (15 Litres)', value: 'Tin', short: 'Tin' },
-  { label: 'Kilogram (Kg)', value: 'Kilogram', short: 'Kg' },
-  { label: 'Liter (L)', value: 'Liter', short: 'L' },
+  { label: 'Bag', value: 'Bag', short: 'Bag', id: '6a0c118913e627687603da19' },
+  { label: 'Quintal (100 Kg)', value: 'Quintal', short: 'Qtl', id: '6a0c118913e627687603da13' },
+  { label: 'Metric Ton (MT)', value: 'Metric Ton', short: 'MT', id: '6a0c118913e627687603da12' },
+  { label: 'Tin (15 Litres)', value: 'Tin', short: 'Tin', id: '6a0c118913e627687603da20' },
+  { label: 'Kilogram (Kg)', value: 'Kilogram', short: 'Kg', id: '6a0eac4cd59663585920f09c' },
+  { label: 'Liter (L)', value: 'Liter', short: 'L', id: '6a0c118913e627687603da15' },
 ];
 
 const DEAL_TYPES = ['Purchase', 'Sale'];
@@ -402,10 +401,13 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   const [isAddingCustomProduct, setIsAddingCustomProduct] = useState(false);
   const [customProdName, setCustomProdName] = useState('');
-  const [customProdHsn, setCustomProdHsn] = useState('');
-  const [customProdUnit, setCustomProdUnit] = useState('Bag (25 Kg)');
-  const [customProdRate, setCustomProdRate] = useState('');
+  const [customProdCategory, setCustomProdCategory] = useState('');
+  const [customProdCategoryId, setCustomProdCategoryId] = useState('');
+  const [customProdUnit, setCustomProdUnit] = useState('');
+  const [customProdUnitId, setCustomProdUnitId] = useState('');
   const [customProdError, setCustomProdError] = useState('');
+  const [showCustomUnitModal, setShowCustomUnitModal] = useState(false);
+  const [showCustomCategoryModal, setShowCustomCategoryModal] = useState(false);
 
   const [productName, setProductName] = useState(
     routeData?.prefill?.productName ||
@@ -414,7 +416,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     ''
   );
   const [hsnCode, setHsnCode] = useState(routeData?.prefill?.hsnCode || '');
-  const [unit, setUnit] = useState(routeData?.prefill?.unit || 'Bag (25 Kg)');
+  const [unit, setUnit] = useState(routeData?.prefill?.unit || '');
   const [approxRate, setApproxRate] = useState(
     routeData?.prefill?.price ? String(routeData.prefill.price) : ''
   );
@@ -606,7 +608,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
               name: p.name,
               hsn: p.hsnCode || '',
               rate: p.price ? String(p.price) : '',
-              unit: p.unitId?.name || p.unit || 'Bag (25 Kg)',
+              unit: p.unitId?.name || p.unit || '',
               category: p.categoryId?.name || p.category || '',
               image: p.image || null,
             }));
@@ -615,17 +617,25 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             setCompanyProducts(prev => (prev.length > 0 && prev[0]?.isNewlyOnboarded ? prev : []));
           }
 
+          // Fetch categories ONLY for this company
           const catRes = await getCategories(targetSellerCompanyId, token).catch(() => null);
           const cList = Array.isArray(catRes?.data) ? catRes.data : catRes?.data?.data || [];
           if (cList.length > 0) {
-            setCategoriesList(cList.map(c => c.name || c.title || c));
+            const companyCats = cList
+              .map(c => ({ id: c._id || c.id, name: c.name || c.title || '' }))
+              .filter(c => c.name && c.id);
+            setCategoriesList(companyCats);
+          } else {
+            setCategoriesList([]);
           }
         } else {
           setCompanyProducts(prev => (prev.length > 0 && prev[0]?.isNewlyOnboarded ? prev : []));
+          setCategoriesList([]);
         }
       } catch (e) {
         console.warn('Inventory fetch note:', e);
         setCompanyProducts(prev => (prev.length > 0 && prev[0]?.isNewlyOnboarded ? prev : []));
+        setCategoriesList([]);
       }
     };
     fetchCompanyInventory();
@@ -1005,13 +1015,13 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           _id: `prod_${Date.now()}`,
           name: onboardForm.productName.trim(),
           hsnCode: onboardForm.hsnCode?.trim(),
-          unit: onboardForm.unitId || unit || 'Bag (25 Kg)',
+          unit: onboardForm.unitId || unit || '',
         } : null);
 
         if (createdProd && (onboardRole === 'seller' || role === 'buyer')) {
           const prodName = createdProd.name || onboardForm.productName.trim();
           const prodHsn = createdProd.hsnCode || onboardForm.hsnCode?.trim() || '';
-          const prodUnit = createdProd.unitId?.name || createdProd.unit || unit || 'Bag (25 Kg)';
+          const prodUnit = createdProd.unitId?.name || createdProd.unit || unit || '';
           const prodItem = {
             id: createdProd._id || createdProd.id || `prod_${Date.now()}`,
             name: prodName,
@@ -1099,13 +1109,13 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       if (updated.length > 0) {
         setProductName(updated.map(p => p.name).join(', '));
         setApproxRate(String(updated[0].rate || ''));
-        setUnit(updated[0].unit || 'Bag (25 Kg)');
+        setUnit(updated[0].unit || '');
         setHsnCode(updated[0].hsn || '');
         setSelectedRecentId(updated[updated.length - 1].id || null);
       } else {
         setProductName('');
         setApproxRate('');
-        setUnit('Bag (25 Kg)');
+        setUnit('');
         setHsnCode('');
         setSelectedRecentId(null);
         setSelectedProductId(null);
@@ -1136,39 +1146,63 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     }
   };
 
-  const handleAddCustomProduct = () => {
+  const handleAddCustomProduct = async () => {
     if (!customProdName.trim()) {
       setCustomProdError('Please enter product name');
       return;
     }
-    if (!customProdRate.trim()) {
-      setCustomProdError('Please enter approx. rate');
+    if (categoriesList.length > 0 && !customProdCategory.trim()) {
+      setCustomProdError('Please select a category');
       return;
     }
+    if (!customProdUnit.trim()) {
+      setCustomProdError('Please select a unit');
+      return;
+    }
+
+    const token = await AsyncStorage.getItem('userToken');
+    const originId = activeUserCompany?._id || activeUserCompany?.id || originCompanyId || '';
+    const targetSellerCompId = role === 'seller' ? originId : (party2Data?.companyId || party2Data?._id || party2Data?.id);
+
+    // Proactively resolve or create real product in database
+    let realProductId = null;
+    try {
+      realProductId = await ensureProductExists({
+        name: customProdName.trim(),
+        categoryId: customProdCategoryId || null,
+        category: customProdCategory.trim() || 'General Commodity',
+        unitId: customProdUnitId || null,
+        unit: customProdUnit.trim(),
+      }, targetSellerCompId, originId, token);
+    } catch (e) {
+      console.warn('Proactive product creation notice:', e);
+    }
+
     const newItem = {
-      id: `custom_${Date.now()}`,
-      productId: null,
+      id: realProductId || `custom_${Date.now()}`,
+      productId: realProductId || null,
       name: customProdName.trim(),
-      hsn: customProdHsn.trim(),
-      rate: customProdRate.trim(),
-      unit: customProdUnit || '',
+      category: customProdCategory.trim() || 'General Commodity',
+      unit: customProdUnit.trim(),
+      hsn: '',
+      rate: '',
       quantity: '',
       discount: '',
       gst: '',
-      category: '',
+      description: '',
       isCustom: true,
     };
     const updated = [...selectedProducts, newItem];
     setSelectedProducts(updated);
     setProductName(updated.map(p => p.name).join(', '));
-    setApproxRate(String(customProdRate.trim()));
-    setUnit(customProdUnit || 'Bag (25 Kg)');
-    setHsnCode(customProdHsn.trim());
+    setUnit(customProdUnit.trim());
 
     // Reset custom inputs
     setCustomProdName('');
-    setCustomProdHsn('');
-    setCustomProdRate('');
+    setCustomProdCategory('');
+    setCustomProdCategoryId('');
+    setCustomProdUnit('');
+    setCustomProdUnitId('');
     setCustomProdError('');
     setIsAddingCustomProduct(false);
   };
@@ -1208,41 +1242,169 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     }
   };
 
-  // Helper to ensure product exists on seller company
-  const resolveProductId = async (pName, targetCompanyId, token) => {
+  // Helper to ensure a product exists in database, creating it if needed
+  const ensureProductExists = async (productData, targetSellerCompanyId, userCompanyId, token) => {
     try {
-      if (!targetCompanyId || String(targetCompanyId).length !== 24) return undefined;
-      const res = await getProducts(targetCompanyId, token).catch(() => null);
-      const list = Array.isArray(res?.data) ? res.data : res?.data?.data || [];
-      const existing = list.find(
-        p => p.name?.toLowerCase().trim() === pName?.toLowerCase().trim()
-      );
-      if (existing) {
-        return existing._id || existing.id;
+      const pName = String(productData?.name || '').trim();
+      if (!pName) return null;
+
+      // 1. If product already has a valid 24-character hex ID, return it!
+      const existingId = productData.productId || productData._id || productData.id;
+      if (existingId && String(existingId).match(/^[0-9a-fA-F]{24}$/)) {
+        return String(existingId);
       }
 
-      // If not existing, try creating product on the seller company
-      try {
-        const newProdRes = await createProduct({
-          companyId: targetCompanyId,
-          name: pName || 'Trading Commodity',
-          price: 0,
-        }, token).catch(() => null);
-        const createdId = newProdRes?.data?._id || newProdRes?.data?.id || newProdRes?.data?.product?._id;
-        if (createdId && String(createdId).length === 24) {
-          return createdId;
+      // 2. Check if product already exists in company products of targetSellerCompanyId
+      const targetCompany = targetSellerCompanyId || userCompanyId;
+      if (targetCompany && String(targetCompany).match(/^[0-9a-fA-F]{24}$/)) {
+        const prodRes = await getProducts(targetCompany, token).catch(() => null);
+        const pList = Array.isArray(prodRes?.data) ? prodRes.data : prodRes?.data?.data || [];
+        const found = pList.find(p => p.name?.toLowerCase().trim() === pName.toLowerCase());
+        if (found && (found._id || found.id)) {
+          return String(found._id || found.id);
         }
-      } catch (ce) { }
-
-      // Fallback to first product of company if available
-      if (list.length > 0 && (list[0]._id || list[0].id)) {
-        return list[0]._id || list[0].id;
       }
 
-      return undefined;
-    } catch (e) {
-      return undefined;
+      // Also check userCompany if different from targetCompany
+      if (userCompanyId && userCompanyId !== targetCompany && String(userCompanyId).match(/^[0-9a-fA-F]{24}$/)) {
+        const myProdRes = await getProducts(userCompanyId, token).catch(() => null);
+        const myPList = Array.isArray(myProdRes?.data) ? myProdRes.data : myProdRes?.data?.data || [];
+        const found = myPList.find(p => p.name?.toLowerCase().trim() === pName.toLowerCase());
+        if (found && (found._id || found.id)) {
+          return String(found._id || found.id);
+        }
+      }
+
+      // 3. Resolve unitId from input or live backend units
+      let resolvedUnitId = productData.unitId && String(productData.unitId).match(/^[0-9a-fA-F]{24}$/)
+        ? String(productData.unitId)
+        : null;
+
+      if (!resolvedUnitId) {
+        try {
+          const unitRes = await getUnits('active', token).catch(() => null);
+          const uList = Array.isArray(unitRes?.data) ? unitRes.data : [];
+          if (uList.length > 0) {
+            const userUnitStr = String(productData?.unit || 'bag').toLowerCase().trim();
+            const matched = uList.find(u =>
+              userUnitStr.includes(u.name?.toLowerCase().trim()) ||
+              userUnitStr.includes(u.shortName?.toLowerCase().trim()) ||
+              u.name?.toLowerCase().trim().includes(userUnitStr)
+            );
+            resolvedUnitId = matched ? (matched._id || matched.id) : (uList[0]._id || uList[0].id);
+          }
+        } catch (uErr) {
+          console.warn('Unit resolution error:', uErr);
+        }
+      }
+      if (!resolvedUnitId) {
+        resolvedUnitId = '6a0c118913e627687603da19'; // Bag fallback
+      }
+
+      // 4. Try creating product under userCompanyId first (authenticated user must own company!)
+      const companiesToTry = [];
+      if (userCompanyId && String(userCompanyId).match(/^[0-9a-fA-F]{24}$/)) {
+        companiesToTry.push(userCompanyId);
+      }
+      if (targetSellerCompanyId && String(targetSellerCompanyId).match(/^[0-9a-fA-F]{24}$/) && !companiesToTry.includes(targetSellerCompanyId)) {
+        companiesToTry.push(targetSellerCompanyId);
+      }
+
+      for (const compId of companiesToTry) {
+        try {
+          // Resolve or create category for this company
+          let categoryId = null;
+          try {
+            const catRes = await getCategories(compId, token).catch(() => null);
+            const cList = Array.isArray(catRes?.data) ? catRes.data : catRes?.data?.data || [];
+            if (productData.categoryId) {
+              const matched = cList.find(c => (c._id || c.id) === productData.categoryId);
+              if (matched) categoryId = productData.categoryId;
+            }
+            if (!categoryId && productData.category) {
+              const matched = cList.find(c => (c.name || c.title || '').toLowerCase().trim() === productData.category.toLowerCase().trim());
+              if (matched) categoryId = matched._id || matched.id;
+            }
+            if (!categoryId && cList.length > 0) {
+              categoryId = cList[0]._id || cList[0].id;
+            }
+            if (!categoryId) {
+              const newCat = await createCategory({
+                companyId: compId,
+                name: productData.category || 'Commodities',
+                description: 'General Commodities',
+              }, token).catch(() => null);
+              categoryId = newCat?.data?._id || newCat?.data?.id || newCat?.category?._id || newCat?._id;
+            }
+          } catch (cErr) {
+            console.warn('Category fetch/create notice:', cErr);
+          }
+
+          if (!categoryId) {
+            try {
+              const newCat = await createCategory({
+                companyId: compId,
+                name: 'General Commodities',
+              }, token).catch(() => null);
+              categoryId = newCat?.data?._id || newCat?.data?.id || newCat?.category?._id || newCat?._id;
+            } catch (fcErr) {}
+          }
+
+          // Build valid product payload matching POST /api/products backend schema
+          const productPayload = {
+            companyId: compId,
+            categoryId: categoryId,
+            unitId: resolvedUnitId,
+            name: pName,
+          };
+          if (productData.hsn) {
+            productPayload.hsnCode = String(productData.hsn).trim();
+          }
+          if (productData.gst) {
+            const rawGst = String(productData.gst).trim();
+            const numGst = rawGst.replace(/[^0-9]/g, '');
+            productPayload.gstCode = rawGst.startsWith('GST_') ? rawGst : (numGst ? `GST_${numGst}` : 'GST_18');
+          }
+          if (productData.description) {
+            productPayload.description = String(productData.description).trim();
+          }
+
+          const createdRes = await createProduct(productPayload, token);
+          const newId = createdRes?.data?._id || createdRes?.data?.id || createdRes?.product?._id || createdRes?._id || createdRes?.id;
+          if (newId && String(newId).match(/^[0-9a-fA-F]{24}$/)) {
+            return String(newId);
+          }
+        } catch (createErr) {
+          console.warn(`Failed to create product on company ${compId}:`, createErr.message || createErr);
+        }
+      }
+
+      // 5. Fallback to existing products on targetSellerCompanyId or userCompanyId
+      for (const compId of companiesToTry) {
+        try {
+          const fallbackRes = await getProducts(compId, token).catch(() => null);
+          const fallbackList = Array.isArray(fallbackRes?.data) ? fallbackRes.data : fallbackRes?.data?.data || [];
+          if (fallbackList.length > 0 && (fallbackList[0]._id || fallbackList[0].id)) {
+            return String(fallbackList[0]._id || fallbackList[0].id);
+          }
+        } catch (fbErr) {}
+      }
+
+      // 6. Last resort: if companyProducts state has valid product IDs
+      if (companyProducts && companyProducts.length > 0) {
+        const cp = companyProducts.find(p => p.id && String(p.id).match(/^[0-9a-fA-F]{24}$/));
+        if (cp) return String(cp.id);
+      }
+
+      return null;
+    } catch (err) {
+      console.error('ensureProductExists error:', err);
+      return null;
     }
+  };
+
+  const resolveProductId = async (pName, targetCompanyId, token) => {
+    return await ensureProductExists({ name: pName }, targetCompanyId, originCompanyId, token);
   };
 
   // Step Validation & Navigation
@@ -1337,7 +1499,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             gst: pTotals.gstPct,
             gstAmount: pTotals.gstAmount,
             totalAmount: pTotals.totalAmount,
-            unitName: prod.unit || unit || 'Bag (25 Kg)',
+            unitName: prod.unit || unit || 'Bag',
             unitShortName: (prod.unit || unit || 'Bag')?.split(' ')?.[0] || 'Bag',
             hsnCode: prod.hsn || hsnCode || '',
             gstCode: pTotals.gstPct > 0 ? `GST_${pTotals.gstPct}` : 'GST_18',
@@ -1384,11 +1546,15 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             const pTotals = calculateProductTotals(prod);
             let pId = prod.productId || prod._id || prod.id;
             if (!pId || !String(pId).match(/^[0-9a-fA-F]{24}$/)) {
-              pId = await resolveProductId(prod.name, resolvedSellerId, token);
+              pId = await ensureProductExists(prod, resolvedSellerId, originId, token);
+            }
+
+            if (!pId || !String(pId).match(/^[0-9a-fA-F]{24}$/)) {
+              throw new Error(`Unable to resolve or create product "${prod.name}". Please ensure seller company has catalog products or valid category.`);
             }
 
             return {
-              productId: String(pId || '6a71c2856b491d0fb76485a1'),
+              productId: String(pId),
               quantity: pTotals.qty || 1,
               price: pTotals.rate || 0,
               discount: pTotals.disc || 0,
@@ -2504,7 +2670,7 @@ Zoomed into item. */}
 
                   <View style={styles.inputRow}>
                     {/* Product Name */}
-                    <View style={[styles.inputCol, { flex: 1.2 }]}>
+                    <View style={[styles.inputCol, { flex: 1 }]}>
                       <Text style={styles.inputLabel}>
                         Product Name <Text style={styles.requiredStar}>*</Text>
                       </Text>
@@ -2512,7 +2678,7 @@ Zoomed into item. */}
                         <Package size={16} color="#64748B" style={styles.inputLeadingIcon} />
                         <TextInput
                           style={styles.textInputField}
-                          placeholder="Enter product name"
+                          placeholder="e.g. Basmati Rice 5kg"
                           placeholderTextColor="#94A3B8"
                           value={customProdName}
                           onChangeText={(t) => {
@@ -2522,25 +2688,25 @@ Zoomed into item. */}
                         />
                       </View>
                     </View>
-
-                    {/* HSN Code */}
-                    <View style={[styles.inputCol, { flex: 0.8 }]}>
-                      <Text style={styles.inputLabel}>HSN Code</Text>
-                      <View style={styles.textInputBox}>
-                        <Hash size={16} color="#64748B" style={styles.inputLeadingIcon} />
-                        <TextInput
-                          style={styles.textInputField}
-                          placeholder="Enter HSN"
-                          placeholderTextColor="#94A3B8"
-                          value={customProdHsn}
-                          onChangeText={setCustomProdHsn}
-                          keyboardType="numeric"
-                        />
-                      </View>
-                    </View>
                   </View>
 
                   <View style={[styles.inputRow, { marginTop: 10 }]}>
+                    {/* Category Selector */}
+                    <View style={[styles.inputCol, { flex: 1 }]}>
+                      <Text style={styles.inputLabel}>Category</Text>
+                      <TouchableOpacity
+                        style={[styles.textInputBox, styles.selectBox]}
+                        onPress={() => setShowCustomCategoryModal(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Tag size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                        <Text style={styles.selectBoxValue} numberOfLines={1}>
+                          {customProdCategory || 'Select Category'}
+                        </Text>
+                        <ChevronDown size={16} color="#64748B" />
+                      </TouchableOpacity>
+                    </View>
+
                     {/* Unit Selector */}
                     <View style={[styles.inputCol, { flex: 1 }]}>
                       <Text style={styles.inputLabel}>
@@ -2548,7 +2714,7 @@ Zoomed into item. */}
                       </Text>
                       <TouchableOpacity
                         style={[styles.textInputBox, styles.selectBox]}
-                        onPress={() => setShowUnitModal(true)}
+                        onPress={() => setShowCustomUnitModal(true)}
                         activeOpacity={0.7}
                       >
                         <ShoppingBag size={16} color="#64748B" style={styles.inputLeadingIcon} />
@@ -2557,27 +2723,6 @@ Zoomed into item. */}
                         </Text>
                         <ChevronDown size={16} color="#64748B" />
                       </TouchableOpacity>
-                    </View>
-
-                    {/* Approx Rate */}
-                    <View style={[styles.inputCol, { flex: 1 }]}>
-                      <Text style={styles.inputLabel}>
-                        Approx. Rate <Text style={styles.requiredStar}>*</Text>
-                      </Text>
-                      <View style={styles.textInputBox}>
-                        <IndianRupee size={16} color="#64748B" style={styles.inputLeadingIcon} />
-                        <TextInput
-                          style={styles.textInputField}
-                          placeholder="Enter rate"
-                          placeholderTextColor="#94A3B8"
-                          value={customProdRate}
-                          onChangeText={(t) => {
-                            setCustomProdRate(t);
-                            if (customProdError) setCustomProdError('');
-                          }}
-                          keyboardType="numeric"
-                        />
-                      </View>
                     </View>
                   </View>
 
@@ -2634,7 +2779,7 @@ Zoomed into item. */}
                     rate: approxRate || '0',
                     discount: discount || '0',
                     gst: gstPercent || '18',
-                    unit: unit || 'Bag (25 Kg)',
+                    unit: unit || '',
                     hsn: hsnCode || '',
                   }]).map((prod, idx) => {
                     const visuals = getProductCategoryVisuals(prod);
@@ -3359,6 +3504,78 @@ Zoomed into item. */}
                       {unit === uItem.label && <Check size={16} color="#2563EB" />}
                     </TouchableOpacity>
                   ))}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ CUSTOM PRODUCT UNIT SELECTOR MODAL ════════════════ */}
+        {showCustomUnitModal && (
+          <Modal transparent visible={showCustomUnitModal} animationType="slide" onRequestClose={() => setShowCustomUnitModal(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowCustomUnitModal(false)} />
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <Text style={styles.modalTitleText}>Select Product Unit</Text>
+                <ScrollView style={{ maxHeight: 280 }}>
+                  {unitsList.map((uItem, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[styles.optionItemRow, customProdUnit === uItem.label && styles.optionItemRowSelected]}
+                      onPress={() => {
+                        setCustomProdUnit(uItem.label);
+                        setCustomProdUnitId(uItem.id || '');
+                        setShowCustomUnitModal(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.optionItemText, customProdUnit === uItem.label && styles.optionItemTextSelected]}>
+                        {uItem.label}
+                      </Text>
+                      {customProdUnit === uItem.label && <Check size={16} color="#2563EB" />}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ CUSTOM PRODUCT CATEGORY SELECTOR MODAL ════════════════ */}
+        {showCustomCategoryModal && (
+          <Modal transparent visible={showCustomCategoryModal} animationType="slide" onRequestClose={() => setShowCustomCategoryModal(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowCustomCategoryModal(false)} />
+              <View style={styles.modalSheetContainer}>
+                <View style={styles.modalDragHandle} />
+                <Text style={styles.modalTitleText}>Select Product Category</Text>
+                <ScrollView style={{ maxHeight: 280 }}>
+                  {categoriesList.length === 0 ? (
+                    <View style={{ padding: 24, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '500' }}>
+                        No categories found for this company
+                      </Text>
+                    </View>
+                  ) : (
+                    categoriesList.map((cat, idx) => (
+                      <TouchableOpacity
+                        key={cat.id || idx}
+                        style={[styles.optionItemRow, (customProdCategoryId === cat.id || customProdCategory === cat.name) && styles.optionItemRowSelected]}
+                        onPress={() => {
+                          setCustomProdCategory(cat.name);
+                          setCustomProdCategoryId(cat.id || '');
+                          setShowCustomCategoryModal(false);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.optionItemText, (customProdCategoryId === cat.id || customProdCategory === cat.name) && styles.optionItemTextSelected]}>
+                          {cat.name}
+                        </Text>
+                        {(customProdCategoryId === cat.id || customProdCategory === cat.name) && <Check size={16} color="#2563EB" />}
+                      </TouchableOpacity>
+                    ))
+                  )}
                 </ScrollView>
               </View>
             </View>

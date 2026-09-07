@@ -10,8 +10,10 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import io from 'socket.io-client';
 import {
   ArrowLeft,
   Bell,
@@ -30,8 +32,16 @@ import {
   ShieldCheck,
   Sparkles,
   RefreshCw,
+  MessageSquare,
+  Truck,
 } from 'lucide-react-native';
-import { getPendingInvitations, getDeals } from '../../services/api';
+import {
+  getUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  clearAllNotifications,
+} from '../../services/api';
+import { backendDomain } from '../../common';
 
 const formatRelativeTime = (timestamp) => {
   if (!timestamp) return 'Just now';
@@ -52,11 +62,142 @@ const formatRelativeTime = (timestamp) => {
   });
 };
 
+const mapBackendNotification = (n, currentCompanyId) => {
+  const eventType = String(n.metadata?.eventType || '').toLowerCase();
+  const notifType = String(n.type || 'info').toLowerCase();
+  const dealId = n.metadata?.dealId;
+  const dealNumber = n.metadata?.dealNumber;
+  const link = String(n.link || '');
+
+  let category = 'Alerts';
+  let targetScreen = null;
+  let targetData = {};
+  let actionLabel = null;
+  let itemType = 'system';
+  let badgeText = 'Alert';
+  let badgeColor = '#2563EB';
+  let badgeBg = '#EFF6FF';
+
+  // Severity badges
+  if (notifType === 'success') {
+    badgeColor = '#059669';
+    badgeBg = '#ECFDF5';
+    badgeText = 'Success';
+  } else if (notifType === 'warning') {
+    badgeColor = '#D97706';
+    badgeBg = '#FEF3C7';
+    badgeText = 'Notice';
+  } else if (notifType === 'error') {
+    badgeColor = '#DC2626';
+    badgeBg = '#FEE2E2';
+    badgeText = 'Attention';
+  }
+
+  // 1. Deals / Sauda
+  if (
+    eventType.startsWith('deal_') ||
+    eventType.startsWith('draft_deal') ||
+    dealId ||
+    link.includes('sauda') ||
+    link.includes('deals')
+  ) {
+    category = 'Deals';
+    itemType = notifType === 'success' ? 'deal_confirmed' : 'deal_pending';
+    targetScreen = dealId ? 'DealDetails' : 'DealsList';
+    targetData = {
+      dealId,
+      dealNumber,
+      companyId: n.companyId || currentCompanyId,
+    };
+    actionLabel = eventType.includes('expired')
+      ? 'View Deal'
+      : eventType.includes('approved')
+      ? 'View Contract'
+      : 'Review Deal';
+    if (!badgeText || badgeText === 'Alert') {
+      badgeText = eventType.includes('approved') ? 'Confirmed' : 'Sauda';
+    }
+  }
+  // 2. Payments
+  else if (eventType.startsWith('payment_') || n.metadata?.paymentId || link.includes('payment')) {
+    category = 'Payments';
+    itemType = 'payment';
+    targetScreen = 'TransactionHistory';
+    targetData = {
+      companyId: n.companyId || currentCompanyId,
+    };
+    actionLabel = 'View Transactions';
+    badgeText = 'Payment';
+    badgeColor = '#7C3AED';
+    badgeBg = '#F3E8FF';
+  }
+  // 3. Chat Messages
+  else if (eventType === 'chat_message' || n.metadata?.conversationId || link.includes('chat')) {
+    category = 'Deals';
+    itemType = 'deal_pending';
+    targetScreen = dealId ? 'DealChat' : 'ChatList';
+    targetData = {
+      dealId,
+      conversationId: n.metadata?.conversationId,
+      companyId: n.companyId || currentCompanyId,
+    };
+    actionLabel = 'Open Chat';
+    badgeText = 'New Message';
+    badgeColor = '#EA580C';
+    badgeBg = '#FFF7ED';
+  }
+  // 4. Deliveries
+  else if (eventType.startsWith('delivery_') || n.metadata?.deliveryId || link.includes('delivery')) {
+    category = 'Deals';
+    itemType = 'deal_confirmed';
+    targetScreen = dealId ? 'DealDetails' : 'DealsList';
+    targetData = {
+      dealId,
+      companyId: n.companyId || currentCompanyId,
+    };
+    actionLabel = 'View Delivery';
+    badgeText = 'Delivery';
+  }
+  // 5. Onboarding / Verification
+  else if (eventType.includes('onboard') || eventType.includes('verified')) {
+    category = 'Alerts';
+    itemType = 'system';
+    targetScreen = 'CompanyProfileDetails';
+    targetData = {
+      companyId: n.companyId || currentCompanyId,
+    };
+    actionLabel = 'View Profile';
+    badgeText = 'Verified';
+    badgeColor = '#059669';
+    badgeBg = '#ECFDF5';
+  }
+
+  return {
+    id: n._id || String(Math.random()),
+    rawId: n._id,
+    type: itemType,
+    category,
+    title: n.title || 'Notification',
+    message: n.message || '',
+    timestamp: n.createdAt ? new Date(n.createdAt) : new Date(),
+    isRead: Boolean(n.isRead),
+    targetScreen,
+    targetData,
+    actionLabel,
+    badgeText,
+    badgeColor,
+    badgeBg,
+    rawItem: n,
+  };
+};
+
 const Notifications = ({ onNavigate, routeData }) => {
   const [activeTab, setActiveTab] = useState('All');
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const currentCompanyId = routeData?.companyId || routeData?.company?._id || routeData?.company?.id || null;
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -64,137 +205,16 @@ const Notifications = ({ onNavigate, routeData }) => {
       if (!token) return;
 
       const list = [];
-
-      // 1. Fetch pending deal invitations
+      // Fetch live notifications strictly from Backend API (no hardcoded data)
       try {
-        const invRes = await getPendingInvitations(token);
-        if (invRes && invRes.success && Array.isArray(invRes.data)) {
-          invRes.data.forEach((inv, index) => {
-            const draft = inv.dealDraft || {};
-            const pName = draft.products?.[0]?.productName || draft.crop || 'Agricultural Sauda';
-            list.push({
-              id: `inv-${inv._id || index}`,
-              type: 'deal_invite',
-              category: 'Deals',
-              title: 'New Sauda Sign Invitation',
-              message: `${inv.senderName || 'A counterparty'} sent you a Sauda contract invitation for ${pName}. Review & sign to lock the deal.`,
-              timestamp: inv.createdAt ? new Date(inv.createdAt) : new Date(),
-              isRead: false,
-              rawItem: inv,
-              targetScreen: 'DealsList',
-              targetData: { filter: 'Invitations' },
-              actionLabel: 'Review & Sign Sauda',
-              badgeText: 'Action Needed',
-              badgeColor: '#D97706',
-              badgeBg: '#FEF3C7',
-            });
+        const notifRes = await getUserNotifications(token, currentCompanyId);
+        if (notifRes && notifRes.success && Array.isArray(notifRes.data)) {
+          notifRes.data.forEach((n) => {
+            list.push(mapBackendNotification(n, currentCompanyId));
           });
         }
-      } catch (e) {
-        console.warn('Error fetching invitations for notifications:', e);
-      }
-
-      // 2. Fetch recent active deals for deal updates
-      try {
-        const dealRes = await getDeals(token, 1, 20);
-        if (dealRes && dealRes.success) {
-          const rawDeals = Array.isArray(dealRes.data)
-            ? dealRes.data
-            : (dealRes.data?.deals || dealRes.data?.myDeals || []);
-
-          rawDeals.forEach((d, idx) => {
-            const status = (d.status || '').toLowerCase();
-            const pName = d.products?.[0]?.productName || d.crop || 'Sauda Contract';
-            const dealId = d._id || d.id;
-
-            if (status === 'confirmed' || status === 'approved') {
-              list.push({
-                id: `deal-appr-${dealId || idx}`,
-                type: 'deal_confirmed',
-                category: 'Deals',
-                title: 'Sauda Contract Confirmed',
-                message: `Sauda #${d.dealNumber || 'Agreement'} for ${pName} has been fully confirmed by both parties.`,
-                timestamp: d.updatedAt || d.createdAt ? new Date(d.updatedAt || d.createdAt) : new Date(),
-                isRead: true,
-                rawItem: d,
-                targetScreen: 'DealDetails',
-                targetData: { dealId, deal: d },
-                actionLabel: 'View Contract',
-                badgeText: 'Confirmed',
-                badgeColor: '#059669',
-                badgeBg: '#ECFDF5',
-              });
-            } else if (status === 'pending') {
-              list.push({
-                id: `deal-pend-${dealId || idx}`,
-                type: 'deal_pending',
-                category: 'Deals',
-                title: 'Pending Signature',
-                message: `Sauda #${d.dealNumber || 'Contract'} is currently awaiting signature confirmation from counterparty.`,
-                timestamp: d.createdAt ? new Date(d.createdAt) : new Date(),
-                isRead: false,
-                rawItem: d,
-                targetScreen: 'DealDetails',
-                targetData: { dealId, deal: d },
-                actionLabel: 'Check Status',
-                badgeText: 'Pending',
-                badgeColor: '#0284C7',
-                badgeBg: '#E0F2FE',
-              });
-            }
-          });
-        }
-      } catch (e) {
-        console.warn('Error fetching deals for notifications:', e);
-      }
-
-      // 3. Fallback mock notifications if list is sparse
-      if (list.length < 3) {
-        list.push(
-          {
-            id: 'mock-1',
-            type: 'system',
-            category: 'Alerts',
-            title: 'Welcome to Pravisti Trade Ledger',
-            message: 'Your account is active. Create or accept Sauda contracts to start digital mandi trading securely.',
-            timestamp: new Date(Date.now() - 1000 * 60 * 15),
-            isRead: false,
-            targetScreen: 'Dashboard',
-            actionLabel: 'Go to Dashboard',
-            badgeText: 'Welcome',
-            badgeColor: '#4F46E5',
-            badgeBg: '#EEF2FF',
-          },
-          {
-            id: 'mock-2',
-            type: 'deal_invite',
-            category: 'Deals',
-            title: 'Wheat (Gehun) Contract Pending',
-            message: 'M/s Laxmi Agro Industries invited you to lock a 50 MT Wheat Sauda deal at ₹2,450/Qtl.',
-            timestamp: new Date(Date.now() - 1000 * 60 * 120),
-            isRead: false,
-            targetScreen: 'DealsList',
-            targetData: { filter: 'Invitations' },
-            actionLabel: 'Review & Sign Sauda',
-            badgeText: 'Action Needed',
-            badgeColor: '#D97706',
-            badgeBg: '#FEF3C7',
-          },
-          {
-            id: 'mock-3',
-            type: 'payment',
-            category: 'Payments',
-            title: 'Brokerage Payment Clearance',
-            message: 'Payment clearance receipt for Sauda #PRV-8821 generated successfully.',
-            timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24),
-            isRead: true,
-            targetScreen: 'MyCompanies',
-            actionLabel: 'View Receipt',
-            badgeText: 'Cleared',
-            badgeColor: '#7C3AED',
-            badgeBg: '#F3E8FF',
-          }
-        );
+      } catch (be) {
+        console.warn('Backend notification fetch error:', be);
       }
 
       // Sort by latest timestamp
@@ -206,23 +226,99 @@ const Notifications = ({ onNavigate, routeData }) => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [currentCompanyId]);
 
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
+
+  // Real-time Socket.IO notification listener
+  useEffect(() => {
+    let socket = null;
+    const setupSocket = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) return;
+
+        let socketUrl = backendDomain;
+        if (socketUrl.includes('localhost') || socketUrl.includes('127.0.0.1')) {
+          if (Platform.OS === 'android') {
+            socketUrl = socketUrl.replace('localhost', '10.0.2.2').replace('127.0.0.1', '10.0.2.2');
+          }
+        }
+
+        socket = io(socketUrl, {
+          auth: { token },
+          extraHeaders: { Authorization: `Bearer ${token}` },
+          transports: ['websocket'],
+        });
+
+        socket.on('notification', (newNotif) => {
+          if (!newNotif) return;
+          const mapped = mapBackendNotification(newNotif, currentCompanyId);
+          setNotifications((prev) => [mapped, ...prev.filter((item) => item.id !== mapped.id)]);
+        });
+      } catch (e) {
+        console.warn('Socket notification listener notice:', e);
+      }
+    };
+
+    setupSocket();
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, [currentCompanyId]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchNotifications();
   };
 
-  const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+  const markAllRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      await markAllNotificationsAsRead(token, currentCompanyId);
+    } catch (e) {
+      console.warn('Error marking all notifications as read:', e);
+    }
   };
 
-  const deleteNotification = (id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  const deleteNotification = async (id) => {
+    const item = notifications.find((n) => n.id === id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (item?.rawId) {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        markNotificationAsRead(item.rawId, token).catch(() => {});
+      } catch (e) {}
+    }
+  };
+
+  const clearAll = () => {
+    Alert.alert(
+      'Clear Notifications',
+      'Are you sure you want to clear all notifications?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            setNotifications([]);
+            try {
+              const token = await AsyncStorage.getItem('userToken');
+              await clearAllNotifications(token, currentCompanyId);
+            } catch (e) {
+              console.warn('Error clearing notifications:', e);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const filteredNotifications = useMemo(() => {
@@ -270,7 +366,16 @@ const Notifications = ({ onNavigate, routeData }) => {
         style={[styles.notifCard, !item.isRead && styles.unreadNotifCard]}
         activeOpacity={0.85}
         onPress={() => {
-          setNotifications(prev => prev.map(n => (n.id === item.id ? { ...n, isRead: true } : n)));
+          setNotifications((prev) =>
+            prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+          );
+          if (item.rawId) {
+            AsyncStorage.getItem('userToken')
+              .then((token) => {
+                if (token) markNotificationAsRead(item.rawId, token).catch(() => {});
+              })
+              .catch(() => {});
+          }
           if (item.targetScreen) {
             onNavigate(item.targetScreen, item.targetData || {});
           }
@@ -339,13 +444,22 @@ const Notifications = ({ onNavigate, routeData }) => {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.markReadBtn}
-          onPress={markAllRead}
-          activeOpacity={0.75}
-        >
-          <CheckCheck size={18} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            style={styles.markReadBtn}
+            onPress={markAllRead}
+            activeOpacity={0.75}
+          >
+            <CheckCheck size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.markReadBtn}
+            onPress={clearAll}
+            activeOpacity={0.75}
+          >
+            <Trash2 size={16} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Category Tabs ── */}

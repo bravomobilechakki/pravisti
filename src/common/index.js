@@ -534,6 +534,29 @@ const SummaryApi = {
     url: `${backendDomain}/api/upload/${filename}`,
     method: "delete",
   }),
+
+  /* ================= NOTIFICATIONS ================= */
+  getUserNotifications: (companyId = null) => ({
+    url: companyId
+      ? `${backendDomain}/api/v1/notifications?companyId=${companyId}`
+      : `${backendDomain}/api/v1/notifications`,
+    method: "get",
+  }),
+
+  markNotificationAsRead: (id) => ({
+    url: `${backendDomain}/api/v1/notifications/${id}/read`,
+    method: "put",
+  }),
+
+  markAllNotificationsAsRead: {
+    url: `${backendDomain}/api/v1/notifications/mark-all-read`,
+    method: "put",
+  },
+
+  clearAllNotifications: {
+    url: `${backendDomain}/api/v1/notifications/clear-all`,
+    method: "delete",
+  },
 };
 
 export { backendDomain };

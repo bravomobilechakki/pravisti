@@ -65,6 +65,7 @@ import {
   getBrokerMyDeals,
   getBrokerPendingQueue,
   getPendingInvitations,
+  getUserNotifications,
   resolveImageUrl,
 } from '../../../services/api';
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
@@ -133,7 +134,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const [isCompanyPickerOpen, setIsCompanyPickerOpen] = React.useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
   const [currentUser, setCurrentUser] = React.useState(routeData?.user || null);
-  const [unreadNotifCount, setUnreadNotifCount] = React.useState(1);
+  const [unreadNotifCount, setUnreadNotifCount] = React.useState(0);
 
   const [editData, setEditData] = React.useState({
     name: '',
@@ -212,18 +213,24 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           }
 
           try {
-            const invRes = await getPendingInvitations(token);
-            if (invRes && invRes.success && Array.isArray(invRes.data)) {
-              setUnreadNotifCount(invRes.data.length || 1);
+            const currentCid = routeData?.company?._id || routeData?.company?.id;
+            const notifRes = await getUserNotifications(token, currentCid);
+            if (notifRes && notifRes.success && Array.isArray(notifRes.data)) {
+              const unread = notifRes.data.filter((n) => !n.isRead).length;
+              setUnreadNotifCount(unread);
+            } else {
+              setUnreadNotifCount(0);
             }
-          } catch (e) { }
+          } catch (e) {
+            setUnreadNotifCount(0);
+          }
         }
       } catch (ue) {
         console.warn('Failed to fetch user profile in CompanyDetails:', ue);
       }
     };
     fetchUserAndNotifications();
-  }, []);
+  }, [routeData?.company?._id, routeData?.company?.id]);
 
   const fetchAllCompanies = React.useCallback(async () => {
     try {
@@ -270,6 +277,16 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           website: response.data.website || '',
           description: response.data.description || '',
         });
+
+        try {
+          const token = await AsyncStorage.getItem('userToken');
+          if (token) {
+            const notifRes = await getUserNotifications(token, id);
+            if (notifRes && notifRes.success && Array.isArray(notifRes.data)) {
+              setUnreadNotifCount(notifRes.data.filter((n) => !n.isRead).length);
+            }
+          }
+        } catch (ne) {}
       }
     } catch (error) {
       console.warn('Error fetching company details:', error);
@@ -648,10 +665,10 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         </View>
 
         <View style={styles.headerRight}>
-          {/* Notification Bell with '1' badge */}
+          {/* Notification Bell with live unread badge */}
           <TouchableOpacity
             style={styles.headerIconBtn}
-            onPress={() => onNavigate('Notifications')}
+            onPress={() => onNavigate('Notifications', { companyId: company?._id || company?.id, company })}
             activeOpacity={0.75}
           >
             <Bell size={20} color="#1E293B" strokeWidth={2.2} />

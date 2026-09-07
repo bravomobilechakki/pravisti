@@ -30,6 +30,7 @@ import {
   getCompanies,
   getUserProfile,
   getPendingInvitations,
+  getUserNotifications,
   getDeals,
   resolveImageUrl,
 } from '../../../services/api';
@@ -117,7 +118,7 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
       const requests = [getCompanies(1, 30)];
       if (token) {
         requests.push(getUserProfile(token));
-        requests.push(getPendingInvitations(token));
+        requests.push(getUserNotifications(token));
       }
 
       const results = await Promise.allSettled(requests);
@@ -148,10 +149,13 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
 
       // 3. Unread Notifications Count
       if (results[2]?.status === 'fulfilled' && results[2].value?.success) {
-        const invData = results[2].value.data;
-        if (Array.isArray(invData)) {
-          setUnreadNotifCount(invData.length);
+        const notifData = results[2].value.data;
+        if (Array.isArray(notifData)) {
+          const unread = notifData.filter((n) => !n.isRead).length;
+          setUnreadNotifCount(unread);
         }
+      } else if (results[2]?.status === 'fulfilled' && Array.isArray(results[2].value)) {
+        setUnreadNotifCount(results[2].value.filter((n) => !n.isRead).length);
       }
 
       // 4. Fetch Sauda Counts for Each Company (Same logic and API as CompanyDetails.jsx)

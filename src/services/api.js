@@ -168,13 +168,24 @@ const putRequest = async (apiConfig, body, token = null) => {
 /**
  * Standard DELETE request helper
  */
-const deleteRequest = async (apiConfig, token = null) => {
+const deleteRequest = async (apiConfig, bodyOrToken = null, token = null) => {
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
   };
 
-  let activeToken = token;
+  let body = null;
+  let activeToken = null;
+
+  if (typeof bodyOrToken === 'string') {
+    activeToken = bodyOrToken;
+  } else if (bodyOrToken && typeof bodyOrToken === 'object') {
+    body = bodyOrToken;
+    activeToken = token;
+  } else if (token) {
+    activeToken = token;
+  }
+
   if (!activeToken) {
     try {
       activeToken = await AsyncStorage.getItem('userToken');
@@ -187,10 +198,15 @@ const deleteRequest = async (apiConfig, token = null) => {
     headers.Authorization = `Bearer ${activeToken}`;
   }
 
-  const response = await fetchWithTimeout(apiConfig.url, {
+  const fetchOptions = {
     method: apiConfig.method || 'DELETE',
     headers,
-  });
+  };
+  if (body) {
+    fetchOptions.body = JSON.stringify(body);
+  }
+
+  const response = await fetchWithTimeout(apiConfig.url, fetchOptions);
   return await handleResponse(response);
 };
 
@@ -1228,6 +1244,71 @@ export {
   deleteImage,
   validateImage,
 } from './uploadService';
+
+/* ================= NOTIFICATION APIs ================= */
+
+/**
+ * Fetch notifications for user (and optionally specific company)
+ * Endpoint: GET /api/v1/notifications
+ * @param {string|null} token
+ * @param {string|null} companyId
+ */
+export const getUserNotifications = async (token = null, companyId = null) => {
+  try {
+    return await getRequest(SummaryApi.getUserNotifications(companyId), token);
+  } catch (error) {
+    console.warn('Error fetching notifications:', error?.message || error);
+    return { success: false, data: [], error: error?.message || error };
+  }
+};
+
+/**
+ * Mark a single notification as read
+ * Endpoint: PUT /api/v1/notifications/:id/read
+ * @param {string} id
+ * @param {string|null} token
+ */
+export const markNotificationAsRead = async (id, token = null) => {
+  try {
+    return await putRequest(SummaryApi.markNotificationAsRead(id), {}, token);
+  } catch (error) {
+    console.warn('Error marking notification as read:', error?.message || error);
+    return { success: false, error: error?.message || error };
+  }
+};
+
+/**
+ * Mark all notifications as read
+ * Endpoint: PUT /api/v1/notifications/mark-all-read
+ * @param {string|null} token
+ * @param {string|null} companyId
+ */
+export const markAllNotificationsAsRead = async (token = null, companyId = null) => {
+  try {
+    const body = companyId ? { companyId } : {};
+    return await putRequest(SummaryApi.markAllNotificationsAsRead, body, token);
+  } catch (error) {
+    console.warn('Error marking all notifications as read:', error?.message || error);
+    return { success: false, error: error?.message || error };
+  }
+};
+
+/**
+ * Clear/delete all notifications
+ * Endpoint: DELETE /api/v1/notifications/clear-all
+ * @param {string|null} token
+ * @param {string|null} companyId
+ */
+export const clearAllNotifications = async (token = null, companyId = null) => {
+  try {
+    const body = companyId ? { companyId } : {};
+    return await deleteRequest(SummaryApi.clearAllNotifications, body, token);
+  } catch (error) {
+    console.warn('Error clearing notifications:', error?.message || error);
+    return { success: false, error: error?.message || error };
+  }
+};
+
 
 
 

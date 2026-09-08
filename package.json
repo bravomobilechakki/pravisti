@@ -1,6 +1,6 @@
 {
   "name": "Pravisti",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "scripts": {
     "android": "dot_clean . 2>/dev/null; COPYFILE_DISABLE=1 react-native run-android --no-packager",

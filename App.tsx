@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, BackHandler, ActivityIndicator } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StyleSheet, View, BackHandler, ActivityIndicator, StatusBar } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserProfile, getPendingVerificationStatus } from './src/services/api';
 
@@ -90,6 +90,34 @@ const checkIsUserBroker = (userObj: any, explicitRole?: string): boolean => {
   ).toString().toLowerCase();
 
   return uRole.includes('broker');
+};
+
+const getScreenStatusBarConfig = (screenName: string) => {
+  switch (screenName) {
+    case 'Dashboard':
+    case 'BrokerDashboard':
+    case 'BrokerProfile':
+      return { bg: '#2327D8', barStyle: 'light-content' as const };
+    case 'Notifications':
+    case 'MyCompanies':
+      return { bg: '#1A56DB', barStyle: 'light-content' as const };
+    case 'Login':
+    case 'Signup':
+    case 'ChooseIndustry':
+      return { bg: '#0F172A', barStyle: 'light-content' as const };
+    case 'BrokerLogin':
+    case 'BrokerOTPVerify':
+    case 'BrokerAuthGateway':
+      return { bg: '#312E81', barStyle: 'light-content' as const };
+    case 'BrokerAddCompany':
+    case 'BrokerCompanyDetails':
+    case 'BrokerOnboardUser':
+      return { bg: '#1E1B4B', barStyle: 'light-content' as const };
+    case 'VoicePreferences':
+      return { bg: '#1541D8', barStyle: 'light-content' as const };
+    default:
+      return { bg: '#FFFFFF', barStyle: 'dark-content' as const };
+  }
 };
 
 function App() {
@@ -388,19 +416,22 @@ function App() {
 
   // const isAuthScreen = current && !['Login', 'Signup', 'ChooseIndustry', 'VoicePreferences'].includes(current.screen);
 
+  const statusBarConfig = getScreenStatusBarConfig(screen);
+
   return (
     <SafeAreaProvider>
-      <View style={styles.container}>
-        {renderScreen()}
-        {/* Voice Assistant - Commented out for now */}
-        {/* {isAuthScreen && (
-          <FloatingVoiceAssistant
-            currentScreen={current.screen}
-            userToken={current.data?.token}
-            onNavigate={onNavigate}
-            onOpenPreferences={() => onNavigate('VoicePreferences')}
-          />
-        )} */}
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: statusBarConfig.bg }]}
+        edges={['top']}
+      >
+        <StatusBar
+          barStyle={statusBarConfig.barStyle}
+          backgroundColor={statusBarConfig.bg}
+          translucent={false}
+        />
+        <View style={{ flex: 1, backgroundColor: statusBarConfig.bg === '#0F172A' ? '#0F172A' : '#FFFFFF' }}>
+          {renderScreen()}
+        </View>
         <OwnershipConfirmationModal
           visible={showOwnershipModal}
           onClose={() => setShowOwnershipModal(false)}
@@ -413,7 +444,7 @@ function App() {
             setShowOwnershipModal(false);
           }}
         />
-      </View>
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }

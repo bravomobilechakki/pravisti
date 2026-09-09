@@ -12,7 +12,8 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
-  Modal
+  Modal,
+  StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -20,9 +21,18 @@ import {
   ChevronDown,
   Building2,
   X,
-  Check
+  Check,
+  MapPin,
+  Mail,
+  Hash,
+  Globe,
+  FileText,
+  Phone,
 } from 'lucide-react-native';
-import { createCompany, getIndustries } from '../../../services/api';
+import { createCompany, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
+
+const THEME = '#2327D8';        // Royal Blue (Login & Dashboard Theme)
+const BG_COLOR = '#F4F6FB';     // Light slate background
 
 const AddCompany = ({ onNavigate, routeData }) => {
   const scrollViewRef = useRef(null);
@@ -31,6 +41,30 @@ const AddCompany = ({ onNavigate, routeData }) => {
   const [industries, setIndustries] = useState([]);
   const [industriesLoading, setIndustriesLoading] = useState(false);
   const [showIndustryModal, setShowIndustryModal] = useState(false);
+  const [isPincodeLoading, setIsPincodeLoading] = useState(false);
+
+  const handlePincodeChange = async (pincodeVal) => {
+    handleInputChange('postalCode', pincodeVal);
+    const cleanPin = pincodeVal.replace(/\D/g, '');
+    if (cleanPin.length === 6) {
+      try {
+        setIsPincodeLoading(true);
+        const res = await fetchPincodeDetails(cleanPin);
+        setIsPincodeLoading(false);
+        if (res && res.success) {
+          setFormData(prev => ({
+            ...prev,
+            postalCode: cleanPin,
+            city: res.city || res.district || prev.city,
+            state: res.state || prev.state,
+            country: res.country || prev.country || 'India',
+          }));
+        }
+      } catch (err) {
+        setIsPincodeLoading(false);
+      }
+    }
+  };
 
   // Auto navigate to Dashboard after 2.5 seconds on successful company creation
   useEffect(() => {
@@ -65,17 +99,61 @@ const AddCompany = ({ onNavigate, routeData }) => {
     fetchIndustries();
   }, [fetchIndustries]);
 
+  const cleanPhoneNumber = (val) => {
+    if (!val) return '';
+    const digits = String(val).replace(/\D/g, '');
+    return digits.length > 10 ? digits.slice(-10) : digits;
+  };
+
   const [userMobile, setUserMobile] = useState('');
 
   useEffect(() => {
     const fetchUserPhone = async () => {
+      // 1. Initial check from routeData
+      const routePhone =
+        routeData?.user?.mobileNumber ||
+        routeData?.user?.mobile ||
+        routeData?.mobileNumber ||
+        routeData?.phone ||
+        '';
+      if (routePhone) {
+        const cleaned = cleanPhoneNumber(routePhone);
+        setUserMobile(cleaned);
+        setFormData(prev => ({ ...prev, phone: prev.phone || cleaned }));
+      }
+
       try {
+        // 2. Check cached profile in AsyncStorage
+        const cachedProfileStr = await AsyncStorage.getItem('user_completed_profile');
+        if (cachedProfileStr) {
+          const cachedProfile = JSON.parse(cachedProfileStr);
+          const cachedPhone =
+            cachedProfile?.mobileNumber ||
+            cachedProfile?.mobile ||
+            cachedProfile?.phone ||
+            '';
+          if (cachedPhone) {
+            const cleaned = cleanPhoneNumber(cachedPhone);
+            setUserMobile(cleaned);
+            setFormData(prev => ({ ...prev, phone: prev.phone || cleaned }));
+          }
+        }
+
+        // 3. Fallback: Query live user profile from API
         const token = await AsyncStorage.getItem('userToken');
         if (token) {
-          const { getUserProfile } = require('../../../services/api');
           const response = await getUserProfile(token);
-          if (response && response.success && response.data?.mobileNumber) {
-            setUserMobile(response.data.mobileNumber);
+          if (response && response.success && response.data) {
+            const apiPhone =
+              response.data.mobileNumber ||
+              response.data.mobile ||
+              response.data.phone ||
+              '';
+            if (apiPhone) {
+              const cleaned = cleanPhoneNumber(apiPhone);
+              setUserMobile(cleaned);
+              setFormData(prev => ({ ...prev, phone: prev.phone || cleaned }));
+            }
           }
         }
       } catch (err) {
@@ -83,11 +161,12 @@ const AddCompany = ({ onNavigate, routeData }) => {
       }
     };
     fetchUserPhone();
-  }, []);
+  }, [routeData]);
 
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    phone: '',
     type: routeData?.role?.toLowerCase() || 'trader',
     registrationNumber: '',
     industryId: '',    // stored _id sent to API
@@ -146,7 +225,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
       const payload = {
         name: formData.name,
         email: formData.email,
-        phone: userMobile || routeData?.user?.mobileNumber || routeData?.user?.mobile || '',
+        phone: formData.phone || userMobile || routeData?.user?.mobileNumber || routeData?.user?.mobile || '',
         type: formData.type,
         registrationNumber: formData.registrationNumber,
         industry: formData.industryId,   // send _id to API
@@ -196,77 +275,144 @@ const AddCompany = ({ onNavigate, routeData }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={THEME} />
+      {/* Royal Blue Top Header Section matching Login Theme */}
+      <View style={styles.heroHeader}>
+        <View style={styles.topNavRow}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => onNavigate('pop')}
+            activeOpacity={0.8}
+          >
+            <ArrowLeft size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Create Company</Text>
+            <Text style={styles.headerSubtitle}>Trader Organization Profile</Text>
+          </View>
+
+          <View style={styles.headerRightPlaceholder} />
+        </View>
+      </View>
+
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboardView}
       >
-        <ScrollView ref={scrollViewRef} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => onNavigate('pop')}
-            >
-              <ArrowLeft size={24} color="#111827" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Add Company</Text>
-            <View style={{ width: 24 }} />
-          </View>
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Card 1: Business Information */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionIconBadge}>
+                <Building2 size={18} color={THEME} />
+              </View>
+              <View style={styles.sectionHeaderTextWrap}>
+                <Text style={styles.sectionTitle}>Company Information</Text>
+                <Text style={styles.sectionSubtitle}>Enter your registered business identity</Text>
+              </View>
+            </View>
 
-          {/* Title */}
-          <View style={styles.titleSection}>
-            <Text style={styles.title}>Company Details</Text>
-            <Text style={styles.subtitle}>
-              Provide the essential information to register a new company.
-            </Text>
-          </View>
-
-          {/* Form Fields */}
-          <View style={styles.form}>
+            {/* Company Name */}
             <View style={styles.fieldContainer}>
-              <Text style={styles.inputLabel}>Company Name*</Text>
-              <TextInput
-                style={[styles.input, errors.name && styles.inputErrorBorder]}
-                placeholder="Enter company name"
-                placeholderTextColor="#9CA3AF"
-                value={formData.name}
-                onChangeText={(text) => handleInputChange('name', text)}
-              />
+              <Text style={styles.inputLabel}>Company Name <Text style={styles.requiredStar}>*</Text></Text>
+              <View
+                style={[
+                  styles.inputWithIconWrapper,
+                  errors.name && styles.inputErrorBorder,
+                ]}
+              >
+                <Building2 size={18} color="#64748B" style={styles.inputLeadingIcon} />
+                <TextInput
+                  style={styles.textInputWithIcon}
+                  placeholder="e.g. Mahavir Agro Traders"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.name}
+                  onChangeText={(text) => handleInputChange('name', text)}
+                  selectionColor={THEME}
+                />
+              </View>
               {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
             </View>
 
+            {/* Registration / GSTIN */}
             <View style={styles.fieldContainer}>
               <View style={styles.inputLabelRow}>
-                <Text style={styles.inputLabel}>Registration / GSTIN*</Text>
+                <Text style={styles.inputLabel}>Registration / GSTIN <Text style={styles.requiredStar}>*</Text></Text>
+                <Text style={styles.helperLabel}>Unique Tax ID</Text>
               </View>
-              <TextInput
-                style={[styles.input, errors.registrationNumber && styles.inputErrorBorder]}
-                placeholder="REG123456 / GSTIN"
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="characters"
-                value={formData.registrationNumber}
-                onChangeText={(text) => handleInputChange('registrationNumber', text)}
-              />
+              <View
+                style={[
+                  styles.inputWithIconWrapper,
+                  errors.registrationNumber && styles.inputErrorBorder,
+                ]}
+              >
+                <Hash size={18} color="#64748B" style={styles.inputLeadingIcon} />
+                <TextInput
+                  style={styles.textInputWithIcon}
+                  placeholder="e.g. 08AAAAA0000A1Z5"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="characters"
+                  value={formData.registrationNumber}
+                  onChangeText={(text) => handleInputChange('registrationNumber', text)}
+                  selectionColor={THEME}
+                />
+              </View>
               {errors.registrationNumber ? <Text style={styles.errorText}>{errors.registrationNumber}</Text> : null}
             </View>
 
-
-
+            {/* Contact Phone Number (Auto-filled with User's mobile number) */}
             <View style={styles.fieldContainer}>
-              <Text style={styles.inputLabel}>Email Address</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="info@company.com"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={formData.email}
-                onChangeText={(text) => handleInputChange('email', text)}
-              />
+              <View style={styles.inputLabelRow}>
+                <Text style={styles.inputLabel}>Contact Phone Number</Text>
+                {formData.phone ? (
+                  <View style={styles.autoFilledBadge}>
+                    <Check size={11} color="#10B981" strokeWidth={3} />
+                    <Text style={styles.autoFilledBadgeText}>User Phone</Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.inputWithIconWrapper}>
+                <Phone size={18} color="#64748B" style={styles.inputLeadingIcon} />
+                <TextInput
+                  style={styles.textInputWithIcon}
+                  placeholder="Enter 10-digit mobile number"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  value={formData.phone}
+                  onChangeText={(text) => handleInputChange('phone', text)}
+                  selectionColor={THEME}
+                />
+              </View>
             </View>
 
+            {/* Email Address */}
             <View style={styles.fieldContainer}>
-              <Text style={styles.inputLabel}>Industry</Text>
+              <Text style={styles.inputLabel}>Official Email Address</Text>
+              <View style={styles.inputWithIconWrapper}>
+                <Mail size={18} color="#64748B" style={styles.inputLeadingIcon} />
+                <TextInput
+                  style={styles.textInputWithIcon}
+                  placeholder="company@trade.com"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={formData.email}
+                  onChangeText={(text) => handleInputChange('email', text)}
+                  selectionColor={THEME}
+                />
+              </View>
+            </View>
+
+            {/* Industry Dropdown */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.inputLabel}>Industry Segment</Text>
               <TouchableOpacity
                 style={styles.dropdownSelector}
                 onPress={() => setShowIndustryModal(true)}
@@ -279,110 +425,172 @@ const AddCompany = ({ onNavigate, routeData }) => {
                   ]}
                   numberOfLines={1}
                 >
-                  {formData.industryName || 'Select Industry'}
+                  {formData.industryName || 'Select Industry (e.g. Agriculture)'}
                 </Text>
                 {industriesLoading ? (
-                  <ActivityIndicator size="small" color="#6B7280" />
+                  <ActivityIndicator size="small" color={THEME} />
                 ) : (
-                  <ChevronDown size={18} color="#6B7280" />
+                  <ChevronDown size={18} color="#64748B" />
                 )}
               </TouchableOpacity>
             </View>
+          </View>
 
-            <Text style={[styles.inputLabel, { marginTop: 10 }]}>Address Details</Text>
-
-            <View style={styles.fieldContainer}>
-              <Text style={styles.inputLabel}>Street / Area</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="123 Main St"
-                placeholderTextColor="#9CA3AF"
-                value={formData.street}
-                onChangeText={(text) => handleInputChange('street', text)}
-              />
+          {/* Card 2: Registered Address (Pincode First + Auto Fill) */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionIconBadge, { backgroundColor: '#EFF6FF' }]}>
+                <MapPin size={18} color={THEME} />
+              </View>
+              <View style={styles.sectionHeaderTextWrap}>
+                <Text style={styles.sectionTitle}>Registered Address</Text>
+                <Text style={styles.sectionSubtitle}>Enter PIN code to auto-populate City & State</Text>
+              </View>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 12 }}>
+            {/* 1. Postal / PIN Code FIRST */}
+            <View style={styles.fieldContainer}>
+              <View style={styles.inputLabelRow}>
+                <Text style={styles.inputLabel}>Postal / PIN Code</Text>
+                {isPincodeLoading ? (
+                  <View style={styles.loadingPinRow}>
+                    <ActivityIndicator size="small" color={THEME} />
+                    <Text style={styles.pinLoadingText}>Looking up...</Text>
+                  </View>
+                ) : formData.postalCode.length === 6 && formData.state ? (
+                  <View style={styles.autoFilledBadge}>
+                    <Check size={12} color="#10B981" strokeWidth={3} />
+                    <Text style={styles.autoFilledBadgeText}>Auto-filled</Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.inputWithIconWrapper}>
+                <MapPin size={18} color={THEME} style={styles.inputLeadingIcon} />
+                <TextInput
+                  style={styles.textInputWithIcon}
+                  placeholder="Enter 6-digit PIN (e.g. 302001)"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.postalCode}
+                  onChangeText={handlePincodeChange}
+                  keyboardType="numeric"
+                  maxLength={6}
+                  selectionColor={THEME}
+                />
+                {isPincodeLoading && (
+                  <ActivityIndicator size="small" color={THEME} style={{ marginRight: 8 }} />
+                )}
+              </View>
+            </View>
+
+            {/* 2. City & State (Auto-filled via PIN code) */}
+            <View style={styles.twoColumnRow}>
               <View style={[styles.fieldContainer, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>City</Text>
+                <Text style={styles.inputLabel}>City / District</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Karachi/Mumbai"
-                  placeholderTextColor="#9CA3AF"
+                  placeholder="City"
+                  placeholderTextColor="#94A3B8"
                   value={formData.city}
                   onChangeText={(text) => handleInputChange('city', text)}
+                  selectionColor={THEME}
                 />
               </View>
+
               <View style={[styles.fieldContainer, { flex: 1 }]}>
                 <Text style={styles.inputLabel}>State</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Sindh/Maharashtra"
-                  placeholderTextColor="#9CA3AF"
+                  placeholder="State"
+                  placeholderTextColor="#94A3B8"
                   value={formData.state}
                   onChangeText={(text) => handleInputChange('state', text)}
+                  selectionColor={THEME}
                 />
               </View>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
-              <View style={[styles.fieldContainer, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Postal / ZIP Code</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 302001"
-                  placeholderTextColor="#9CA3AF"
-                  value={formData.postalCode}
-                  onChangeText={(text) => handleInputChange('postalCode', text)}
-                  keyboardType="numeric"
-                />
-              </View>
-              <View style={[styles.fieldContainer, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Country</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="India"
-                  placeholderTextColor="#9CA3AF"
-                  value={formData.country}
-                  onChangeText={(text) => handleInputChange('country', text)}
-                />
-              </View>
-            </View>
-
-            <View style={[styles.fieldContainer, { marginTop: 10 }]}>
-              <Text style={styles.inputLabel}>Website URL (Optional)</Text>
+            {/* 3. Street / Area */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.inputLabel}>Street / Building Address</Text>
               <TextInput
                 style={styles.input}
-                placeholder="https://example.com"
-                placeholderTextColor="#9CA3AF"
-                value={formData.website}
-                onChangeText={(text) => handleInputChange('website', text)}
-                keyboardType="url"
+                placeholder="Plot / Shop No, Street, Landmark"
+                placeholderTextColor="#94A3B8"
+                value={formData.street}
+                onChangeText={(text) => handleInputChange('street', text)}
+                selectionColor={THEME}
               />
             </View>
 
-            <View style={[styles.fieldContainer, { marginTop: 10 }]}>
-              <Text style={styles.inputLabel}>Business Description (Optional)</Text>
+            {/* 4. Country */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.inputLabel}>Country</Text>
               <TextInput
-                style={[styles.input, { height: 80, textAlignVertical: 'top', paddingTop: 10 }]}
-                placeholder="Tell us about your business..."
-                placeholderTextColor="#9CA3AF"
+                style={styles.input}
+                placeholder="India"
+                placeholderTextColor="#94A3B8"
+                value={formData.country}
+                onChangeText={(text) => handleInputChange('country', text)}
+                selectionColor={THEME}
+              />
+            </View>
+          </View>
+
+          {/* Card 3: Additional Details (Optional) */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionIconBadge, { backgroundColor: '#F0FDF4' }]}>
+                <FileText size={18} color="#059669" />
+              </View>
+              <View style={styles.sectionHeaderTextWrap}>
+                <Text style={styles.sectionTitle}>Additional Details</Text>
+                <Text style={styles.sectionSubtitle}>Online presence and company bio (optional)</Text>
+              </View>
+            </View>
+
+            {/* Website URL */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.inputLabel}>Website URL</Text>
+              <View style={styles.inputWithIconWrapper}>
+                <Globe size={18} color="#64748B" style={styles.inputLeadingIcon} />
+                <TextInput
+                  style={styles.textInputWithIcon}
+                  placeholder="https://yourcompany.com"
+                  placeholderTextColor="#94A3B8"
+                  value={formData.website}
+                  onChangeText={(text) => handleInputChange('website', text)}
+                  keyboardType="url"
+                  autoCapitalize="none"
+                  selectionColor={THEME}
+                />
+              </View>
+            </View>
+
+            {/* Business Description */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.inputLabel}>Business Description</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Describe your business activities, products dealt with, trading history..."
+                placeholderTextColor="#94A3B8"
                 value={formData.description}
                 onChangeText={(text) => handleInputChange('description', text)}
                 multiline={true}
                 numberOfLines={3}
+                selectionColor={THEME}
               />
             </View>
           </View>
 
           {/* Submit Button */}
           <TouchableOpacity
-            style={[styles.submitButton, isLoading && { opacity: 0.7 }]}
+            style={[styles.submitButton, isLoading && { opacity: 0.75 }]}
             onPress={handleSubmit}
             disabled={isLoading}
+            activeOpacity={0.85}
           >
             {isLoading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
               <>
                 <Text style={styles.submitButtonText}>Register Company</Text>
@@ -416,7 +624,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
 
             {industriesLoading ? (
               <View style={styles.industryLoader}>
-                <ActivityIndicator size="large" color="#4F46E5" />
+                <ActivityIndicator size="large" color={THEME} />
                 <Text style={styles.industryLoaderText}>Loading industries...</Text>
               </View>
             ) : industries.length === 0 ? (
@@ -466,7 +674,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
                         ) : null}
                       </View>
                       {isSelected && (
-                        <Check size={16} color="#4F46E5" strokeWidth={2.5} />
+                        <Check size={16} color={THEME} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                   );
@@ -513,126 +721,206 @@ const AddCompany = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: THEME,
   },
-  keyboardView: {
-    flex: 1,
+  heroHeader: {
+    backgroundColor: THEME,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 10 : 8,
+    paddingBottom: 18,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
   },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 120,
-  },
-  header: {
+  topNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
   },
   backButton: {
-    padding: 12,
-    marginLeft: -12,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  backIcon: {
-    fontSize: 28,
-    color: '#111827',
+  headerTitleContainer: {
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
-  titleSection: {
-    marginTop: 16,
-    marginBottom: 24,
+  headerSubtitle: {
+    fontSize: 11.5,
+    color: '#C7D2FE',
+    marginTop: 2,
+    fontWeight: '500',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 8,
+  headerRightPlaceholder: {
+    width: 38,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
+  keyboardView: {
+    flex: 1,
+    backgroundColor: BG_COLOR,
   },
-  form: {
-    gap: 20,
-    marginBottom: 32,
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 100,
+  },
+  sectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  sectionIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  sectionHeaderTextWrap: {
+    flex: 1,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  sectionSubtitle: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
   },
   fieldContainer: {
-    gap: 8,
+    marginBottom: 14,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#374151',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  requiredStar: {
+    color: '#EF4444',
+    fontWeight: '700',
   },
   inputLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 6,
   },
-  optionalLabel: {
-    fontSize: 12,
-    color: '#9CA3AF',
+  helperLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '500',
   },
   input: {
     height: 48,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingHorizontal: 16,
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 14,
     fontSize: 14,
-    color: '#111827',
-    backgroundColor: '#F9FAFB',
+    color: '#0F172A',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+  },
+  inputWithIconWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 48,
+    borderWidth: 1.2,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+  },
+  inputLeadingIcon: {
+    marginRight: 10,
+  },
+  textInputWithIcon: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+  },
+  twoColumnRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  loadingPinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  pinLoadingText: {
+    fontSize: 11.5,
+    color: THEME,
+    fontWeight: '600',
+  },
+  autoFilledBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 4,
+  },
+  autoFilledBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#059669',
   },
   textArea: {
-    height: 100,
-    paddingTop: 12,
+    height: 84,
+    paddingTop: 10,
     textAlignVertical: 'top',
-  },
-  mobileInputContainer: {
-    flexDirection: 'row',
-    height: 48,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#F9FAFB',
-  },
-  countryCode: {
-    width: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRightWidth: 1,
-    borderRightColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-  },
-  countryCodeText: {
-    fontSize: 14,
-    color: '#374151',
-  },
-  mobileInput: {
-    flex: 1,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#111827',
   },
   submitButton: {
     height: 52,
-    backgroundColor: '#4F46E5',
-    borderRadius: 12,
+    backgroundColor: THEME,
+    borderRadius: 14,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-    shadowColor: '#4F46E5',
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 20,
+    shadowColor: THEME,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 5,
   },
   submitButtonText: {
     color: '#FFFFFF',
@@ -697,12 +985,12 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     height: 50,
-    backgroundColor: '#4F46E5',
+    backgroundColor: THEME,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     width: '100%',
-    shadowColor: '#4F46E5',
+    shadowColor: THEME,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,

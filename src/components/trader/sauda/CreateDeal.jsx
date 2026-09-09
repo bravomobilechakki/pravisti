@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -537,27 +537,83 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   // Load User Profile and Master Data
   useEffect(() => {
+    let isMounted = true;
     const loadMasterData = async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
         if (!token) return;
 
-        const userRes = await getUserProfile(token);
-        if (userRes && userRes.success && userRes.data) {
-          const u = userRes.data;
-          setActiveUserId(u._id || u.id);
-          if (Array.isArray(u.companies) && u.companies.length > 0) {
-            setUserCompaniesList(u.companies);
-            const active = u.companies[0];
-            setActiveUserCompany(active);
-            setParty1(active.name || '');
-            const ind = getResolvedIndustry(active, '');
-            setSellerIndustry(ind);
-            const loc = getResolvedLocation(active, '');
-            if (loc) {
-              setSellerLocation(loc);
-              setDeliveryLocation(loc);
+        let userCompanies = [];
+
+        // 1. Fetch live user companies directly
+        try {
+          const compsRes = await getCompanies(1, 50);
+          if (compsRes && compsRes.success && Array.isArray(compsRes.data?.companies)) {
+            userCompanies = compsRes.data.companies;
+          } else if (Array.isArray(compsRes?.data)) {
+            userCompanies = compsRes.data;
+          }
+        } catch (e) {
+          console.warn('getCompanies fetch note in CreateDeal:', e);
+        }
+
+        // 2. Fallback to user profile
+        if (userCompanies.length === 0) {
+          try {
+            const userRes = await getUserProfile(token);
+            if (userRes && userRes.success && userRes.data) {
+              const u = userRes.data;
+              if (isMounted) setActiveUserId(u._id || u.id);
+              if (Array.isArray(u.companies) && u.companies.length > 0) {
+                userCompanies = u.companies.filter(c => c && typeof c === 'object');
+              }
             }
+          } catch (e) { }
+        }
+
+        // 3. Fallback to cached profile
+        if (userCompanies.length === 0) {
+          try {
+            const storedProfile = await AsyncStorage.getItem('user_completed_profile');
+            if (storedProfile) {
+              const parsed = JSON.parse(storedProfile);
+              if (Array.isArray(parsed?.companies) && parsed.companies.length > 0) {
+                userCompanies = parsed.companies.filter(c => c && typeof c === 'object');
+              }
+            }
+          } catch (e) { }
+        }
+
+        if (!isMounted) return;
+
+        if (userCompanies.length > 0) {
+          setUserCompaniesList(userCompanies);
+
+          // Find active company:
+          const targetId =
+            routeData?.companyId ||
+            routeData?.company?._id ||
+            routeData?.company?.id ||
+            routeData?.originCompany?._id ||
+            routeData?.originCompany?.id ||
+            (await AsyncStorage.getItem('selectedCompanyId')) ||
+            (await AsyncStorage.getItem('activeCompanyId'));
+
+          let matched = null;
+          if (targetId && targetId !== 'ALL') {
+            matched = userCompanies.find((c) => String(c._id || c.id) === String(targetId));
+          }
+          const active = matched || userCompanies[0];
+
+          setActiveUserCompany(active);
+          const compName = active.name || active.companyName || active.businessName || '';
+          setParty1(compName);
+          const ind = getResolvedIndustry(active, 'Commodity Trading');
+          setSellerIndustry(ind);
+          const loc = getResolvedLocation(active, '');
+          if (loc) {
+            setSellerLocation(loc);
+            setDeliveryLocation(loc);
           }
         }
 
@@ -584,6 +640,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     };
     loadMasterData();
   }, [originCompanyId]);
+
+
 
   // Load Inventory of Seller
   useEffect(() => {
@@ -774,7 +832,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         }
       } else {
         // Auto open onboard modal for new contact
-        openOnboardModal(isParty2 ? (role === 'buyer' ? 'seller' : 'buyer') : 'broker', cleanDigits);
+        const phone10 = cleanDigits.slice(-10);
+        openOnboardModal(isParty2 ? (role === 'buyer' ? 'seller' : 'buyer') : 'broker', phone10);
       }
     } catch (e) {
       console.warn('Number lookup note:', e);
@@ -876,10 +935,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   // Assisted Onboarding Helpers
   const openOnboardModal = (targetRole, defaultPhone = '') => {
+    const cleanDefault = (defaultPhone || '').replace(/\D/g, '').slice(-10);
     setOnboardRole(targetRole);
     setOnboardForm({
       name: '',
-      mobileNumber: defaultPhone || '',
+      mobileNumber: cleanDefault,
       companyName: '',
       industryId: industriesList[0]?._id || '',
       registrationNumber: '',
@@ -924,7 +984,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     if (!onboardForm.name.trim()) {
       errors.name = 'Contact person name is required';
     }
-    const cleanMobile = onboardForm.mobileNumber.replace(/\D/g, '');
+    const cleanMobile = onboardForm.mobileNumber.replace(/\D/g, '').slice(-10);
     if (!cleanMobile) {
       errors.mobileNumber = 'Mobile number is required';
     } else if (cleanMobile.length !== 10) {
@@ -953,13 +1013,16 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         },
       ] : [];
 
+      const cleanGst = (onboardForm.registrationNumber || '').trim();
       const payload = {
         role: onboardRole,
         name: onboardForm.name.trim(),
-        mobileNumber: `+91${cleanMobile}`,
+        mobileNumber: cleanMobile,
         companyName: onboardForm.companyName.trim(),
+        companyId: originCompanyId,
+        brokerCompanyId: originCompanyId,
         industryId: onboardForm.industryId || undefined,
-        gst: onboardForm.registrationNumber.trim() || undefined,
+        ...(cleanGst ? { gst: cleanGst } : {}),
         companyAddress: {
           street: onboardForm.street || '',
           city: onboardForm.city || '',
@@ -988,7 +1051,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           companyId: newCompanyId,
           name: newCompanyName,
           company: newCompanyName,
-          mobile: `+91${cleanMobile}`,
+          mobile: cleanMobile,
           isRegistered: true,
           status: companyStatus,
           approvalStatus: companyStatus,
@@ -1043,11 +1106,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
         setShowOnboardModal(false);
       } else {
-        Alert.alert('Onboarding Note', response?.message || 'Party recorded for deal ledger.');
+        Alert.alert('Onboarding Notice', response?.message || 'Party recorded for deal ledger.');
         setShowOnboardModal(false);
       }
     } catch (e) {
-      Alert.alert('Notice', 'Counterparty profile saved for agreement creation.');
+      Alert.alert('Onboarding Notice', e?.message || 'Failed to complete party onboarding. Please check inputs.');
       setShowOnboardModal(false);
     } finally {
       setIsOnboardingSubmitting(false);
@@ -1347,7 +1410,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                 name: 'General Commodities',
               }, token).catch(() => null);
               categoryId = newCat?.data?._id || newCat?.data?.id || newCat?.category?._id || newCat?._id;
-            } catch (fcErr) {}
+            } catch (fcErr) { }
           }
 
           // Build valid product payload matching POST /api/products backend schema
@@ -1387,7 +1450,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           if (fallbackList.length > 0 && (fallbackList[0]._id || fallbackList[0].id)) {
             return String(fallbackList[0]._id || fallbackList[0].id);
           }
-        } catch (fbErr) {}
+        } catch (fbErr) { }
       }
 
       // 6. Last resort: if companyProducts state has valid product IDs
@@ -1710,18 +1773,42 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     };
   };
 
+  // Dynamic category tabs derived from API categories and loaded products
+  const displayCategoryTabs = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+
+    (categoriesList || []).forEach(c => {
+      const name = (c.name || '').trim();
+      if (name && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        list.push({ id: c.id || name, name });
+      }
+    });
+
+    (companyProducts || []).forEach(p => {
+      const name = (typeof p.category === 'string' ? p.category : p.category?.name || '').trim();
+      if (name && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        list.push({ id: name, name });
+      }
+    });
+
+    return list;
+  }, [categoriesList, companyProducts]);
+
   // Filter Recent Products by Search and Category
   const filteredProducts = companyProducts.filter(p => {
     const matchSearch =
       !productSearch.trim() ||
       p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
       (p.hsn && p.hsn.includes(productSearch));
+    const pCat = (typeof p.category === 'string' ? p.category : p.category?.name || '').toLowerCase();
+    const pCatId = p.categoryId?._id || p.categoryId?.id || (typeof p.categoryId === 'string' ? p.categoryId : '');
     const matchCat =
       selectedCategoryTab === 'all' ||
-      (selectedCategoryTab === 'grains' && (p.category === 'grains' || p.name.toLowerCase().includes('rice') || p.name.toLowerCase().includes('wheat'))) ||
-      (selectedCategoryTab === 'oil' && (p.category === 'oil' || p.name.toLowerCase().includes('oil'))) ||
-      (selectedCategoryTab === 'pulses' && (p.category === 'pulses' || p.name.toLowerCase().includes('sugar') || p.name.toLowerCase().includes('dal'))) ||
-      (selectedCategoryTab === 'spices' && (p.category === 'spices' || p.name.toLowerCase().includes('chilli') || p.name.toLowerCase().includes('jeera')));
+      pCat === selectedCategoryTab.toLowerCase() ||
+      (pCatId && pCatId === selectedCategoryTab);
     return matchSearch && matchCat;
   });
 
@@ -1734,7 +1821,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
 
-        {/* ════════════════ TOP APP BAR & MASCOT ════════════════ */}
+        {/* ════════════════ TOP APP BAR & COMPANY CONTEXT ════════════════ */}
         <View style={styles.topHeader}>
           <TouchableOpacity
             style={styles.backButtonCircle}
@@ -1747,12 +1834,28 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             }}
             activeOpacity={0.7}
           >
-            <ArrowLeft size={18} color="#0F172A" />
+            <ArrowLeft size={20} color="#1541D8" strokeWidth={2.4} />
           </TouchableOpacity>
 
           <View style={styles.titleColumn}>
             <Text style={styles.screenTitle}>Create New Deal</Text>
-            <Text style={styles.stepSubtitle}>Step {currentStep} of 4</Text>
+            {Boolean(party1 || activeUserCompany?.name) ? (
+              <TouchableOpacity
+                onPress={() => userCompaniesList.length > 1 && setShowCompanySwitchModal(true)}
+                activeOpacity={userCompaniesList.length > 1 ? 0.7 : 1}
+                style={styles.headerCompanyPill}
+              >
+                <Building2 size={11} color="#2563EB" />
+                <Text style={styles.headerCompanyText} numberOfLines={1}>
+                  {party1 || activeUserCompany?.name}
+                </Text>
+                {userCompaniesList.length > 1 && (
+                  <ChevronDown size={11} color="#2563EB" />
+                )}
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.stepSubtitle}>Step {currentStep} of 4</Text>
+            )}
           </View>
 
           <View style={styles.mascotWrapper}>
@@ -1863,10 +1966,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           {currentStep === 1 && (
             <View style={styles.stepSection}>
               <View style={styles.sectionHeadingBox}>
-                <Text style={styles.mainSectionTitle}>Add Parties</Text>
-                <Text style={styles.mainSectionSubtitle}>
-                  Select trading role and counterparty for this deal.
-                </Text>
+
+
               </View>
 
               {/* Trading Role Switcher */}
@@ -1902,30 +2003,52 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
               {/* Your Company Card */}
               <View style={styles.partyCardWrapper}>
-                <Text style={styles.partySectionHeader}>
-                  {role === 'buyer' ? 'Buyer (Your Company)' : 'Seller (Your Company)'}
-                </Text>
-                <View style={styles.whitePartyCard}>
-                  <View style={[styles.partyAvatarBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
-                    <Text style={[styles.partyAvatarText, { color: '#059669' }]}>
-                      {party1.substring(0, 2).toUpperCase()}
-                    </Text>
+                <View style={styles.partySectionHeaderRow}>
+                  <Text style={styles.partySectionHeader}>
+                    {role === 'buyer' ? 'Buyer (Your Company)' : 'Seller (Your Company)'}
+                  </Text>
+                  {userCompaniesList.length > 1 && (
+                    <TouchableOpacity
+                      style={styles.switchCompanyBadgeBtn}
+                      onPress={() => setShowCompanySwitchModal(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Building2 size={12} color="#2563EB" />
+                      <Text style={styles.switchCompanyBadgeText}>Change Company</Text>
+                      <ChevronDown size={12} color="#2563EB" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.whitePartyCard, styles.whitePartyCardClickable]}
+                  onPress={() => {
+                    if (userCompaniesList.length > 1) {
+                      setShowCompanySwitchModal(true);
+                    }
+                  }}
+                  activeOpacity={userCompaniesList.length > 1 ? 0.75 : 1}
+                >
+                  <View style={[styles.partyAvatarBox, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+                    <Building2 size={20} color="#2563EB" />
                   </View>
 
                   <View style={styles.partyInfoColumn}>
                     <View style={styles.partyNameRow}>
-                      <Text style={styles.partyCompanyName}>{party1}</Text>
+                      <Text style={styles.partyCompanyName} numberOfLines={1}>
+                        {party1 || activeUserCompany?.name || 'My Company'}
+                      </Text>
                       <View style={styles.primaryBadge}>
-                        <Text style={styles.primaryBadgeText}>Primary</Text>
+                        <Text style={styles.primaryBadgeText}>Your Company</Text>
                       </View>
                     </View>
-                    <Text style={styles.partyCategoryText}>
+                    <Text style={styles.partyCategoryText} numberOfLines={1}>
                       {sellerIndustry || getResolvedIndustry(activeUserCompany, 'Commodity Trading')}
                     </Text>
                     {Boolean(sellerLocation || getResolvedLocation(activeUserCompany)) && (
                       <View style={styles.partyLocationRow}>
                         <MapPin size={12} color="#64748B" />
-                        <Text style={styles.partyLocationText}>
+                        <Text style={styles.partyLocationText} numberOfLines={1}>
                           {sellerLocation || getResolvedLocation(activeUserCompany)}
                         </Text>
                       </View>
@@ -1933,15 +2056,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   </View>
 
                   {userCompaniesList.length > 1 && (
-                    <TouchableOpacity
-                      style={styles.partyEditButton}
-                      onPress={() => setShowCompanySwitchModal(true)}
-                      activeOpacity={0.7}
-                    >
-                      <Edit2 size={16} color="#2563EB" />
-                    </TouchableOpacity>
+                    <View style={styles.companyDropdownTrigger}>
+                      <ChevronDown size={18} color="#2563EB" />
+                    </View>
                   )}
-                </View>
+                </TouchableOpacity>
               </View>
 
               {/* Counterparty Selection (Buyer or Seller) */}
@@ -2228,60 +2347,24 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.categoryPill, selectedCategoryTab === 'grains' && styles.categoryPillActive]}
-                  onPress={() => setSelectedCategoryTab('grains')}
-                  activeOpacity={0.8}
-                >
-                  <Wheat size={14} color={selectedCategoryTab === 'grains' ? '#FFFFFF' : '#475569'} />
-                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'grains' && styles.categoryPillTextActive]}>
-                    Grains
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.categoryPill, selectedCategoryTab === 'pulses' && styles.categoryPillActive]}
-                  onPress={() => setSelectedCategoryTab('pulses')}
-                  activeOpacity={0.8}
-                >
-                  <Package size={14} color={selectedCategoryTab === 'pulses' ? '#FFFFFF' : '#475569'} />
-                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'pulses' && styles.categoryPillTextActive]}>
-                    Pulses
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.categoryPill, selectedCategoryTab === 'oil' && styles.categoryPillActive]}
-                  onPress={() => setSelectedCategoryTab('oil')}
-                  activeOpacity={0.8}
-                >
-                  <Droplet size={14} color={selectedCategoryTab === 'oil' ? '#FFFFFF' : '#475569'} />
-                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'oil' && styles.categoryPillTextActive]}>
-                    Oil
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.categoryPill, selectedCategoryTab === 'spices' && styles.categoryPillActive]}
-                  onPress={() => setSelectedCategoryTab('spices')}
-                  activeOpacity={0.8}
-                >
-                  <Flame size={14} color={selectedCategoryTab === 'spices' ? '#FFFFFF' : '#475569'} />
-                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'spices' && styles.categoryPillTextActive]}>
-                    Spices
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.categoryPill, selectedCategoryTab === 'more' && styles.categoryPillActive]}
-                  onPress={() => setSelectedCategoryTab('more')}
-                  activeOpacity={0.8}
-                >
-                  <LayoutGrid size={14} color={selectedCategoryTab === 'more' ? '#FFFFFF' : '#475569'} />
-                  <Text style={[styles.categoryPillText, selectedCategoryTab === 'more' && styles.categoryPillTextActive]}>
-                    More
-                  </Text>
-                </TouchableOpacity>
+                {displayCategoryTabs.map((cat) => {
+                  const isSelected =
+                    selectedCategoryTab.toLowerCase() === cat.name.toLowerCase() ||
+                    selectedCategoryTab === cat.id;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id || cat.name}
+                      style={[styles.categoryPill, isSelected && styles.categoryPillActive]}
+                      onPress={() => setSelectedCategoryTab(isSelected ? 'all' : cat.name)}
+                      activeOpacity={0.8}
+                    >
+                      <Tag size={14} color={isSelected ? '#FFFFFF' : '#475569'} />
+                      <Text style={[styles.categoryPillText, isSelected && styles.categoryPillTextActive]}>
+                        {cat.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
 
               {/* Catalog / Recent Products Grid (Only if inventory exists) */}
@@ -2649,16 +2732,22 @@ Zoomed into item. */}
               ) : (
                 <View style={styles.formContainer}>
                   <View style={styles.formSectionHeaderRow}>
-                    <Text style={styles.subSectionTitle}>Add Custom Product</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={styles.customProductIconBadge}>
+                        <Package size={15} color="#2563EB" />
+                      </View>
+                      <Text style={styles.subSectionTitle}>Add Custom Product</Text>
+                    </View>
                     <TouchableOpacity
                       onPress={() => {
                         setIsAddingCustomProduct(false);
                         setCustomProdError('');
                       }}
                       activeOpacity={0.7}
-                      style={{ padding: 4 }}
+                      style={styles.customProductCloseBtn}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                      <X size={16} color="#64748B" />
+                      <X size={18} color="#EF4444" strokeWidth={2.4} />
                     </TouchableOpacity>
                   </View>
 
@@ -2741,7 +2830,7 @@ Zoomed into item. */}
                       onPress={handleAddCustomProduct}
                       style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: '#2563EB' }}
                     >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>+ Add Product</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>Confirm</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -3697,10 +3786,16 @@ Zoomed into item. */}
               <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowCompanySwitchModal(false)} />
               <View style={styles.modalSheetContainer}>
                 <View style={styles.modalDragHandle} />
-                <Text style={styles.modalTitleText}>Switch Active Company</Text>
-                <ScrollView style={{ maxHeight: 280 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4, paddingBottom: 14 }}>
+                  <Text style={styles.modalTitleText}>Select Your Company</Text>
+                  <TouchableOpacity onPress={() => setShowCompanySwitchModal(false)} activeOpacity={0.7} style={{ padding: 4 }}>
+                    <X size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}>
                   {userCompaniesList.map((c, idx) => {
                     const cId = c._id || c.id;
+                    const cName = c.name || c.companyName || c.businessName || 'Company';
                     const isSelected = String(activeUserCompany?._id || activeUserCompany?.id) === String(cId);
                     return (
                       <TouchableOpacity
@@ -3708,20 +3803,24 @@ Zoomed into item. */}
                         style={[styles.optionItemRow, isSelected && styles.optionItemRowSelected]}
                         onPress={() => {
                           setActiveUserCompany(c);
-                          setParty1(c.name || 'My Company');
+                          setParty1(cName);
                           const ind = getResolvedIndustry(c, 'Commodity Trading');
                           setSellerIndustry(ind);
                           const loc = getResolvedLocation(c, '');
                           if (loc) {
                             setSellerLocation(loc);
+                            setDeliveryLocation(loc);
                           }
                           setShowCompanySwitchModal(false);
                         }}
                         activeOpacity={0.7}
                       >
+                        <View style={[styles.partyAvatarBox, { width: 38, height: 38, borderRadius: 19, backgroundColor: isSelected ? '#EFF6FF' : '#F1F5F9', borderColor: isSelected ? '#93C5FD' : '#E2E8F0', marginRight: 12 }]}>
+                          <Building2 size={18} color={isSelected ? '#2563EB' : '#64748B'} />
+                        </View>
                         <View style={{ flex: 1, gap: 2 }}>
                           <Text style={[styles.optionItemText, isSelected && styles.optionItemTextSelected]}>
-                            {c.name}
+                            {cName}
                           </Text>
                           {getResolvedIndustry(c) ? (
                             <Text style={{ fontSize: 11.5, color: '#64748B' }}>
@@ -3734,7 +3833,7 @@ Zoomed into item. */}
                             </Text>
                           ) : null}
                         </View>
-                        {isSelected && <Check size={16} color="#2563EB" />}
+                        {isSelected && <Check size={18} color="#2563EB" strokeWidth={2.5} />}
                       </TouchableOpacity>
                     );
                   })}
@@ -4226,6 +4325,25 @@ const styles = StyleSheet.create({
     color: '#2563EB',
     marginTop: 2,
   },
+  headerCompanyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginTop: 3,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    maxWidth: '85%',
+  },
+  headerCompanyText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#1D4ED8',
+    flexShrink: 1,
+  },
   mascotWrapper: {
     width: 46,
     height: 46,
@@ -4703,6 +4821,39 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2563EB',
   },
+  formContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginTop: 8,
+    gap: 12,
+  },
+  formSectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  customProductIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customProductCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   formGroup: {
     gap: 6,
   },
@@ -4781,6 +4932,27 @@ const styles = StyleSheet.create({
   partyCardWrapper: {
     gap: 8,
   },
+  partySectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  switchCompanyBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  switchCompanyBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
   partySectionHeader: {
     fontSize: 13,
     fontWeight: '800',
@@ -4800,6 +4972,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 3,
     elevation: 1,
+  },
+  whitePartyCardClickable: {
+    borderWidth: 1.5,
+    borderColor: '#DBEAFE',
+  },
+  companyDropdownTrigger: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
   },
   partyAvatarBox: {
     width: 44,

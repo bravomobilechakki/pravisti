@@ -47,6 +47,7 @@ import {
   Share2,
   Eye,
   Trash2,
+  Building2,
 } from 'lucide-react-native';
 
 const isDealMatchingCompany = (deal, companyId) => {
@@ -140,45 +141,53 @@ const DealsList = ({ onNavigate, routeData }) => {
     [companyNames]
   );
 
-  // Fetch Missing Company Names for buyer/seller display
+  // Fetch Missing Company Names for buyer/seller display with batching & dedup
   React.useEffect(() => {
+    let isCancelled = false;
     const fetchMissingCompanyNames = async () => {
       try {
-        const missingIds = [];
+        const missingIdsSet = new Set();
         deals.forEach((deal) => {
-          const bId = deal.buyerCompanyId?._id || deal.buyerCompanyId;
-          const sId = deal.sellerCompanyId?._id || deal.sellerCompanyId;
+          const bId = String(deal.buyerCompanyId?._id || deal.buyerCompanyId || '');
+          const sId = String(deal.sellerCompanyId?._id || deal.sellerCompanyId || '');
 
-          if (typeof bId === 'string' && bId.match(/^[0-9a-fA-F]{24}$/) && !fetchedCompanyIdsRef.current.has(bId)) {
-            fetchedCompanyIdsRef.current.add(bId);
-            missingIds.push(bId);
+          if (/^[0-9a-fA-F]{24}$/.test(bId) && !fetchedCompanyIdsRef.current.has(bId) && !companyNames[bId]) {
+            missingIdsSet.add(bId);
           }
-          if (typeof sId === 'string' && sId.match(/^[0-9a-fA-F]{24}$/) && !fetchedCompanyIdsRef.current.has(sId)) {
-            fetchedCompanyIdsRef.current.add(sId);
-            missingIds.push(sId);
+          if (/^[0-9a-fA-F]{24}$/.test(sId) && !fetchedCompanyIdsRef.current.has(sId) && !companyNames[sId]) {
+            missingIdsSet.add(sId);
           }
         });
 
+        const missingIds = Array.from(missingIdsSet);
         if (missingIds.length === 0) return;
-        const newNames = {};
-        let updated = false;
+        missingIds.forEach((id) => fetchedCompanyIdsRef.current.add(id));
 
-        await Promise.all(
-          missingIds.map(async (id) => {
-            try {
-              const res = await getCompanyDetails(id);
-              if (res && res.success && res.data) {
-                newNames[id] = res.data.name || res.data.companyName || 'Company';
-                updated = true;
+        // Process in small batches of 4 to prevent network congestion
+        const BATCH_SIZE = 4;
+        for (let i = 0; i < missingIds.length; i += BATCH_SIZE) {
+          if (isCancelled) break;
+          const batch = missingIds.slice(i, i + BATCH_SIZE);
+          const newNames = {};
+          let updated = false;
+
+          await Promise.all(
+            batch.map(async (id) => {
+              try {
+                const res = await getCompanyDetails(id);
+                if (res && res.success && res.data) {
+                  newNames[id] = res.data.name || res.data.companyName || 'Company';
+                  updated = true;
+                }
+              } catch (e) {
+                // Ignore silent failure
               }
-            } catch (e) {
-              console.warn(`Failed to fetch company details for ${id}:`, e);
-            }
-          })
-        );
+            })
+          );
 
-        if (updated) {
-          setCompanyNames((prev) => ({ ...prev, ...newNames }));
+          if (updated && !isCancelled) {
+            setCompanyNames((prev) => ({ ...prev, ...newNames }));
+          }
         }
       } catch (err) {
         console.warn('Error fetching missing company names:', err);
@@ -188,6 +197,9 @@ const DealsList = ({ onNavigate, routeData }) => {
     if (deals && deals.length > 0) {
       fetchMissingCompanyNames();
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [deals]);
 
   // Fetch Deals
@@ -310,7 +322,6 @@ const DealsList = ({ onNavigate, routeData }) => {
       },
     ]);
   };
-
   // Metrics Calculations
   const totalDealsCount = deals.length;
   const activeDealsCount = useMemo(
@@ -396,51 +407,55 @@ const DealsList = ({ onNavigate, routeData }) => {
     return list;
   }, [deals, searchQuery, selectedFilterTab, sortOrder, resolveName]);
 
+  const activeCompanyName =
+    routeData?.companyName ||
+    routeData?.company?.name ||
+    companyNames[activeCompanyId] ||
+    '';
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="light-content" backgroundColor="#1541D8" />
 
-      {/* ─── 1. TOP LIGHT WHITE HEADER ─── */}
+      {/* ─── 1. TOP ROYAL BLUE HEADER ─── */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerBackBtn}
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={22} color="#1541D8" strokeWidth={2.4} />
+          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <View style={{ alignItems: 'center' }}>
-          <Text style={styles.headerTitle}>Deals</Text>
-          {(routeData?.companyName || routeData?.company?.name) && (
-            <Text style={{ fontSize: 11, color: '#1541D8', fontWeight: '700', marginTop: 1 }} numberOfLines={1}>
-              {routeData?.companyName || routeData?.company?.name}
-            </Text>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            Deals (Saudas)
+          </Text>
+          {Boolean(activeCompanyName) && (
+            <View style={styles.headerCompanyBadge}>
+              <Building2 size={11} color="#C7D2FE" style={{ marginRight: 4 }} />
+              <Text style={styles.headerCompanyBadgeText} numberOfLines={1}>
+                {activeCompanyName}
+              </Text>
+            </View>
           )}
         </View>
 
         <View style={styles.headerRightActions}>
           <TouchableOpacity
             style={styles.headerActionBtn}
-            onPress={() => setIsSearchOpen((prev) => !prev)}
-            activeOpacity={0.75}
-          >
-            <Search size={19} color="#1E293B" strokeWidth={2.2} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.headerActionBtn}
             onPress={() => setIsSortModalVisible(true)}
             activeOpacity={0.75}
           >
-            <Filter size={19} color="#1E293B" strokeWidth={2.2} />
+            <Filter size={18} color="#FFFFFF" strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <View style={styles.contentContainer}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -610,7 +625,11 @@ const DealsList = ({ onNavigate, routeData }) => {
               </Text>
               <TouchableOpacity
                 style={styles.emptyAddBtn}
-                onPress={() => onNavigate('CreateDeal')}
+                onPress={() => onNavigate('CreateDeal', {
+                  company: routeData?.company,
+                  companyId: activeCompanyId,
+                  companyName: routeData?.companyName || routeData?.company?.name,
+                })}
                 activeOpacity={0.8}
               >
                 <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
@@ -782,7 +801,11 @@ const DealsList = ({ onNavigate, routeData }) => {
       <View style={styles.createDealBannerWrapper}>
         <TouchableOpacity
           style={styles.createDealBannerCard}
-          onPress={() => onNavigate('CreateDeal')}
+          onPress={() => onNavigate('CreateDeal', {
+            company: routeData?.company,
+            companyId: activeCompanyId,
+            companyName: routeData?.companyName || routeData?.company?.name,
+          })}
           activeOpacity={0.9}
         >
           {/* Mascot Character Image */}
@@ -855,7 +878,12 @@ const DealsList = ({ onNavigate, routeData }) => {
               onPress={() => {
                 const d = actionSheetDeal;
                 setActionSheetDeal(null);
-                onNavigate('CreateDeal', { prefillDeal: d });
+                onNavigate('CreateDeal', {
+                  prefillDeal: d,
+                  company: routeData?.company,
+                  companyId: activeCompanyId,
+                  companyName: routeData?.companyName || routeData?.company?.name,
+                });
               }}
               activeOpacity={0.7}
             >
@@ -932,6 +960,7 @@ const DealsList = ({ onNavigate, routeData }) => {
           </View>
         </View>
       </Modal>
+      </View>
     </SafeAreaView>
   );
 };
@@ -941,12 +970,16 @@ export default DealsList;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#1541D8',
+  },
+  contentContainer: {
+    flex: 1,
     backgroundColor: '#F8FAFC',
   },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 16,
+    paddingBottom: 24,
   },
 
   /* ── 1. Top Header ── */
@@ -955,35 +988,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'ios' ? 6 : 10,
+    paddingBottom: 14,
+    backgroundColor: '#1541D8',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: 'rgba(255, 255, 255, 0.12)',
   },
   headerBackBtn: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginLeft: 6,
+  headerCenter: {
     flex: 1,
-    letterSpacing: -0.3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
   },
-  headerRightActions: {
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  headerCompanyBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginTop: 4,
+    maxWidth: '90%',
+  },
+  headerCompanyBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#E0E7FF',
+    flexShrink: 1,
+  },
+  headerRightActions: {
+    width: 38,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   headerActionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F1F5F9',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     justifyContent: 'center',
     alignItems: 'center',
   },

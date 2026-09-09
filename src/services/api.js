@@ -19,10 +19,19 @@ const handleResponse = async (response) => {
   }
 };
 
-const fetchWithTimeout = async (url, options, timeoutMs = 45000, maxRetries = 1) => {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+const fetchWithTimeout = async (url, options, timeoutMs = null, maxRetries = 1) => {
+  // If this is an auth endpoint, give it 35s because it wakes up idle Cloud Run containers & sends WhatsApp OTPs
+  const isAuthEndpoint = typeof url === 'string' && (url.includes('/auth/') || url.includes('/login') || url.includes('/verify-otp') || url.includes('/signup'));
+  const baseTimeout = timeoutMs || (isAuthEndpoint ? 35000 : 20000);
+  // Auth endpoints (login, verify-otp, signup) must NEVER be auto-retried behind the scenes.
+  // Reason: If verify-otp is retried, attempt 0 consumes/deletes the OTP on the server, so attempt 1 fails with "No OTP found, please request OTP".
+  // Similarly, retrying sendOTP creates a duplicate OTP and overwrites the active one.
+  const effectiveRetries = isAuthEndpoint ? 0 : maxRetries;
+
+  for (let attempt = 0; attempt <= effectiveRetries; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const currentTimeout = attempt === 0 ? baseTimeout : Math.max(baseTimeout, 28000);
+    const timer = setTimeout(() => controller.abort(), currentTimeout);
     try {
       const res = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timer);
@@ -32,14 +41,14 @@ const fetchWithTimeout = async (url, options, timeoutMs = 45000, maxRetries = 1)
       const isTimeout = err.name === 'AbortError';
       const isNetworkFailed = err.message && err.message.toLowerCase().includes('network request failed');
 
-      if ((isTimeout || isNetworkFailed) && attempt < maxRetries) {
-        console.warn(`[API] Request to ${url} timed out/failed on attempt ${attempt + 1}. Retrying in 1.5s after server wake up...`);
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+      if ((isTimeout || isNetworkFailed) && attempt < effectiveRetries) {
+        console.warn(`[API] Request to ${url} timed out/failed on attempt ${attempt + 1}. Retrying in 1s...`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
       }
 
       if (isTimeout) {
-        throw new Error('Request timed out. Server may be waking up — please tap again now.');
+        throw new Error('Server took too long to respond. Server may be waking up — please tap again.');
       }
       throw err;
     }
@@ -113,6 +122,7 @@ const patchRequest = async (apiConfig, body, token = null) => {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
   };
+
 
   let activeToken = token;
   if (!activeToken) {
@@ -241,9 +251,10 @@ export const signUpUser = async (name, role, mobileNumber) => {
 
 export const loginUser = async (mobileNumber) => {
   try {
-    console.log(`Logging in via OTP sending to: ${SummaryApi.sendOTP.url}`);
+    const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').slice(-10);
+    console.log(`Logging in via OTP sending to: ${SummaryApi.sendOTP.url} for ${cleanMobile}`);
     return await postRequest(SummaryApi.sendOTP, {
-      mobileNumber
+      mobileNumber: cleanMobile
     });
   } catch (error) {
     console.error('Error in loginUser:', error.message || error);
@@ -253,9 +264,11 @@ export const loginUser = async (mobileNumber) => {
 
 export const verifyOtp = async (mobileNumber, otp) => {
   try {
+    const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').slice(-10);
+    const cleanOtp = String(otp || '').trim();
     return await postRequest(SummaryApi.verifyOTP, {
-      mobileNumber,
-      otp
+      mobileNumber: cleanMobile,
+      otp: cleanOtp
     });
   } catch (error) {
     console.error('Error verifying OTP:', error.message || error);
@@ -312,12 +325,36 @@ export const getCompanies = async (page = 1, limit = 10) => {
   }
 };
 
+const companyDetailsCache = new Map();
+const inFlightCompanyRequests = new Map();
+
 export const getCompanyDetails = async (id) => {
   try {
     if (!id || id === 'undefined' || id === 'null') {
       return { success: false, message: 'Invalid Company ID' };
     }
-    return await getRequest(SummaryApi.getCompanyDetails(id));
+    const cleanId = String(id).trim();
+    if (companyDetailsCache.has(cleanId)) {
+      return companyDetailsCache.get(cleanId);
+    }
+    if (inFlightCompanyRequests.has(cleanId)) {
+      return await inFlightCompanyRequests.get(cleanId);
+    }
+
+    const reqPromise = (async () => {
+      try {
+        const res = await getRequest(SummaryApi.getCompanyDetails(cleanId));
+        if (res && res.success && res.data) {
+          companyDetailsCache.set(cleanId, res);
+        }
+        return res;
+      } finally {
+        inFlightCompanyRequests.delete(cleanId);
+      }
+    })();
+
+    inFlightCompanyRequests.set(cleanId, reqPromise);
+    return await reqPromise;
   } catch (error) {
     console.warn('Notice fetching company details:', error.message || error);
     return { success: false, message: error.message || 'Company not found' };
@@ -428,7 +465,7 @@ export const getDeals = async (token, page = 1, limit = 10, companyId = null, st
   try {
     return await getRequest(SummaryApi.getDeals(page, limit, companyId, status), token);
   } catch (error) {
-    console.error('Error fetching deals:', error.message || error);
+    console.warn('Error fetching deals:', error.message || error);
     throw error;
   }
 };
@@ -943,21 +980,26 @@ export const assistedCreatePartyAccount = async (payload, token) => {
   try {
     const roleClean = (payload.role || payload.partyType || 'seller').toLowerCase();
     const cleanDigits = (payload.mobileNumber || '').replace(/\D/g, '');
+    const mobileToUse = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits;
     const rawEmail = (payload.email || '').trim();
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     const isValidEmail = emailRegex.test(rawEmail);
-    const fallbackPrefix = cleanDigits.length >= 6 ? cleanDigits : `user${Date.now().toString().slice(-6)}`;
+    const fallbackPrefix = mobileToUse.length >= 6 ? mobileToUse : `user${Date.now().toString().slice(-6)}`;
     const defaultEmail = `user${fallbackPrefix}@gmail.com`;
     const emailToUse = isValidEmail ? rawEmail : defaultEmail;
+
+    const rawGst = (payload.gst || payload.gstNumber || payload.gstin || payload.registrationNumber || '').trim();
+    const compId = payload.brokerCompanyId || payload.companyId || payload.creatorCompanyId || null;
 
     const formattedPayload = {
       role: roleClean,
       name: payload.name || payload.ownerName || payload.targetUserName || '',
-      mobileNumber: payload.mobileNumber || '',
+      mobileNumber: mobileToUse,
       email: emailToUse,
       companyEmail: emailToUse,
       companyName: payload.companyName || '',
       ...(payload.industryId || payload.industry ? { industryId: payload.industryId || payload.industry } : {}),
+      ...(compId ? { brokerCompanyId: compId, companyId: compId } : {}),
       companyAddress: payload.companyAddress || {
         street: payload.address?.street || payload.street || '',
         city: payload.address?.city || payload.city || '',
@@ -966,7 +1008,7 @@ export const assistedCreatePartyAccount = async (payload, token) => {
         postalCode: payload.address?.postalCode || payload.address?.zip || payload.postalCode || payload.zip || '',
         country: payload.address?.country || payload.country || 'India',
       },
-      gst: payload.gst || payload.gstNumber || payload.gstin || payload.registrationNumber || '',
+      ...(rawGst ? { gst: rawGst } : {}),
       businessDetails: payload.businessDetails || payload.description || '',
       products: roleClean === 'buyer' ? [] : (Array.isArray(payload.products) && payload.products.length > 0 ? payload.products.map(p => ({
         name: typeof p === 'string' ? p : p.name,
@@ -977,7 +1019,22 @@ export const assistedCreatePartyAccount = async (payload, token) => {
       })) : []),
     };
 
-    return await postRequest(SummaryApi.assistedCreateBusiness, formattedPayload, token);
+    let response;
+    try {
+      response = await postRequest(SummaryApi.assistedCreateBusiness, formattedPayload, token);
+    } catch (primaryErr) {
+      // Fallback: try alternate route prefix if primary returned error
+      try {
+        const currentUrl = SummaryApi.assistedCreateBusiness.url;
+        const altUrl = currentUrl.includes('/api/broker-onboard/')
+          ? currentUrl.replace('/api/broker-onboard/', '/api/onboarding/')
+          : currentUrl.replace('/api/onboarding/', '/api/broker-onboard/');
+        response = await postRequest({ url: altUrl, method: 'post' }, formattedPayload, token);
+      } catch (fallbackErr) {
+        throw primaryErr;
+      }
+    }
+    return response;
   } catch (error) {
     console.error('Error creating assisted business:', error.message || error);
     throw error;

@@ -243,7 +243,7 @@ const Profile = ({ onNavigate, routeData }) => {
                   } else if (item.label === 'Voice Preferences') {
                     onNavigate('VoicePreferences');
                   } else if (item.label === 'Onboarded Users') {
-                    onNavigate('OnboardedUsers');
+                    onNavigate('OnboardedUsers', { fromScreen: ' ' });
                   }
                 }}
                 activeOpacity={0.7}

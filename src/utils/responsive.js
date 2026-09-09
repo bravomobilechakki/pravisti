@@ -1,55 +1,133 @@
-import { Dimensions, PixelRatio } from 'react-native';
+import { Dimensions, PixelRatio, useWindowDimensions } from 'react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// Base dimensions (standard modern phone design draft: 375 x 812)
+// Base design reference (standard mobile screen: 375 x 812)
 const BASE_WIDTH = 375;
 const BASE_HEIGHT = 812;
 
 /**
- * Scale horizontal dimensions (margin, padding, width)
+ * Clamp a number between min and max
+ */
+export const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
+
+/**
+ * Static fallback values based on initial window dimensions
+ */
+const { width: INITIAL_WIDTH, height: INITIAL_HEIGHT } = Dimensions.get('window');
+export const SCREEN_WIDTH = INITIAL_WIDTH;
+export const SCREEN_HEIGHT = INITIAL_HEIGHT;
+
+/**
+ * Static Horizontal Scale
  */
 export const scale = (size) => {
-  return PixelRatio.roundToNearestPixel((SCREEN_WIDTH / BASE_WIDTH) * size);
+  const { width } = Dimensions.get('window');
+  return PixelRatio.roundToNearestPixel((width / BASE_WIDTH) * size);
 };
 
 /**
- * Scale vertical dimensions (height, marginTop, marginBottom)
+ * Static Vertical Scale
  */
 export const verticalScale = (size) => {
-  return PixelRatio.roundToNearestPixel((SCREEN_HEIGHT / BASE_HEIGHT) * size);
+  const { height } = Dimensions.get('window');
+  return PixelRatio.roundToNearestPixel((height / BASE_HEIGHT) * size);
 };
 
 /**
- * Moderate scaling for padding/font-sizes with custom factor
+ * Static Moderate Scale (with adjustable dampening factor)
  */
 export const moderateScale = (size, factor = 0.5) => {
-  return PixelRatio.roundToNearestPixel(size + (scale(size) - size) * factor);
+  const { width } = Dimensions.get('window');
+  const scaled = (width / BASE_WIDTH) * size;
+  return PixelRatio.roundToNearestPixel(size + (scaled - size) * factor);
 };
 
 /**
- * Width percentage helper (e.g. wp(50) = 50% of screen width)
+ * Static Width Percentage (e.g. wp(50) = 50% of screen width)
  */
 export const wp = (percentage) => {
-  return PixelRatio.roundToNearestPixel((SCREEN_WIDTH * percentage) / 100);
+  const { width } = Dimensions.get('window');
+  return PixelRatio.roundToNearestPixel((width * percentage) / 100);
 };
 
 /**
- * Height percentage helper (e.g. hp(20) = 20% of screen height)
+ * Static Height Percentage (e.g. hp(20) = 20% of screen height)
  */
 export const hp = (percentage) => {
-  return PixelRatio.roundToNearestPixel((SCREEN_HEIGHT * percentage) / 100);
+  const { height } = Dimensions.get('window');
+  return PixelRatio.roundToNearestPixel((height * percentage) / 100);
 };
 
 /**
- * Font size scaling clamped to avoid excessive overflow or tiny text
+ * Safe Font Size scaling clamped to prevent cut-offs on small screens or giant text on large devices
  */
-export const fontSize = (size) => {
-  const scaled = moderateScale(size, 0.4);
-  return Math.min(Math.max(scaled, size * 0.85), size * 1.35);
+export const fontSize = (size, factor = 0.35) => {
+  const { width } = Dimensions.get('window');
+  const scaled = size + ((width / BASE_WIDTH) * size - size) * factor;
+  // Clamp between 85% and 125% of the base size to maintain typography integrity
+  return PixelRatio.roundToNearestPixel(clamp(scaled, size * 0.85, size * 1.25));
 };
 
-export const isSmallDevice = SCREEN_WIDTH < 360;
-export const isTablet = SCREEN_WIDTH >= 600;
+export const isSmallDevice = INITIAL_WIDTH < 360;
+export const isStandardDevice = INITIAL_WIDTH >= 360 && INITIAL_WIDTH < 415;
+export const isLargeDevice = INITIAL_WIDTH >= 415 && INITIAL_WIDTH < 600;
+export const isTablet = INITIAL_WIDTH >= 600;
 
-export { SCREEN_WIDTH, SCREEN_HEIGHT };
+/**
+ * Modern Dynamic Responsive Hook for components
+ * Reacts dynamically to screen rotations, foldables, and split-screen changes
+ */
+export const useResponsive = () => {
+  const { width, height } = useWindowDimensions();
+
+  const isSmall = width < 360;
+  const isStandard = width >= 360 && width < 415;
+  const isLarge = width >= 415 && width < 600;
+  const isTab = width >= 600;
+  const isLandscape = width > height;
+
+  const dynScale = (size) => PixelRatio.roundToNearestPixel((width / BASE_WIDTH) * size);
+  const dynVerticalScale = (size) => PixelRatio.roundToNearestPixel((height / BASE_HEIGHT) * size);
+  const dynModerateScale = (size, factor = 0.5) => {
+    const scaled = (width / BASE_WIDTH) * size;
+    return PixelRatio.roundToNearestPixel(size + (scaled - size) * factor);
+  };
+  const dynWp = (pct) => PixelRatio.roundToNearestPixel((width * pct) / 100);
+  const dynHp = (pct) => PixelRatio.roundToNearestPixel((height * pct) / 100);
+  const dynFontSize = (size, factor = 0.35) => {
+    const scaled = size + ((width / BASE_WIDTH) * size - size) * factor;
+    return PixelRatio.roundToNearestPixel(clamp(scaled, size * 0.85, size * 1.25));
+  };
+
+  return {
+    width,
+    height,
+    isSmallDevice: isSmall,
+    isStandardDevice: isStandard,
+    isLargeDevice: isLarge,
+    isTablet: isTab,
+    isLandscape,
+    scale: dynScale,
+    verticalScale: dynVerticalScale,
+    moderateScale: dynModerateScale,
+    wp: dynWp,
+    hp: dynHp,
+    fontSize: dynFontSize,
+  };
+};
+
+export default {
+  scale,
+  verticalScale,
+  moderateScale,
+  wp,
+  hp,
+  fontSize,
+  clamp,
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+  isSmallDevice,
+  isStandardDevice,
+  isLargeDevice,
+  isTablet,
+  useResponsive,
+};

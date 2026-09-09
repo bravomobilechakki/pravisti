@@ -123,12 +123,66 @@ const formatVolume = (value) => {
   return `₹${num.toLocaleString('en-IN')}`;
 };
 
+const getDealStatusInfo = (deal) => {
+  const rawStatus = String(deal?.status || '').toLowerCase().trim();
+
+  // Check party approvalStatus if available
+  if (deal?.approvalStatus) {
+    const isRejected = Object.values(deal.approvalStatus).some(
+      (v) => String(v).toLowerCase() === 'rejected'
+    );
+    if (isRejected || rawStatus === 'rejected') {
+      return { label: 'Rejected', bg: '#FEF2F2', color: '#EF4444' };
+    }
+  }
+
+  if (rawStatus === 'confirmed' || rawStatus === 'approved') {
+    return { label: 'Confirmed', bg: '#ECFDF5', color: '#059669' };
+  }
+  if (rawStatus === 'active') {
+    return { label: 'Active', bg: '#E8F8F0', color: '#10B981' };
+  }
+  if (['completed', 'settled', 'delivered'].includes(rawStatus)) {
+    return { label: 'Completed', bg: '#F1F5F9', color: '#64748B' };
+  }
+  if (
+    ['in progress', 'in_progress', 'inprogress', 'negotiation', 'processing'].includes(
+      rawStatus
+    )
+  ) {
+    return { label: 'In Progress', bg: '#EFF6FF', color: '#2563EB' };
+  }
+  if (['draft', 'created'].includes(rawStatus)) {
+    return { label: 'Draft', bg: '#FEF3C7', color: '#D97706' };
+  }
+  if (rawStatus === 'cancelled') {
+    return { label: 'Cancelled', bg: '#FEF2F2', color: '#EF4444' };
+  }
+  if (rawStatus === 'rejected') {
+    return { label: 'Rejected', bg: '#FEF2F2', color: '#EF4444' };
+  }
+  if (rawStatus === 'expired') {
+    return { label: 'Expired', bg: '#FEF2F2', color: '#EF4444' };
+  }
+  if (rawStatus === 'pending') {
+    return { label: 'Pending', bg: '#FFFBEB', color: '#D97706' };
+  }
+
+  return {
+    label: rawStatus ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1) : 'Active',
+    bg: '#E8F8F0',
+    color: '#10B981',
+  };
+};
+
 const CompanyDetails = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [company, setCompany] = React.useState(routeData?.company || null);
   const [companiesList, setCompaniesList] = React.useState([]);
   const [fetchedDeals, setFetchedDeals] = React.useState([]);
+  const fetchedDealsRef = React.useRef([]);
+  const lastFetchedDealsCompanyId = React.useRef(null);
   const [isDealsLoading, setIsDealsLoading] = React.useState(true);
   const [isEditModalVisible, setIsEditModalVisible] = React.useState(false);
   const [isCompanyPickerOpen, setIsCompanyPickerOpen] = React.useState(false);
@@ -238,14 +292,12 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       if (res && res.success) {
         const list = res.data?.companies || [];
         setCompaniesList(list);
-        if (!company && list.length > 0) {
-          setCompany(list[0]);
-        }
+        setCompany((prev) => (prev ? prev : (list.length > 0 ? list[0] : null)));
       }
     } catch (e) {
       console.warn('Failed to load companies list:', e);
     }
-  }, [company]);
+  }, []);
 
   const fetchDetails = React.useCallback(async (targetCompanyId) => {
     const id = targetCompanyId || company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
@@ -294,7 +346,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [company?._id, company?.id, routeData?.company]);
+  }, [company?._id, company?.id, routeData?.company?._id, routeData?.company?.id]);
 
   const fetchDealsList = React.useCallback(async () => {
     const id = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
@@ -387,6 +439,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
       const filtered = allDeals.filter(isDealForThisCompany);
 
+      fetchedDealsRef.current = filtered;
       setFetchedDeals(filtered);
       AsyncStorage.setItem(cacheKey, JSON.stringify(filtered)).catch(() => { });
     } catch (e) {
@@ -396,10 +449,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     }
   }, [company?._id, company?.id, company?.name, company?.companyName, routeData?.company?._id, routeData?.company?.id, routeData?.company?.name]);
 
-  const fetchOnboardedUsers = React.useCallback(async () => {
-    const currentCompanyId = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
-    if (!currentCompanyId) return;
+  const fetchOnboardedUsers = React.useCallback(async (targetCompanyId = null) => {
+    const rawId = targetCompanyId || company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
+    if (!rawId) return;
 
+    const currentCompanyId = String(rawId);
     const cacheKey = `company_onboarded_users_${currentCompanyId}`;
 
     try {
@@ -407,7 +461,21 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
-          setOnboardedUsers(parsed);
+          // Strictly ensure cached items are for this company
+          const validCached = parsed.filter((item) => {
+            const itemCompId = String(
+              item.brokerCompanyId ||
+              item.creatorCompanyId ||
+              item.companyId ||
+              item.originCompanyId ||
+              item.creatorCompany?._id ||
+              item.creatorCompany?.id ||
+              item.linkedCompanyId ||
+              ''
+            );
+            return !itemCompId || itemCompId === 'undefined' || itemCompId === 'null' || itemCompId === currentCompanyId;
+          });
+          setOnboardedUsers(validCached);
         }
       }
     } catch (e) { }
@@ -416,45 +484,138 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       const token = await AsyncStorage.getItem('userToken');
       if (!token) return;
 
-      const [queueResResult, myDealsResResult] = await Promise.allSettled([
+      // Strictly fetch only for this current company
+      const fetchCalls = [
         getBrokerPendingQueue(currentCompanyId, token),
         getBrokerMyDeals(currentCompanyId, token),
-      ]);
+      ];
+
+      const results = await Promise.allSettled(fetchCalls);
 
       const combined = [];
       const seenIds = new Set();
+      const targetStr = String(currentCompanyId);
 
       const addItems = (arr) => {
         if (!Array.isArray(arr)) return;
         arr.forEach((item) => {
-          const id = item._id || item.id || item.registrationId || item.mobileNumber || item.invitedMobile || item.name || item.companyName;
-          if (id && !seenIds.has(String(id))) {
-            seenIds.add(String(id));
-            combined.push(item);
+          if (!item) return;
+          const itemCompId = String(
+            item.brokerCompanyId ||
+            item.creatorCompanyId ||
+            item.companyId ||
+            item.originCompanyId ||
+            item.creatorCompany?._id ||
+            item.creatorCompany?.id ||
+            item.company?._id ||
+            item.company?.id ||
+            item.linkedCompanyId ||
+            ''
+          );
+          // If item has a specific company association and does not match current company, skip
+          if (itemCompId && itemCompId !== 'undefined' && itemCompId !== 'null' && itemCompId !== targetStr) {
+            return;
+          }
+
+          const id =
+            item._id ||
+            item.id ||
+            item.registrationId ||
+            item.mobileNumber ||
+            item.invitedMobile ||
+            (item.company?.name ? `${item.company.name}_${item.name || ''}` : null);
+          const key = id ? String(id) : Math.random().toString();
+          if (key && !seenIds.has(key)) {
+            seenIds.add(key);
+            combined.push({
+              ...item,
+              linkedCompanyId: targetStr,
+            });
           }
         });
       };
 
-      if (queueResResult.status === 'fulfilled') {
-        addItems(extractApiArray(queueResResult.value));
-      }
-      if (myDealsResResult.status === 'fulfilled') {
-        addItems(extractApiArray(myDealsResResult.value));
-      }
-
-      const filteredList = combined.filter((usr) => {
-        const usrCompanyId = String(usr.companyId || usr.company?._id || usr.company?.id || usr.brokerCompanyId || usr.creatorCompanyId || '');
-        const usrTargetCompanyId = String(usr.targetCompanyId || usr.company?.companyId || '');
-        if (!usrCompanyId && !usrTargetCompanyId) return false;
-        return usrCompanyId === String(currentCompanyId) || usrTargetCompanyId === String(currentCompanyId);
+      results.forEach((r) => {
+        if (r.status === 'fulfilled') {
+          addItems(extractApiArray(r.value));
+        }
       });
 
-      setOnboardedUsers(filteredList);
-      AsyncStorage.setItem(cacheKey, JSON.stringify(filteredList)).catch(() => { });
+      // Supplement with counterparties from deals strictly for this company
+      const activeDeals = Array.isArray(fetchedDealsRef.current) ? fetchedDealsRef.current : (Array.isArray(fetchedDeals) ? fetchedDeals : []);
+      activeDeals.forEach((deal) => {
+        const p1 = deal.sellerCompany || deal.sellerCompanyId || deal.party1?.company || deal.party1;
+        const p1Id = String(p1?._id || p1?.id || deal.sellerCompanyId || '');
+        const p2 = deal.buyerCompany || deal.buyerCompanyId || deal.party2?.company || deal.party2;
+        const p2Id = String(p2?._id || p2?.id || deal.buyerCompanyId || '');
+
+        const isP1Current = p1Id === targetStr;
+        const isP2Current = p2Id === targetStr;
+
+        if (isP1Current && p2 && p2Id !== targetStr) {
+          const bName = p2.name || p2.companyName || deal.buyerName || 'Buyer';
+          const bMob = p2.mobileNumber || p2.phone || deal.buyerMobile || deal.invitedMobile || '';
+          const key = `party_buyer_${p2Id || bMob || bName}`;
+          if (!seenIds.has(key)) {
+            seenIds.add(key);
+            combined.push({
+              registrationId: key,
+              _id: p2Id || key,
+              targetUserName: deal.buyerContactPerson || p2.contactPerson || bName,
+              name: deal.buyerContactPerson || p2.contactPerson || bName,
+              invitedMobile: bMob,
+              mobileNumber: bMob,
+              role: 'buyer',
+              status: 'verified',
+              accountStatus: 'verified',
+              company: {
+                id: p2Id,
+                name: bName,
+                address: p2.address || {},
+                registrationNumber: p2.registrationNumber || p2.gstin || '',
+              },
+              deals: [deal],
+              createdAt: deal.createdAt,
+              linkedCompanyId: targetStr,
+            });
+          }
+        } else if (isP2Current && p1 && p1Id !== targetStr) {
+          const sName = p1.name || p1.companyName || deal.sellerName || 'Seller';
+          const sMob = p1.mobileNumber || p1.phone || deal.sellerMobile || deal.invitedMobile || '';
+          const key = `party_seller_${p1Id || sMob || sName}`;
+          if (!seenIds.has(key)) {
+            seenIds.add(key);
+            combined.push({
+              registrationId: key,
+              _id: p1Id || key,
+              targetUserName: deal.sellerContactPerson || p1.contactPerson || sName,
+              name: deal.sellerContactPerson || p1.contactPerson || sName,
+              invitedMobile: sMob,
+              mobileNumber: sMob,
+              role: 'seller',
+              status: 'verified',
+              accountStatus: 'verified',
+              company: {
+                id: p1Id,
+                name: sName,
+                address: p1.address || {},
+                registrationNumber: p1.registrationNumber || p1.gstin || '',
+              },
+              deals: [deal],
+              createdAt: deal.createdAt,
+              linkedCompanyId: targetStr,
+            });
+          }
+        }
+      });
+
+      setOnboardedUsers(combined);
+      AsyncStorage.setItem(cacheKey, JSON.stringify(combined)).catch(() => { });
     } catch (e) {
       console.warn('Failed to fetch onboarded users for company details:', e);
     }
-  }, [company, routeData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company?._id, company?.id, routeData?.company?._id, routeData?.company?.id]);
 
   const checkProductAccessRequests = React.useCallback(async () => {
     const companyId = company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
@@ -473,7 +634,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     } catch (err) {
       console.warn('Failed to fetch product access requests:', err);
     }
-  }, [company, routeData]);
+  }, [company?._id, company?.id, routeData?.company?._id, routeData?.company?.id]);
 
   React.useEffect(() => {
     fetchAllCompanies();
@@ -483,7 +644,8 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const currentActiveCompanyId = company?._id || company?.id;
 
   React.useEffect(() => {
-    if (currentActiveCompanyId) {
+    if (currentActiveCompanyId && lastFetchedDealsCompanyId.current !== currentActiveCompanyId) {
+      lastFetchedDealsCompanyId.current = currentActiveCompanyId;
       fetchDealsList();
       fetchOnboardedUsers();
       checkProductAccessRequests();
@@ -492,6 +654,8 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
+    lastFetchedDealsCompanyId.current = null;
+    setOnboardedUsers([]);
     fetchDetails();
     fetchDealsList();
     fetchOnboardedUsers();
@@ -635,10 +799,16 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     {
       id: 'parties',
       title: 'Onboarded',
-      subtitle: 'Onboarded Users',
+      subtitle: onboardedUsers.length > 0 ? `${onboardedUsers.length} Parties` : 'Onboarded Users',
       icon: <Users size={19} color="#16A34A" strokeWidth={2.2} />,
       bgColor: '#F0FDF4',
-      onPress: () => onNavigate('OnboardedUsers', { companyId: company?._id || company?.id, companyName: company?.name }),
+      onPress: () => onNavigate('OnboardedUsers', {
+        companyId: company?._id || company?.id,
+        companyName: company?.name,
+        company,
+        fromScreen: 'CompanyDetails',
+        initialUsers: onboardedUsers,
+      }),
     },
     {
       id: 'messages',
@@ -1002,8 +1172,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 })
                 : 'Recent';
 
-              const isConfirmed =
-                deal.status === 'confirmed' || deal.status === 'active' || deal.status === 'completed';
+              const statusInfo = getDealStatusInfo(deal);
 
               return (
                 <TouchableOpacity
@@ -1040,16 +1209,16 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                       <View
                         style={[
                           styles.recentDealStatusPill,
-                          { backgroundColor: isConfirmed ? '#ECFDF5' : '#FFFBEB' },
+                          { backgroundColor: statusInfo.bg },
                         ]}
                       >
                         <Text
                           style={[
                             styles.recentDealStatusText,
-                            { color: isConfirmed ? '#10B981' : '#D97706' },
+                            { color: statusInfo.color },
                           ]}
                         >
-                          {isConfirmed ? 'Confirmed' : 'Pending'}
+                          {statusInfo.label}
                         </Text>
                       </View>
                     </View>
@@ -1125,8 +1294,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                     style={[styles.companyModalItem, isSelected && styles.companyModalItemActive]}
                     onPress={() => {
                       setCompany(comp);
+                      setOnboardedUsers([]);
                       setIsCompanyPickerOpen(false);
-                      fetchDetails(comp._id || comp.id);
+                      const compId = comp._id || comp.id;
+                      fetchDetails(compId);
+                      fetchOnboardedUsers(compId);
                     }}
                     activeOpacity={0.75}
                   >

@@ -36,6 +36,7 @@ import {
   updateDeliveryStatus,
   uploadImage,
   resolveImageUrl,
+  sendMessage,
 } from '../../../services/api';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import {
@@ -83,8 +84,83 @@ const PAYTM_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" w
 
 const UPI_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"><path fill="#EA580C" d="M14.2 4L7 13.5h4.2L15.7 7.5z"/><path fill="#16A34A" d="M9.8 20L17 10.5h-4.2L8.3 16.5z"/></svg>`;
 
+const PALETTES = {
+  PAYMENT_SENT: {
+    name: 'Payment Sent',
+    headerBg: '#0284C7',
+    headerGradientEnd: '#1D4ED8',
+    cardBorder: '#BFDBFE',
+    cardBg: '#F0F9FF',
+    accentColor: '#0369A1',
+    badgeBg: '#E0F2FE',
+    badgeText: '#0369A1',
+    promptBg: '#EFF6FF',
+    promptBorder: '#BFDBFE',
+    promptText: '#1E3A8A',
+    btnPrimaryBg: '#0284C7',
+    btnPrimaryText: '#FFFFFF',
+    approvedBannerBg: '#EFF6FF',
+    approvedBannerText: '#1D4ED8',
+    iconColor: '#0284C7',
+  },
+  PAYMENT_RECEIVED: {
+    name: 'Payment Received',
+    headerBg: '#059669',
+    headerGradientEnd: '#0D9488',
+    cardBorder: '#A7F3D0',
+    cardBg: '#ECFDF5',
+    accentColor: '#047857',
+    badgeBg: '#D1FAE5',
+    badgeText: '#047857',
+    promptBg: '#ECFDF5',
+    promptBorder: '#A7F3D0',
+    promptText: '#064E3B',
+    btnPrimaryBg: '#059669',
+    btnPrimaryText: '#FFFFFF',
+    approvedBannerBg: '#ECFDF5',
+    approvedBannerText: '#065F46',
+    iconColor: '#059669',
+  },
+  DELIVERY_SENT: {
+    name: 'Delivery Sent',
+    headerBg: '#4F46E5',
+    headerGradientEnd: '#4338CA',
+    cardBorder: '#C7D2FE',
+    cardBg: '#EEF2FF',
+    accentColor: '#4338CA',
+    badgeBg: '#E0E7FF',
+    badgeText: '#4338CA',
+    promptBg: '#EEF2FF',
+    promptBorder: '#C7D2FE',
+    promptText: '#312E81',
+    btnPrimaryBg: '#4F46E5',
+    btnPrimaryText: '#FFFFFF',
+    approvedBannerBg: '#EEF2FF',
+    approvedBannerText: '#3730A3',
+    iconColor: '#4F46E5',
+  },
+  DELIVERY_RECEIVED: {
+    name: 'Delivery Received',
+    headerBg: '#9333EA',
+    headerGradientEnd: '#C026D3',
+    cardBorder: '#E9D5FF',
+    cardBg: '#FAF5FF',
+    accentColor: '#7E22CE',
+    badgeBg: '#F3E8FF',
+    badgeText: '#7E22CE',
+    promptBg: '#FAF5FF',
+    promptBorder: '#E9D5FF',
+    promptText: '#581C87',
+    btnPrimaryBg: '#9333EA',
+    btnPrimaryText: '#FFFFFF',
+    approvedBannerBg: '#FAF5FF',
+    approvedBannerText: '#6B21A8',
+    iconColor: '#9333EA',
+  },
+};
+
 const sanitizeSystemMessage = (text) => {
-  return text.replace(/^[💸✅❌]\s*/, '');
+  return (text || '').replace(/^[💸📦🚚📥✅❌]\s*/, '').trim();
 };
 
 const parsePaymentMessage = (text) => {
@@ -190,42 +266,89 @@ const findMatchingPayment = (msgText, msgTime, payments) => {
 };
 
 const parseDeliveryMessage = (text) => {
-  const isApproved = text.toLowerCase().includes('approved') || text.startsWith('✅');
-  const isRejected = text.toLowerCase().includes('rejected') || text.startsWith('❌');
-  const qtyMatch = text.match(/(?:quantity|qty|delivered)\s*[:\-]?\s*([0-9,]+)/i) ||
+  if (!text) return { isApproved: false, isRejected: false, quantity: '', vehicleNumber: '', notes: '' };
+  const lower = text.toLowerCase();
+  const isApproved = lower.includes('approved') || text.startsWith('✅');
+  const isRejected = lower.includes('rejected') || text.startsWith('❌');
+  const qtyMatch =
+    text.match(/(?:quantity|qty|delivered|dispatch|dispatched)\s*[:\-]?\s*([0-9,]+)/i) ||
     text.match(/([0-9,]+)\s*(?:Units|packet|kg|Bales|tons|pcs|packet|pg|Bags)/i) ||
     text.match(/([0-9,]+)/);
   const quantity = qtyMatch ? qtyMatch[1].replace(/,/g, '') : '';
-  return { isApproved, isRejected, quantity };
+  const vehicleMatch = text.match(/(?:vehicle|truck|lorry|veh)\s*(?:no|number)?\s*[:\-]?\s*([A-Z0-9\s\-]+?)(?:\.|$|Pending)/i);
+  const vehicleNumber = vehicleMatch ? vehicleMatch[1].trim() : '';
+  const notesMatch = text.match(/(?:notes?|remarks?)\s*[:\-]?\s*(.*)$/i);
+  const notes = notesMatch ? notesMatch[1].trim() : '';
+  return { isApproved, isRejected, quantity, vehicleNumber, notes };
 };
 
 const findMatchingDelivery = (msgText, msgTime, deliveries) => {
-  const parsed = parseDeliveryMessage(msgText);
-  if (!parsed || !parsed.quantity) return null;
+  if (!deliveries || deliveries.length === 0 || !msgText) return null;
 
-  const qty = parseInt(parsed.quantity, 10);
-  const candidates = (deliveries || []).filter(d => d.quantity === qty);
-  if (candidates.length === 1) {
-    return candidates[0];
+  const clean = sanitizeSystemMessage(msgText).toLowerCase();
+  const hasDeliveryContext =
+    clean.includes('delivery') ||
+    clean.includes('dispatch') ||
+    clean.includes('dispatched') ||
+    clean.includes('📦') ||
+    clean.includes('🚚') ||
+    clean.includes('📥');
+
+  if (!hasDeliveryContext) return null;
+
+  const parsed = parseDeliveryMessage(msgText);
+  if (parsed && parsed.quantity) {
+    const qty = parseInt(parsed.quantity, 10);
+    const candidates = deliveries.filter(d => Number(d.quantity) === qty);
+    if (candidates.length === 1) {
+      return candidates[0];
+    }
+
+    if (candidates.length > 1) {
+      const msgDate = new Date(msgTime).getTime();
+      let bestMatch = candidates[0];
+      let minDiff = Math.abs(new Date(bestMatch.createdAt || bestMatch.dispatchDate || 0).getTime() - msgDate);
+
+      for (let i = 1; i < candidates.length; i++) {
+        const diff = Math.abs(new Date(candidates[i].createdAt || candidates[i].dispatchDate || 0).getTime() - msgDate);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestMatch = candidates[i];
+        }
+      }
+      return bestMatch;
+    }
   }
 
-  if (candidates.length > 1) {
+  // Fallback for system delivery notifications
+  if (
+    clean.includes('delivery') ||
+    clean.includes('dispatched') ||
+    clean.includes('pending buyer confirmation') ||
+    clean.includes('pending seller confirmation')
+  ) {
     const msgDate = new Date(msgTime).getTime();
-    let bestMatch = candidates[0];
-    let minDiff = Math.abs(new Date(bestMatch.createdAt).getTime() - msgDate);
-
-    for (let i = 1; i < candidates.length; i++) {
-      const diff = Math.abs(new Date(candidates[i].createdAt).getTime() - msgDate);
-      if (diff < minDiff) {
-        minDiff = diff;
-        bestMatch = candidates[i];
+    if (!isNaN(msgDate)) {
+      const sorted = [...deliveries].sort((a, b) => {
+        const diffA = Math.abs(new Date(a.createdAt || a.dispatchDate || 0).getTime() - msgDate);
+        const diffB = Math.abs(new Date(b.createdAt || b.dispatchDate || 0).getTime() - msgDate);
+        return diffA - diffB;
+      });
+      if (sorted.length > 0) {
+        const closest = sorted[0];
+        const timeDiff = Math.abs(new Date(closest.createdAt || closest.dispatchDate || 0).getTime() - msgDate);
+        if (timeDiff < 3600000 * 2) {
+          return closest;
+        }
       }
     }
-    return bestMatch;
+    const pendingDelivery = deliveries.find(d => d.status === 'pending');
+    if (pendingDelivery) return pendingDelivery;
+    if (deliveries.length === 1) return deliveries[0];
   }
 
-  return null;
 };
+
 
 // Helper function to decode base64 without external dependencies
 const base64Decode = (str) => {
@@ -401,7 +524,20 @@ const DealChat = ({ onNavigate, routeData }) => {
   const [onlineStatus, setOnlineStatus] = useState('online');
   const [isCounterpartyTyping, setIsCounterpartyTyping] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!routeData?.deal);
+  const [isFetchingMessages, setIsFetchingMessages] = useState(true);
+
+
+
+
+  // Safety fallback: Never keep user stuck on full-screen loader for more than 2 seconds
+  useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setIsLoading(false);
+      setIsFetchingMessages(false);
+    }, 2000);
+    return () => clearTimeout(safetyTimer);
+  }, []);
 
   // Active top tab state
   const [activeTab, setActiveTab] = useState('chat');
@@ -457,6 +593,7 @@ const DealChat = ({ onNavigate, routeData }) => {
   const fetchDealDeliveriesRef = useRef();
   const currentUserIdRef = useRef(null);
   const conversationIdRef = useRef(routeData?.conversationId || null);
+  const onReceiveMessageRef = useRef();
 
   useEffect(() => {
     currentUserIdRef.current = currentUserId;
@@ -468,7 +605,208 @@ const DealChat = ({ onNavigate, routeData }) => {
 
   const dealId = routeData?.dealId || deal?._id;
 
+  const ensureConversation = useCallback(async (token) => {
+    if (conversationIdRef.current) return conversationIdRef.current;
+    if (conversationId) {
+      conversationIdRef.current = conversationId;
+      return conversationId;
+    }
+
+    const cleanDealId = String(
+      routeData?.dealId?._id ||
+      routeData?.dealId?.id ||
+      routeData?.dealId ||
+      deal?._id ||
+      deal?.id ||
+      routeData?.deal?._id ||
+      routeData?.deal?.id ||
+      ''
+    ).trim();
+
+    if (!cleanDealId) return null;
+
+    // 1. Check deal-specific cached conversation ID
+    try {
+      const cached = await AsyncStorage.getItem(`deal_conv_${cleanDealId}`);
+      if (cached) {
+        conversationIdRef.current = cached;
+        setConversationId(cached);
+        return cached;
+      }
+    } catch (e) { }
+
+    // 2. Search existing conversations from backend or local cache
+    try {
+      let list = [];
+      const convsRes = await getConversations(token, 1, 100).catch(() => null);
+      if (Array.isArray(convsRes?.data?.data)) {
+        list = convsRes.data.data;
+      } else if (Array.isArray(convsRes?.data?.conversations)) {
+        list = convsRes.data.conversations;
+      } else if (Array.isArray(convsRes?.data)) {
+        list = convsRes.data;
+      } else if (Array.isArray(convsRes?.conversations)) {
+        list = convsRes.conversations;
+      } else if (Array.isArray(convsRes)) {
+        list = convsRes;
+      }
+
+      if (list.length === 0) {
+        try {
+          const cachedAllConvs = await AsyncStorage.getItem('cached_conversations');
+          if (cachedAllConvs) {
+            const parsed = JSON.parse(cachedAllConvs);
+            if (Array.isArray(parsed)) list = parsed;
+          }
+        } catch (e) { }
+      }
+
+      const targetIdStr = cleanDealId.toLowerCase();
+      const targetDealNum = String(
+        deal?.dealNumber ||
+        routeData?.dealNumber ||
+        routeData?.deal?.dealNumber ||
+        ''
+      ).toLowerCase().trim();
+
+      const matched = list.find(c => {
+        const cDealId = String(
+          c.dealId?._id ||
+          c.dealId?.id ||
+          c.dealId ||
+          c.deal?._id ||
+          c.deal?.id ||
+          c.deal ||
+          c.metadata?.dealId ||
+          ''
+        ).toLowerCase().trim();
+        const cNum = String(c.dealNumber || c.metadata?.dealNumber || '').toLowerCase().trim();
+        const cSubject = String(c.subject || '').toLowerCase().trim();
+
+        if (cDealId && cDealId === targetIdStr) return true;
+        if (targetDealNum) {
+          if (cNum && cNum === targetDealNum) return true;
+          if (cSubject && cSubject.includes(targetDealNum)) return true;
+        }
+        if (targetIdStr && targetIdStr.length >= 4) {
+          const last4 = targetIdStr.slice(-4);
+          if (cNum && cNum.includes(last4)) return true;
+          if (cSubject && cSubject.includes(last4)) return true;
+        }
+        return false;
+      });
+
+      if (matched?._id || matched?.id) {
+        const foundId = matched._id || matched.id;
+        conversationIdRef.current = foundId;
+        setConversationId(foundId);
+        AsyncStorage.setItem(`deal_conv_${cleanDealId}`, foundId).catch(() => { });
+        return foundId;
+      }
+    } catch (e) {
+      console.warn('Notice: Error searching existing conversations:', e.message || e);
+    }
+
+    // 3. Fallback: Create conversation with valid participants objects [{ userId }]
+    try {
+      let activeDealObj = deal || routeData?.deal || null;
+
+      // Ensure deal has buyer & seller populated
+      if (
+        !activeDealObj ||
+        (!activeDealObj.sellerCompanyId && !activeDealObj.buyerCompanyId) ||
+        (!activeDealObj.party1 && !activeDealObj.party2)
+      ) {
+        try {
+          const dealDetailRes = await getDealDetails(cleanDealId, token);
+          if (dealDetailRes?.data) {
+            activeDealObj = dealDetailRes.data;
+            setDeal(activeDealObj);
+          }
+        } catch (e) { }
+      }
+
+      const participantSet = new Set();
+      const addCandidate = (val) => {
+        if (!val) return;
+        let idStr = '';
+        if (typeof val === 'string') {
+          idStr = val.trim();
+        } else if (typeof val === 'object') {
+          idStr = String(val.userId || val._id || val.id || val.owner || '').trim();
+        }
+        if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
+          participantSet.add(idStr);
+        }
+      };
+
+      // Current user
+      const myUid = currentUserIdRef.current || currentUserId || getUserIdFromToken(token);
+      addCandidate(myUid);
+
+      if (activeDealObj) {
+        // Buyer side
+        addCandidate(activeDealObj.buyerCompany?.owner);
+        addCandidate(activeDealObj.buyerCompanyId?.owner);
+        addCandidate(activeDealObj.buyer?.userId);
+        addCandidate(activeDealObj.buyer?._id);
+        addCandidate(activeDealObj.buyer?.id);
+        addCandidate(activeDealObj.buyerUserId);
+        addCandidate(activeDealObj.buyer);
+
+        // Seller side
+        addCandidate(activeDealObj.sellerCompany?.owner);
+        addCandidate(activeDealObj.sellerCompanyId?.owner);
+        addCandidate(activeDealObj.seller?.userId);
+        addCandidate(activeDealObj.seller?._id);
+        addCandidate(activeDealObj.seller?.id);
+        addCandidate(activeDealObj.sellerUserId);
+        addCandidate(activeDealObj.seller);
+
+        // Broker side / Creator
+        addCandidate(activeDealObj.createdBy);
+        addCandidate(activeDealObj.brokerCompany?.owner);
+        addCandidate(activeDealObj.brokerCompanyId?.owner);
+        addCandidate(activeDealObj.broker?.userId);
+
+        // Party1 & Party2
+        addCandidate(activeDealObj.party1?.userId);
+        addCandidate(activeDealObj.party1?.user);
+        addCandidate(activeDealObj.party1?.owner);
+        addCandidate(activeDealObj.party2?.userId);
+        addCandidate(activeDealObj.party2?.user);
+        addCandidate(activeDealObj.party2?.owner);
+      }
+
+      // Backend expects participants: [{ userId: ObjectId }]
+      const formattedParticipants = Array.from(participantSet).map(uid => ({ userId: uid }));
+
+      const createRes = await createConversation(
+        {
+          dealId: cleanDealId,
+          dealNumber: activeDealObj?.dealNumber || routeData?.dealNumber || `DEAL-${cleanDealId.slice(-4)}`,
+          type: 'group',
+          participants: formattedParticipants,
+        },
+        token
+      );
+
+      const newId = createRes?.data?._id || createRes?.data?.id || createRes?.data?.conversation?._id || createRes?.conversation?._id;
+      if (newId) {
+        conversationIdRef.current = newId;
+        setConversationId(newId);
+        AsyncStorage.setItem(`deal_conv_${cleanDealId}`, newId).catch(() => { });
+        return newId;
+      }
+    } catch (e) {
+      console.warn('Could not auto-create conversation in ensureConversation:', e.message || e);
+    }
+
+    return null;
+  }, [conversationId, currentUserId, deal, routeData?.dealId, routeData?.dealNumber, routeData?.deal]);
+
   const onReceiveMessage = useCallback((msg, myUserId) => {
+    if (!msg) return;
     const activeUserId = myUserId || currentUserIdRef.current;
     const isMe = checkIsMe(msg, activeUserId);
     const senderName = msg.sender?.name || msg.sender?.userId?.name || msg.senderName || (isMe ? 'You' : 'Party');
@@ -495,39 +833,97 @@ const DealChat = ({ onNavigate, routeData }) => {
     };
 
     setChatMessages(prev => {
-      if (prev.some(m => m.id === mapped.id)) return prev;
+      // 1. Direct ID match: already present
+      if (prev.some(m => String(m.id) === String(mapped.id))) return prev;
 
-      let updated = [];
-      if (isMe) {
-        const hasTemp = prev.some(
-          m =>
-            m.type === 'me' &&
-            ((m.text && m.text === mapped.text) || (m.mediaUrl && mapped.mediaUrl)) &&
-            !isNaN(Number(m.id))
-        );
-        if (hasTemp) {
-          updated = prev.map(m =>
-            m.type === 'me' &&
-            ((m.text && m.text === mapped.text) || (m.mediaUrl && mapped.mediaUrl)) &&
-            !isNaN(Number(m.id))
-              ? mapped
-              : m
-          );
-        } else {
-          updated = [...prev, mapped];
+      // 2. Identify if there's an optimistic/temporary message to replace
+      const tempIndex = prev.findIndex(m => {
+        if (!m) return false;
+        const mId = String(m.id || '');
+        const isTemp =
+          mId.startsWith('pay_') ||
+          mId.startsWith('del_') ||
+          mId.startsWith('sys_') ||
+          mId.startsWith('temp_') ||
+          !isNaN(Number(mId));
+
+        if (isTemp) {
+          // A. Exact text match
+          if (m.text && mapped.text && m.text.trim() === mapped.text.trim()) return true;
+          // B. Media match
+          if (m.mediaUrl && mapped.mediaUrl && m.mediaUrl === mapped.mediaUrl) return true;
+          // C. Payment match (same amount in text)
+          const mClean = (m.text || '').toLowerCase();
+          const mapClean = (mapped.text || '').toLowerCase();
+          if (
+            (mClean.includes('payment') || mClean.includes('💸')) &&
+            (mapClean.includes('payment') || mapClean.includes('💸'))
+          ) {
+            const p1 = parsePaymentMessage(m.text);
+            const p2 = parsePaymentMessage(mapped.text);
+            if (p1?.amount && p2?.amount && String(p1.amount).replace(/,/g, '') === String(p2.amount).replace(/,/g, '')) {
+              return true;
+            }
+          }
+          // D. Delivery match
+          if (
+            (mClean.includes('delivery') || mClean.includes('📦')) &&
+            (mapClean.includes('delivery') || mapClean.includes('📦'))
+          ) {
+            if (mClean.slice(0, 30) === mapClean.slice(0, 30)) return true;
+          }
         }
-      } else {
-        updated = [...prev, mapped];
+        return false;
+      });
+
+      const dId = routeData?.dealId || deal?._id;
+
+      if (tempIndex !== -1) {
+        const updated = [...prev];
+        updated[tempIndex] = mapped;
+        const convId = conversationIdRef.current || conversationId;
+        if (convId) {
+          AsyncStorage.setItem(`cached_messages_${convId}`, JSON.stringify(updated)).catch(() => { });
+        }
+        if (dId) {
+          AsyncStorage.setItem(`cached_messages_deal_${dId}`, JSON.stringify(updated)).catch(() => { });
+        }
+        return updated;
       }
 
+      // 3. Prevent duplicate broadcast within 15 seconds if text is identical
+      const isDuplicateRecent = prev.some(m => {
+        if (!m || !m.text || !mapped.text) return false;
+        if (m.text.trim() === mapped.text.trim()) {
+          const t1 = new Date(m.dateRaw || 0).getTime();
+          const t2 = new Date(mapped.dateRaw || 0).getTime();
+          if (Math.abs(t1 - t2) < 15000) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (isDuplicateRecent) {
+        return prev;
+      }
+
+      const updated = [...prev, mapped];
       const convId = conversationIdRef.current || conversationId;
       if (convId) {
         AsyncStorage.setItem(`cached_messages_${convId}`, JSON.stringify(updated)).catch(() => { });
       }
+      if (dId) {
+        AsyncStorage.setItem(`cached_messages_deal_${dId}`, JSON.stringify(updated)).catch(() => { });
+      }
 
       return updated;
     });
-  }, [conversationId]);
+  }, [conversationId, deal, routeData?.dealId]);
+
+  useEffect(() => {
+    onReceiveMessageRef.current = onReceiveMessage;
+  }, [onReceiveMessage]);
 
   const refreshDealDetails = useCallback(async () => {
     try {
@@ -605,6 +1001,42 @@ const DealChat = ({ onNavigate, routeData }) => {
         fetchPaymentDashboardData();
         refreshDealDetails();
         fetchDealPayments();
+
+        let broadcastText = '';
+        if (status === 'approved') {
+          if (myRole === 'Seller') {
+            broadcastText = 'Payment has been received and approved by the Seller.';
+          } else {
+            broadcastText = 'Payment has been approved by the Buyer.';
+          }
+        } else if (status === 'rejected') {
+          broadcastText = `Payment has been rejected by the ${myRole || 'Counterparty'}.`;
+        }
+
+        if (broadcastText && socketRef.current) {
+          const activeConvId = conversationIdRef.current;
+          const pPayload = {
+            dealId: deal?._id || dealId,
+            content: broadcastText,
+            type: 'text',
+          };
+          if (activeConvId) pPayload.conversationId = activeConvId;
+          socketRef.current.emit('send_message', pPayload);
+
+          setChatMessages(prev => [
+            ...prev,
+            {
+              id: 'sys_' + Date.now(),
+              sender: 'System',
+              text: broadcastText,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+              dateRaw: new Date(),
+              type: 'system',
+              status: 'sent',
+            },
+          ]);
+        }
+
         setSuccessToast({
           title: 'Status Updated',
           message: `Payment status marked as ${status}`,
@@ -625,6 +1057,42 @@ const DealChat = ({ onNavigate, routeData }) => {
         refreshDealDetails();
         fetchDealPayments();
         fetchDealDeliveries();
+
+        let broadcastText = '';
+        if (status === 'approved') {
+          if (myRole === 'Buyer') {
+            broadcastText = 'Delivery has been received and approved by the Buyer.';
+          } else {
+            broadcastText = 'Delivery has been approved by the Seller.';
+          }
+        } else if (status === 'rejected') {
+          broadcastText = `Delivery has been rejected by the ${myRole || 'Counterparty'}.`;
+        }
+
+        if (broadcastText && socketRef.current) {
+          const activeConvId = conversationIdRef.current;
+          const dPayload = {
+            dealId: deal?._id || dealId,
+            content: broadcastText,
+            type: 'text',
+          };
+          if (activeConvId) dPayload.conversationId = activeConvId;
+          socketRef.current.emit('send_message', dPayload);
+
+          setChatMessages(prev => [
+            ...prev,
+            {
+              id: 'sys_' + Date.now(),
+              sender: 'System',
+              text: broadcastText,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+              dateRaw: new Date(),
+              type: 'system',
+              status: 'sent',
+            },
+          ]);
+        }
+
         setSuccessToast({
           title: 'Status Updated',
           message: `Delivery status marked as ${status}`,
@@ -695,6 +1163,52 @@ const DealChat = ({ onNavigate, routeData }) => {
         fetchPaymentDashboardData();
         refreshDealDetails();
         fetchDealPayments();
+
+        const isBuyerPerspective = myRole === 'Buyer' || paymentType === 'sent';
+        const msgContent = isBuyerPerspective
+          ? `💸 Payment entry of ₹${amt.toLocaleString('en-IN')} recorded by ${myName} via ${paymentMethod}. Pending Seller approval.`
+          : `💸 Payment receive request of ₹${amt.toLocaleString('en-IN')} recorded by ${myName} via ${paymentMethod}. Pending Buyer approval.`;
+
+        const effectiveDealId = deal?._id || dealId;
+        let activeConvId = conversationIdRef.current || conversationId;
+        if (!activeConvId && token) {
+          activeConvId = await ensureConversation(token);
+        }
+
+        if (socketRef.current) {
+          const pPayload = {
+            dealId: effectiveDealId,
+            content: msgContent,
+            type: 'system',
+          };
+          if (activeConvId) pPayload.conversationId = activeConvId;
+          socketRef.current.emit('send_message', pPayload);
+        }
+
+        // Backend recordPayment automatically saves the ChatMessage with type 'system' in MongoDB.
+        // Avoid sending manual sendMessage with invalid type 'payment' which causes Mongoose validation errors.
+
+        const newPayMsg = {
+          id: 'pay_' + Date.now(),
+          sender: 'You',
+          text: msgContent,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+          dateRaw: new Date(),
+          type: 'me',
+          status: 'sent',
+        };
+
+        setChatMessages(prev => {
+          const next = [...prev, newPayMsg];
+          if (effectiveDealId) {
+            AsyncStorage.setItem(`cached_messages_deal_${effectiveDealId}`, JSON.stringify(next)).catch(() => { });
+          }
+          if (activeConvId) {
+            AsyncStorage.setItem(`cached_messages_${activeConvId}`, JSON.stringify(next)).catch(() => { });
+          }
+          return next;
+        });
+
         setSuccessToast({
           title: 'Payment Logged Successfully!',
           message: `₹${amt.toLocaleString('en-IN')} (${paymentType === 'sent' ? 'Sent' : 'Received'}) via ${paymentMethod}`,
@@ -743,6 +1257,53 @@ const DealChat = ({ onNavigate, routeData }) => {
         setDeliveryNotes('');
         fetchDealDeliveries();
         refreshDealDetails();
+
+        const isSellerPerspective = myRole === 'Seller' || deliveryType === 'sent';
+        const msgContent = isSellerPerspective
+          ? `📦 Delivery of ${qty} ${productUnit || 'Units'} dispatched by ${myName}${deliveryVehicleNumber ? ` (Vehicle: ${deliveryVehicleNumber})` : ''}. Pending Buyer approval.`
+          : `📥 Delivery receive request of ${qty} ${productUnit || 'Units'} recorded by ${myName}. Pending Seller approval.`;
+
+        const effectiveDealId = deal?._id || dealId;
+        let activeConvId = conversationIdRef.current || conversationId;
+        if (!activeConvId && token) {
+          activeConvId = await ensureConversation(token);
+        }
+
+        if (socketRef.current) {
+          const dPayload = {
+            dealId: effectiveDealId,
+            content: msgContent,
+            type: 'system',
+          };
+          if (activeConvId) dPayload.conversationId = activeConvId;
+          socketRef.current.emit('send_message', dPayload);
+        }
+
+        if (activeConvId && token) {
+          sendMessage(activeConvId, { content: msgContent, type: 'system', dealId: effectiveDealId }, token).catch(() => { });
+        }
+
+        const newDelMsg = {
+          id: 'del_' + Date.now(),
+          sender: 'You',
+          text: msgContent,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+          dateRaw: new Date(),
+          type: 'me',
+          status: 'sent',
+        };
+
+        setChatMessages(prev => {
+          const next = [...prev, newDelMsg];
+          if (effectiveDealId) {
+            AsyncStorage.setItem(`cached_messages_deal_${effectiveDealId}`, JSON.stringify(next)).catch(() => { });
+          }
+          if (activeConvId) {
+            AsyncStorage.setItem(`cached_messages_${activeConvId}`, JSON.stringify(next)).catch(() => { });
+          }
+          return next;
+        });
+
         setSuccessToast({
           title: 'Delivery Logged Successfully!',
           message: `${qty} units logged successfully`,
@@ -769,6 +1330,7 @@ const DealChat = ({ onNavigate, routeData }) => {
         const token = await AsyncStorage.getItem('userToken');
         if (!token) {
           setIsLoading(false);
+          setIsFetchingMessages(false);
           return;
         }
 
@@ -779,21 +1341,37 @@ const DealChat = ({ onNavigate, routeData }) => {
           currentUserIdRef.current = idFromToken;
         }
 
-        // 1. Get user profile
+        // 1. Get user profile (Fast cache check first)
         try {
-          const userRes = await getUserProfile(token);
-          if (userRes && userRes.success && userRes.data) {
-            const user = userRes.data;
+          const cachedUser = await AsyncStorage.getItem('userData');
+          if (cachedUser) {
+            const user = JSON.parse(cachedUser);
             myUserId = user._id || user.id || idFromToken;
             setCurrentUserId(myUserId);
             setCurrentUserName(user.name || user.companyName || '');
             setCurrentUserLogo(user.logo || user.company?.logo || user.avatar || user.profilePicture || null);
             currentUserIdRef.current = myUserId;
-            setCurrentUserCompanyIds((user.companies || []).map(c => String(c._id || c.id || c)));
+            if (Array.isArray(user.companies)) {
+              setCurrentUserCompanyIds(user.companies.map(c => String(c._id || c.id || c)));
+            }
           }
-        } catch (profileErr) {
-          console.warn('Profile fetch notice:', profileErr);
-        }
+        } catch (e) { }
+
+        getUserProfile(token).then(userRes => {
+          if (userRes && userRes.success && userRes.data) {
+            const user = userRes.data;
+            const uId = user._id || user.id || idFromToken;
+            setCurrentUserId(uId);
+            setCurrentUserName(user.name || user.companyName || '');
+            setCurrentUserLogo(user.logo || user.company?.logo || user.avatar || user.profilePicture || null);
+            currentUserIdRef.current = uId;
+            if (Array.isArray(user.companies)) {
+              setCurrentUserCompanyIds(user.companies.map(c => String(c._id || c.id || c)));
+            }
+          }
+        }).catch(profileErr => {
+          console.warn('Profile fetch notice:', profileErr.message || profileErr);
+        });
 
         // 2. Load deal details
         const id = routeData?.dealId || routeData?.deal?._id || routeData?.deal?.id;
@@ -803,90 +1381,63 @@ const DealChat = ({ onNavigate, routeData }) => {
           (!activeDeal.sellerCompanyId && !activeDeal.buyerCompanyId) ||
           (!activeDeal.products && !activeDeal.product);
 
+        if (activeDeal) {
+          setDeal(activeDeal);
+          setIsLoading(false); // Screen is immediately responsive!
+        }
+
         if (id && isDealIncomplete) {
           try {
-            const dealRes = await getDealDetails(id, token);
+            const dealRes = await Promise.race([
+              getDealDetails(id, token),
+              new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 12000))
+            ]);
             if (dealRes && (dealRes.success || dealRes.data) && dealRes.data) {
               activeDeal = dealRes.data;
               setDeal(activeDeal);
             }
           } catch (e) {
-            console.warn('Failed to load complete deal details:', e);
+            console.warn('Failed to load complete deal details:', e.message || e);
+          } finally {
+            setIsLoading(false);
           }
+        } else {
+          setIsLoading(false);
         }
 
         const dealStatus = String(activeDeal?.status || '').toLowerCase();
-        const isDealApproved = dealStatus === 'approved' || dealStatus === 'active' || dealStatus === 'in_progress';
+        const isDealValidForChat = dealStatus !== 'cancelled' && dealStatus !== 'rejected';
+
+        // 3. Load conversation thread
+        // Immediate local cache check for this deal
+        if (id) {
+          try {
+            const cachedDealMsgs = await AsyncStorage.getItem(`cached_messages_deal_${id}`);
+            if (cachedDealMsgs) {
+              const parsed = JSON.parse(cachedDealMsgs);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setChatMessages(prev => (prev.length === 0 ? parsed : prev));
+                setIsFetchingMessages(false);
+              }
+            }
+          } catch (e) { }
+        }
 
         // 3. Load conversation thread
         let activeConversationId = conversationIdRef.current || conversationId;
-        if (!activeConversationId) {
-          const convsRes = await getConversations(token, 1, 50);
-          const convList = Array.isArray(convsRes?.data?.data)
-            ? convsRes.data.data
-            : Array.isArray(convsRes?.data)
-              ? convsRes.data
-              : Array.isArray(convsRes)
-                ? convsRes
-                : [];
-          if (convList.length > 0) {
-            const matchedConv = convList.find(c => {
-              const cDealId = c.dealId?._id || c.dealId?.id || c.dealId;
-              const targetId = id?._id || id?.id || id;
-              if (!cDealId || !targetId) return false;
-              return String(cDealId).toLowerCase().trim() === String(targetId).toLowerCase().trim();
-            });
-            if (matchedConv) {
-              activeConversationId = matchedConv._id || matchedConv.id;
-              setConversationId(activeConversationId);
-              conversationIdRef.current = activeConversationId;
+        if (!activeConversationId && id) {
+          try {
+            const cachedConvId = await AsyncStorage.getItem(`deal_conv_${id}`);
+            if (cachedConvId) {
+              activeConversationId = cachedConvId;
+              setConversationId(cachedConvId);
+              conversationIdRef.current = cachedConvId;
             }
-          }
+          } catch (e) { }
         }
 
-        // 3b. Create conversation if missing
-        if (!activeConversationId && isDealApproved && id) {
-          try {
-            const participantIds = new Set();
-            const addUid = (val) => {
-              if (!val) return;
-              const idStr = String(typeof val === 'object' ? (val._id || val.id || val.userId || '') : val).trim();
-              if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
-                participantIds.add(idStr);
-              }
-            };
-
-            if (activeDeal) {
-              addUid(activeDeal.sellerCompany?.owner);
-              addUid(activeDeal.sellerCompanyId?.owner);
-              addUid(activeDeal.buyerCompany?.owner);
-              addUid(activeDeal.buyerCompanyId?.owner);
-              addUid(activeDeal.brokerCompany?.owner);
-              addUid(activeDeal.brokerCompanyId?.owner);
-              addUid(activeDeal.party1?.userId);
-              addUid(activeDeal.party2?.userId);
-              addUid(activeDeal.createdBy);
-            }
-            addUid(myUserId);
-
-            const pArray = Array.from(participantIds);
-            const createRes = await createConversation(
-              {
-                dealId: id,
-                dealNumber: activeDeal?.dealNumber || `DEAL-${String(id).slice(-4)}`,
-                type: 'group',
-                participants: pArray,
-              },
-              token
-            );
-            if (createRes && (createRes.success || createRes.data) && createRes.data) {
-              activeConversationId = createRes.data._id || createRes.data.id;
-              setConversationId(activeConversationId);
-              conversationIdRef.current = activeConversationId;
-            }
-          } catch (convErr) {
-            console.warn('Create conversation notice:', convErr);
-          }
+        if (!activeConversationId && token) {
+          activeConversationId = await ensureConversation(token);
         }
 
         if (activeConversationId) {
@@ -896,58 +1447,69 @@ const DealChat = ({ onNavigate, routeData }) => {
               const parsed = JSON.parse(cachedMsgs);
               if (Array.isArray(parsed) && parsed.length > 0) {
                 setChatMessages(parsed);
-                setIsLoading(false);
+                setIsFetchingMessages(false);
               }
             }
           } catch (cacheErr) {
             console.warn('Cache error:', cacheErr);
           }
 
-          const msgsRes = await getConversationMessages(activeConversationId, token, 1, 50).catch(e => {
-            console.warn('Error fetching messages:', e);
-            return null;
-          });
+          try {
+            const msgsRes = await Promise.race([
+              getConversationMessages(activeConversationId, token, 1, 50),
+              new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 12000))
+            ]);
 
-          let rawList = [];
-          if (Array.isArray(msgsRes?.data?.data)) {
-            rawList = msgsRes.data.data;
-          } else if (Array.isArray(msgsRes?.data)) {
-            rawList = msgsRes.data;
-          } else if (Array.isArray(msgsRes?.messages)) {
-            rawList = msgsRes.messages;
-          } else if (Array.isArray(msgsRes)) {
-            rawList = msgsRes;
-          }
+            let rawList = [];
+            if (Array.isArray(msgsRes?.data?.data)) {
+              rawList = msgsRes.data.data;
+            } else if (Array.isArray(msgsRes?.data)) {
+              rawList = msgsRes.data;
+            } else if (Array.isArray(msgsRes?.messages)) {
+              rawList = msgsRes.messages;
+            } else if (Array.isArray(msgsRes)) {
+              rawList = msgsRes;
+            }
 
-          if (rawList.length > 0 || (msgsRes && (msgsRes.success || msgsRes.statusCode === 200))) {
-            const historyMessages = rawList.map(msg => {
-              const isMe = checkIsMe(msg, myUserId);
-              let status = msg.status || 'sent';
-              if (msg.readBy && msg.readBy.length > 0) {
-                status = 'read';
+            if (rawList.length > 0) {
+              const historyMessages = rawList.map(msg => {
+                const isMe = checkIsMe(msg, myUserId);
+                let status = msg.status || 'sent';
+                if (msg.readBy && msg.readBy.length > 0) {
+                  status = 'read';
+                }
+                const media = extractMediaUrl(msg);
+                const textContent = extractTextContent(msg, media);
+                return {
+                  id: msg._id || msg.id,
+                  sender: isMe ? 'You' : (msg.sender?.name || msg.sender?.userId?.name || 'Party'),
+                  text: textContent,
+                  mediaUrl: media,
+                  time: msg.createdAt
+                    ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+                    : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+                  dateRaw: msg.createdAt || new Date(),
+                  type: isMe ? 'me' : 'other',
+                  status: status,
+                };
+              });
+              setChatMessages(historyMessages);
+              await AsyncStorage.setItem(`cached_messages_${activeConversationId}`, JSON.stringify(historyMessages)).catch(() => { });
+              if (id) {
+                await AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(historyMessages)).catch(() => { });
               }
-              const media = extractMediaUrl(msg);
-              const textContent = extractTextContent(msg, media);
-              return {
-                id: msg._id || msg.id,
-                sender: isMe ? 'You' : (msg.sender?.name || msg.sender?.userId?.name || 'Party'),
-                text: textContent,
-                mediaUrl: media,
-                time: msg.createdAt
-                  ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
-                  : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
-                dateRaw: msg.createdAt || new Date(),
-                type: isMe ? 'me' : 'other',
-                status: status,
-              };
-            });
-            setChatMessages(historyMessages);
-            await AsyncStorage.setItem(`cached_messages_${activeConversationId}`, JSON.stringify(historyMessages)).catch(() => {});
+            }
+          } catch (msgErr) {
+            console.warn('Message fetch notice:', msgErr.message || msgErr);
+          } finally {
+            setIsFetchingMessages(false);
           }
 
-          if (isDealApproved) {
-            await markConversationAsRead(activeConversationId, token);
+          if (isDealValidForChat) {
+            markConversationAsRead(activeConversationId, token).catch(() => { });
           }
+        } else {
+          setIsFetchingMessages(false);
         }
 
         // 5. Establish Socket
@@ -983,7 +1545,7 @@ const DealChat = ({ onNavigate, routeData }) => {
         });
 
         socket.on('receive_message', (msg) => {
-          onReceiveMessage(msg, myUserId);
+          onReceiveMessageRef.current?.(msg, myUserId);
           const content = msg.content || msg.message || msg.text || '';
           if (content.toLowerCase().includes('payment')) {
             playPaymentSound();
@@ -1037,25 +1599,27 @@ const DealChat = ({ onNavigate, routeData }) => {
         console.error('Failed to init socket chat:', err);
       } finally {
         setIsLoading(false);
+        setIsFetchingMessages(false);
       }
     };
 
     initChat();
 
     return () => {
-      if (socket) {
+      if (socketRef.current) {
         const id = routeData?.dealId || routeData?.deal?._id;
         if (id) {
-          socket.emit('leave_room', { dealId: id });
+          socketRef.current.emit('leave_room', { dealId: id });
         }
-        socket.disconnect();
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeData, onReceiveMessage]);
+  }, [routeData?.dealId, routeData?.deal?._id]);
 
   const handleInputChange = (text) => {
     setMessage(text);
@@ -1114,10 +1678,11 @@ const DealChat = ({ onNavigate, routeData }) => {
     }
   };
 
-  const sendChatImage = async (asset) => {
+  const sendChatImage = async (asset, captionParam = '') => {
     if (!asset || !asset.uri) return;
+
     const tempId = Date.now();
-    const captionText = message.trim();
+    const captionText = (captionParam || message || '').trim();
 
     const localImgMsg = {
       id: tempId,
@@ -1130,7 +1695,12 @@ const DealChat = ({ onNavigate, routeData }) => {
       status: 'sending',
     };
 
-    setChatMessages(prev => [...prev, localImgMsg]);
+    const id = routeData?.dealId || deal?._id;
+    setChatMessages(prev => {
+      const next = [...prev, localImgMsg];
+      if (id) AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(next)).catch(() => { });
+      return next;
+    });
     setMessage('');
 
     try {
@@ -1138,8 +1708,12 @@ const DealChat = ({ onNavigate, routeData }) => {
       const uploadedUrl = await uploadImage(asset);
       const remoteImgUrl = resolveImageUrl(uploadedUrl);
 
-      const id = routeData?.dealId || deal?._id;
-      const activeConvId = conversationIdRef.current;
+      const token = await AsyncStorage.getItem('userToken');
+      let activeConvId = conversationIdRef.current || conversationId;
+      if (!activeConvId && token) {
+        activeConvId = await ensureConversation(token);
+      }
+
       const payload = {
         dealId: id,
         content: captionText,
@@ -1166,54 +1740,62 @@ const DealChat = ({ onNavigate, routeData }) => {
         });
       }
 
-      setChatMessages(prev =>
-        prev.map(m => (m.id === tempId ? { ...m, mediaUrl: remoteImgUrl, status: 'sent' } : m))
-      );
+      // Persist to MongoDB database
+      if (activeConvId && token) {
+        const sendRes = await sendMessage(activeConvId, {
+          content: captionText,
+          type: 'image',
+          media: { url: remoteImgUrl, type: 'image' },
+          mediaUrl: remoteImgUrl,
+          imageUrl: remoteImgUrl,
+          dealId: id,
+        }, token);
+        if (sendRes && (sendRes.success || sendRes.data)) {
+          const savedMsg = sendRes.data || sendRes.message;
+          if (savedMsg && typeof savedMsg === 'object') {
+            onReceiveMessage(savedMsg, currentUserId);
+          }
+        }
+      }
+
+      setChatMessages(prev => {
+        const updated = prev.map(m => (m.id === tempId ? { ...m, mediaUrl: remoteImgUrl, status: 'sent' } : m));
+        if (id) AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(updated)).catch(() => { });
+        if (activeConvId) AsyncStorage.setItem(`cached_messages_${activeConvId}`, JSON.stringify(updated)).catch(() => { });
+        return updated;
+      });
     } catch (err) {
       console.error('Failed to upload/send chat image:', err);
       Alert.alert('Upload Failed', err.message || 'Could not upload image. Please try again.');
-      setChatMessages(prev =>
-        prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m))
-      );
+      setChatMessages(prev => {
+        const updated = prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m));
+        if (id) AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(updated)).catch(() => { });
+        return updated;
+      });
     } finally {
       setIsUploadingChatImage(false);
     }
   };
 
-  const handleSend = () => {
-    if (!message.trim() || !socketRef.current) return;
+  const handleSend = async () => {
+    if (!message.trim()) return;
 
     const id = routeData?.dealId || deal?._id;
     if (!id) return;
 
     const messageText = message.trim();
+    setMessage('');
+
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
-    socketRef.current.emit('typing_stop', { dealId: id });
-
-    const activeConvId = conversationIdRef.current;
-    const payload = { dealId: id, content: messageText, type: 'text' };
-    if (activeConvId) {
-      payload.conversationId = activeConvId;
+    if (socketRef.current) {
+      socketRef.current.emit('typing_stop', { dealId: id });
     }
 
-    socketRef.current.emit('send_message', payload, (response) => {
-      if (response && response.success) {
-        const msgObj = response.data || response.message;
-        if (msgObj && typeof msgObj === 'object') {
-          onReceiveMessage(msgObj, currentUserId);
-          const returnedConvId = msgObj.conversationId || response.conversationId;
-          if (returnedConvId && !conversationIdRef.current) {
-            conversationIdRef.current = returnedConvId;
-            setConversationId(returnedConvId);
-          }
-        }
-      }
-    });
-
+    const tempId = Date.now();
     const localMsg = {
-      id: Date.now(),
+      id: tempId,
       sender: 'You',
       text: messageText,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
@@ -1222,8 +1804,77 @@ const DealChat = ({ onNavigate, routeData }) => {
       status: 'sending',
     };
 
-    setChatMessages(prev => [...prev, localMsg]);
-    setMessage('');
+    setChatMessages(prev => {
+      const next = [...prev, localMsg];
+      if (id) AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(next)).catch(() => { });
+      return next;
+    });
+
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      let activeConvId = conversationIdRef.current || conversationId;
+      if (!activeConvId && token) {
+        activeConvId = await ensureConversation(token);
+      }
+
+      const payload = {
+        dealId: id,
+        content: messageText,
+        type: 'text',
+      };
+      if (activeConvId) {
+        payload.conversationId = activeConvId;
+      }
+
+      // 1. Emit via socket for real-time delivery
+      if (socketRef.current) {
+        socketRef.current.emit('send_message', payload, (response) => {
+          if (response && response.success) {
+            const msgObj = response.data || response.message;
+            if (msgObj && typeof msgObj === 'object') {
+              onReceiveMessage(msgObj, currentUserId);
+            }
+          }
+        });
+      }
+
+      // 2. Persist message to database via REST API
+      if (activeConvId && token) {
+        const sendRes = await sendMessage(activeConvId, { content: messageText, type: 'text', dealId: id }, token);
+        if (sendRes && (sendRes.success || sendRes.data)) {
+          const savedMsg = sendRes.data || sendRes.message;
+          if (savedMsg && typeof savedMsg === 'object') {
+            onReceiveMessage(savedMsg, currentUserId);
+          } else {
+            setChatMessages(prev => {
+              const updated = prev.map(m => (m.id === tempId ? { ...m, status: 'sent' } : m));
+              if (id) AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(updated)).catch(() => { });
+              if (activeConvId) AsyncStorage.setItem(`cached_messages_${activeConvId}`, JSON.stringify(updated)).catch(() => { });
+              return updated;
+            });
+          }
+        } else {
+          setChatMessages(prev => {
+            const updated = prev.map(m => (m.id === tempId ? { ...m, status: 'sent' } : m));
+            if (id) AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(updated)).catch(() => { });
+            return updated;
+          });
+        }
+      } else {
+        setChatMessages(prev => {
+          const updated = prev.map(m => (m.id === tempId ? { ...m, status: 'sent' } : m));
+          if (id) AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(updated)).catch(() => { });
+          return updated;
+        });
+      }
+    } catch (sendErr) {
+      console.warn('Message send notice:', sendErr.message || sendErr);
+      setChatMessages(prev => {
+        const updated = prev.map(m => (m.id === tempId ? { ...m, status: 'sent' } : m));
+        if (id) AsyncStorage.setItem(`cached_messages_deal_${id}`, JSON.stringify(updated)).catch(() => { });
+        return updated;
+      });
+    }
   };
 
   // --- Dynamic Counterparty and Role Resolution (No Hardcoded Names) ---
@@ -1486,57 +2137,274 @@ const DealChat = ({ onNavigate, routeData }) => {
     return getProductImageUri(deal) || getProductImageUri(routeData?.deal) || null;
   }, [deal, routeData?.deal, getProductImageUri]);
 
+  const displayMessages = useMemo(() => {
+    if (!Array.isArray(chatMessages) || chatMessages.length === 0) return [];
+
+    const seenIds = new Set();
+    const seenPaymentTxns = new Set();
+    const seenPaymentAmounts = new Set();
+    const seenDeliveries = new Set();
+    const seenTextFingerprints = new Set();
+
+    const deduped = [];
+
+    for (const msg of chatMessages) {
+      if (!msg) continue;
+      const mId = String(msg.id || '');
+      if (mId && seenIds.has(mId)) continue;
+      if (mId) seenIds.add(mId);
+
+      const rawText = msg.text || '';
+      const cleanTxt = rawText.toLowerCase().trim();
+
+      // 1. PAYMENT CARD DEDUPLICATION
+      const isPayMsg =
+        msg.type === 'payment' ||
+        rawText.startsWith('💸') ||
+        (cleanTxt.includes('payment') &&
+          (cleanTxt.includes('entry of') ||
+            cleanTxt.includes('payment recorded') ||
+            cleanTxt.includes('payment received') ||
+            cleanTxt.includes('payment approved') ||
+            cleanTxt.includes('pending seller approval') ||
+            cleanTxt.includes('pending buyer approval') ||
+            cleanTxt.includes('verification') ||
+            cleanTxt.includes('initiated') ||
+            cleanTxt.includes('payment given') ||
+            cleanTxt.includes('payment rejected')));
+
+      if (isPayMsg) {
+        const matchedPayment = findMatchingPayment(msg.text, msg.dateRaw, dealPayments);
+        const txnId =
+          matchedPayment?.transactionId ||
+          matchedPayment?.paymentTransactionId ||
+          matchedPayment?.referenceNumber ||
+          matchedPayment?._id;
+
+        if (txnId) {
+          const key = String(txnId).toUpperCase().trim();
+          if (seenPaymentTxns.has(key)) {
+            continue; // Skip duplicate payment card!
+          }
+          seenPaymentTxns.add(key);
+        } else {
+          // Fallback: match by parsed amount + 5-minute time window
+          const { amount } = parsePaymentMessage(msg.text);
+          const amtNum = amount ? amount.replace(/,/g, '') : '';
+          const timeSlot = msg.dateRaw ? Math.floor(new Date(msg.dateRaw).getTime() / (1000 * 60 * 5)) : 0;
+          const amtKey = `${amtNum}_${timeSlot}`;
+          if (amtNum && seenPaymentAmounts.has(amtKey)) {
+            continue; // Duplicate payment within 5 mins!
+          }
+          if (amtNum) seenPaymentAmounts.add(amtKey);
+        }
+      }
+
+      // 2. DELIVERY CARD DEDUPLICATION
+      const isDeliveryMsg =
+        msg.type === 'delivery' ||
+        rawText.startsWith('📦') ||
+        rawText.startsWith('📥') ||
+        (cleanTxt.includes('delivery') &&
+          (cleanTxt.includes('dispatched') ||
+            cleanTxt.includes('received') ||
+            cleanTxt.includes('approved') ||
+            cleanTxt.includes('recorded')));
+
+      if (isDeliveryMsg) {
+        const matchedDelivery = findMatchingDelivery(msg.text, msg.dateRaw, dealDeliveries);
+        const delId = matchedDelivery?._id || matchedDelivery?.id;
+        if (delId) {
+          const delKey = String(delId);
+          if (seenDeliveries.has(delKey)) {
+            continue; // Skip duplicate delivery card!
+          }
+          seenDeliveries.add(delKey);
+        }
+      }
+
+      // 3. REGULAR MESSAGE DEDUPLICATION (exact same text + sender within 10 seconds)
+      if (!isPayMsg && !isDeliveryMsg && rawText.trim()) {
+        const timeSlot = msg.dateRaw ? Math.floor(new Date(msg.dateRaw).getTime() / 10000) : 0;
+        const textKey = `${msg.sender || ''}_${rawText.trim()}_${timeSlot}`;
+        if (seenTextFingerprints.has(textKey)) {
+          continue; // Exact duplicate sent within 10 seconds!
+        }
+        seenTextFingerprints.add(textKey);
+      }
+
+      deduped.push(msg);
+    }
+
+    return deduped;
+  }, [chatMessages, dealPayments, dealDeliveries]);
+
   if (isLoading) {
     return (
-      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#1541D8" />
-        <Text style={styles.loadingText}>Opening secure chat...</Text>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.headerBackBtn}
+            onPress={() => onNavigate('back')}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <ArrowLeft size={22} color="#0F172A" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.headerTitle}>{routeData?.deal?.dealNumber || routeData?.dealNumber || 'Deal Chat'}</Text>
+            <Text style={styles.headerSubtitle}>Connecting securely...</Text>
+          </View>
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
+          <ActivityIndicator size="large" color="#1541D8" />
+          <Text style={styles.loadingText}>Opening secure chat...</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   const renderMessageItem = ({ item, index }) => {
-    const prevMsg = index > 0 ? chatMessages[index - 1] : null;
+    const prevMsg = index > 0 ? displayMessages[index - 1] : null;
     const showDateSeparator = !prevMsg || getMessageDateString(item.dateRaw) !== getMessageDateString(prevMsg.dateRaw);
     const isMe = item.type === 'me';
 
     const cleanTxt = sanitizeSystemMessage(item.text || '').toLowerCase();
+
+    // ─── 0. CENTERED SYSTEM CONFIRMATION PILL BADGE ───
+    const isSystemPillMessage =
+      cleanTxt.includes('has been received and approved by') ||
+      cleanTxt.includes('has been approved by') ||
+      cleanTxt.includes('has been rejected by') ||
+      cleanTxt.includes('approved & auto-recorded');
+
+    if (isSystemPillMessage) {
+      return (
+        <View style={styles.msgWrapper}>
+          {showDateSeparator && getMessageDateString(item.dateRaw) !== '' && (
+            <View style={styles.dateSeparatorRow}>
+              <View style={styles.datePill}>
+                <Text style={styles.datePillText}>{getMessageDateString(item.dateRaw)}</Text>
+              </View>
+            </View>
+          )}
+          <View style={styles.systemPillContainer}>
+            <View style={styles.systemPillBadge}>
+              <Text style={styles.systemPillText}>{item.text}</Text>
+            </View>
+          </View>
+        </View>
+      );
+    }
+
     const isSystemPaymentMsg =
       item.type === 'payment' ||
       item.text.startsWith('💸') ||
       (cleanTxt.includes('payment') &&
         (cleanTxt.includes('entry of') ||
-         cleanTxt.includes('payment recorded') ||
-         cleanTxt.includes('payment received') ||
-         cleanTxt.includes('payment approved') ||
-         cleanTxt.includes('pending seller approval') ||
-         cleanTxt.includes('pending buyer approval') ||
-         cleanTxt.includes('verification') ||
-         cleanTxt.includes('initiated') ||
-         cleanTxt.includes('payment given') ||
-         cleanTxt.includes('payment rejected')));
+          cleanTxt.includes('payment recorded') ||
+          cleanTxt.includes('payment received') ||
+          cleanTxt.includes('payment approved') ||
+          cleanTxt.includes('pending seller approval') ||
+          cleanTxt.includes('pending buyer approval') ||
+          cleanTxt.includes('verification') ||
+          cleanTxt.includes('initiated') ||
+          cleanTxt.includes('payment given') ||
+          cleanTxt.includes('payment rejected')));
 
     const matchedPayment = isSystemPaymentMsg
       ? findMatchingPayment(item.text, item.dateRaw, dealPayments)
       : null;
+
+    // Duplicate Prevention Rule for Payment:
+    // Hide auto-recorded counterpart entries on creator's screen
+    if (matchedPayment && (matchedPayment.isAutoRecorded || matchedPayment.isAutoGenerated)) {
+      if (myRole === 'Buyer' && (matchedPayment.paymentType === 'received' || isMe)) return null;
+      if (myRole === 'Seller' && (matchedPayment.paymentType === 'sent' || isMe)) return null;
+    }
+
     const { amount, method, notes } = isSystemPaymentMsg
       ? parsePaymentMessage(item.text)
       : { amount: '', method: '', notes: '' };
 
     const isPaymentAlert = isSystemPaymentMsg && !cleanTxt.includes('proforma invoice');
 
-    // 1. Payment Card Bubble (Dynamic Data)
+    // ─── 1. DUAL-PERSPECTIVE PAYMENT CARD BUBBLE ───
     if (isPaymentAlert) {
-      const isApproved = cleanTxt.includes('approved') || cleanTxt.includes('received') || (matchedPayment && matchedPayment.status === 'approved');
-      const isPending = !isApproved && (!matchedPayment || matchedPayment.status === 'pending');
+      const isBuyer = myRole === 'Buyer';
+      const isSeller = myRole === 'Seller';
+
+      const isApproved =
+        cleanTxt.includes('approved') ||
+        (matchedPayment && matchedPayment.status === 'approved') ||
+        item.status === 'approved';
+      const isRejected =
+        cleanTxt.includes('rejected') ||
+        (matchedPayment && matchedPayment.status === 'rejected') ||
+        item.status === 'rejected';
+      const isPending = !isApproved && !isRejected;
+
+      // Perspective Theme:
+      // Buyer always sees "Payment Sent" (Royal / Sky Blue)
+      // Seller always sees "Payment Received" (Emerald Green / Teal)
+      const isPaymentSentTheme = isBuyer || (!isSeller && (matchedPayment?.paymentType === 'sent' || isMe));
+      const theme = isPaymentSentTheme ? PALETTES.PAYMENT_SENT : PALETTES.PAYMENT_RECEIVED;
+      const cardTitle = isPaymentSentTheme ? 'PAYMENT SENT' : 'PAYMENT RECEIVED';
+
       const rawAmt = amount || (matchedPayment?.amount ? String(matchedPayment.amount) : '');
-      const amtDisplay = rawAmt
-        ? `₹ ${parseFloat(String(rawAmt).replace(/,/g, '')).toLocaleString('en-IN')}`
+      const rawAmtNum = Number(rawAmt ? String(rawAmt).replace(/,/g, '') : (matchedPayment?.amount || 0));
+      const amtDisplay = rawAmtNum > 0
+        ? `₹ ${rawAmtNum.toLocaleString('en-IN')}`
         : (matchedPayment?.amount ? `₹ ${parseFloat(matchedPayment.amount).toLocaleString('en-IN')}` : (formattedDealTotal || ''));
-      const txnDisplay = matchedPayment?.transactionId || matchedPayment?.referenceNumber || (matchedPayment?._id ? `TXN${String(matchedPayment._id).slice(-8).toUpperCase()}` : (item.id && isNaN(Number(item.id)) ? `TXN${item.id.slice(-8).toUpperCase()}` : 'TXN' + String(Date.now()).slice(-8)));
+      const formattedAmt = amtDisplay || '₹0';
+
+      const txnDisplay = matchedPayment?.transactionId || matchedPayment?.paymentTransactionId || matchedPayment?.referenceNumber || (matchedPayment?._id ? `TXN-${String(matchedPayment._id).slice(-8).toUpperCase()}` : (item.id && isNaN(Number(item.id)) ? `TXN-${item.id.slice(-8).toUpperCase()}` : 'TXN-' + String(Date.now()).slice(-8)));
       const remarksDisplay = notes || matchedPayment?.notes || (!isSystemPaymentMsg && item.text && !cleanTxt.startsWith('payment recorded') ? item.text : '');
       const paymentMethodDisplay = method || matchedPayment?.paymentMethod || 'UPI';
-      const showApproveReject = isPending && ((myRole === 'Seller' && !isMe) || (myRole === 'Buyer' && isMe === false));
+
+      let subtitleText = '';
+      let promptText = '';
+      let showApproveReject = false;
+
+      if (isPaymentSentTheme) {
+        // Buyer Perspective: Payment Sent
+        if (isMe) {
+          subtitleText = `Aapne (${myName}) payment bheja hai`;
+          if (isPending) {
+            promptText = `Aapne ${formattedAmt} payment bheja hai. Seller ke approval ka intezar hai.`;
+          }
+        } else {
+          subtitleText = `${partyName} ne payment receive hone ki request bheji hai`;
+          if (isPending) {
+            promptText = `${partyName} ne ${formattedAmt} payment receive hone ki request bheji hai. Kya aap ise approve karte hain?`;
+            showApproveReject = true;
+          }
+        }
+      } else {
+        // Seller Perspective: Payment Received
+        if (!isMe) {
+          subtitleText = `${partyName} ne payment bheja hai (Aapko receive hua)`;
+          if (isPending) {
+            promptText = `${partyName} ne ${formattedAmt} payment bheja hai. Kya aapko ${formattedAmt} payment receive ho gaya hai aur aap ise approve karte hain?`;
+            showApproveReject = true;
+          }
+        } else {
+          subtitleText = `Aapne (${myName}) payment receive entry dali hai`;
+          if (isPending) {
+            promptText = `Aapne ${formattedAmt} payment receive entry dali hai. Buyer ke approval ka intezar hai.`;
+          }
+        }
+      }
+
+      let bannerText = '';
+      if (isApproved) {
+        if (showApproveReject || (!isMe && (isSeller || isBuyer))) {
+          bannerText = 'Payment Approved & Auto-Recorded';
+        } else {
+          bannerText = 'Payment Approved';
+        }
+      } else if (isRejected) {
+        bannerText = 'Payment Rejected';
+      }
 
       const senderDisplay = isMe ? myName : partyName;
       const roleDisplay = isMe ? myRole : roleLabel;
@@ -1576,39 +2444,48 @@ const DealChat = ({ onNavigate, routeData }) => {
                 </View>
               </View>
 
-              <View style={[styles.paymentInnerCard, isApproved && styles.paymentInnerCardApproved]}>
+              <View style={[styles.paymentInnerCard, { borderColor: theme.cardBorder, backgroundColor: theme.cardBg }]}>
                 <View style={styles.paymentCardHeader}>
                   <View style={styles.paymentCardHeaderLeft}>
-                    <View style={[styles.rupeeCircle, isApproved ? styles.rupeeCircleGreen : styles.rupeeCircleOrange]}>
+                    <View style={[styles.rupeeCircle, { backgroundColor: theme.headerBg }]}>
                       {isApproved ? (
                         <Check size={14} color="#FFFFFF" strokeWidth={3} />
                       ) : (
                         <Text style={styles.rupeeCircleText}>₹</Text>
                       )}
                     </View>
-                    <Text style={styles.paymentCardTitle} numberOfLines={1}>
-                      {isApproved ? 'Payment Received' : 'Payment Recorded'}
-                    </Text>
+                    <View style={{ flexShrink: 1 }}>
+                      <Text style={[styles.paymentCardTitle, { color: theme.accentColor }]} numberOfLines={1}>
+                        {cardTitle}
+                      </Text>
+                      {subtitleText ? (
+                        <Text style={styles.cardSubtitleText} numberOfLines={1}>
+                          {subtitleText}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
 
-                  <View style={[styles.statusTag, isApproved ? styles.statusTagApproved : styles.statusTagPending]}>
+                  <View style={[styles.statusTag, isApproved ? styles.statusTagApproved : (isRejected ? styles.statusTagRejected : styles.statusTagPending)]}>
                     {isApproved ? (
                       <Check size={11} color="#15803D" strokeWidth={2.8} style={{ marginRight: 4 }} />
+                    ) : isRejected ? (
+                      <X size={11} color="#DC2626" strokeWidth={2.8} style={{ marginRight: 4 }} />
                     ) : (
                       <Clock size={11} color="#D97706" strokeWidth={2.5} style={{ marginRight: 4 }} />
                     )}
-                    <Text style={[styles.statusTagText, isApproved ? styles.statusTagTextApproved : styles.statusTagTextPending]}>
-                      {isApproved ? 'Approved' : 'Pending Verification'}
+                    <Text style={[styles.statusTagText, isApproved ? styles.statusTagTextApproved : (isRejected ? styles.statusTagTextRejected : styles.statusTagTextPending)]}>
+                      {isApproved ? 'Approved' : isRejected ? 'Rejected' : 'Pending Approval'}
                     </Text>
                   </View>
                 </View>
 
                 {amtDisplay !== '' && (
                   <View style={styles.paymentAmountRow}>
-                    <Text style={styles.paymentAmountBig}>{amtDisplay}</Text>
+                    <Text style={[styles.paymentAmountBig, { color: theme.accentColor }]}>{formattedAmt}</Text>
                     {paymentMethodDisplay ? (
-                      <View style={styles.paymentMethodPill}>
-                        <Text style={styles.paymentMethodPillText}>{paymentMethodDisplay}</Text>
+                      <View style={[styles.paymentMethodPill, { backgroundColor: theme.badgeBg }]}>
+                        <Text style={[styles.paymentMethodPillText, { color: theme.badgeText }]}>{paymentMethodDisplay}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -1630,7 +2507,7 @@ const DealChat = ({ onNavigate, routeData }) => {
                         >
                           {txnDisplay}
                         </Text>
-                        <Copy size={13} color="#2563EB" style={{ marginLeft: 5, flexShrink: 0 }} />
+                        <Copy size={13} color={theme.accentColor} style={{ marginLeft: 5, flexShrink: 0 }} />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -1654,8 +2531,8 @@ const DealChat = ({ onNavigate, routeData }) => {
                 {(matchedPayment?.attachmentUrl || matchedPayment?.receiptUrl) && (
                   <View style={styles.docAttachmentBox}>
                     <View style={styles.docAttachmentLeft}>
-                      <View style={styles.pdfIconBadge}>
-                        <Text style={styles.pdfIconText}>DOC</Text>
+                      <View style={[styles.pdfIconBadge, { backgroundColor: theme.badgeBg }]}>
+                        <Text style={[styles.pdfIconText, { color: theme.badgeText }]}>DOC</Text>
                       </View>
                       <View style={{ marginLeft: 8 }}>
                         <Text style={styles.docFileName} numberOfLines={1}>Payment_Receipt</Text>
@@ -1666,20 +2543,28 @@ const DealChat = ({ onNavigate, routeData }) => {
                       onPress={() => Linking.openURL(matchedPayment.attachmentUrl || matchedPayment.receiptUrl).catch(() => Alert.alert('Receipt', 'Unable to open document'))}
                       activeOpacity={0.7}
                     >
-                      <Download size={16} color="#1541D8" />
+                      <Download size={16} color={theme.accentColor} />
                     </TouchableOpacity>
                   </View>
                 )}
 
-                {showApproveReject && matchedPayment && (
+                {/* Prompt Box when Pending */}
+                {isPending && promptText ? (
+                  <View style={[styles.promptBox, { backgroundColor: theme.promptBg, borderColor: theme.promptBorder }]}>
+                    <Text style={[styles.promptText, { color: theme.promptText }]}>{promptText}</Text>
+                  </View>
+                ) : null}
+
+                {/* Action buttons for counterparty */}
+                {showApproveReject && matchedPayment && isPending && (
                   <View style={styles.paymentApprovalButtons}>
                     <TouchableOpacity
-                      style={[styles.approvalBtn, styles.approveBtn]}
+                      style={[styles.approvalBtn, { backgroundColor: theme.btnPrimaryBg }]}
                       onPress={() => handleUpdatePaymentStatus(matchedPayment._id, 'approved')}
                       activeOpacity={0.8}
                     >
                       <Check size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <Text style={styles.approveBtnText}>Approve Payment</Text>
+                      <Text style={styles.approveBtnText}>Approve & Confirm</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.approvalBtn, styles.rejectBtn]}
@@ -1687,10 +2572,17 @@ const DealChat = ({ onNavigate, routeData }) => {
                       activeOpacity={0.8}
                     >
                       <X size={15} color="#DC2626" style={{ marginRight: 6 }} />
-                      <Text style={styles.rejectBtnText}>Decline</Text>
+                      <Text style={styles.rejectBtnText}>Reject</Text>
                     </TouchableOpacity>
                   </View>
                 )}
+
+                {/* Approved / Rejected Banner */}
+                {bannerText ? (
+                  <View style={[styles.approvedBanner, { backgroundColor: theme.approvedBannerBg }]}>
+                    <Text style={[styles.approvedBannerText, { color: theme.approvedBannerText }]}>{bannerText}</Text>
+                  </View>
+                ) : null}
               </View>
 
               <View style={styles.bubbleFooter}>
@@ -1723,7 +2615,328 @@ const DealChat = ({ onNavigate, routeData }) => {
       );
     }
 
-    // 2. Regular Message Bubble
+    // ─── 2. DUAL-PERSPECTIVE DELIVERY CARD BUBBLE ───
+    const isSystemDeliveryMsg =
+      item.type === 'delivery' ||
+      item.text.startsWith('📦') ||
+      item.text.startsWith('🚚') ||
+      item.text.startsWith('📥') ||
+      (cleanTxt.includes('delivery') &&
+        (cleanTxt.includes('entry of') ||
+          cleanTxt.includes('delivery recorded') ||
+          cleanTxt.includes('delivery sent') ||
+          cleanTxt.includes('delivery received') ||
+          cleanTxt.includes('dispatch') ||
+          cleanTxt.includes('dispatched') ||
+          cleanTxt.includes('goods received') ||
+          cleanTxt.includes('pending buyer approval') ||
+          cleanTxt.includes('pending seller approval')));
+
+    const matchedDelivery = isSystemDeliveryMsg
+      ? findMatchingDelivery(item.text, item.dateRaw, dealDeliveries)
+      : null;
+
+    // Duplicate Prevention Rule for Delivery:
+    // Hide auto-recorded counterpart entries on creator's screen
+    if (matchedDelivery && (matchedDelivery.isAutoRecorded || matchedDelivery.isAutoGenerated)) {
+      if (myRole === 'Buyer' && (matchedDelivery.deliveryType === 'sent' || isMe)) return null;
+      if (myRole === 'Seller' && (matchedDelivery.deliveryType === 'received' || isMe)) return null;
+    }
+
+    const isDeliveryAlert = isSystemDeliveryMsg && !isSystemPillMessage;
+
+    if (isDeliveryAlert) {
+      const isBuyer = myRole === 'Buyer';
+      const isSeller = myRole === 'Seller';
+
+      const isDelApproved =
+        cleanTxt.includes('approved') ||
+        (matchedDelivery && matchedDelivery.status === 'approved') ||
+        item.status === 'approved';
+      const isDelRejected =
+        cleanTxt.includes('rejected') ||
+        (matchedDelivery && matchedDelivery.status === 'rejected') ||
+        item.status === 'rejected';
+      const isDelPending = !isDelApproved && !isDelRejected;
+
+      // Perspective Theme:
+      // Seller always sees "Delivery Sent" (Royal Indigo / Blue)
+      // Buyer always sees "Delivery Received" (Rich Purple / Fuchsia)
+      const isDeliverySentTheme = isSeller || (!isBuyer && (matchedDelivery?.deliveryType === 'sent' || isMe));
+      const delTheme = isDeliverySentTheme ? PALETTES.DELIVERY_SENT : PALETTES.DELIVERY_RECEIVED;
+      const delCardTitle = isDeliverySentTheme ? 'DELIVERY SENT' : 'DELIVERY RECEIVED';
+
+      const parsedDel = parseDeliveryMessage(item.text);
+      const delQty = matchedDelivery?.quantity || parsedDel?.quantity || productQuantity || '';
+      const delUnit = matchedDelivery?.unit || productUnit || 'Units';
+      const formattedQty = `${delQty} ${delUnit}`.trim();
+
+      const delTxnDisplay = matchedDelivery?.deliveryTransactionId || (matchedDelivery?._id ? `DEL-${String(matchedDelivery._id).slice(-8).toUpperCase()}` : (item.id && isNaN(Number(item.id)) ? `DEL-${item.id.slice(-8).toUpperCase()}` : 'DEL-' + String(Date.now()).slice(-8)));
+      const delVehicleDisplay = matchedDelivery?.vehicleNumber || parsedDel?.vehicleNumber || '';
+      const delDispatchDateDisplay = matchedDelivery?.dispatchDate || (item.dateRaw ? new Date(item.dateRaw).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+      const delNotesDisplay = matchedDelivery?.notes || parsedDel?.notes || '';
+      const delAttachment = matchedDelivery?.attachmentUrl || matchedDelivery?.receiptUrl;
+
+      let delSubtitleText = '';
+      let delPromptText = '';
+      let showDelApproveReject = false;
+
+      if (isDeliverySentTheme) {
+        // Seller perspective: Delivery Sent
+        if (isMe) {
+          delSubtitleText = `Sent by Seller (${myName})`;
+          if (isDelPending) {
+            delPromptText = `Aapne ${formattedQty} delivery bheji hai. Buyer ke confirmation ka intezar hai.`;
+          }
+        } else {
+          delSubtitleText = `${partyName} ne delivery receive karne ki entry dali hai`;
+          if (isDelPending) {
+            delPromptText = `${partyName} ne ${formattedQty} delivery receive karne ki entry dali hai. Kya aap ise approve karte hain?`;
+            showDelApproveReject = true;
+          }
+        }
+      } else {
+        // Buyer perspective: Delivery Received
+        if (!isMe) {
+          delSubtitleText = `Sent by Seller (${partyName})`;
+          if (isDelPending) {
+            delPromptText = `${partyName} ne ${formattedQty} delivery bheji hai. Kya aapko maal receive hua aur aap ise approve karte hain?`;
+            showDelApproveReject = true;
+          }
+        } else {
+          delSubtitleText = `Received by Buyer (${myName})`;
+          if (isDelPending) {
+            delPromptText = `Aapne ${formattedQty} delivery receive entry dali hai. Seller ke confirmation ka intezar hai.`;
+          }
+        }
+      }
+
+      let delBannerText = '';
+      if (isDelApproved) {
+        if (showDelApproveReject || (!isMe && (isBuyer || isSeller))) {
+          delBannerText = 'Delivery Approved & Auto-Recorded';
+        } else {
+          delBannerText = 'Delivery Approved';
+        }
+      } else if (isDelRejected) {
+        delBannerText = 'Delivery Rejected';
+      }
+
+      const senderDisplay = isMe ? myName : partyName;
+      const roleDisplay = isMe ? myRole : roleLabel;
+
+      return (
+        <View style={styles.msgWrapper}>
+          {showDateSeparator && getMessageDateString(item.dateRaw) !== '' && (
+            <View style={styles.dateSeparatorRow}>
+              <View style={styles.datePill}>
+                <Text style={styles.datePillText}>{getMessageDateString(item.dateRaw)}</Text>
+              </View>
+            </View>
+          )}
+
+          <View style={[styles.bubbleRow, isMe ? styles.bubbleRowRight : styles.bubbleRowLeft]}>
+            {!isMe && (
+              <View style={[styles.avatarCircle, styles.avatarCircleCounterparty]}>
+                {counterpartyLogo ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(counterpartyLogo) }}
+                    style={styles.avatarImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text style={styles.avatarCircleText}>{getInitials(partyName)}</Text>
+                )}
+              </View>
+            )}
+
+            <View style={[styles.cardBubbleContainer, isMe ? styles.cardBubbleMe : styles.cardBubbleOther]}>
+              <View style={styles.bubbleSenderRow}>
+                <Text style={styles.bubbleSenderName}>{senderDisplay}</Text>
+                <View style={[styles.rolePill, roleDisplay === 'Buyer' ? styles.rolePillBuyer : styles.rolePillSeller]}>
+                  <Text style={[styles.rolePillText, roleDisplay === 'Buyer' ? styles.rolePillTextBuyer : styles.rolePillTextSeller]}>
+                    {roleDisplay}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.paymentInnerCard, { borderColor: delTheme.cardBorder, backgroundColor: delTheme.cardBg }]}>
+                <View style={styles.paymentCardHeader}>
+                  <View style={styles.paymentCardHeaderLeft}>
+                    <View style={[styles.rupeeCircle, { backgroundColor: delTheme.headerBg }]}>
+                      <Truck size={13} color="#FFFFFF" />
+                    </View>
+                    <View style={{ flexShrink: 1 }}>
+                      <Text style={[styles.paymentCardTitle, { color: delTheme.accentColor }]} numberOfLines={1}>
+                        {delCardTitle}
+                      </Text>
+                      {delSubtitleText ? (
+                        <Text style={styles.cardSubtitleText} numberOfLines={1}>
+                          {delSubtitleText}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  <View style={[styles.statusTag, isDelApproved ? styles.statusTagApproved : (isDelRejected ? styles.statusTagRejected : styles.statusTagPending)]}>
+                    {isDelApproved ? (
+                      <Check size={11} color="#15803D" strokeWidth={2.8} style={{ marginRight: 4 }} />
+                    ) : isDelRejected ? (
+                      <X size={11} color="#DC2626" strokeWidth={2.8} style={{ marginRight: 4 }} />
+                    ) : (
+                      <Clock size={11} color="#D97706" strokeWidth={2.5} style={{ marginRight: 4 }} />
+                    )}
+                    <Text style={[styles.statusTagText, isDelApproved ? styles.statusTagTextApproved : (isDelRejected ? styles.statusTagTextRejected : styles.statusTagTextPending)]}>
+                      {isDelApproved ? 'Approved' : isDelRejected ? 'Rejected' : 'Pending Approval'}
+                    </Text>
+                  </View>
+                </View>
+
+                {formattedQty !== '' && (
+                  <View style={styles.paymentAmountRow}>
+                    <Text style={[styles.paymentAmountBig, { color: delTheme.accentColor }]}>{formattedQty}</Text>
+                    {productName ? (
+                      <View style={[styles.paymentMethodPill, { backgroundColor: delTheme.badgeBg }]}>
+                        <Text style={[styles.paymentMethodPillText, { color: delTheme.badgeText }]} numberOfLines={1}>{productName}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+
+                <View style={styles.paymentDetailsTable}>
+                  {delTxnDisplay !== '' && (
+                    <View style={styles.paymentDetailRow}>
+                      <Text style={styles.paymentDetailKey}>DEL ID</Text>
+                      <TouchableOpacity
+                        style={styles.paymentCopyRow}
+                        onPress={() => Alert.alert('Copied', `Delivery ID ${delTxnDisplay} copied!`)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={styles.paymentDetailVal}
+                          numberOfLines={1}
+                          ellipsizeMode="middle"
+                        >
+                          {delTxnDisplay}
+                        </Text>
+                        <Copy size={13} color={delTheme.accentColor} style={{ marginLeft: 5, flexShrink: 0 }} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {delVehicleDisplay ? (
+                    <View style={styles.paymentDetailRow}>
+                      <Text style={styles.paymentDetailKey}>Vehicle</Text>
+                      <Text style={styles.paymentDetailVal} numberOfLines={1}>{delVehicleDisplay}</Text>
+                    </View>
+                  ) : null}
+
+                  {delDispatchDateDisplay ? (
+                    <View style={styles.paymentDetailRow}>
+                      <Text style={styles.paymentDetailKey}>Date</Text>
+                      <Text style={styles.paymentDetailVal} numberOfLines={1}>{delDispatchDateDisplay}</Text>
+                    </View>
+                  ) : null}
+
+                  {delNotesDisplay ? (
+                    <View style={styles.paymentDetailRow}>
+                      <Text style={styles.paymentDetailKey}>Notes</Text>
+                      <Text style={styles.paymentDetailVal} numberOfLines={2}>{delNotesDisplay}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Proof attachment if exists on delivery record */}
+                {delAttachment && (
+                  <View style={styles.docAttachmentBox}>
+                    <View style={styles.docAttachmentLeft}>
+                      <View style={[styles.pdfIconBadge, { backgroundColor: delTheme.badgeBg }]}>
+                        <Text style={[styles.pdfIconText, { color: delTheme.badgeText }]}>DOC</Text>
+                      </View>
+                      <View style={{ marginLeft: 8 }}>
+                        <Text style={styles.docFileName} numberOfLines={1}>Delivery_Slip</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.docDownloadBtn}
+                      onPress={() => Linking.openURL(delAttachment).catch(() => Alert.alert('Receipt', 'Unable to open document'))}
+                      activeOpacity={0.7}
+                    >
+                      <Download size={16} color={delTheme.accentColor} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Prompt Box when Pending */}
+                {isDelPending && delPromptText ? (
+                  <View style={[styles.promptBox, { backgroundColor: delTheme.promptBg, borderColor: delTheme.promptBorder }]}>
+                    <Text style={[styles.promptText, { color: delTheme.promptText }]}>{delPromptText}</Text>
+                  </View>
+                ) : null}
+
+                {/* Action buttons for counterparty */}
+                {showDelApproveReject && matchedDelivery && isDelPending && (
+                  <View style={styles.paymentApprovalButtons}>
+                    <TouchableOpacity
+                      style={[styles.approvalBtn, { backgroundColor: delTheme.btnPrimaryBg }]}
+                      onPress={() => handleUpdateDeliveryStatus(matchedDelivery._id, 'approved')}
+                      activeOpacity={0.8}
+                    >
+                      <Check size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.approveBtnText}>
+                        {myRole === 'Buyer' ? 'Approve & Received' : 'Approve Delivery'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.approvalBtn, styles.rejectBtn]}
+                      onPress={() => handleUpdateDeliveryStatus(matchedDelivery._id, 'rejected')}
+                      activeOpacity={0.8}
+                    >
+                      <X size={15} color="#DC2626" style={{ marginRight: 6 }} />
+                      <Text style={styles.rejectBtnText}>Reject</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Approved / Rejected Banner */}
+                {delBannerText ? (
+                  <View style={[styles.approvedBanner, { backgroundColor: delTheme.approvedBannerBg }]}>
+                    <Text style={[styles.approvedBannerText, { color: delTheme.approvedBannerText }]}>{delBannerText}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.bubbleFooter}>
+                <Text style={styles.bubbleTime}>{item.time}</Text>
+                {isMe && (
+                  <View style={styles.checkDoubleRow}>
+                    <Text style={[styles.checkDoubleText, item.status === 'read' ? styles.checkBlue : styles.checkGrey]}>
+                      ✓✓
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {isMe && (
+              <View style={[styles.avatarCircle, styles.avatarCircleMe]}>
+                {myLogo ? (
+                  <Image
+                    source={{ uri: resolveImageUrl(myLogo) }}
+                    style={styles.avatarImg}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text style={styles.avatarCircleTextMe}>{getInitials(myName)}</Text>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+      );
+    }
+
+    // ─── 3. REGULAR MESSAGE BUBBLE ───
     const senderDisplay = isMe ? myName : partyName;
     const roleDisplay = isMe ? myRole : roleLabel;
 
@@ -1864,26 +3077,7 @@ const DealChat = ({ onNavigate, routeData }) => {
           <ChevronLeft size={22} color="#1E293B" strokeWidth={2.4} />
         </TouchableOpacity>
 
-        {/* Product / Counterparty Avatar */}
-        <View style={styles.headerAvatarWrap}>
-          {counterpartyLogo ? (
-            <Image
-              source={{ uri: resolveImageUrl(counterpartyLogo) }}
-              style={styles.headerAvatarImage}
-              resizeMode="cover"
-            />
-          ) : productImgUrl ? (
-            <Image
-              source={{ uri: productImgUrl }}
-              style={styles.headerAvatarImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.headerAvatarFallback}>
-              <Text style={styles.headerAvatarFallbackText}>{getInitials(partyName)}</Text>
-            </View>
-          )}
-        </View>
+
 
         <View style={styles.headerDetailsCol}>
           <View style={styles.headerRow1}>
@@ -2008,35 +3202,44 @@ const DealChat = ({ onNavigate, routeData }) => {
         style={styles.chatArea}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        {chatMessages.length === 0 ? (
-          <ScrollView contentContainerStyle={styles.emptyContainer} showsVerticalScrollIndicator={false}>
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIconCircle}>
-                <Handshake size={36} color="#1541D8" />
-              </View>
-              <Text style={styles.emptyTitle}>Trade Channel Ready</Text>
-              <Text style={styles.emptySubtitle}>
-                Negotiate terms, confirm dispatches, and log verified payments directly inside this deal chat.
+        {displayMessages.length === 0 ? (
+          isFetchingMessages ? (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 }}>
+              <ActivityIndicator size="small" color="#1541D8" />
+              <Text style={{ marginTop: 12, fontSize: 13, color: '#64748B', fontWeight: '500' }}>
+                Connecting to deal conversation...
               </Text>
-              <View style={styles.quickChipsRow}>
-                {['Confirm delivery schedule', 'Share specifications', 'Discuss advance payment'].map((chip, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={styles.suggestionChip}
-                    onPress={() => setMessage(chip)}
-                  >
-                    <Text style={styles.suggestionChipText}>{chip}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
             </View>
-          </ScrollView>
+          ) : (
+            <ScrollView contentContainerStyle={styles.emptyContainer} showsVerticalScrollIndicator={false}>
+              <View style={styles.emptyCard}>
+                <View style={styles.emptyIconCircle}>
+                  <Handshake size={36} color="#1541D8" />
+                </View>
+                <Text style={styles.emptyTitle}>Trade Channel Ready</Text>
+                <Text style={styles.emptySubtitle}>
+                  Negotiate terms, confirm dispatches, and log verified payments directly inside this deal chat.
+                </Text>
+                <View style={styles.quickChipsRow}>
+                  {['Confirm delivery schedule', 'Share specifications', 'Discuss advance payment'].map((chip, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={styles.suggestionChip}
+                      onPress={() => setMessage(chip)}
+                    >
+                      <Text style={styles.suggestionChipText}>{chip}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </ScrollView>
+          )
         ) : (
           <FlatList
             ref={flatListRef}
-            data={chatMessages}
+            data={displayMessages}
             renderItem={renderMessageItem}
-            keyExtractor={item => item.id.toString()}
+            keyExtractor={(item, idx) => (item.id ? String(item.id) : String(idx))}
             contentContainerStyle={styles.messageListContent}
             showsVerticalScrollIndicator={false}
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
@@ -2058,41 +3261,47 @@ const DealChat = ({ onNavigate, routeData }) => {
         <View style={styles.bottomBarContainer}>
           {showAttachMenu && (
             <View style={styles.attachMenuPopup}>
-              <TouchableOpacity
-                style={styles.attachMenuItem}
-                onPress={() => handleSelectPaymentAction('sent')}
-                activeOpacity={0.7}
-              >
-                <CreditCard size={16} color="#10B981" style={{ marginRight: 10 }} />
-                <Text style={styles.attachMenuItemText}>Send Payment</Text>
-              </TouchableOpacity>
+              {myRole === 'Buyer' ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.attachMenuItem}
+                    onPress={() => handleSelectPaymentAction('sent')}
+                    activeOpacity={0.7}
+                  >
+                    <CreditCard size={16} color="#0284C7" style={{ marginRight: 10 }} />
+                    <Text style={styles.attachMenuItemText}>Send Payment (Payment Sent)</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.attachMenuItem}
-                onPress={() => handleSelectPaymentAction('received')}
-                activeOpacity={0.7}
-              >
-                <CheckCircle size={16} color="#10B981" style={{ marginRight: 10 }} />
-                <Text style={styles.attachMenuItemText}>Receive Payment</Text>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.attachMenuItem}
+                    onPress={() => handleSelectDeliveryAction('received')}
+                    activeOpacity={0.7}
+                  >
+                    <Download size={16} color="#9333EA" style={{ marginRight: 10 }} />
+                    <Text style={styles.attachMenuItemText}>Confirm Receipt (Delivery Received)</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.attachMenuItem}
+                    onPress={() => handleSelectDeliveryAction('sent')}
+                    activeOpacity={0.7}
+                  >
+                    <Truck size={16} color="#4F46E5" style={{ marginRight: 10 }} />
+                    <Text style={styles.attachMenuItemText}>Dispatch Goods (Delivery Sent)</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.attachMenuItem}
-                onPress={() => handleSelectDeliveryAction('sent')}
-                activeOpacity={0.7}
-              >
-                <Truck size={16} color="#3B82F6" style={{ marginRight: 10 }} />
-                <Text style={styles.attachMenuItemText}>Record Dispatch</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.attachMenuItem}
-                onPress={() => handleSelectDeliveryAction('received')}
-                activeOpacity={0.7}
-              >
-                <Download size={16} color="#3B82F6" style={{ marginRight: 10 }} />
-                <Text style={styles.attachMenuItemText}>Confirm Receipt</Text>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.attachMenuItem}
+                    onPress={() => handleSelectPaymentAction('received')}
+                    activeOpacity={0.7}
+                  >
+                    <CheckCircle size={16} color="#059669" style={{ marginRight: 10 }} />
+                    <Text style={styles.attachMenuItemText}>Receive Payment (Payment Received)</Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
               <TouchableOpacity
                 style={styles.attachMenuItem}
@@ -2807,7 +4016,7 @@ const DealChat = ({ onNavigate, routeData }) => {
             <TouchableOpacity
               style={styles.imageViewerCloseBtn}
               onPress={() => {
-                if (fullPreviewImage) Linking.openURL(fullPreviewImage).catch(() => {});
+                if (fullPreviewImage) Linking.openURL(fullPreviewImage).catch(() => { });
               }}
               activeOpacity={0.7}
             >
@@ -3499,6 +4708,73 @@ const styles = StyleSheet.create({
     minWidth: 0,
     marginLeft: 6,
   },
+  cardSubtitleText: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 1,
+    fontWeight: '500',
+  },
+  statusTagRejected: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  statusTagTextRejected: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  promptBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginVertical: 6,
+  },
+  promptText: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  approvedBanner: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  approvedBannerText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  systemPillContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginVertical: 8,
+    paddingHorizontal: 16,
+  },
+  systemPillBadge: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    maxWidth: '92%',
+    alignItems: 'center',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  systemPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
   paymentApprovalButtons: {
     flexDirection: 'row',
     gap: 6,
@@ -3506,11 +4782,12 @@ const styles = StyleSheet.create({
   },
   approvalBtn: {
     flex: 1,
-    height: 30,
-    borderRadius: 6,
+    height: 32,
+    borderRadius: 7,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
   },
   approveBtn: {
     backgroundColor: '#10B981',
@@ -3521,7 +4798,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   rejectBtn: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#FCA5A5',
   },

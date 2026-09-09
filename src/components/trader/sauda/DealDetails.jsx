@@ -1180,7 +1180,11 @@ const DealDetails = ({ onNavigate, routeData }) => {
           <ArrowLeft size={19} color="#1E293B" strokeWidth={2.4} />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitleMain}>Deal Details</Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitleMain} numberOfLines={1} ellipsizeMode="tail">
+            Deal Details
+          </Text>
+        </View>
 
         <View style={styles.headerRightActions}>
           <TouchableOpacity
@@ -2154,9 +2158,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerTitleContainer: {
+    flex: 1,
+    marginHorizontal: 8,
+    justifyContent: 'center',
+  },
   headerTitleMain: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#0F172A',
   },
   headerRightActions: {

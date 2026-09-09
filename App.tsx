@@ -22,9 +22,6 @@ import {
   ContactPicker,
   CategoryPage,
   AddProductPage,
-
-
-
   TransactionHistory,
   OnboardedUsers,
 } from './src/components/trader';
@@ -95,6 +92,7 @@ const checkIsUserBroker = (userObj: any, explicitRole?: string): boolean => {
 const getScreenStatusBarConfig = (screenName: string) => {
   switch (screenName) {
     case 'Dashboard':
+    case 'AddCompany':
     case 'BrokerDashboard':
     case 'BrokerProfile':
       return { bg: '#2327D8', barStyle: 'light-content' as const };
@@ -152,33 +150,48 @@ function App() {
       try {
         const token = await AsyncStorage.getItem('userToken');
         if (token) {
-          const response = await getUserProfile(token);
-          if (response && response.success) {
-            const userData = response.data;
-            const storedProfileStr = await AsyncStorage.getItem('user_completed_profile');
-            let mergedUser = userData;
-            if (storedProfileStr) {
-              mergedUser = { ...userData, ...JSON.parse(storedProfileStr) };
-            }
-            const isBroker = checkIsUserBroker(mergedUser);
-            const initialScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
-            setNavigationStack([{ screen: initialScreen, data: { user: mergedUser, role: isBroker ? 'Broker' : 'Trader' } }]);
+          const storedProfileStr = await AsyncStorage.getItem('user_completed_profile');
+          let cachedUser: any = null;
+          if (storedProfileStr) {
+            try {
+              cachedUser = JSON.parse(storedProfileStr);
+            } catch (e) { }
+          }
 
-            checkPendingVerification(token);
-          } else {
-            // Token invalid or expired
-            await AsyncStorage.removeItem('userToken');
-            await AsyncStorage.removeItem('user_completed_profile');
+          // If we have cached profile, launch immediately without waiting for server!
+          if (cachedUser) {
+            const isBroker = checkIsUserBroker(cachedUser);
+            const initialScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
+            setNavigationStack([{ screen: initialScreen, data: { user: cachedUser, role: isBroker ? 'Broker' : 'Trader' } }]);
+            setIsInitializing(false);
+          }
+
+          // Fetch latest profile from server
+          try {
+            const response = await getUserProfile(token);
+            if (response && response.success && response.data) {
+              const userData = response.data;
+              let mergedUser = userData;
+              if (cachedUser) {
+                mergedUser = { ...userData, ...cachedUser };
+              }
+              const isBroker = checkIsUserBroker(mergedUser);
+              const initialScreen = isBroker ? 'BrokerDashboard' : 'Dashboard';
+              setNavigationStack([{ screen: initialScreen, data: { user: mergedUser, role: isBroker ? 'Broker' : 'Trader' } }]);
+              AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedUser)).catch(() => { });
+              checkPendingVerification(token);
+            } else if (response?.statusCode === 401 || (response?.message && response.message.toLowerCase().includes('token'))) {
+              // Token strictly invalid/expired by auth server
+              await AsyncStorage.removeItem('userToken');
+              await AsyncStorage.removeItem('user_completed_profile');
+              setNavigationStack([{ screen: 'Login', data: {} }]);
+            }
+          } catch (netErr) {
+            console.warn('Network error during session verification, continuing with cached session:', netErr);
           }
         }
       } catch (error) {
-        console.error('Failed to restore session automatically', error);
-        try {
-          await AsyncStorage.removeItem('userToken');
-          await AsyncStorage.removeItem('user_completed_profile');
-        } catch (clearError) {
-          console.warn('Failed to clear invalid credentials', clearError);
-        }
+        console.warn('Failed to restore session automatically', error);
       } finally {
         setIsInitializing(false);
       }

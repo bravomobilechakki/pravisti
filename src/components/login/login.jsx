@@ -188,7 +188,7 @@ const Login = ({ onNavigate, routeData }) => {
   };
 
   const handleSendOtp = async () => {
-    const cleanMobile = mobile.trim();
+    const cleanMobile = mobile.replace(/\D/g, '').slice(-10);
     if (cleanMobile.length !== 10) {
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
@@ -231,7 +231,7 @@ const Login = ({ onNavigate, routeData }) => {
       setErrorMessage('Please enter the complete 4-digit OTP.');
       return;
     }
-    const cleanMobile = mobile.trim();
+    const cleanMobile = mobile.replace(/\D/g, '').slice(-10);
     isVerifyingRef.current = true;
     setErrorMessage('');
     setIsLoading(true);
@@ -255,14 +255,22 @@ const Login = ({ onNavigate, routeData }) => {
         const msg = response?.message || response?.error || 'Invalid OTP. Please try again.';
         setErrorMessage(msg);
         setOtp(['', '', '', '']);
+        if (msg.toLowerCase().includes('no otp') || msg.toLowerCase().includes('request otp') || msg.toLowerCase().includes('expired')) {
+          setTimer(0);
+        }
         setTimeout(() => otpRefs.current[0]?.focus(), 100);
       }
+
+
     } catch (error) {
       const errMsg = error?.message || 'OTP verification failed. Please try again.';
       console.error('OTP verify error:', error);
       setErrorMessage(errMsg);
-      // Only clear input if it was NOT a timeout/network hiccup
-      const isTransient = errMsg.toLowerCase().includes('timed out') || errMsg.toLowerCase().includes('network') || errMsg.toLowerCase().includes('server');
+      if (errMsg.toLowerCase().includes('no otp') || errMsg.toLowerCase().includes('request otp') || errMsg.toLowerCase().includes('expired')) {
+        setTimer(0);
+      }
+      // Only preserve input if it was a network timeout or connection abort
+      const isTransient = errMsg.toLowerCase().includes('timed out') || errMsg.toLowerCase().includes('abort');
       if (!isTransient) {
         setOtp(['', '', '', '']);
         setTimeout(() => otpRefs.current[0]?.focus(), 100);
@@ -328,7 +336,11 @@ const Login = ({ onNavigate, routeData }) => {
                   placeholder="00000 00000"
                   placeholderTextColor="#CBD5E1"
                   value={mobile}
-                  onChangeText={(text) => { setMobile(text); if (errorMessage) setErrorMessage(''); }}
+                  onChangeText={(text) => {
+                    const clean = text.replace(/\D/g, '').slice(0, 10);
+                    setMobile(clean);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   keyboardType="phone-pad"
                   maxLength={10}
                   editable={!otpSent}

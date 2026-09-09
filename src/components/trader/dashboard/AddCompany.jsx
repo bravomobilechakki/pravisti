@@ -283,6 +283,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
             style={styles.backButton}
             onPress={() => onNavigate('pop')}
             activeOpacity={0.8}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <ArrowLeft size={20} color="#FFFFFF" />
           </TouchableOpacity>

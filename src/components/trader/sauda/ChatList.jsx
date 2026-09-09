@@ -478,6 +478,7 @@ const ChatList = ({ onNavigate, routeData }) => {
           style={styles.headerCircleBtn}
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={20} color="#1541D8" strokeWidth={2.4} />
         </TouchableOpacity>

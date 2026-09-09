@@ -487,8 +487,9 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
           style={styles.headerBackBtn}
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ArrowLeft size={22} color="#1541D8" strokeWidth={2.4} />
+          <ArrowLeft size={20} color="#1541D8" strokeWidth={2.4} />
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Company Details</Text>
@@ -1005,7 +1006,16 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalIndicator} />
-            <Text style={styles.modalHeading}>Update Company Details</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text style={[styles.modalHeading, { marginBottom: 0 }]}>Update Company Details</Text>
+              <TouchableOpacity
+                onPress={() => setIsEditModalVisible(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}
+              >
+                <X size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
 
             <ScrollView
               showsVerticalScrollIndicator={false}
@@ -1246,8 +1256,12 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   headerBackBtn: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     justifyContent: 'center',
     alignItems: 'center',
   },

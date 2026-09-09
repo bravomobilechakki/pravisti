@@ -291,7 +291,7 @@ const BrokerDashboard = ({ onNavigate, routeData }) => {
 
           <View style={styles.brandContainer}>
             <Image
-              source={require('../../images/logo/new_logo.png')}
+              source={require('../../images/white_logo.png')}
               style={styles.brandLogo}
               resizeMode="contain"
             />

@@ -7,7 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { Sprout, Sun, Plus, ArrowRight } from 'lucide-react-native';
+import { Sprout, Sun, Plus, ArrowRight, ArrowLeft } from 'lucide-react-native';
 
 const MyCompanies = ({ onNavigate }) => {
 
@@ -41,6 +41,13 @@ const MyCompanies = ({ onNavigate }) => {
 
       {/* HEADER */}
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => onNavigate('pop')}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color="#0F172A" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>My Companies</Text>
         <TouchableOpacity
           style={styles.addBtnTop}
@@ -153,14 +160,26 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
     backgroundColor: '#fff',
   },
 
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   headerTitle: {
     fontSize: 18,
     fontWeight: '800',
+    flex: 1,
+    marginLeft: 12,
   },
 
   addBtnTop: {

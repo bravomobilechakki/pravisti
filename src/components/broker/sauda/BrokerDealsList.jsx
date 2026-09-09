@@ -27,6 +27,7 @@ import {
   RotateCcw,
   ShieldCheck,
   ArrowRight,
+  ArrowLeft,
   FileText,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -278,7 +279,16 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
     <View style={styles.headerContainer}>
       {/* Compact Top Title Header */}
       <View style={styles.topHeader}>
-        <Text style={styles.pageTitle}>My Saudas</Text>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => onNavigate('pop')}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <ArrowLeft size={18} color={COLORS.navy} />
+        </TouchableOpacity>
+
+        <Text style={[styles.pageTitle, { flex: 1, marginLeft: 10 }]}>My Saudas</Text>
 
         <TouchableOpacity
           style={styles.newSaudaBtn}
@@ -573,11 +583,18 @@ const styles = StyleSheet.create({
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 12,
     backgroundColor: '#FFFFFF',
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   pageTitle: {
     fontSize: 22,

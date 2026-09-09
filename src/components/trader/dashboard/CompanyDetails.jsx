@@ -52,6 +52,8 @@ import {
   Layers,
   MessageSquare,
   FolderTree,
+  LayoutGrid,
+  Wallet,
 } from 'lucide-react-native';
 import {
   getCompanyDetails,
@@ -338,7 +340,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               setUnreadNotifCount(notifRes.data.filter((n) => !n.isRead).length);
             }
           }
-        } catch (ne) {}
+        } catch (ne) { }
       }
     } catch (error) {
       console.warn('Error fetching company details:', error);
@@ -767,41 +769,42 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     {
       id: 'create_deal',
       title: 'Create Deal',
-      subtitle: 'Sauda',
-      icon: <FilePlus size={19} color="#2563EB" strokeWidth={2.2} />,
-      bgColor: '#EFF6FF',
+      icon: <FilePlus size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#1D64F2',
       onPress: () => onNavigate('CreateDeal', { originCompany: company, company }),
     },
     {
       id: 'add_product',
       title: 'Add Product',
-      subtitle: 'Catalog',
-      icon: <Package size={19} color="#7C3AED" strokeWidth={2.2} />,
-      bgColor: '#F5F3FF',
+      icon: <Package size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#FF9900',
       onPress: () => onNavigate('AddProductPage', { company }),
     },
     {
       id: 'categories',
       title: 'Add Categories',
-      subtitle: 'All Catalog',
-      icon: <Layers size={19} color="#E11D48" strokeWidth={2.2} />,
-      bgColor: '#FFF1F2',
+      icon: <LayoutGrid size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#9333EA',
       onPress: () => onNavigate('CategoryPage', { company, initialTab: 'category' }),
     },
     {
-      id: 'sub_categories',
-      title: 'Add Sub Categories',
-      subtitle: 'Segments',
-      icon: <FolderTree size={19} color="#2563EB" strokeWidth={2.2} />,
-      bgColor: '#EFF6FF',
-      onPress: () => onNavigate('CategoryPage', { company, initialTab: 'subcategory' }),
+      id: 'payments',
+      title: 'Payments',
+      icon: <Wallet size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#10B981',
+      onPress: () => onNavigate('CompanyPayments', {
+        company,
+        companyId: company?._id || company?.id || routeData?.companyId,
+        companyName: company?.name || company?.businessName || routeData?.companyName,
+        deals: fetchedDeals,
+        fromScreen: 'CompanyDetails',
+      }),
     },
     {
       id: 'parties',
       title: 'Onboarded',
-      subtitle: onboardedUsers.length > 0 ? `${onboardedUsers.length} Parties` : 'Onboarded Users',
-      icon: <Users size={19} color="#16A34A" strokeWidth={2.2} />,
-      bgColor: '#F0FDF4',
+      icon: <Users size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#0D9488',
       onPress: () => onNavigate('OnboardedUsers', {
         companyId: company?._id || company?.id,
         companyName: company?.name,
@@ -813,10 +816,23 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     {
       id: 'messages',
       title: 'View Chats',
-      subtitle: 'Chat/Inbox',
-      icon: <MessageSquare size={19} color="#EA580C" strokeWidth={2.2} />,
-      bgColor: '#FFF7ED',
+      icon: <MessageSquare size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#FF1E56',
       onPress: () => onNavigate('ChatList', { company, companyId: company?._id || company?.id }),
+    },
+    {
+      id: 'my_task',
+      title: 'My Task',
+      icon: <CheckCircle2 size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#059669',
+      onPress: () => Alert.alert('My Task', 'Tasks feature coming soon!'),
+    },
+    {
+      id: 'create_project',
+      title: 'Create Project',
+      icon: <Building2 size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#4F46E5',
+      onPress: () => Alert.alert('Create Project', 'Project management feature coming soon!'),
     },
   ];
 
@@ -827,8 +843,16 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       {/* ─── 1. TOP HEADER (With realogo.png & Notification / Avatar) ─── */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.headerBackBtn}
+            onPress={() => onNavigate('pop')}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ArrowLeft size={20} color="#1E293B" strokeWidth={2.4} />
+          </TouchableOpacity>
           <Image
-            source={require('../../../images/constructions/realogo.png')}
+            source={require('../../../images/blue_logo.png')}
             style={styles.brandLogoImage}
             resizeMode="contain"
           />
@@ -848,7 +872,6 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               </View>
             )}
           </TouchableOpacity>
-
           {/* Right Corner Company Avatar (shows Company Logo or Company First Letter) */}
           <TouchableOpacity
             style={styles.headerAvatarBtn}
@@ -969,13 +992,12 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             <TouchableOpacity
               style={styles.customizeBtn}
               onPress={() => {
-                setEditErrors({ name: '', phone: '', registrationNumber: '' });
-                setIsEditModalVisible(true);
+                Alert.alert('Quick Actions', 'Select any tile to navigate directly to management, trade, catalog, or reports.');
               }}
               activeOpacity={0.7}
             >
-              <Text style={styles.customizeBtnText}>Customize</Text>
-              <SlidersHorizontal size={14} color="#2563EB" strokeWidth={2.2} style={{ marginLeft: 4 }} />
+              <Text style={styles.customizeBtnText}>View All</Text>
+              <ChevronRight size={15} color="#2563EB" strokeWidth={2.4} style={{ marginLeft: 2 }} />
             </TouchableOpacity>
           </View>
 
@@ -983,7 +1005,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             {quickActions.map((action) => (
               <TouchableOpacity
                 key={action.id}
-                style={styles.quickActionCard}
+                style={styles.quickActionItem}
                 onPress={action.onPress}
                 activeOpacity={0.75}
               >
@@ -992,9 +1014,6 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 </View>
                 <Text style={styles.quickActionTitle} numberOfLines={1}>
                   {action.title}
-                </Text>
-                <Text style={styles.quickActionSubtitle} numberOfLines={1}>
-                  {action.subtitle}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1509,7 +1528,16 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalIndicator} />
-            <Text style={styles.modalHeading}>Update Company Details</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text style={[styles.modalHeading, { marginBottom: 0 }]}>Update Company Details</Text>
+              <TouchableOpacity
+                onPress={() => setIsEditModalVisible(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}
+              >
+                <X size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
 
             <ScrollView
               showsVerticalScrollIndicator={false}
@@ -1731,10 +1759,21 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  headerBackBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   brandLogoImage: {
-    width: 128,
-    height: 38,
+    width: 124,
+    height: 36,
   },
   headerRight: {
     flexDirection: 'row',
@@ -1979,44 +2018,42 @@ const styles = StyleSheet.create({
   quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 10,
+    justifyContent: 'flex-start',
+    marginTop: 2,
   },
-  quickActionCard: {
-    width: '31.5%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
+  quickActionItem: {
+    width: '25%',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
+    marginBottom: 16,
+    paddingHorizontal: 2,
+    backgroundColor: 'transparent',
   },
   quickActionIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 5,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.15,
+        shadowRadius: 5,
+      },
+      android: {
+        // No elevation on Android to prevent white/grey square shadow artifacts behind rounded squircle
+      },
+    }),
   },
   quickActionTitle: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1E293B',
     textAlign: 'center',
-  },
-  quickActionSubtitle: {
-    fontSize: 8.5,
-    fontWeight: '500',
-    color: '#64748B',
-    textAlign: 'center',
-    marginTop: 1,
+    marginTop: 7,
+    letterSpacing: -0.2,
   },
 
   /* ── 5. Business Overview ── */

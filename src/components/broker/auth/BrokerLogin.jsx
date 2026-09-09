@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   StatusBar,
 } from 'react-native';
-import { Phone, ShieldCheck, ArrowRight, Building2 } from 'lucide-react-native';
+import { Phone, ShieldCheck, ArrowRight, Building2, ArrowLeft } from 'lucide-react-native';
 import { loginUser } from '../../../services/api';
 
 const BrokerLogin = ({ onNavigate, routeData }) => {
@@ -48,6 +48,14 @@ const BrokerLogin = ({ onNavigate, routeData }) => {
         style={{ flex: 1 }}
       >
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => onNavigate('pop')}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <ArrowLeft size={20} color="#FFFFFF" />
+          </TouchableOpacity>
           <View style={styles.badge}>
             <ShieldCheck size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
             <Text style={styles.badgeText}>Pravisti Broker Portal</Text>
@@ -105,7 +113,16 @@ const BrokerLogin = ({ onNavigate, routeData }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#312E81' },
-  header: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 24 },
+  header: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 20 },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',

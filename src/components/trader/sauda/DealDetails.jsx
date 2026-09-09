@@ -1176,6 +1176,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
           style={styles.headerCircleBtn}
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={19} color="#1E293B" strokeWidth={2.4} />
         </TouchableOpacity>

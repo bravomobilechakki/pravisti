@@ -31,7 +31,7 @@ import {
   Award,
   Mail,
 } from 'lucide-react-native';
-import { createCompany, getIndustries } from '../../../services/api';
+import { createCompany, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
 
 const COLORS = {
   primaryDark: '#2327D8',   // Royal Blue (Login & Signup Theme)
@@ -91,7 +91,114 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
     phone: '',
   });
 
+  const [isPincodeLoading, setIsPincodeLoading] = useState(false);
   const [errors, setErrors] = useState({});
+
+  const cleanPhoneNumber = (val) => {
+    if (!val) return '';
+    let cleaned = String(val).replace(/\D/g, '');
+    if (cleaned.length === 12 && cleaned.startsWith('91')) {
+      cleaned = cleaned.slice(2);
+    }
+    if (cleaned.length === 11 && cleaned.startsWith('0')) {
+      cleaned = cleaned.slice(1);
+    }
+    return cleaned.slice(0, 10);
+  };
+
+  // Auto-fill logged in user's mobile number
+  useEffect(() => {
+    const fetchUserPhone = async () => {
+      try {
+        // 1. Check routeData
+        const userFromRoute = routeData?.user || routeData?.userData;
+        const phoneFromRoute =
+          userFromRoute?.mobileNumber ||
+          userFromRoute?.mobile ||
+          userFromRoute?.phone ||
+          '';
+        if (phoneFromRoute) {
+          const cleaned = cleanPhoneNumber(phoneFromRoute);
+          if (cleaned) {
+            setFormData(prev => ({ ...prev, phone: prev.phone || cleaned }));
+            return;
+          }
+        }
+
+        // 2. Check local cached user profile
+        const cachedStr = await AsyncStorage.getItem('user_completed_profile');
+        if (cachedStr) {
+          const cachedProfile = JSON.parse(cachedStr);
+          const cachedPhone =
+            cachedProfile?.mobileNumber ||
+            cachedProfile?.mobile ||
+            cachedProfile?.phone ||
+            '';
+          if (cachedPhone) {
+            const cleaned = cleanPhoneNumber(cachedPhone);
+            if (cleaned) {
+              setFormData(prev => ({ ...prev, phone: prev.phone || cleaned }));
+              return;
+            }
+          }
+        }
+
+        // 3. Fallback: Query live user profile from API
+        const token = await AsyncStorage.getItem('userToken');
+        if (token) {
+          const response = await getUserProfile(token);
+          if (response && response.success && response.data) {
+            const apiPhone =
+              response.data.mobileNumber ||
+              response.data.mobile ||
+              response.data.phone ||
+              '';
+            if (apiPhone) {
+              const cleaned = cleanPhoneNumber(apiPhone);
+              if (cleaned) {
+                setFormData(prev => ({ ...prev, phone: prev.phone || cleaned }));
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load user phone in BrokerAddCompany:', err);
+      }
+    };
+    fetchUserPhone();
+  }, [routeData]);
+
+  // Handle Pincode entry and auto-fetch City & State
+  const handlePincodeChange = async (pincodeVal) => {
+    updateField('postalCode', pincodeVal);
+    const cleanPin = pincodeVal.replace(/\D/g, '');
+    if (cleanPin.length === 6) {
+      try {
+        setIsPincodeLoading(true);
+        const res = await fetchPincodeDetails(cleanPin);
+        setIsPincodeLoading(false);
+        if (res && res.success) {
+          const fetchedCity = res.city || res.district || '';
+          const fetchedState = res.state || '';
+          setFormData(prev => ({
+            ...prev,
+            postalCode: cleanPin,
+            city: fetchedCity || prev.city,
+            state: fetchedState || prev.state,
+            country: res.country || prev.country || 'India',
+          }));
+          setErrors(prev => ({
+            ...prev,
+            city: undefined,
+            state: undefined,
+            postalCode: undefined,
+          }));
+        }
+      } catch (err) {
+        setIsPincodeLoading(false);
+      }
+    }
+  };
 
   // Auto redirect to BrokerDashboard after success
   useEffect(() => {
@@ -221,7 +328,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
           <View style={styles.topNavRow}>
             <TouchableOpacity
               style={styles.navBackBtn}
-              onPress={() => onNavigate('BrokerDashboard')}
+              onPress={() => onNavigate('pop')}
               activeOpacity={0.8}
             >
               <ArrowLeft size={20} color="#FFFFFF" />
@@ -323,7 +430,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
               </View>
               <TextInput
                 style={styles.input}
-                placeholder="no"
+                placeholder="Enter 10-digit mobile number"
                 placeholderTextColor={COLORS.textPlaceholder}
                 keyboardType="phone-pad"
                 maxLength={10}
@@ -359,6 +466,42 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
               </View>
               <Text style={styles.cardSectionTitle}>2. Address</Text>
             </View>
+
+            {/* Pincode with Auto-fill */}
+            <Text style={styles.label}>
+              Pincode <Text style={styles.requiredStar}>*</Text>
+            </Text>
+            <View
+              style={[
+                styles.inputWrapper,
+                focusedField === 'postalCode' && styles.inputFocused,
+                errors.postalCode && styles.inputError,
+              ]}
+            >
+              <View style={styles.inputIconCircle}>
+                <MapPin size={16} color={COLORS.primary} />
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="6-digit Pincode (e.g. 385260)"
+                placeholderTextColor={COLORS.textPlaceholder}
+                keyboardType="numeric"
+                maxLength={6}
+                value={formData.postalCode}
+                onFocus={() => setFocusedField('postalCode')}
+                onBlur={() => setFocusedField(null)}
+                onChangeText={handlePincodeChange}
+              />
+              {isPincodeLoading && (
+                <ActivityIndicator size="small" color={COLORS.primary} style={{ marginRight: 10 }} />
+              )}
+            </View>
+            {errors.postalCode && <Text style={styles.errorText}>{errors.postalCode}</Text>}
+            {isPincodeLoading && (
+              <Text style={{ fontSize: 11.5, color: COLORS.primary, marginTop: 4, marginLeft: 2, fontWeight: '600' }}>
+                Fetching City & State...
+              </Text>
+            )}
 
             <Text style={styles.label}>City <Text style={styles.requiredStar}>*</Text></Text>
             <View

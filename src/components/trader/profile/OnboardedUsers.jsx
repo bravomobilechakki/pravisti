@@ -945,14 +945,10 @@ const OnboardedUsers = ({ onNavigate, routeData }) => {
           style={styles.backBtn}
           onPress={() => {
             if (!onNavigate) return;
-            if (routeData?.fromScreen) {
-              onNavigate(routeData.fromScreen, routeData);
-            } else if (routeData?.company || routeData?.companyId) {
-              onNavigate('CompanyDetails', { company: routeData?.company, companyId: routeData?.companyId });
-            } else {
-              onNavigate('Profile');
-            }
+            onNavigate('pop');
           }}
+          activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={20} color="#1E293B" />
         </TouchableOpacity>

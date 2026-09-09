@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   StatusBar,
 } from 'react-native';
-import { ShieldCheck, ArrowRight, Lock } from 'lucide-react-native';
+import { ShieldCheck, ArrowRight, Lock, ArrowLeft } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { verifyOtp } from '../../../services/api';
 
@@ -62,6 +62,14 @@ const BrokerOTPVerify = ({ onNavigate, routeData }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#312E81" />
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => onNavigate('pop')}
+          activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <ArrowLeft size={20} color="#FFFFFF" />
+        </TouchableOpacity>
         <Text style={styles.title}>Verify Broker OTP</Text>
         <Text style={styles.subtitle}>Enter 4-digit code sent to +91 {mobile}</Text>
       </View>
@@ -97,7 +105,16 @@ const BrokerOTPVerify = ({ onNavigate, routeData }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#312E81' },
-  header: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 24 },
+  header: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 20 },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   title: { fontSize: 24, fontWeight: '800', color: '#FFFFFF', marginBottom: 8 },
   subtitle: { fontSize: 13, color: '#C7D2FE' },
   card: {

@@ -2245,7 +2245,7 @@ const DealChat = ({ onNavigate, routeData }) => {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.headerBackBtn}
-            onPress={() => onNavigate('back')}
+            onPress={() => onNavigate('pop')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <ArrowLeft size={22} color="#0F172A" />
@@ -3073,6 +3073,7 @@ const DealChat = ({ onNavigate, routeData }) => {
           style={styles.headerBackBtn}
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ChevronLeft size={22} color="#1E293B" strokeWidth={2.4} />
         </TouchableOpacity>

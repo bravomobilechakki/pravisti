@@ -112,8 +112,8 @@ const mapBackendNotification = (n, currentCompanyId) => {
     actionLabel = eventType.includes('expired')
       ? 'View Deal'
       : eventType.includes('approved')
-      ? 'View Contract'
-      : 'Review Deal';
+        ? 'View Contract'
+        : 'Review Deal';
     if (!badgeText || badgeText === 'Alert') {
       badgeText = eventType.includes('approved') ? 'Confirmed' : 'Sauda';
     }
@@ -293,8 +293,8 @@ const Notifications = ({ onNavigate, routeData }) => {
     if (item?.rawId) {
       try {
         const token = await AsyncStorage.getItem('userToken');
-        markNotificationAsRead(item.rawId, token).catch(() => {});
-      } catch (e) {}
+        markNotificationAsRead(item.rawId, token).catch(() => { });
+      } catch (e) { }
     }
   };
 
@@ -372,9 +372,9 @@ const Notifications = ({ onNavigate, routeData }) => {
           if (item.rawId) {
             AsyncStorage.getItem('userToken')
               .then((token) => {
-                if (token) markNotificationAsRead(item.rawId, token).catch(() => {});
+                if (token) markNotificationAsRead(item.rawId, token).catch(() => { });
               })
-              .catch(() => {});
+              .catch(() => { });
           }
           if (item.targetScreen) {
             onNavigate(item.targetScreen, item.targetData || {});
@@ -433,6 +433,7 @@ const Notifications = ({ onNavigate, routeData }) => {
           style={styles.backBtn}
           onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={18} color="#FFFFFF" />
         </TouchableOpacity>
@@ -533,8 +534,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     backgroundColor: '#1A56DB',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+
+
   },
   backBtn: {
     width: 36,

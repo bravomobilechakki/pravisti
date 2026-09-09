@@ -10,7 +10,7 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
-import { Building2, ShieldCheck, ArrowRight, MapPin, Percent } from 'lucide-react-native';
+import { Building2, ShieldCheck, ArrowRight, MapPin, Percent, ArrowLeft } from 'lucide-react-native';
 
 const BrokerRegistration = ({ onNavigate }) => {
   const [firmName, setFirmName] = useState('');
@@ -34,6 +34,14 @@ const BrokerRegistration = ({ onNavigate }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => onNavigate('pop')}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <ArrowLeft size={20} color="#0F172A" />
+          </TouchableOpacity>
           <ShieldCheck size={28} color="#4F46E5" style={{ marginBottom: 8 }} />
           <Text style={styles.title}>Register Brokerage Firm</Text>
           <Text style={styles.subtitle}>Setup APMC mandi brokerage details for instant sauda issuance.</Text>
@@ -92,7 +100,16 @@ const BrokerRegistration = ({ onNavigate }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { padding: 24 },
-  header: { marginBottom: 24 },
+  header: { marginBottom: 20 },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   title: { fontSize: 24, fontWeight: '800', color: '#0F172A', marginBottom: 4 },
   subtitle: { fontSize: 13, color: '#64748B', lineHeight: 18 },
   formGroup: { marginBottom: 16 },

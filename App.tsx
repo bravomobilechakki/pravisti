@@ -24,6 +24,7 @@ import {
   AddProductPage,
   TransactionHistory,
   OnboardedUsers,
+  CompanyPayments,
 } from './src/components/trader';
 import Notifications from './src/components/common/Notifications';
 import {
@@ -59,6 +60,7 @@ const CategoryPageScreen = CategoryPage as any;
 const AddProductPageScreen = AddProductPage as any;
 const TransactionHistoryScreen = TransactionHistory as any;
 const OnboardedUsersScreen = OnboardedUsers as any;
+const CompanyPaymentsScreen = CompanyPayments as any;
 const NotificationsScreen = Notifications as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
 const BrokerAddCompanyScreen = BrokerAddCompany as any;
@@ -309,7 +311,7 @@ function App() {
       finalTarget = isTargetBroker ? 'BrokerCompanyDetails' : 'CompanyDetails';
     }
 
-    if (finalTarget === 'pop') {
+    if (finalTarget === 'pop' || finalTarget === 'back') {
       const popped = popScreen();
       if (!popped) {
         replaceScreen(isTargetBroker ? 'BrokerDashboard' : 'Dashboard', finalData);
@@ -405,6 +407,8 @@ function App() {
         return <TransactionHistoryScreen onNavigate={onNavigate} routeData={data} />;
       case 'OnboardedUsers':
         return <OnboardedUsersScreen onNavigate={onNavigate} routeData={data} />;
+      case 'CompanyPayments':
+        return <CompanyPaymentsScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerDashboard':
         return <BrokerDashboardScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerAddCompany':

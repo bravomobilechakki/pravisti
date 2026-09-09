@@ -402,6 +402,16 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
         {/* Unified Company Identity Card (Single Row Header Layout) */}
         <View style={styles.companyIdentityCard}>
           <View style={styles.identityTopRow}>
+            {/* Back Navigation Button */}
+            <TouchableOpacity
+              style={styles.cardBackBtnInline}
+              onPress={() => onNavigate('pop')}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+            </TouchableOpacity>
+
             {/* Firm Logo / Avatar */}
             <View style={styles.firmAvatarBox}>
               {companyLogo ? (

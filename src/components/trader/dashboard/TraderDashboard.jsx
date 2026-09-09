@@ -402,7 +402,7 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
             {/* Center: Brand Logo */}
             <View style={styles.brandContainer}>
               <Image
-                source={require('../../../images/new_logo_pravisti.png')}
+                source={require('../../../images/white_logo.png')}
                 style={styles.brandLogo}
                 resizeMode="contain"
               />
@@ -631,23 +631,11 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
                   </TouchableOpacity>
                 );
               })}
-
-              {/* Add New Company CTA Button */}
-              <TouchableOpacity
-                style={styles.addCompanyRowBtn}
-                onPress={() => onNavigate('AddCompany', { user: currentUser })}
-                activeOpacity={0.78}
-              >
-                <View style={styles.addCompanyRowIconCircle}>
-                  <Plus size={14} color={THEME} />
-                </View>
-                <Text style={styles.addCompanyRowBtnText}>Link Another Company</Text>
-              </TouchableOpacity>
             </View>
           )}
         </View>
 
-        <View style={{ height: 60 }} />
+        <View style={{ height: 24 }} />
       </ScrollView>
       </View>
 
@@ -838,7 +826,7 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME, // Single Pure Royal Blue (#2327D8)
+    backgroundColor: BG_COLOR, // Clean #F8FAFC - eliminates solid blue bar at bottom on iOS
   },
   mainWrapper: {
     flex: 1,

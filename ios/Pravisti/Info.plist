@@ -34,7 +34,19 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>Pravisti requires location access for business profile verification.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Pravisti requires camera access to take profile photos and document attachments for deals.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pravisti requires photo library access to upload invoices, product images, and company documents.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Pravisti requires permission to save deal receipts and contract images to your photo library.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Pravisti requires contacts access to easily select and invite parties for trading contracts.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Pravisti requires microphone access for voice-assisted commands and deal creation.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Pravisti requires speech recognition to transcribe voice trade commands.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -633,21 +633,9 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => onNavigate('CreateDeal', {
-            companyId: routeData?.companyId,
-            companyName: routeData?.companyName,
-            role: routeData?.role,
-            originCompany: routeData?.originCompany,
-            company: routeData?.company,
-            prefill: routeData?.prefill,
-            existingParty2: routeData?.existingParty2,
-            existingParty2Name: routeData?.existingParty2Name,
-            existingSellerCompany: routeData?.existingSellerCompany,
-            existingSellerCompanyName: routeData?.existingSellerCompanyName,
-            existingBrokerCompany: routeData?.existingBrokerCompany,
-            existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
-          })}
+          onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={18} color="#0F172A" />
         </TouchableOpacity>

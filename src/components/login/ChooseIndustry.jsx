@@ -63,7 +63,7 @@ const ChooseIndustry = ({ onNavigate, routeData }) => {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButtonCircle}
-          onPress={() => onNavigate('Login')}
+          onPress={() => onNavigate('pop')}
         >
           <ArrowLeft size={18} color="#1A1D1F" />
         </TouchableOpacity>

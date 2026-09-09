@@ -55,10 +55,10 @@ const ModernHeader = React.memo(({ width, height }) => {
         </View>
       </View>
 
-      {/* Logo Container: Pravisti New Logo */}
+      {/* Logo Container: Pravisti White Logo */}
       <View style={styles.logoBadgeContainer}>
         <Image
-          source={require('../../images/new_logo_pravisti.png')}
+          source={require('../../images/white_logo.png')}
           style={{ width: width * 0.72, height: 68 }}
           resizeMode="contain"
         />

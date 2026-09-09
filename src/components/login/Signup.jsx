@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { signUpUser, verifyOtp } from '../../services/api';
-import { Edit3, Phone, ShieldCheck, ArrowRight, User } from 'lucide-react-native';
+import { Edit3, Phone, ShieldCheck, ArrowRight, User, ArrowLeft } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const THEME = '#2327D8';
@@ -30,7 +30,7 @@ const DARK_NAVY = '#1E1C38';
 const BG_COLOR = '#F4F6FB';
 
 // Sleek Modern Mesh Top Header (Stationary Logo & Photo)
-const ModernHeader = React.memo(({ width, height }) => {
+const ModernHeader = React.memo(({ width, height, onBack }) => {
   return (
     <View style={{ width, height, backgroundColor: DARK_NAVY, overflow: 'hidden', position: 'relative' }}>
       {/* Deep Royal Gradient Background */}
@@ -50,6 +50,18 @@ const ModernHeader = React.memo(({ width, height }) => {
       <View style={styles.ambientGlowTopRight} />
       <View style={styles.ambientGlowBottomLeft} />
 
+      {/* Back Navigation Button */}
+      {onBack && (
+        <TouchableOpacity
+          style={styles.headerBackBtn}
+          onPress={onBack}
+          activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+        </TouchableOpacity>
+      )}
+
       {/* Portal Badge Pill */}
       <View style={styles.topPillBadgeContainer}>
         <View style={styles.topPillBadge}>
@@ -58,10 +70,10 @@ const ModernHeader = React.memo(({ width, height }) => {
         </View>
       </View>
 
-      {/* Logo Container: Pravisti New Logo */}
+      {/* Logo Container: Pravisti White Logo */}
       <View style={styles.logoBadgeContainer}>
         <Image
-          source={require('../../images/new_logo_pravisti.png')}
+          source={require('../../images/white_logo.png')}
           style={{ width: width * 0.72, height: 68 }}
           resizeMode="contain"
         />
@@ -260,7 +272,7 @@ const Signup = ({ onNavigate, routeData }) => {
             <View style={{ flex: 1 }}>
 
               {/* Modern Mesh Top Bar Header */}
-              <ModernHeader width={width} height={headerHeight} />
+              <ModernHeader width={width} height={headerHeight} onBack={() => onNavigate('pop')} />
 
               {/* Form Card */}
               <View style={styles.formCard}>
@@ -448,6 +460,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG_COLOR,
+  },
+  headerBackBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 10 : 14,
+    left: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 20,
   },
   topPillBadgeContainer: {
     position: 'absolute',

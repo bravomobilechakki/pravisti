@@ -155,8 +155,9 @@ const Profile = ({ onNavigate, routeData }) => {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => onNavigate('Dashboard')}
+          onPress={() => onNavigate('pop')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={20} color="#0F172A" />
         </TouchableOpacity>

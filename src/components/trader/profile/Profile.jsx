@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
+  Alert,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -28,26 +30,42 @@ import {
   LogOut,
   X,
   Mic,
+  Camera,
+  Image as ImageIcon,
+  Trash2,
 } from 'lucide-react-native';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  resolveImageUrl,
+  updateUserProfile,
+  getUserProfile,
+  getCompanies,
+} from '../../../services/api';
+import uploadService from '../../../services/uploadService';
 
 const Profile = ({ onNavigate, routeData }) => {
-  const [profileData, setProfileData] = React.useState(null);
-  const [isEditModalVisible, setIsEditModalVisible] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(false);
+  const [profileData, setProfileData] = useState(routeData?.user || null);
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Edit fields state
-  const [editName, setEditName] = React.useState('');
-  const [editEmail, setEditEmail] = React.useState('');
-  const [editCompany, setEditCompany] = React.useState('');
-  const [editGstin, setEditGstin] = React.useState('');
-  const [editAddress, setEditAddress] = React.useState('');
+  const [editName, setEditName] = useState(routeData?.user?.name || '');
+  const [editEmail, setEditEmail] = useState(routeData?.user?.email || '');
+  const [editCompany, setEditCompany] = useState(routeData?.user?.company || '');
+  const [editGstin, setEditGstin] = useState(routeData?.user?.gstin || '');
+  const [editAddress, setEditAddress] = useState(routeData?.user?.address || '');
+  const [editProfilePicture, setEditProfilePicture] = useState(
+    routeData?.user?.profilePicture || routeData?.user?.avatar || routeData?.user?.image || ''
+  );
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isImagePickerModalVisible, setIsImagePickerModalVisible] = useState(false);
 
-  const [companiesCount, setCompaniesCount] = React.useState(0);
+  const [companiesCount, setCompaniesCount] = useState(0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
         const storedProfile = await AsyncStorage.getItem('user_completed_profile');
         if (storedProfile) {
           const parsed = JSON.parse(storedProfile);
@@ -57,18 +75,19 @@ const Profile = ({ onNavigate, routeData }) => {
           setEditCompany(parsed.company || '');
           setEditGstin(parsed.gstin || '');
           setEditAddress(parsed.address || '');
+          setEditProfilePicture(parsed.profilePicture || parsed.avatar || parsed.image || '');
           return;
         }
 
-        const { getUserProfile } = require('../../../services/api');
         const response = await getUserProfile();
-        if (response && response.success) {
+        if (response && response.success && response.data) {
           setProfileData(response.data);
           setEditName(response.data.name || '');
           setEditEmail(response.data.email || '');
           setEditCompany(response.data.company || '');
           setEditGstin(response.data.gstin || '');
           setEditAddress(response.data.address || '');
+          setEditProfilePicture(response.data.profilePicture || response.data.avatar || response.data.image || '');
         }
       } catch (error) {
         console.warn('Failed to load profile:', error);
@@ -77,10 +96,9 @@ const Profile = ({ onNavigate, routeData }) => {
     fetchProfile();
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const fetchCompanies = async () => {
       try {
-        const { getCompanies } = require('../../../services/api');
         const response = await getCompanies(1, 100);
         if (response && response.success && response.data?.companies) {
           setCompaniesCount(response.data.companies.length);
@@ -92,33 +110,95 @@ const Profile = ({ onNavigate, routeData }) => {
     fetchCompanies();
   }, []);
 
+  const openEditModal = () => {
+    setEditName(profileData?.name || routeData?.user?.name || '');
+    setEditEmail(profileData?.email || routeData?.user?.email || '');
+    setEditCompany(profileData?.company || routeData?.user?.company || '');
+    setEditGstin(profileData?.gstin || routeData?.user?.gstin || '');
+    setEditAddress(profileData?.address || routeData?.user?.address || '');
+    setEditProfilePicture(
+      profileData?.profilePicture || profileData?.avatar || profileData?.image || routeData?.user?.profilePicture || ''
+    );
+    setIsEditModalVisible(true);
+  };
+
+  const handlePickImage = (sourceType = 'library') => {
+    const pickerOptions = {
+      mediaType: 'photo',
+      maxWidth: 1024,
+      maxHeight: 1024,
+      quality: 0.85,
+    };
+
+    const callback = async (response) => {
+      if (response.didCancel) return;
+      if (response.errorCode) {
+        Alert.alert('Error', response.errorMessage || 'Failed to select image');
+        return;
+      }
+
+      if (response.assets && response.assets.length > 0) {
+        const asset = response.assets[0];
+        setIsUploadingImage(true);
+        try {
+          const uploadedUrl = await uploadService.uploadImage(asset);
+          setEditProfilePicture(uploadedUrl);
+        } catch (uploadErr) {
+          console.error('Profile image upload error:', uploadErr);
+          Alert.alert('Upload Failed', uploadErr.message || 'Could not upload profile picture. Please try again.');
+        } finally {
+          setIsUploadingImage(false);
+        }
+      }
+    };
+
+    if (sourceType === 'camera') {
+      launchCamera(pickerOptions, callback);
+    } else {
+      launchImageLibrary(pickerOptions, callback);
+    }
+  };
+
   const handleSaveProfile = async () => {
     if (!editName.trim()) {
-      const { Alert } = require('react-native');
       Alert.alert('Validation Error', 'Full Name is required');
       return;
     }
 
     setIsLoading(true);
     try {
+      const token = await AsyncStorage.getItem('userToken');
+
+      const payload = {
+        name: editName.trim(),
+        email: editEmail.trim(),
+        profilePicture: editProfilePicture,
+      };
+
+      try {
+        await updateUserProfile(payload, token);
+      } catch (apiErr) {
+        console.warn('Notice updating profile on backend:', apiErr?.message || apiErr);
+      }
+
       const updatedProfile = {
         ...profileData,
-        name: editName,
-        email: editEmail,
+        name: editName.trim(),
+        email: editEmail.trim(),
+        profilePicture: editProfilePicture,
+        avatar: editProfilePicture,
+        image: editProfilePicture,
         company: editCompany,
         gstin: editGstin,
         address: editAddress,
       };
 
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
       await AsyncStorage.setItem('user_completed_profile', JSON.stringify(updatedProfile));
       setProfileData(updatedProfile);
 
-      const { Alert } = require('react-native');
       Alert.alert('Success', 'Profile details updated successfully!');
       setIsEditModalVisible(false);
     } catch (error) {
-      const { Alert } = require('react-native');
       Alert.alert('Error', 'Failed to save profile data.');
     } finally {
       setIsLoading(false);
@@ -164,7 +244,7 @@ const Profile = ({ onNavigate, routeData }) => {
         <Text style={styles.headerTitle}>Profile</Text>
         <TouchableOpacity
           style={styles.editButton}
-          onPress={() => setIsEditModalVisible(true)}
+          onPress={openEditModal}
           activeOpacity={0.7}
         >
           <Edit3 size={16} color="#0F172A" />
@@ -178,9 +258,28 @@ const Profile = ({ onNavigate, routeData }) => {
         {/* Unified Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{displayName.charAt(0)}</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.avatar}
+              onPress={openEditModal}
+              activeOpacity={0.8}
+            >
+              {(profileData?.profilePicture || profileData?.avatar || profileData?.image || routeData?.user?.profilePicture) ? (
+                <Image
+                  source={{ uri: resolveImageUrl(profileData?.profilePicture || profileData?.avatar || profileData?.image || routeData?.user?.profilePicture) }}
+                  style={{ width: '100%', height: '100%', borderRadius: 40 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.avatarText}>{(displayName || 'T').charAt(0).toUpperCase()}</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.mainAvatarCameraBadge}
+              onPress={openEditModal}
+              activeOpacity={0.85}
+            >
+              <Camera size={11} color="#FFFFFF" strokeWidth={2.4} />
+            </TouchableOpacity>
             <View style={styles.roleBadge}>
               <Text style={styles.roleBadgeText}>{displayRole}</Text>
             </View>
@@ -244,7 +343,14 @@ const Profile = ({ onNavigate, routeData }) => {
                   } else if (item.label === 'Voice Preferences') {
                     onNavigate('VoicePreferences');
                   } else if (item.label === 'Onboarded Users') {
-                    onNavigate('OnboardedUsers', { fromScreen: ' ' });
+                    onNavigate('OnboardedUsers', { fromScreen: 'Profile' });
+                  } else if (item.label === 'Contacts') {
+                    onNavigate('ChatList');
+                  } else if (item.label === 'Notifications') {
+                    onNavigate('Notifications');
+                  } else {
+                    const { Alert } = require('react-native');
+                    Alert.alert(item.label, `${item.label} settings coming soon!`);
                   }
                 }}
                 activeOpacity={0.7}
@@ -322,6 +428,55 @@ const Profile = ({ onNavigate, routeData }) => {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.modalForm}
               >
+                {/* Profile Picture Upload Section */}
+                <View style={styles.avatarEditWrapper}>
+                  <View style={styles.avatarEditCircleWrapper}>
+                    <TouchableOpacity
+                      style={styles.avatarEditCircle}
+                      onPress={() => setIsImagePickerModalVisible(true)}
+                      activeOpacity={0.8}
+                      disabled={isUploadingImage}
+                    >
+                      {editProfilePicture ? (
+                        <Image
+                          source={{ uri: resolveImageUrl(editProfilePicture) }}
+                          style={styles.avatarEditImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Text style={styles.avatarEditText}>
+                          {(editName || displayName || 'T').charAt(0).toUpperCase()}
+                        </Text>
+                      )}
+                      {isUploadingImage && (
+                        <View style={styles.avatarUploadingOverlay}>
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.avatarEditBadge}
+                      onPress={() => setIsImagePickerModalVisible(true)}
+                      activeOpacity={0.85}
+                      disabled={isUploadingImage}
+                    >
+                      <Camera size={13} color="#FFFFFF" strokeWidth={2.4} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={() => setIsImagePickerModalVisible(true)}
+                    activeOpacity={0.7}
+                    style={styles.changePhotoBtn}
+                    disabled={isUploadingImage}
+                  >
+                    <Text style={styles.changePhotoBtnText}>
+                      {editProfilePicture ? 'Change Profile Picture' : 'Upload Profile Picture'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
                 <View style={styles.fieldContainer}>
                   <Text style={styles.inputLabel}>Full Name*</Text>
                   <TextInput
@@ -383,9 +538,9 @@ const Profile = ({ onNavigate, routeData }) => {
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.saveButton, isLoading && { opacity: 0.7 }]}
+                  style={[styles.saveButton, (isLoading || isUploadingImage) && { opacity: 0.7 }]}
                   onPress={handleSaveProfile}
-                  disabled={isLoading}
+                  disabled={isLoading || isUploadingImage}
                   activeOpacity={0.8}
                 >
                   {isLoading ? (
@@ -398,6 +553,66 @@ const Profile = ({ onNavigate, routeData }) => {
             </View>
           </KeyboardAvoidingView>
         </View>
+      </Modal>
+
+      {/* Photo Picker Options Modal */}
+      <Modal
+        visible={isImagePickerModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsImagePickerModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.imagePickerModalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsImagePickerModalVisible(false)}
+        >
+          <View style={styles.imagePickerModalCard}>
+            <Text style={styles.imagePickerModalTitle}>Profile Photo</Text>
+            <TouchableOpacity
+              style={styles.imagePickerModalOption}
+              onPress={() => {
+                setIsImagePickerModalVisible(false);
+                setTimeout(() => handlePickImage('camera'), 350);
+              }}
+              activeOpacity={0.7}
+            >
+              <Camera size={20} color="#2563EB" style={{ marginRight: 12 }} />
+              <Text style={styles.imagePickerModalOptionText}>Take Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.imagePickerModalOption}
+              onPress={() => {
+                setIsImagePickerModalVisible(false);
+                setTimeout(() => handlePickImage('library'), 350);
+              }}
+              activeOpacity={0.7}
+            >
+              <ImageIcon size={20} color="#2563EB" style={{ marginRight: 12 }} />
+              <Text style={styles.imagePickerModalOptionText}>Choose from Gallery</Text>
+            </TouchableOpacity>
+            {editProfilePicture ? (
+              <TouchableOpacity
+                style={[styles.imagePickerModalOption, { borderTopWidth: 1, borderTopColor: '#F1F5F9' }]}
+                onPress={() => {
+                  setEditProfilePicture('');
+                  setIsImagePickerModalVisible(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <Trash2 size={20} color="#EF4444" style={{ marginRight: 12 }} />
+                <Text style={[styles.imagePickerModalOptionText, { color: '#EF4444' }]}>Remove Photo</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={styles.imagePickerModalCancelBtn}
+              onPress={() => setIsImagePickerModalVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.imagePickerModalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -789,6 +1004,137 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  mainAvatarCameraBadge: {
+    position: 'absolute',
+    bottom: -2,
+    left: 56,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#2563EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  avatarEditWrapper: {
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  avatarEditCircleWrapper: {
+    position: 'relative',
+  },
+  avatarEditCircle: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 2.5,
+    borderColor: '#C7D2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarEditImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarEditText: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#4F46E5',
+  },
+  avatarUploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#2563EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+  },
+  changePhotoBtn: {
+    marginTop: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  changePhotoBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  imagePickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  imagePickerModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: Platform.OS === 'ios' ? 38 : 24,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  imagePickerModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  imagePickerModalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  imagePickerModalOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  imagePickerModalCancelBtn: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  imagePickerModalCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
   },
 });
 

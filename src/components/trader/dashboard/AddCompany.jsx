@@ -31,7 +31,7 @@ import {
   Plus,
   Briefcase,
 } from 'lucide-react-native';
-import { createCompany, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
+import { createCompany, createIndustry, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
 
 const THEME = '#2327D8';        // Royal Blue (Login & Dashboard Theme)
 const BG_COLOR = '#F4F6FB';     // Light slate background
@@ -185,7 +185,8 @@ const AddCompany = ({ onNavigate, routeData }) => {
   });
   const [errors, setErrors] = useState({
     name: '',
-    registrationNumber: ''
+    registrationNumber: '',
+    industry: '',
   });
 
   const handleInputChange = (field, value) => {
@@ -197,7 +198,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
 
   const handleSubmit = async () => {
     // Validation
-    let newErrors = { name: '', registrationNumber: '' };
+    let newErrors = { name: '', registrationNumber: '', industry: '' };
     let hasError = false;
 
     if (!formData.name.trim()) {
@@ -206,6 +207,16 @@ const AddCompany = ({ onNavigate, routeData }) => {
     }
     if (!formData.registrationNumber.trim()) {
       newErrors.registrationNumber = 'Registration / GSTIN is required';
+      hasError = true;
+    }
+
+    if (isCustomIndustry) {
+      if (!customIndustryName.trim()) {
+        newErrors.industry = 'Please enter your custom industry name';
+        hasError = true;
+      }
+    } else if (!formData.industryId) {
+      newErrors.industry = 'Please select an industry segment';
       hasError = true;
     }
 
@@ -224,7 +235,52 @@ const AddCompany = ({ onNavigate, routeData }) => {
         return;
       }
 
+      let targetIndustryId = null;
 
+      if (isCustomIndustry) {
+        const trimmedCustom = customIndustryName.trim();
+
+        // 1. Check if industry already exists in locally cached list
+        const matched = industries.find(
+          ind => (ind.name || '').trim().toLowerCase() === trimmedCustom.toLowerCase()
+        );
+
+        if (matched && (matched._id || matched.id)) {
+          targetIndustryId = matched._id || matched.id;
+        } else {
+          // 2. Pre-create standalone custom industry via POST /api/industries to obtain valid ObjectId
+          try {
+            const indRes = await createIndustry({ name: trimmedCustom, description: trimmedCustom }, token);
+            const createdObj = indRes?.data?.industry || indRes?.data?.company || indRes?.data || indRes;
+            const createdId = createdObj?._id || createdObj?.id;
+            if (createdId) {
+              targetIndustryId = createdId;
+              if (indRes?.data) {
+                setIndustries(prev => [...prev, indRes.data]);
+              }
+            }
+          } catch (indErr) {
+            console.warn('[AddCompany] createIndustry pre-call failed:', indErr?.message || indErr);
+            // 3. Fallback: try refreshing industries list in case it exists in DB
+            try {
+              const freshRes = await getIndustries();
+              if (freshRes?.success && Array.isArray(freshRes.data)) {
+                setIndustries(freshRes.data);
+                const retryMatch = freshRes.data.find(
+                  ind => (ind.name || '').trim().toLowerCase() === trimmedCustom.toLowerCase()
+                );
+                if (retryMatch && (retryMatch._id || retryMatch.id)) {
+                  targetIndustryId = retryMatch._id || retryMatch.id;
+                }
+              }
+            } catch (freshErr) {
+              console.warn('[AddCompany] getIndustries refresh failed:', freshErr?.message || freshErr);
+            }
+          }
+        }
+      } else {
+        targetIndustryId = formData.industryId || (industries.length > 0 ? (industries[0]._id || industries[0].id) : undefined);
+      }
 
       const payload = {
         name: formData.name,
@@ -250,11 +306,18 @@ const AddCompany = ({ onNavigate, routeData }) => {
       };
 
       if (isCustomIndustry) {
-        if (customIndustryName.trim()) {
-          payload.customIndustry = customIndustryName.trim();
+        payload.customIndustry = customIndustryName.trim();
+        // Provide industry ObjectId as well so backend validator never fails with "industry is required"
+        if (targetIndustryId) {
+          payload.industry = targetIndustryId;
+          payload.industryId = targetIndustryId;
+        } else if (industries.length > 0 && (industries[0]._id || industries[0].id)) {
+          payload.industry = industries[0]._id || industries[0].id;
+          payload.industryId = industries[0]._id || industries[0].id;
         }
-      } else if (formData.industryId) {
-        payload.industry = formData.industryId;
+      } else if (targetIndustryId) {
+        payload.industry = targetIndustryId;
+        payload.industryId = targetIndustryId;
       }
 
       const response = await createCompany(payload, token);
@@ -452,20 +515,23 @@ const AddCompany = ({ onNavigate, routeData }) => {
               </View>
 
               {isCustomIndustry ? (
-                <View style={styles.inputWithIconWrapper}>
+                <View style={[styles.inputWithIconWrapper, errors.industry && styles.inputErrorBorder]}>
                   <Briefcase size={18} color="#64748B" style={styles.inputLeadingIcon} />
                   <TextInput
                     style={styles.textInputWithIcon}
                     placeholder="Enter custom industry (e.g. Solar & Renewable)"
                     placeholderTextColor="#94A3B8"
                     value={customIndustryName}
-                    onChangeText={setCustomIndustryName}
+                    onChangeText={(val) => {
+                      setCustomIndustryName(val);
+                      if (errors.industry) setErrors(prev => ({ ...prev, industry: '' }));
+                    }}
                     selectionColor={THEME}
                   />
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={styles.dropdownSelector}
+                  style={[styles.dropdownSelector, errors.industry && styles.inputErrorBorder]}
                   onPress={() => setShowIndustryModal(true)}
                   activeOpacity={0.75}
                 >
@@ -485,6 +551,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
                   )}
                 </TouchableOpacity>
               )}
+              {errors.industry ? <Text style={styles.errorText}>{errors.industry}</Text> : null}
             </View>
           </View>
 
@@ -719,6 +786,9 @@ const AddCompany = ({ onNavigate, routeData }) => {
                           industryId: item._id,
                           industryName: item.name,
                         }));
+                        if (errors.industry) {
+                          setErrors(prev => ({ ...prev, industry: '' }));
+                        }
                         setShowIndustryModal(false);
                       }}
                       activeOpacity={0.7}

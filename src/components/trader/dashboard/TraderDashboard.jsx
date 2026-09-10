@@ -408,10 +408,10 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
               />
             </View>
 
-            {/* Right: User Avatar / Drawer Trigger */}
+            {/* Right: User Avatar -> Direct Full Screen Trader Profile */}
             <TouchableOpacity
               style={styles.avatarBtn}
-              onPress={() => setIsDrawerOpen(true)}
+              onPress={() => onNavigate('Profile', { user: currentUser })}
               activeOpacity={0.8}
             >
               {userLogoUri && !userImgError ? (

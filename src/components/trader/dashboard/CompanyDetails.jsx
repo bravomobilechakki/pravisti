@@ -16,6 +16,7 @@ import {
   RefreshControl,
   Image,
   Dimensions,
+  Linking,
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -59,6 +60,7 @@ import {
 import {
   getCompanyDetails,
   getCompanies,
+  clearCompanyCache,
   updateCompany,
   deleteCompany,
   getDeals,
@@ -69,11 +71,14 @@ import {
   getBrokerPendingQueue,
   getPendingInvitations,
   getUserNotifications,
+  getActiveBanners,
   resolveImageUrl,
 } from '../../../services/api';
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BANNER_CARD_WIDTH = SCREEN_WIDTH - 32;
+const BANNER_CARD_HEIGHT = 152;
 
 // Reusable SVG Sparkline Wave Component matching reference image
 const SparklineWave = ({ color, gradientId, pathD, fillD }) => (
@@ -178,10 +183,174 @@ const getDealStatusInfo = (deal) => {
   };
 };
 
+// Helper to extract company logo URL from varied field aliases or object format
+const getCompanyLogo = (item) => {
+  if (!item) return null;
+  const raw = item.logo || item.logoUrl || item.image || item.companyLogo || item.avatar;
+  if (!raw) return null;
+  if (typeof raw === 'string' && raw.trim() !== '') return raw.trim();
+  if (typeof raw === 'object' && raw !== null) {
+    return raw.url || raw.secure_url || raw.uri || raw.path || null;
+  }
+  return null;
+};
+
+// Reusable Company Logo Avatar with letter fallback and image error resilience
+const CompanyLogoAvatar = ({
+  logo,
+  name,
+  size = 34,
+  radius = 10,
+  textColor = '#1E3A8A',
+  bgColor = '#EFF6FF',
+  borderColor = 'transparent',
+  borderWidth = 0,
+  style,
+}) => {
+  const [imageError, setImageError] = React.useState(false);
+
+  const rawLogo = React.useMemo(() => {
+    return getCompanyLogo({ logo });
+  }, [logo]);
+
+  // Reset image error whenever rawLogo changes
+  React.useEffect(() => {
+    setImageError(false);
+  }, [rawLogo]);
+
+  const initials = React.useMemo(() => {
+    if (!name) return 'C';
+    const trimmed = String(name).trim();
+    if (!trimmed) return 'C';
+    const parts = trimmed.split(/\s+/);
+    if (parts.length > 1 && parts[0] && parts[1]) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return trimmed.substring(0, 1).toUpperCase();
+  }, [name]);
+
+  const resolvedUri = rawLogo && !imageError ? resolveImageUrl(rawLogo) : null;
+
+  return (
+    <View
+      style={[
+        {
+          width: size,
+          height: size,
+          borderRadius: radius,
+          backgroundColor: bgColor,
+          borderColor: borderColor,
+          borderWidth: borderWidth,
+          justifyContent: 'center',
+          alignItems: 'center',
+          overflow: 'hidden',
+        },
+        style,
+      ]}
+    >
+      {resolvedUri ? (
+        <Image
+          source={{ uri: resolvedUri }}
+          style={{ width: size, height: size, borderRadius: radius }}
+          resizeMode="cover"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <Text
+          style={{
+            fontSize: Math.max(12, Math.floor(size * 0.42)),
+            fontWeight: '800',
+            color: textColor,
+          }}
+        >
+          {initials}
+        </Text>
+      )}
+    </View>
+  );
+};
+
+// Dedicated Banner Card Item with Image loading state, Error resilience and Create Deal button
+const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
+  const [imageError, setImageError] = React.useState(false);
+  const [imageLoading, setImageLoading] = React.useState(true);
+
+  const rawImg = item?.image || item?.imageUrl || item?.bannerImage || item?.bannerUrl || item?.banner || '';
+  const bannerImgUrl = rawImg ? resolveImageUrl(rawImg) : '';
+
+  React.useEffect(() => {
+    setImageError(false);
+    setImageLoading(true);
+  }, [bannerImgUrl]);
+
+  const hasValidImage = Boolean(bannerImgUrl) && !imageError;
+
+  return (
+    <TouchableOpacity
+      style={styles.bannerCard}
+      activeOpacity={0.92}
+      onPress={() => onPress(item)}
+    >
+      {hasValidImage ? (
+        <>
+          <Image
+            source={{ uri: bannerImgUrl }}
+            style={styles.bannerImage}
+            resizeMode="cover"
+            onLoadStart={() => setImageLoading(true)}
+            onLoadEnd={() => setImageLoading(false)}
+            onError={(err) => {
+              console.warn('Banner image load error:', bannerImgUrl, err?.nativeEvent?.error);
+              setImageError(true);
+              setImageLoading(false);
+            }}
+          />
+          {imageLoading && (
+            <View style={styles.bannerImageLoaderOverlay}>
+              <ActivityIndicator size="small" color="#1541D8" />
+            </View>
+          )}
+        </>
+      ) : (
+        <View style={styles.bannerFallbackInner}>
+          <View style={styles.bannerFallbackDecorCircle1} />
+          <View style={styles.bannerFallbackDecorCircle2} />
+          <View style={styles.bannerFallbackTextCol}>
+            <View style={styles.bannerFallbackHeader}>
+              <Tag size={15} color="#93C5FD" style={{ marginRight: 6 }} />
+              <Text style={styles.bannerFallbackTag}>SPECIAL PROMOTION</Text>
+            </View>
+            <Text style={styles.bannerFallbackTitle} numberOfLines={1}>
+              {item.title || 'Pravisti Trade Offer'}
+            </Text>
+            <Text style={styles.bannerFallbackSubtitle} numberOfLines={2}>
+              {item.description || 'Verified mandi deals, live tracking & secure settlements.'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Small Create Deal Button on Left Side Bottom */}
+      <TouchableOpacity
+        style={styles.bannerSmallCreateDealBtn}
+        onPress={onCreateDeal}
+        activeOpacity={0.85}
+      >
+        <Plus size={13} color="#1541D8" strokeWidth={2.8} />
+        <Text style={styles.bannerSmallCreateDealBtnText}>Create Deal</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+};
+
 const CompanyDetails = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [company, setCompany] = React.useState(routeData?.company || null);
+  const companyRef = React.useRef(company);
+  React.useEffect(() => {
+    companyRef.current = company;
+  }, [company]);
   const [companiesList, setCompaniesList] = React.useState([]);
   const [fetchedDeals, setFetchedDeals] = React.useState([]);
   const fetchedDealsRef = React.useRef([]);
@@ -189,9 +358,12 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const [isDealsLoading, setIsDealsLoading] = React.useState(true);
   const [isEditModalVisible, setIsEditModalVisible] = React.useState(false);
   const [isCompanyPickerOpen, setIsCompanyPickerOpen] = React.useState(false);
-  const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
   const [currentUser, setCurrentUser] = React.useState(routeData?.user || null);
   const [unreadNotifCount, setUnreadNotifCount] = React.useState(0);
+  const [banners, setBanners] = React.useState([]);
+  const [isBannersLoading, setIsBannersLoading] = React.useState(true);
+  const [activeBannerIndex, setActiveBannerIndex] = React.useState(0);
+  const bannerScrollRef = React.useRef(null);
 
   const [editData, setEditData] = React.useState({
     name: '',
@@ -289,30 +461,54 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     fetchUserAndNotifications();
   }, [routeData?.company?._id, routeData?.company?.id]);
 
+  React.useEffect(() => {
+    if (routeData?.company) {
+      setCompany((prev) => ({ ...(prev || {}), ...routeData.company }));
+    }
+    if (routeData?.refresh) {
+      fetchDetails(undefined, true);
+      fetchAllCompanies();
+      fetchBanners();
+    }
+  }, [routeData?.company?._id, routeData?.company?.id, routeData?.refresh]);
+
   const fetchAllCompanies = React.useCallback(async () => {
     try {
-      const res = await getCompanies(1, 20);
+      const res = await getCompanies(1, 50);
       if (res && res.success) {
         const list = res.data?.companies || [];
         setCompaniesList(list);
-        setCompany((prev) => (prev ? prev : (list.length > 0 ? list[0] : null)));
+        setCompany((prev) => {
+          if (!prev) return list.length > 0 ? list[0] : null;
+          const currentId = prev._id || prev.id;
+          const matched = list.find((c) => String(c._id || c.id) === String(currentId));
+          return matched ? { ...prev, ...matched } : prev;
+        });
       }
     } catch (e) {
       console.warn('Failed to load companies list:', e);
     }
   }, []);
 
-  const fetchDetails = React.useCallback(async (targetCompanyId) => {
-    const id = targetCompanyId || company?._id || company?.id || routeData?.company?._id || routeData?.company?.id;
+  const fetchDetails = React.useCallback(async (targetCompanyId, forceRefresh = true) => {
+    const id = targetCompanyId || companyRef.current?._id || companyRef.current?.id || routeData?.company?._id || routeData?.company?.id;
     if (!id) {
       setIsLoading(false);
       setRefreshing(false);
       return;
     }
     try {
-      const response = await getCompanyDetails(id);
-      if (response && response.success) {
-        setCompany(response.data);
+      const response = await getCompanyDetails(id, forceRefresh);
+      if (response && response.success && response.data) {
+        setCompany((prev) => ({ ...(prev || {}), ...response.data }));
+        setCompaniesList((prevList) =>
+          prevList.map((item) =>
+            String(item._id || item.id) === String(response.data._id || response.data.id)
+              ? { ...item, ...response.data }
+              : item
+          )
+        );
+        fetchBanners(response.data);
 
         const isIndustryObj = typeof response.data.industry === 'object' && response.data.industry !== null;
 
@@ -639,10 +835,121 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     }
   }, [company?._id, company?.id, routeData?.company?._id, routeData?.company?.id]);
 
+  const getActiveIndustryId = React.useCallback((comp) => {
+    if (!comp) return null;
+    if (typeof comp.industry === 'object' && comp.industry !== null) {
+      return comp.industry._id || comp.industry.id || null;
+    }
+    if (comp.industryId) {
+      return typeof comp.industryId === 'object'
+        ? comp.industryId._id || comp.industryId.id || null
+        : String(comp.industryId);
+    }
+    if (typeof comp.industry === 'string' && comp.industry.match(/^[0-9a-fA-F]{24}$/)) {
+      return comp.industry;
+    }
+    return null;
+  }, []);
+
+  const fetchBanners = React.useCallback(async (targetComp) => {
+    try {
+      setIsBannersLoading(true);
+      const c = targetComp || companyRef.current || routeData?.company;
+      const indId = getActiveIndustryId(c);
+      const token = await AsyncStorage.getItem('userToken');
+
+      let bannerList = [];
+      // 1. First attempt to fetch banners for the active company's industry
+      if (indId) {
+        try {
+          const res = await getActiveBanners(indId, token);
+          if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+            bannerList = res.data;
+          } else if (Array.isArray(res) && res.length > 0) {
+            bannerList = res;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch industry banners:', e);
+        }
+      }
+
+      // 2. Fallback: If no industry-specific banner was found, fetch all active/global banners!
+      if (bannerList.length === 0) {
+        try {
+          const globalRes = await getActiveBanners(null, token);
+          if (globalRes && globalRes.success && Array.isArray(globalRes.data) && globalRes.data.length > 0) {
+            bannerList = globalRes.data;
+          } else if (Array.isArray(globalRes) && globalRes.length > 0) {
+            bannerList = globalRes;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch global banners:', e);
+        }
+      }
+
+      if (bannerList.length > 0) {
+        const sorted = [...bannerList].sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
+        setBanners(sorted);
+      } else {
+        setBanners([]);
+      }
+    } catch (err) {
+      console.warn('Failed to load active banners:', err);
+      setBanners([]);
+    } finally {
+      setIsBannersLoading(false);
+    }
+  }, [getActiveIndustryId, routeData?.company]);
+
+  // Auto-scroll banner if multiple banners exist
+  React.useEffect(() => {
+    if (!banners || banners.length <= 1) return;
+    const interval = setInterval(() => {
+      setActiveBannerIndex((prev) => {
+        const next = (prev + 1) % banners.length;
+        if (bannerScrollRef.current) {
+          bannerScrollRef.current.scrollTo({
+            x: next * BANNER_CARD_WIDTH,
+            animated: true,
+          });
+        }
+        return next;
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [banners]);
+
+  const handleBannerPress = (banner) => {
+    if (!banner) return;
+    const target = (banner.targetScreen || '').toLowerCase().trim();
+    const link = (banner.linkUrl || '').trim();
+
+    if (link && (link.startsWith('http://') || link.startsWith('https://'))) {
+      Linking.openURL(link).catch((e) => console.warn('Cannot open banner link:', e));
+      return;
+    }
+
+    if (target === 'deals' || target === 'saudas') {
+      onNavigate('Deals', { company, originCompany: company });
+    } else if (target === 'products' || target === 'catalog') {
+      onNavigate('Products', { company, originCompany: company });
+    } else if (target === 'chat' || target === 'messages') {
+      onNavigate('Messages', { company, originCompany: company });
+    } else if (target === 'ledger' || target === 'payments') {
+      onNavigate('CompanyPayments', { company, originCompany: company });
+    } else if (target === 'onboarding' || target === 'profile') {
+      onNavigate('CompanyProfileDetails', { company, companyId: company?._id || company?.id });
+    } else {
+      onNavigate('CreateDeal', { originCompany: company, company });
+    }
+  };
+
   React.useEffect(() => {
     fetchAllCompanies();
     fetchDetails();
-  }, [fetchAllCompanies, fetchDetails]);
+    fetchBanners();
+  }, []);
 
   const currentActiveCompanyId = company?._id || company?.id;
 
@@ -652,8 +959,9 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       fetchDealsList();
       fetchOnboardedUsers();
       checkProductAccessRequests();
+      fetchBanners();
     }
-  }, [currentActiveCompanyId, fetchDealsList, fetchOnboardedUsers, checkProductAccessRequests]);
+  }, [currentActiveCompanyId, fetchDealsList, fetchOnboardedUsers, checkProductAccessRequests, fetchBanners]);
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -663,7 +971,8 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     fetchDealsList();
     fetchOnboardedUsers();
     fetchAllCompanies();
-  }, [fetchDetails, fetchDealsList, fetchOnboardedUsers, fetchAllCompanies]);
+    fetchBanners();
+  }, [fetchDetails, fetchDealsList, fetchOnboardedUsers, fetchAllCompanies, fetchBanners]);
 
   const handleUpdate = async () => {
     if (!editData.name || !editData.phone || !editData.registrationNumber) {
@@ -832,11 +1141,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       onPress: () => Alert.alert('My Task', 'Tasks feature coming soon!'),
     },
     {
-      id: 'create_project',
-      title: 'Create Project',
+      id: 'company_profile',
+      title: 'Company Profile',
       icon: <Building2 size={24} color="#FFFFFF" strokeWidth={2.2} />,
       bgColor: '#4F46E5',
-      onPress: () => Alert.alert('Create Project', 'Project management feature coming soon!'),
+      onPress: () => onNavigate('CompanyProfileDetails', { company, companyId: company?._id || company?.id }),
     },
   ];
 
@@ -876,23 +1185,21 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               </View>
             )}
           </TouchableOpacity>
-          {/* Right Corner Company Avatar (shows Company Logo or Company First Letter) */}
+          {/* Right Corner Header: Company Logo / Company Initial (Company Profile) */}
           <TouchableOpacity
             style={styles.headerAvatarBtn}
-            onPress={() => onNavigate('CompanyProfileDetails', { company })}
+            onPress={() => onNavigate('CompanyProfileDetails', { company, companyId: company?._id || company?.id })}
             activeOpacity={0.8}
           >
-            <View style={styles.headerAvatarCircle}>
-              {(company?.logo || company?.logoUrl || company?.image || company?.companyLogo) ? (
-                <Image
-                  source={{ uri: resolveImageUrl(company.logo || company.logoUrl || company.image || company.companyLogo) }}
-                  style={{ width: 38, height: 38, borderRadius: 19 }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <Text style={styles.headerAvatarText}>{companyFirstLetter}</Text>
-              )}
-            </View>
+            <CompanyLogoAvatar
+              logo={getCompanyLogo(company)}
+              name={company?.name || displayCompanyName}
+              size={38}
+              radius={19}
+              bgColor="#EFF6FF"
+              borderColor="#DBEAFE"
+              borderWidth={1.5}
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -915,20 +1222,17 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         <View style={styles.companySelectorWrapper}>
           <TouchableOpacity
             style={styles.companySelectorCard}
-            onPress={() => onNavigate('CompanyProfileDetails', { company })}
+            onPress={() => onNavigate('CompanyProfileDetails', { company, companyId: company?._id || company?.id })}
             activeOpacity={0.8}
           >
-            <View style={styles.companyIconBox}>
-              {company?.logo ? (
-                <Image
-                  source={{ uri: resolveImageUrl(company.logo) }}
-                  style={{ width: '100%', height: '100%', borderRadius: 10 }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <Building2 size={18} color="#1E3A8A" strokeWidth={2.2} />
-              )}
-            </View>
+            <CompanyLogoAvatar
+              logo={getCompanyLogo(company)}
+              name={company?.name || displayCompanyName}
+              size={34}
+              radius={10}
+              bgColor="#EFF6FF"
+              style={{ marginRight: 10 }}
+            />
 
             <View style={styles.companyNameRow}>
               <Text style={styles.companyNameText} numberOfLines={1}>
@@ -951,42 +1255,82 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           </TouchableOpacity>
         </View>
 
-        {/* ─── 3. ROYAL BLUE HERO CARD (With hello.png inside circle) ─── */}
-        <View style={styles.heroCard}>
-          {/* Decorative Glow Circles */}
-          <View style={styles.heroGlowCircle1} />
-          <View style={styles.heroGlowCircle2} />
-
-          {/* Left Side: Greeting, Heading & Voice Deal Button */}
-          <View style={styles.heroLeftCol}>
-            <Text style={styles.heroGreeting}>Hello, {userName}! 👋</Text>
-            <Text style={styles.heroHeading}>
-              Manage your business smarter with{' '}
-              <Text style={styles.heroHeadingHighlight}>Pravisti</Text>
-            </Text>
-
-            <TouchableOpacity
-              style={styles.heroMicBtn}
-              onPress={() => onNavigate('CreateDeal', { originCompany: company, company })}
-              activeOpacity={0.88}
-            >
-              <Plus size={16} color="#1541D8" strokeWidth={2.4} />
-              <Text style={styles.heroMicBtnText}>Click and create deal</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Right Side: hello.png mascot inside shimmer outline ring */}
-          <View style={styles.heroRightCol}>
-            <View style={styles.mascotOuterShimmerRing}>
-              <View style={styles.mascotHaloCircle}>
-                <Image
-                  source={require('../../../images/constructions/hello.png')}
-                  style={styles.heroHelloImage}
-                  resizeMode="contain"
-                />
-              </View>
+        {/* ─── 3. PROMOTIONAL BANNER (Industry-wise from backend) ─── */}
+        <View style={styles.bannerOuterContainer}>
+          {isBannersLoading && banners.length === 0 ? (
+            <View style={styles.bannerLoadingCard}>
+              <ActivityIndicator size="small" color="#1541D8" />
             </View>
-          </View>
+          ) : banners.length > 0 ? (
+            <View style={styles.bannerWrapper}>
+              <ScrollView
+                ref={bannerScrollRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                snapToInterval={BANNER_CARD_WIDTH}
+                snapToAlignment="center"
+                style={styles.bannerScrollView}
+                onMomentumScrollEnd={(e) => {
+                  const xOffset = e.nativeEvent.contentOffset.x;
+                  const idx = Math.round(xOffset / BANNER_CARD_WIDTH);
+                  if (idx >= 0 && idx < banners.length) {
+                    setActiveBannerIndex(idx);
+                  }
+                }}
+                contentContainerStyle={{ alignItems: 'center' }}
+              >
+                {banners.map((item, idx) => (
+                  <BannerCardItem
+                    key={item._id || item.id || `banner_${idx}`}
+                    item={item}
+                    onPress={handleBannerPress}
+                    onCreateDeal={() => onNavigate('CreateDeal', { originCompany: company, company })}
+                  />
+                ))}
+              </ScrollView>
+
+              {/* Dots Pagination Indicator (if > 1 banner) */}
+              {banners.length > 1 && (
+                <View style={styles.bannerDotsWrap} pointerEvents="none">
+                  {banners.map((_, dotIdx) => (
+                    <View
+                      key={`banner_dot_${dotIdx}`}
+                      style={[
+                        styles.bannerDot,
+                        activeBannerIndex === dotIdx && styles.bannerDotActive,
+                      ]}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : (
+            /* Fallback banner if backend has no banners configured yet */
+            <TouchableOpacity
+              style={styles.bannerCardFallback}
+              activeOpacity={0.92}
+              onPress={() => onNavigate('CreateDeal', { originCompany: company, company })}
+            >
+              <View style={styles.bannerFallbackDecorCircle1} />
+              <View style={styles.bannerFallbackDecorCircle2} />
+              <View style={styles.bannerFallbackTextCol}>
+                <Text style={styles.bannerFallbackTitle}>Promote & Grow Business</Text>
+                <Text style={styles.bannerFallbackSubtitle}>Create and manage deals with verified traders</Text>
+              </View>
+
+              {/* Small Create Deal Button on Left Side Bottom */}
+              <TouchableOpacity
+                style={styles.bannerSmallCreateDealBtn}
+                onPress={() => onNavigate('CreateDeal', { originCompany: company, company })}
+                activeOpacity={0.85}
+              >
+                <Plus size={13} color="#1541D8" strokeWidth={2.8} />
+                <Text style={styles.bannerSmallCreateDealBtnText}>Create Deal</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* ─── 4. QUICK ACTIONS SECTION (4x2 Grid) ─── */}
@@ -1388,20 +1732,21 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                       setOnboardedUsers([]);
                       setIsCompanyPickerOpen(false);
                       const compId = comp._id || comp.id;
-                      fetchDetails(compId);
+                      fetchDetails(compId, true);
                       fetchOnboardedUsers(compId);
+                      fetchBanners(comp);
                     }}
                     activeOpacity={0.75}
                   >
-                    {comp.logo ? (
-                      <Image
-                        source={{ uri: resolveImageUrl(comp.logo) }}
-                        style={{ width: 22, height: 22, borderRadius: 6, marginRight: 8 }}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Building2 size={18} color={isSelected ? '#2563EB' : '#64748B'} />
-                    )}
+                    <CompanyLogoAvatar
+                      logo={getCompanyLogo(comp)}
+                      name={comp.name}
+                      size={28}
+                      radius={8}
+                      bgColor={isSelected ? '#DBEAFE' : '#EFF6FF'}
+                      textColor={isSelected ? '#2563EB' : '#1E3A8A'}
+                      style={{ marginRight: 10 }}
+                    />
                     <Text
                       style={[styles.companyModalItemText, isSelected && styles.companyModalItemTextActive]}
                       numberOfLines={1}
@@ -1429,165 +1774,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         </TouchableOpacity>
       </Modal>
 
-      {/* ─── 9. USER PROFILE SIDE DRAWER ─── */}
-      <Modal
-        visible={isDrawerOpen}
-        transparent
-        animationType="none"
-        onRequestClose={() => setIsDrawerOpen(false)}
-      >
-        <View style={styles.drawerOverlay}>
-          <TouchableOpacity
-            style={styles.drawerBackdrop}
-            activeOpacity={1}
-            onPress={() => setIsDrawerOpen(false)}
-          />
-          <View style={styles.drawerContainer}>
-            <View style={styles.drawerHeader}>
-              <TouchableOpacity
-                style={styles.drawerCloseBtn}
-                onPress={() => setIsDrawerOpen(false)}
-                activeOpacity={0.7}
-              >
-                <X size={18} color="#FFFFFF" strokeWidth={2.4} />
-              </TouchableOpacity>
-
-              <View style={styles.drawerAvatarWrapper}>
-                <View style={styles.drawerAvatarCircle}>
-                  {currentUser?.profilePicture || currentUser?.avatar ? (
-                    <Image
-                      source={{ uri: resolveImageUrl(currentUser.profilePicture || currentUser.avatar) }}
-                      style={{ width: '100%', height: '100%', borderRadius: 34 }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <Text style={styles.drawerAvatarText}>{userInitial}</Text>
-                  )}
-                </View>
-                <View style={styles.drawerAvatarCheckBadge}>
-                  <ShieldCheck size={12} color="#FFFFFF" strokeWidth={3} />
-                </View>
-              </View>
-
-              <Text style={styles.drawerUserName} numberOfLines={1}>
-                {userName}
-              </Text>
-              <Text style={styles.drawerUserPhone}>
-                {currentUser?.phone || currentUser?.mobileNumber || '+91 98765 43210'}
-              </Text>
-
-              <View style={styles.drawerRolePill}>
-                <Text style={styles.drawerRoleText}>TRADER ACCOUNT</Text>
-              </View>
-            </View>
-
-            <ScrollView style={styles.drawerBody} showsVerticalScrollIndicator={false}>
-              <Text style={styles.drawerSectionTitle}>COMMERCE & COMPANY</Text>
-
-              <TouchableOpacity
-                style={styles.drawerMenuItem}
-                onPress={() => {
-                  setIsDrawerOpen(false);
-                  onNavigate('MyCompanies');
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.drawerMenuIconBg, { backgroundColor: '#EFF6FF' }]}>
-                  <Building2 size={18} color="#2563EB" />
-                </View>
-                <Text style={styles.drawerMenuLabel}>My Companies</Text>
-                <ChevronRight size={16} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.drawerMenuItem}
-                onPress={() => {
-                  setIsDrawerOpen(false);
-                  onNavigate('DealsList', { companyId: company?._id || company?.id, companyName: company?.name, company });
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.drawerMenuIconBg, { backgroundColor: '#F0FDF4' }]}>
-                  <Handshake size={18} color="#16A34A" />
-                </View>
-                <Text style={styles.drawerMenuLabel}>My Deals (Sauda)</Text>
-                <ChevronRight size={16} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.drawerMenuItem}
-                onPress={() => {
-                  setIsDrawerOpen(false);
-                  onNavigate('ChatList');
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.drawerMenuIconBg, { backgroundColor: '#FFF7ED' }]}>
-                  <Users size={18} color="#EA580C" />
-                </View>
-                <Text style={styles.drawerMenuLabel}>Parties & Messages</Text>
-                <ChevronRight size={16} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <View style={styles.drawerDivider} />
-
-              <Text style={styles.drawerSectionTitle}>SETTINGS & TOOLS</Text>
-
-              <TouchableOpacity
-                style={styles.drawerMenuItem}
-                onPress={() => {
-                  setIsDrawerOpen(false);
-                  onNavigate('CompanyProfileDetails', { company });
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.drawerMenuIconBg, { backgroundColor: '#F5F3FF' }]}>
-                  <Building2 size={18} color="#7C3AED" />
-                </View>
-                <Text style={styles.drawerMenuLabel}>Company Profile Details</Text>
-                <ChevronRight size={16} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.drawerMenuItem}
-                onPress={() => {
-                  setIsDrawerOpen(false);
-                  onNavigate('Profile');
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.drawerMenuIconBg, { backgroundColor: '#EFF6FF' }]}>
-                  <User size={18} color="#2563EB" />
-                </View>
-                <Text style={styles.drawerMenuLabel}>User Profile</Text>
-                <ChevronRight size={16} color="#94A3B8" />
-              </TouchableOpacity>
-
-              <View style={styles.drawerDivider} />
-
-              <TouchableOpacity
-                style={styles.drawerLogoutBtn}
-                onPress={async () => {
-                  setIsDrawerOpen(false);
-                  await AsyncStorage.removeItem('userToken');
-                  await AsyncStorage.removeItem('user_completed_profile');
-                  onNavigate('Login');
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.drawerMenuIconBg, { backgroundColor: '#FEF2F2' }]}>
-                  <LogOut size={18} color="#DC2626" />
-                </View>
-                <Text style={[styles.drawerMenuLabel, { color: '#DC2626', fontWeight: '700' }]}>
-                  Log Out
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ─── 10. EDIT COMPANY DETAILS MODAL ─── */}
+      {/* ─── 9. EDIT COMPANY DETAILS MODAL ─── */}
       <Modal
         visible={isEditModalVisible}
         transparent
@@ -1952,114 +2139,166 @@ const styles = StyleSheet.create({
     color: '#10B981',
   },
 
-  /* ── 3. Royal Blue Hero Card ── */
-  heroCard: {
-    backgroundColor: '#1541D8',
-    borderRadius: 24,
-    padding: 18,
+  /* ── 3. Promotional Banners (Industry-wise) ── */
+  bannerOuterContainer: {
     marginBottom: 20,
+  },
+  bannerLoadingCard: {
+    width: BANNER_CARD_WIDTH,
+    height: BANNER_CARD_HEIGHT,
+    borderRadius: 16,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerWrapper: {
     position: 'relative',
+    width: BANNER_CARD_WIDTH,
+    height: BANNER_CARD_HEIGHT,
+    borderRadius: 16,
     overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  bannerScrollView: {
+    width: BANNER_CARD_WIDTH,
+    height: BANNER_CARD_HEIGHT,
+  },
+  bannerCard: {
+    width: BANNER_CARD_WIDTH,
+    height: BANNER_CARD_HEIGHT,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#1E293B',
+  },
+  bannerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  bannerImageLoaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(239, 246, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bannerFallbackHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#1541D8',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 8,
+    marginBottom: 6,
   },
-  heroGlowCircle1: {
+  bannerFallbackTag: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#93C5FD',
+    letterSpacing: 0.8,
+  },
+  bannerSmallCreateDealBtn: {
     position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    top: -60,
-    right: -40,
+    bottom: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 10,
   },
-  heroGlowCircle2: {
+  bannerSmallCreateDealBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#1541D8',
+    marginLeft: 4,
+  },
+  bannerDotsWrap: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 10,
+    zIndex: 10,
+  },
+  bannerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    marginHorizontal: 2.5,
+  },
+  bannerDotActive: {
+    width: 14,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  bannerCardFallback: {
+    width: BANNER_CARD_WIDTH,
+    height: BANNER_CARD_HEIGHT,
+    borderRadius: 16,
+    backgroundColor: '#1541D8',
+    overflow: 'hidden',
+    position: 'relative',
+    padding: 16,
+    justifyContent: 'space-between',
+    shadowColor: '#1541D8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  bannerFallbackInner: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#1541D8',
+    padding: 16,
+    justifyContent: 'center',
+  },
+  bannerFallbackDecorCircle1: {
     position: 'absolute',
     width: 140,
     height: 140,
     borderRadius: 70,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    top: -40,
+    right: -20,
+  },
+  bannerFallbackDecorCircle2: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    bottom: -50,
-    left: -30,
+    bottom: -30,
+    left: -20,
   },
-  heroLeftCol: {
-    flex: 1.4,
-    paddingRight: 6,
+  bannerFallbackTextCol: {
+    paddingRight: 30,
   },
-  heroGreeting: {
-    fontSize: 13,
-    fontWeight: '700',
+  bannerFallbackTitle: {
+    fontSize: 16,
+    fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 4,
   },
-  heroHeading: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 23,
-    marginBottom: 12,
-  },
-  heroHeadingHighlight: {
-    color: '#93C5FD',
-    fontWeight: '900',
-  },
-  heroMicBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  heroMicBtnText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#1541D8',
-    marginLeft: 5,
-  },
-  heroRightCol: {
-    flex: 0.85,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mascotOuterShimmerRing: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.22)',
-    padding: 3,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mascotHaloCircle: {
-    width: 94,
-    height: 94,
-    borderRadius: 47,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  heroHelloImage: {
-    width: 82,
-    height: 82,
+  bannerFallbackSubtitle: {
+    fontSize: 12,
+    color: '#BFDBFE',
+    fontWeight: '500',
   },
 
   /* ── 4. Quick Actions ── */

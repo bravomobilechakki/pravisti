@@ -285,6 +285,15 @@ export const getUserProfile = async (token) => {
   }
 };
 
+export const updateUserProfile = async (profileData, token = null) => {
+  try {
+    return await putRequest(SummaryApi.updateUserProfile, profileData, token);
+  } catch (error) {
+    console.error('Error updating user profile:', error.message || error);
+    throw error;
+  }
+};
+
 export const logoutUser = async (token) => {
   try {
     return await postRequest(SummaryApi.logOut, {}, token);
@@ -337,16 +346,24 @@ export const getCompanies = async (page = 1, limit = 10) => {
 const companyDetailsCache = new Map();
 const inFlightCompanyRequests = new Map();
 
-export const getCompanyDetails = async (id) => {
+export const clearCompanyCache = (id) => {
+  if (id) {
+    companyDetailsCache.delete(String(id).trim());
+  } else {
+    companyDetailsCache.clear();
+  }
+};
+
+export const getCompanyDetails = async (id, forceRefresh = false) => {
   try {
     if (!id || id === 'undefined' || id === 'null') {
       return { success: false, message: 'Invalid Company ID' };
     }
     const cleanId = String(id).trim();
-    if (companyDetailsCache.has(cleanId)) {
+    if (!forceRefresh && companyDetailsCache.has(cleanId)) {
       return companyDetailsCache.get(cleanId);
     }
-    if (inFlightCompanyRequests.has(cleanId)) {
+    if (!forceRefresh && inFlightCompanyRequests.has(cleanId)) {
       return await inFlightCompanyRequests.get(cleanId);
     }
 
@@ -372,6 +389,9 @@ export const getCompanyDetails = async (id) => {
 
 export const updateCompany = async (id, companyData, token) => {
   try {
+    if (id) {
+      companyDetailsCache.delete(String(id).trim());
+    }
     return await postRequest(SummaryApi.updateCompany(id), companyData, token);
   } catch (error) {
     console.error('Error updating company:', error.message || error);
@@ -1375,6 +1395,17 @@ export const clearAllNotifications = async (token = null, companyId = null) => {
   }
 };
 
-
-
-
+/**
+ * Fetch active promotional banners (optionally filtered by industry)
+ * Endpoint: GET /api/banners?industryId=...
+ * @param {string|null} industryId
+ * @param {string|null} token
+ */
+export const getActiveBanners = async (industryId = null, token = null) => {
+  try {
+    return await getRequest(SummaryApi.getActiveBanners(industryId), token);
+  } catch (error) {
+    console.warn('Error fetching active banners:', error?.message || error);
+    return { success: false, data: [] };
+  }
+};

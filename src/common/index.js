@@ -27,6 +27,10 @@ const SummaryApi = {
     url: `${backendDomain}/api/users/profile`,
     method: "get",
   },
+  updateUserProfile: {
+    url: `${backendDomain}/api/users/profile`,
+    method: "put",
+  },
 
   /* ================= INDUSTRIES ================= */
   getIndustries: {
@@ -561,6 +565,14 @@ const SummaryApi = {
     url: `${backendDomain}/api/v1/notifications/clear-all`,
     method: "delete",
   },
+
+  /* ================= BANNERS ================= */
+  getActiveBanners: (industryId = null) => ({
+    url: industryId
+      ? `${backendDomain}/api/banners?industryId=${industryId}`
+      : `${backendDomain}/api/banners`,
+    method: "get",
+  }),
 };
 
 export { backendDomain };

@@ -32,7 +32,7 @@ import {
   Mail,
   Plus,
 } from 'lucide-react-native';
-import { createCompany, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
+import { createCompany, createIndustry, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
 
 const COLORS = {
   primaryDark: '#2327D8',   // Royal Blue (Login & Signup Theme)
@@ -253,6 +253,15 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
     }
     if (!formData.city.trim()) newErrors.city = 'City / APMC Mandi Yard is required';
     if (!formData.state.trim()) newErrors.state = 'State is required';
+
+    if (isCustomIndustry) {
+      if (!customIndustryName.trim()) {
+        newErrors.industry = 'Please enter custom industry name';
+      }
+    } else if (!formData.industryId && (!industries || industries.length === 0)) {
+      newErrors.industry = 'Please select an industry';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -262,6 +271,55 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
     setIsLoading(true);
 
     try {
+      const token = await AsyncStorage.getItem('userToken');
+
+      let targetIndustryId = null;
+
+      if (isCustomIndustry) {
+        const trimmedCustom = customIndustryName.trim();
+
+        // 1. Check if industry already exists in locally cached list
+        const matched = industries.find(
+          ind => (ind.name || '').trim().toLowerCase() === trimmedCustom.toLowerCase()
+        );
+
+        if (matched && (matched._id || matched.id)) {
+          targetIndustryId = matched._id || matched.id;
+        } else {
+          // 2. Pre-create standalone custom industry via POST /api/industries to obtain valid ObjectId
+          try {
+            const indRes = await createIndustry({ name: trimmedCustom, description: trimmedCustom }, token);
+            const createdObj = indRes?.data?.industry || indRes?.data?.company || indRes?.data || indRes;
+            const createdId = createdObj?._id || createdObj?.id;
+            if (createdId) {
+              targetIndustryId = createdId;
+              if (indRes?.data) {
+                setIndustries(prev => [...prev, indRes.data]);
+              }
+            }
+          } catch (indErr) {
+            console.warn('[BrokerAddCompany] createIndustry pre-call failed:', indErr?.message || indErr);
+            // 3. Fallback: try refreshing industries list in case it exists in DB
+            try {
+              const freshRes = await getIndustries();
+              if (freshRes?.success && Array.isArray(freshRes.data)) {
+                setIndustries(freshRes.data);
+                const retryMatch = freshRes.data.find(
+                  ind => (ind.name || '').trim().toLowerCase() === trimmedCustom.toLowerCase()
+                );
+                if (retryMatch && (retryMatch._id || retryMatch.id)) {
+                  targetIndustryId = retryMatch._id || retryMatch.id;
+                }
+              }
+            } catch (freshErr) {
+              console.warn('[BrokerAddCompany] getIndustries refresh failed:', freshErr?.message || freshErr);
+            }
+          }
+        }
+      } else {
+        targetIndustryId = formData.industryId || (industries.length > 0 ? (industries[0]._id || industries[0].id) : undefined);
+      }
+
       const payload = {
         name: formData.name,
         email: formData.email.trim(),
@@ -281,18 +339,20 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
       };
 
       if (isCustomIndustry) {
-        if (customIndustryName.trim()) {
-          payload.customIndustry = customIndustryName.trim();
-        }
-      } else {
-        const targetIndustryId = formData.industryId || (industries.length > 0 ? industries[0]._id : undefined);
+        payload.customIndustry = customIndustryName.trim();
         if (targetIndustryId) {
           payload.industry = targetIndustryId;
           payload.industryId = targetIndustryId;
+        } else if (industries.length > 0 && (industries[0]._id || industries[0].id)) {
+          payload.industry = industries[0]._id || industries[0].id;
+          payload.industryId = industries[0]._id || industries[0].id;
         }
+      } else if (targetIndustryId) {
+        payload.industry = targetIndustryId;
+        payload.industryId = targetIndustryId;
       }
 
-      const res = await createCompany(payload);
+      const res = await createCompany(payload, token);
 
       try {
         const storedCompStr = await AsyncStorage.getItem('broker_companies_storage');
@@ -479,7 +539,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
             </View>
 
             {isCustomIndustry ? (
-              <View style={[styles.inputWrapper, focusedField === 'customIndustry' && styles.inputFocused]}>
+              <View style={[styles.inputWrapper, focusedField === 'customIndustry' && styles.inputFocused, errors.industry && styles.inputError]}>
                 <View style={styles.inputIconCircle}>
                   <Briefcase size={16} color={COLORS.primary} />
                 </View>
@@ -490,12 +550,15 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
                   value={customIndustryName}
                   onFocus={() => setFocusedField('customIndustry')}
                   onBlur={() => setFocusedField(null)}
-                  onChangeText={setCustomIndustryName}
+                  onChangeText={(val) => {
+                    setCustomIndustryName(val);
+                    if (errors.industry) setErrors(prev => ({ ...prev, industry: null }));
+                  }}
                 />
               </View>
             ) : (
               <TouchableOpacity
-                style={styles.dropdownBtn}
+                style={[styles.dropdownBtn, errors.industry && styles.inputError]}
                 onPress={() => setShowIndustryModal(true)}
                 activeOpacity={0.85}
               >
@@ -505,6 +568,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
                 <ChevronDown size={18} color={COLORS.textMuted} />
               </TouchableOpacity>
             )}
+            {errors.industry && <Text style={styles.errorText}>{errors.industry}</Text>}
 
             {/* Commission Rate (%) */}
 
@@ -731,6 +795,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
                     setCustomIndustryName('');
                     updateField('industryId', ind._id);
                     updateField('industryName', ind.name);
+                    if (errors.industry) setErrors(prev => ({ ...prev, industry: null }));
                     setShowIndustryModal(false);
                   }}
                 >

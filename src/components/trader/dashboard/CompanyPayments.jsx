@@ -551,7 +551,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
               });
             }
           });
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // Extract embedded payments from deals
@@ -612,7 +612,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
               });
             }
           });
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // Extract embedded deliveries from deals
@@ -647,7 +647,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
             setDashboardSummary(dashRes.data);
           }
         }
-      } catch (err) {}
+      } catch (err) { }
     } catch (error) {
       console.error('Error fetching company ledger:', error);
     } finally {
@@ -1615,8 +1615,8 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                         {item.dealId?.dealNumber
                           ? `Deal #${item.dealId.dealNumber}`
                           : item.dealId?._id
-                          ? `Deal #${item.dealId._id.slice(-6).toUpperCase()}`
-                          : 'Deal Transaction'}
+                            ? `Deal #${item.dealId._id.slice(-6).toUpperCase()}`
+                            : 'Deal Transaction'}
                       </Text>
                     </View>
 
@@ -1841,8 +1841,8 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                         {item.dealId?.dealNumber
                           ? `Deal #${item.dealId.dealNumber}`
                           : item.dealId?._id
-                          ? `Deal #${item.dealId._id.slice(-6).toUpperCase()}`
-                          : 'Deal Shipment'}
+                            ? `Deal #${item.dealId._id.slice(-6).toUpperCase()}`
+                            : 'Deal Shipment'}
                       </Text>
                     </View>
 

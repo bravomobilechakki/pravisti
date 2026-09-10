@@ -28,6 +28,8 @@ import {
   Globe,
   FileText,
   Phone,
+  Plus,
+  Briefcase,
 } from 'lucide-react-native';
 import { createCompany, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
 
@@ -41,6 +43,8 @@ const AddCompany = ({ onNavigate, routeData }) => {
   const [industries, setIndustries] = useState([]);
   const [industriesLoading, setIndustriesLoading] = useState(false);
   const [showIndustryModal, setShowIndustryModal] = useState(false);
+  const [isCustomIndustry, setIsCustomIndustry] = useState(false);
+  const [customIndustryName, setCustomIndustryName] = useState('');
   const [isPincodeLoading, setIsPincodeLoading] = useState(false);
 
   const handlePincodeChange = async (pincodeVal) => {
@@ -228,7 +232,6 @@ const AddCompany = ({ onNavigate, routeData }) => {
         phone: formData.phone || userMobile || routeData?.user?.mobileNumber || routeData?.user?.mobile || '',
         type: formData.type,
         registrationNumber: formData.registrationNumber,
-        industry: formData.industryId,   // send _id to API
         address: {
           street: formData.street,
           city: formData.city,
@@ -245,6 +248,14 @@ const AddCompany = ({ onNavigate, routeData }) => {
           }
         ]
       };
+
+      if (isCustomIndustry) {
+        if (customIndustryName.trim()) {
+          payload.customIndustry = customIndustryName.trim();
+        }
+      } else if (formData.industryId) {
+        payload.industry = formData.industryId;
+      }
 
       const response = await createCompany(payload, token);
       if (response && response.success) {
@@ -411,29 +422,69 @@ const AddCompany = ({ onNavigate, routeData }) => {
               </View>
             </View>
 
-            {/* Industry Dropdown */}
+            {/* Industry Segment */}
             <View style={styles.fieldContainer}>
-              <Text style={styles.inputLabel}>Industry Segment</Text>
-              <TouchableOpacity
-                style={styles.dropdownSelector}
-                onPress={() => setShowIndustryModal(true)}
-                activeOpacity={0.75}
-              >
-                <Text
-                  style={[
-                    styles.dropdownSelectorText,
-                    !formData.industryName && styles.dropdownPlaceholder,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {formData.industryName || 'Select Industry (e.g. Agriculture)'}
-                </Text>
-                {industriesLoading ? (
-                  <ActivityIndicator size="small" color={THEME} />
+              <View style={styles.inputLabelRow}>
+                <Text style={styles.inputLabel}>Industry Segment</Text>
+                {isCustomIndustry ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsCustomIndustry(false);
+                      setCustomIndustryName('');
+                    }}
+                    style={styles.toggleIndustryModeBtn}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.toggleIndustryModeText}>Select from list</Text>
+                  </TouchableOpacity>
                 ) : (
-                  <ChevronDown size={18} color="#64748B" />
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsCustomIndustry(true);
+                      setFormData(prev => ({ ...prev, industryId: '', industryName: '' }));
+                    }}
+                    style={styles.toggleIndustryModeBtn}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.toggleIndustryModeText}>+ Custom Industry</Text>
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
+              </View>
+
+              {isCustomIndustry ? (
+                <View style={styles.inputWithIconWrapper}>
+                  <Briefcase size={18} color="#64748B" style={styles.inputLeadingIcon} />
+                  <TextInput
+                    style={styles.textInputWithIcon}
+                    placeholder="Enter custom industry (e.g. Solar & Renewable)"
+                    placeholderTextColor="#94A3B8"
+                    value={customIndustryName}
+                    onChangeText={setCustomIndustryName}
+                    selectionColor={THEME}
+                  />
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.dropdownSelector}
+                  onPress={() => setShowIndustryModal(true)}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownSelectorText,
+                      !formData.industryName && styles.dropdownPlaceholder,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {formData.industryName || 'Select Industry (e.g. Agriculture)'}
+                  </Text>
+                  {industriesLoading ? (
+                    <ActivityIndicator size="small" color={THEME} />
+                  ) : (
+                    <ChevronDown size={18} color="#64748B" />
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -638,6 +689,20 @@ const AddCompany = ({ onNavigate, routeData }) => {
                 keyExtractor={(item) => item._id}
                 contentContainerStyle={styles.industryList}
                 showsVerticalScrollIndicator={false}
+                ListFooterComponent={
+                  <TouchableOpacity
+                    style={styles.customIndustryModalBtn}
+                    onPress={() => {
+                      setShowIndustryModal(false);
+                      setIsCustomIndustry(true);
+                      setFormData(prev => ({ ...prev, industryId: '', industryName: '' }));
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Plus size={17} color={THEME} style={{ marginRight: 6 }} />
+                    <Text style={styles.customIndustryModalBtnText}>+ Other / Add Custom Industry</Text>
+                  </TouchableOpacity>
+                }
                 renderItem={({ item }) => {
                   const isSelected = formData.industryId === item._id;
                   return (
@@ -647,6 +712,8 @@ const AddCompany = ({ onNavigate, routeData }) => {
                         isSelected && styles.industryItemSelected,
                       ]}
                       onPress={() => {
+                        setIsCustomIndustry(false);
+                        setCustomIndustryName('');
                         setFormData(prev => ({
                           ...prev,
                           industryId: item._id,
@@ -1149,6 +1216,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#94A3B8',
     fontWeight: '500',
+  },
+  toggleIndustryModeBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  toggleIndustryModeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME,
+  },
+  customIndustryModalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 8,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    borderStyle: 'dashed',
+    backgroundColor: '#EEF2FF',
+  },
+  customIndustryModalBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME,
   },
 });
 

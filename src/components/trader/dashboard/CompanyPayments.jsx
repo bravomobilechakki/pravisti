@@ -14,8 +14,13 @@ import {
   RefreshControl,
   Platform,
   KeyboardAvoidingView,
+  Image,
+  Linking,
+  Share,
+  Dimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { launchImageLibrary } from 'react-native-image-picker';
 import {
   ArrowLeft,
   Wallet,
@@ -37,6 +42,12 @@ import {
   Calendar,
   Check,
   RefreshCw,
+  Download,
+  Share2,
+  Paperclip,
+  ExternalLink,
+  Eye,
+  Camera,
 } from 'lucide-react-native';
 import {
   getPayments,
@@ -49,12 +60,17 @@ import {
   getDeals,
   getUserProfile,
   getCompanies,
+  uploadImage,
+  resolveImageUrl,
 } from '../../../services/api';
+import { downloadFileToDevice } from '../../../utils/fileDownloader';
 
 const CompanyPayments = ({ onNavigate, routeData }) => {
   const initialCompany = routeData?.company || {};
-  const initialCompanyId = String(routeData?.companyId || initialCompany?._id || initialCompany?.id || '').trim();
-  const initialCompanyName = routeData?.companyName || initialCompany?.name || initialCompany?.businessName || 'Company';
+  const normalizeId = (val) => String(val?._id || val?.id || val || '').trim();
+
+  const initialCompanyId = normalizeId(routeData?.companyId || initialCompany?._id || initialCompany?.id || routeData?.company);
+  const initialCompanyName = String(routeData?.companyName || initialCompany?.name || initialCompany?.businessName || initialCompany?.companyName || '').trim();
 
   const [userCompanies, setUserCompanies] = useState(initialCompany._id ? [initialCompany] : []);
   const [selectedCompanyId, setSelectedCompanyId] = useState(initialCompanyId);
@@ -81,11 +97,42 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionInProgressId, setActionInProgressId] = useState(null);
 
-  // Modals
+  // Modals & Inline Dropdowns
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
-  const [isDealPickerOpen, setIsDealPickerOpen] = useState(false);
+  const [isDealDropdownExpanded, setIsDealDropdownExpanded] = useState(false);
+  const [isPaymentDealDropdownExpanded, setIsPaymentDealDropdownExpanded] = useState(false);
+  const [isDeliveryDealDropdownExpanded, setIsDeliveryDealDropdownExpanded] = useState(false);
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(routeData?.user || null);
+
+  // Load Current User Identity
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) return;
+        const res = await getUserProfile(token);
+        if (res?.success && res.data) {
+          setCurrentUser(res.data);
+        }
+      } catch (e) {
+        console.warn('Error fetching user profile in CompanyPayments:', e);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  // Sync state if routeData changes (e.g. user opens different company details)
+  useEffect(() => {
+    const comp = routeData?.company || {};
+    const cid = normalizeId(routeData?.companyId || comp?._id || comp?.id || routeData?.company);
+    const cname = String(routeData?.companyName || comp?.name || comp?.businessName || comp?.companyName || '').trim();
+    if (cid && cid !== selectedCompanyId) {
+      setSelectedCompanyId(cid);
+      setSelectedCompanyName(cname);
+    }
+  }, [routeData?.companyId, routeData?.company]);
 
   // Payment Form
   const [paymentForm, setPaymentForm] = useState({
@@ -109,41 +156,67 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     notes: '',
   });
 
-  const normalizeId = (val) => String(val?._id || val?.id || val || '').trim();
+  // Proof & Attachment States
+  const [fullPreviewImage, setFullPreviewImage] = useState(null);
+  const [paymentAttachmentUrl, setPaymentAttachmentUrl] = useState('');
+  const [paymentAttachmentAsset, setPaymentAttachmentAsset] = useState(null);
+  const [isUploadingPaymentAttachment, setIsUploadingPaymentAttachment] = useState(false);
 
-  /* ── Filter Helper: Is Payment for Company? ── */
-  const isPaymentForCompany = (item, targetCompId, dealMap, dealIdSet) => {
-    const normTarget = normalizeId(targetCompId).toLowerCase();
-    if (!normTarget) return true;
+  const [deliveryAttachmentUrl, setDeliveryAttachmentUrl] = useState('');
+  const [deliveryAttachmentAsset, setDeliveryAttachmentAsset] = useState(null);
+  const [isUploadingDeliveryAttachment, setIsUploadingDeliveryAttachment] = useState(false);
 
-    // Direct company IDs
-    const pCid = normalizeId(item.companyId?._id || item.companyId).toLowerCase();
-    if (pCid && pCid === normTarget) return true;
+  /* ── Filter Helper: Is Deal for Company? (Strict) ── */
+  const isDealForThisCompany = (deal, targetCompId, targetCompName) => {
+    if (!deal) return false;
+    const tId = normalizeId(targetCompId).toLowerCase();
+    const tName = String(targetCompName || '').trim().toLowerCase();
 
-    const payerCid = normalizeId(item.payerCompanyId?._id || item.payerCompanyId).toLowerCase();
-    if (payerCid && payerCid === normTarget) return true;
+    if (!tId && !tName) return false;
 
-    const receiverCid = normalizeId(item.receiverCompanyId?._id || item.receiverCompanyId).toLowerCase();
-    if (receiverCid && receiverCid === normTarget) return true;
+    const extract = (val) => {
+      if (!val) return '';
+      if (typeof val === 'string') return val.trim().toLowerCase();
+      return normalizeId(val._id || val.id || val).toLowerCase();
+    };
 
-    const sellerCid = normalizeId(item.sellerCompanyId?._id || item.sellerCompanyId).toLowerCase();
-    if (sellerCid && sellerCid === normTarget) return true;
+    const sellerCid = extract(deal.sellerCompanyId);
+    const buyerCid = extract(deal.buyerCompanyId);
+    const brokerCid = extract(deal.brokerCompanyId);
+    const p1Cid = extract(deal.party1?.companyId || deal.party1?.company);
+    const p2Cid = extract(deal.party2?.companyId || deal.party2?.company);
+    const creatorCid = extract(deal.creatorCompanyId);
+    const targetDealCid = extract(deal.targetCompanyId);
+    const directCid = extract(deal.companyId);
 
-    const buyerCid = normalizeId(item.buyerCompanyId?._id || item.buyerCompanyId).toLowerCase();
-    if (buyerCid && buyerCid === normTarget) return true;
-
-    // Deal relationship
-    const pDealId = normalizeId(item.dealId?._id || item.dealId?.id || item.dealId).toLowerCase();
-    if (pDealId && dealIdSet && dealIdSet.has(pDealId)) {
-      return true;
+    if (tId) {
+      if (
+        sellerCid === tId ||
+        buyerCid === tId ||
+        brokerCid === tId ||
+        p1Cid === tId ||
+        p2Cid === tId ||
+        creatorCid === tId ||
+        targetDealCid === tId ||
+        directCid === tId
+      ) {
+        return true;
+      }
     }
 
-    if (item.dealId && typeof item.dealId === 'object') {
-      const s = normalizeId(item.dealId.sellerCompanyId?._id || item.dealId.sellerCompanyId).toLowerCase();
-      const b = normalizeId(item.dealId.buyerCompanyId?._id || item.dealId.buyerCompanyId).toLowerCase();
-      const c = normalizeId(item.dealId.companyId?._id || item.dealId.companyId).toLowerCase();
-      const br = normalizeId(item.dealId.brokerCompanyId?._id || item.dealId.brokerCompanyId).toLowerCase();
-      if (s === normTarget || b === normTarget || c === normTarget || br === normTarget) {
+    if (tName && tName !== 'company') {
+      const sName = String(deal.sellerCompany?.name || deal.sellerCompanyId?.name || deal.sellerCompanyName || '').trim().toLowerCase();
+      const bName = String(deal.buyerCompany?.name || deal.buyerCompanyId?.name || deal.buyerCompanyName || '').trim().toLowerCase();
+      const p1Name = String(deal.party1?.company?.name || deal.party1?.name || '').trim().toLowerCase();
+      const p2Name = String(deal.party2?.company?.name || deal.party2?.name || '').trim().toLowerCase();
+      const dName = String(deal.companyName || deal.company?.name || '').trim().toLowerCase();
+      if (
+        (sName && sName === tName) ||
+        (bName && bName === tName) ||
+        (p1Name && p1Name === tName) ||
+        (p2Name && p2Name === tName) ||
+        (dName && dName === tName)
+      ) {
         return true;
       }
     }
@@ -151,25 +224,208 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     return false;
   };
 
-  /* ── Filter Helper: Is Delivery for Company? ── */
-  const isDeliveryForCompany = (item, targetCompId, dealMap, dealIdSet) => {
+  /* ── Filter Helper: Is Payment for Company? (Strict) ── */
+  const isPaymentForCompany = (item, targetCompId, targetCompName, dealIdSet) => {
+    if (!item) return false;
     const normTarget = normalizeId(targetCompId).toLowerCase();
-    if (!normTarget) return true;
+    const normName = String(targetCompName || '').trim().toLowerCase();
 
-    const dCid = normalizeId(item.companyId?._id || item.companyId).toLowerCase();
-    if (dCid && dCid === normTarget) return true;
+    // 1. Check if linked to one of this company's validated deals
+    const pDealId = normalizeId(item.dealId?._id || item.dealId?.id || item.dealId).toLowerCase();
+    if (pDealId && dealIdSet && dealIdSet.has(pDealId)) {
+      return true;
+    }
 
+    // 2. Direct company IDs on payment
+    if (normTarget) {
+      const pCid = normalizeId(item.companyId?._id || item.companyId).toLowerCase();
+      if (pCid && pCid === normTarget) return true;
+
+      const payerCid = normalizeId(item.payerCompanyId?._id || item.payerCompanyId).toLowerCase();
+      if (payerCid && payerCid === normTarget) return true;
+
+      const receiverCid = normalizeId(item.receiverCompanyId?._id || item.receiverCompanyId).toLowerCase();
+      if (receiverCid && receiverCid === normTarget) return true;
+
+      const sellerCid = normalizeId(item.sellerCompanyId?._id || item.sellerCompanyId).toLowerCase();
+      if (sellerCid && sellerCid === normTarget) return true;
+
+      const buyerCid = normalizeId(item.buyerCompanyId?._id || item.buyerCompanyId).toLowerCase();
+      if (buyerCid && buyerCid === normTarget) return true;
+
+      const brokerCid = normalizeId(item.brokerCompanyId?._id || item.brokerCompanyId).toLowerCase();
+      if (brokerCid && brokerCid === normTarget) return true;
+
+      // Check inside item.dealId if populated
+      if (item.dealId && typeof item.dealId === 'object') {
+        const dSellerCid = normalizeId(item.dealId.sellerCompanyId?._id || item.dealId.sellerCompanyId).toLowerCase();
+        const dBuyerCid = normalizeId(item.dealId.buyerCompanyId?._id || item.dealId.buyerCompanyId).toLowerCase();
+        const dBrokerCid = normalizeId(item.dealId.brokerCompanyId?._id || item.dealId.brokerCompanyId).toLowerCase();
+        const dCompCid = normalizeId(item.dealId.companyId?._id || item.dealId.companyId).toLowerCase();
+        const dP1Cid = normalizeId(item.dealId.party1?.companyId || item.dealId.party1?.company).toLowerCase();
+        const dP2Cid = normalizeId(item.dealId.party2?.companyId || item.dealId.party2?.company).toLowerCase();
+        if (
+          dSellerCid === normTarget ||
+          dBuyerCid === normTarget ||
+          dBrokerCid === normTarget ||
+          dCompCid === normTarget ||
+          dP1Cid === normTarget ||
+          dP2Cid === normTarget
+        ) {
+          return true;
+        }
+      }
+    }
+
+    // 3. Match by company name
+    if (normName && normName !== 'company') {
+      const payerName = String(item.payerCompanyName || item.payerCompany?.name || '').trim().toLowerCase();
+      const receiverName = String(item.receiverCompanyName || item.receiverCompany?.name || '').trim().toLowerCase();
+      const cName = String(item.companyName || item.company?.name || '').trim().toLowerCase();
+      if (
+        (payerName && payerName === normName) ||
+        (receiverName && receiverName === normName) ||
+        (cName && cName === normName)
+      ) {
+        return true;
+      }
+
+      if (item.dealId && typeof item.dealId === 'object') {
+        const dSellerName = String(item.dealId.sellerCompany?.name || item.dealId.sellerCompanyId?.name || item.dealId.sellerCompanyName || '').trim().toLowerCase();
+        const dBuyerName = String(item.dealId.buyerCompany?.name || item.dealId.buyerCompanyId?.name || item.dealId.buyerCompanyName || '').trim().toLowerCase();
+        if ((dSellerName && dSellerName === normName) || (dBuyerName && dBuyerName === normName)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  /* ── Filter Helper: Is Delivery for Company? (Strict) ── */
+  const isDeliveryForCompany = (item, targetCompId, targetCompName, dealIdSet) => {
+    if (!item) return false;
+    const normTarget = normalizeId(targetCompId).toLowerCase();
+    const normName = String(targetCompName || '').trim().toLowerCase();
+
+    // 1. Linked to one of this company's validated deals
     const dDealId = normalizeId(item.dealId?._id || item.dealId?.id || item.dealId).toLowerCase();
     if (dDealId && dealIdSet && dealIdSet.has(dDealId)) {
       return true;
     }
 
-    if (item.dealId && typeof item.dealId === 'object') {
-      const s = normalizeId(item.dealId.sellerCompanyId?._id || item.dealId.sellerCompanyId).toLowerCase();
-      const b = normalizeId(item.dealId.buyerCompanyId?._id || item.dealId.buyerCompanyId).toLowerCase();
-      const c = normalizeId(item.dealId.companyId?._id || item.dealId.companyId).toLowerCase();
-      const br = normalizeId(item.dealId.brokerCompanyId?._id || item.dealId.brokerCompanyId).toLowerCase();
-      if (s === normTarget || b === normTarget || c === normTarget || br === normTarget) {
+    // 2. Direct company IDs
+    if (normTarget) {
+      const dCid = normalizeId(item.companyId?._id || item.companyId).toLowerCase();
+      if (dCid && dCid === normTarget) return true;
+
+      const sellerCid = normalizeId(item.sellerCompanyId?._id || item.sellerCompanyId).toLowerCase();
+      if (sellerCid && sellerCid === normTarget) return true;
+
+      const buyerCid = normalizeId(item.buyerCompanyId?._id || item.buyerCompanyId).toLowerCase();
+      if (buyerCid && buyerCid === normTarget) return true;
+
+      const brokerCid = normalizeId(item.brokerCompanyId?._id || item.brokerCompanyId).toLowerCase();
+      if (brokerCid && brokerCid === normTarget) return true;
+
+      if (item.dealId && typeof item.dealId === 'object') {
+        const dSellerCid = normalizeId(item.dealId.sellerCompanyId?._id || item.dealId.sellerCompanyId).toLowerCase();
+        const dBuyerCid = normalizeId(item.dealId.buyerCompanyId?._id || item.dealId.buyerCompanyId).toLowerCase();
+        const dBrokerCid = normalizeId(item.dealId.brokerCompanyId?._id || item.dealId.brokerCompanyId).toLowerCase();
+        const dCompCid = normalizeId(item.dealId.companyId?._id || item.dealId.companyId).toLowerCase();
+        const dP1Cid = normalizeId(item.dealId.party1?.companyId || item.dealId.party1?.company).toLowerCase();
+        const dP2Cid = normalizeId(item.dealId.party2?.companyId || item.dealId.party2?.company).toLowerCase();
+        if (
+          dSellerCid === normTarget ||
+          dBuyerCid === normTarget ||
+          dBrokerCid === normTarget ||
+          dCompCid === normTarget ||
+          dP1Cid === normTarget ||
+          dP2Cid === normTarget
+        ) {
+          return true;
+        }
+      }
+    }
+
+    // 3. Name check
+    if (normName && normName !== 'company') {
+      const cName = String(item.companyName || item.company?.name || '').trim().toLowerCase();
+      if (cName && cName === normName) return true;
+
+      if (item.dealId && typeof item.dealId === 'object') {
+        const dSellerName = String(item.dealId.sellerCompany?.name || item.dealId.sellerCompanyId?.name || '').trim().toLowerCase();
+        const dBuyerName = String(item.dealId.buyerCompany?.name || item.dealId.buyerCompanyId?.name || '').trim().toLowerCase();
+        if ((dSellerName && dSellerName === normName) || (dBuyerName && dBuyerName === normName)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  /* ── Check if Entry was Created By Current User/Company ── */
+  const isEntryCreatedByMe = (item) => {
+    if (!item) return false;
+
+    const myUserId = normalizeId(currentUser?._id || currentUser?.id || routeData?.user?._id || routeData?.user?.id).toLowerCase();
+    const myCompanyId = normalizeId(selectedCompanyId || initialCompanyId).toLowerCase();
+
+    // 1. Check User ID match
+    const creatorUserId = normalizeId(
+      item.createdBy?._id ||
+      item.createdBy?.id ||
+      item.createdBy ||
+      item.userId ||
+      item.creatorId ||
+      item.recordedBy?._id ||
+      item.recordedBy
+    ).toLowerCase();
+
+    if (myUserId && creatorUserId && myUserId === creatorUserId) {
+      return true;
+    }
+
+    // 2. Check Creator Company ID match
+    const creatorCompanyId = normalizeId(
+      item.creatorCompanyId?._id ||
+      item.creatorCompanyId ||
+      item.creatorCompany?._id ||
+      item.creatorCompany ||
+      item.companyId?._id ||
+      item.companyId
+    ).toLowerCase();
+
+    if (myCompanyId && creatorCompanyId && myCompanyId === creatorCompanyId) {
+      return true;
+    }
+
+    // 3. Direction match for Payments:
+    // If sent, the payer entered it. If my company is the payer, I created it!
+    const payerCompanyId = normalizeId(item.payerCompanyId?._id || item.payerCompanyId).toLowerCase();
+    const receiverCompanyId = normalizeId(item.receiverCompanyId?._id || item.receiverCompanyId).toLowerCase();
+    const paymentType = String(item.paymentType || item.type || '').toLowerCase();
+
+    if (myCompanyId) {
+      if ((paymentType === 'sent' || paymentType === 'debit') && payerCompanyId && myCompanyId === payerCompanyId) {
+        return true;
+      }
+      if ((paymentType === 'received' || paymentType === 'credit') && receiverCompanyId && myCompanyId === receiverCompanyId) {
+        return true;
+      }
+    }
+
+    // 4. Direction match for Delivery:
+    const sellerCompanyId = normalizeId(item.sellerCompanyId?._id || item.sellerCompanyId).toLowerCase();
+    const buyerCompanyId = normalizeId(item.buyerCompanyId?._id || item.buyerCompanyId).toLowerCase();
+    const deliveryType = String(item.deliveryType || item.type || '').toLowerCase();
+
+    if (myCompanyId) {
+      if (deliveryType === 'sent' && sellerCompanyId && myCompanyId === sellerCompanyId) {
+        return true;
+      }
+      if (deliveryType === 'received' && buyerCompanyId && myCompanyId === buyerCompanyId) {
         return true;
       }
     }
@@ -178,19 +434,20 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
   };
 
   /* ── Load Deals, Payments & Deliveries strictly filtered by Company ── */
-  const fetchData = useCallback(async (isPullToRefresh = false, targetCid = selectedCompanyId) => {
+  const fetchData = useCallback(async (isPullToRefresh = false, targetCid = selectedCompanyId, targetName = selectedCompanyName) => {
     if (isPullToRefresh) {
       setIsRefreshing(true);
     } else {
       setIsLoading(true);
     }
 
-    const currentTargetCid = targetCid || selectedCompanyId || '';
+    const currentTargetCid = String(targetCid || selectedCompanyId || initialCompanyId || '').trim();
+    const currentTargetName = String(targetName || selectedCompanyName || initialCompanyName || '').trim();
 
     try {
       const token = await AsyncStorage.getItem('userToken');
 
-      // 0. Load User's Companies List if available
+      // 0. Load User's Companies List
       try {
         const compRes = await getCompanies(1, 50);
         if (compRes?.success && compRes.data) {
@@ -205,58 +462,53 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
 
       // 1. Fetch Company Deals
       let rawDeals = [];
+
+      // Seed from pre-passed deals from CompanyDetails if available
+      if (Array.isArray(routeData?.deals) && routeData.deals.length > 0) {
+        rawDeals = [...routeData.deals];
+      }
+
+      // Fetch deals for this company via API
       try {
         const dealsRes = await getDeals(token, 1, 100, currentTargetCid || undefined);
         if (dealsRes?.success && dealsRes.data) {
-          rawDeals = Array.isArray(dealsRes.data)
+          const list = Array.isArray(dealsRes.data)
             ? dealsRes.data
             : dealsRes.data.deals || dealsRes.data.data || [];
+          if (list.length > 0) {
+            const seenDids = new Set(rawDeals.map((d) => normalizeId(d._id || d.id).toLowerCase()));
+            list.forEach((d) => {
+              const did = normalizeId(d._id || d.id).toLowerCase();
+              if (!seenDids.has(did)) {
+                seenDids.add(did);
+                rawDeals.push(d);
+              }
+            });
+          }
         }
       } catch (err) {
         console.warn('Could not load company deals:', err);
       }
 
-      // Fallback: if no deals returned from company filter, fetch all user deals and filter
+      // Fallback: if no deals found, fetch general deals to check if any belong to this company
       if (rawDeals.length === 0) {
         try {
           const fallbackRes = await getDeals(token, 1, 100);
           if (fallbackRes?.success && fallbackRes.data) {
-            rawDeals = Array.isArray(fallbackRes.data)
+            const list = Array.isArray(fallbackRes.data)
               ? fallbackRes.data
               : fallbackRes.data.deals || fallbackRes.data.data || [];
+            rawDeals = list;
           }
         } catch (e) {
           console.warn('Fallback deals error:', e);
         }
       }
 
-      // Filter deals strictly for currentTargetCid
-      let companyDeals = rawDeals;
-      if (currentTargetCid) {
-        const targetNorm = normalizeId(currentTargetCid).toLowerCase();
-        companyDeals = rawDeals.filter((d) => {
-          const s = normalizeId(d.sellerCompanyId).toLowerCase();
-          const b = normalizeId(d.buyerCompanyId).toLowerCase();
-          const c = normalizeId(d.companyId).toLowerCase();
-          const br = normalizeId(d.brokerCompanyId).toLowerCase();
-          return s === targetNorm || b === targetNorm || c === targetNorm || br === targetNorm;
-        });
+      // Filter deals strictly for this specific company
+      const companyDeals = rawDeals.filter((d) => isDealForThisCompany(d, currentTargetCid, currentTargetName));
 
-        // Fallback matching by name if IDs differ
-        if (companyDeals.length === 0 && rawDeals.length > 0) {
-          const cNameNorm = String(selectedCompanyName || '').toLowerCase();
-          if (cNameNorm) {
-            companyDeals = rawDeals.filter((d) => {
-              const sName = String(d.sellerCompanyId?.name || d.sellerCompanyName || '').toLowerCase();
-              const bName = String(d.buyerCompanyId?.name || d.buyerCompanyName || '').toLowerCase();
-              return sName.includes(cNameNorm) || bName.includes(cNameNorm);
-            });
-          }
-          if (companyDeals.length === 0) {
-            companyDeals = rawDeals;
-          }
-        }
-      }
+      // CRITICAL: NEVER fallback to rawDeals! If 0 deals, deals remains empty!
       setDeals(companyDeals);
 
       const dealIdSet = new Set(companyDeals.map((d) => normalizeId(d._id || d.id).toLowerCase()));
@@ -287,7 +539,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
       if (companyDeals.length > 0) {
         try {
           const dealPayResults = await Promise.allSettled(
-            companyDeals.slice(0, 15).map((d) => getPayments({ dealId: d._id || d.id }, token))
+            companyDeals.slice(0, 20).map((d) => getPayments({ dealId: d._id || d.id, limit: 50 }, token))
           );
           dealPayResults.forEach((r, idx) => {
             if (r.status === 'fulfilled' && r.value?.success && r.value.data) {
@@ -322,7 +574,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
 
       // STRICT COMPANY FILTER FOR PAYMENTS
       const companyFilteredPayments = uniquePayments.filter((item) =>
-        isPaymentForCompany(item, currentTargetCid, dealMap, dealIdSet)
+        isPaymentForCompany(item, currentTargetCid, currentTargetName, dealIdSet)
       );
       setPayments(companyFilteredPayments);
 
@@ -348,7 +600,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
       if (companyDeals.length > 0) {
         try {
           const dealDelivResults = await Promise.allSettled(
-            companyDeals.slice(0, 15).map((d) => getDeliveries({ dealId: d._id || d.id }, token))
+            companyDeals.slice(0, 20).map((d) => getDeliveries({ dealId: d._id || d.id, limit: 50 }, token))
           );
           dealDelivResults.forEach((r, idx) => {
             if (r.status === 'fulfilled' && r.value?.success && r.value.data) {
@@ -383,7 +635,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
 
       // STRICT COMPANY FILTER FOR DELIVERIES
       const companyFilteredDeliveries = uniqueDeliveries.filter((item) =>
-        isDeliveryForCompany(item, currentTargetCid, dealMap, dealIdSet)
+        isDeliveryForCompany(item, currentTargetCid, currentTargetName, dealIdSet)
       );
       setDeliveries(companyFilteredDeliveries);
 
@@ -402,7 +654,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [selectedCompanyId, selectedCompanyName]);
+  }, [selectedCompanyId, selectedCompanyName, initialCompanyId, initialCompanyName, routeData?.deals]);
 
   useEffect(() => {
     fetchData();
@@ -535,6 +787,155 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     setShowDeliveryModal(true);
   };
 
+  /* ── Pick & Upload Attachment Helpers ── */
+  const pickPaymentReceipt = async () => {
+    try {
+      const res = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 0.8,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      });
+
+      if (res.didCancel || !res.assets || !res.assets[0]) return;
+      const asset = res.assets[0];
+      setPaymentAttachmentAsset(asset);
+      setIsUploadingPaymentAttachment(true);
+      try {
+        const uploadedUrl = await uploadImage(asset);
+        if (uploadedUrl) {
+          setPaymentAttachmentUrl(uploadedUrl);
+        }
+      } catch (uploadErr) {
+        Alert.alert('Upload Notice', 'Failed to upload receipt slip. Please try again.');
+        setPaymentAttachmentAsset(null);
+      } finally {
+        setIsUploadingPaymentAttachment(false);
+      }
+    } catch (e) {
+      console.warn('Image picker error:', e);
+    }
+  };
+
+  const pickDeliveryDocument = async () => {
+    try {
+      const res = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 0.8,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      });
+
+      if (res.didCancel || !res.assets || !res.assets[0]) return;
+      const asset = res.assets[0];
+      setDeliveryAttachmentAsset(asset);
+      setIsUploadingDeliveryAttachment(true);
+      try {
+        const uploadedUrl = await uploadImage(asset);
+        if (uploadedUrl) {
+          setDeliveryAttachmentUrl(uploadedUrl);
+        }
+      } catch (uploadErr) {
+        Alert.alert('Upload Notice', 'Failed to upload delivery document. Please try again.');
+        setDeliveryAttachmentAsset(null);
+      } finally {
+        setIsUploadingDeliveryAttachment(false);
+      }
+    } catch (e) {
+      console.warn('Image picker error:', e);
+    }
+  };
+
+  /* ── Export Ledger as CSV / Report ── */
+  const handleExportLedger = async () => {
+    try {
+      const companyLabel = selectedCompanyName || 'Company';
+      const dateStr = new Date().toISOString().slice(0, 10);
+
+      if (activeTab === 'payments') {
+        if (!filteredPayments || filteredPayments.length === 0) {
+          Alert.alert('Export Ledger', 'No payment records found to export.');
+          return;
+        }
+
+        let totalSent = 0;
+        let totalReceived = 0;
+        filteredPayments.forEach((p) => {
+          const amt = Number(p.amount) || 0;
+          if (p.paymentType === 'sent') totalSent += amt;
+          else if (p.paymentType === 'received') totalReceived += amt;
+        });
+
+        const csvRows = [
+          `"PRAVISTI - PAYMENT & FINANCIAL LEDGER"`,
+          `"Company: ${companyLabel}","Export Date: ${dateStr}"`,
+          `"Total Sent: ₹${totalSent.toLocaleString('en-IN')}","Total Received: ₹${totalReceived.toLocaleString('en-IN')}","Net Balance: ₹${(totalReceived - totalSent).toLocaleString('en-IN')}"`,
+          `""`,
+          `"Date","Deal #","Type","Amount (INR)","Payment Method","Status","Ref / UTR","Notes","Receipt Link"`,
+        ];
+
+        filteredPayments.forEach((p) => {
+          const pDate = (p.createdAt || p.date || '').slice(0, 10);
+          const dealNo = p.dealId?.dealNumber || (p.dealId?._id ? `DL-${p.dealId._id.slice(-6).toUpperCase()}` : 'N/A');
+          const pType = (p.paymentType || 'sent').toUpperCase();
+          const amt = Number(p.amount) || 0;
+          const method = p.paymentMethod || 'Bank Transfer';
+          const status = (p.status || 'pending').toUpperCase();
+          const ref = (p.referenceNumber || p.paymentTransactionId || p.utrNumber || '').replace(/"/g, '""');
+          const notes = (p.notes || '').replace(/"/g, '""');
+          const receipt = p.attachmentUrl || p.receiptUrl ? resolveImageUrl(p.attachmentUrl || p.receiptUrl) : '';
+
+          csvRows.push(
+            `"${pDate}","${dealNo}","${pType}","${amt}","${method}","${status}","${ref}","${notes}","${receipt}"`
+          );
+        });
+
+        const csvContent = csvRows.join('\n');
+        await Share.share({
+          title: `${companyLabel}_Payment_Ledger_${dateStr}.csv`,
+          message: csvContent,
+        });
+      } else {
+        if (!filteredDeliveries || filteredDeliveries.length === 0) {
+          Alert.alert('Export Deliveries', 'No delivery records found to export.');
+          return;
+        }
+
+        const csvRows = [
+          `"PRAVISTI - DELIVERY & DISPATCH REPORT"`,
+          `"Company: ${companyLabel}","Export Date: ${dateStr}"`,
+          `""`,
+          `"Date","Deal #","Delivery Type","Product","Quantity","Vehicle #","Bilty #","Status","Notes","Proof Link"`,
+        ];
+
+        filteredDeliveries.forEach((d) => {
+          const dDate = (d.createdAt || d.date || '').slice(0, 10);
+          const dealNo = d.dealId?.dealNumber || (d.dealId?._id ? `DL-${d.dealId._id.slice(-6).toUpperCase()}` : 'N/A');
+          const dType = (d.deliveryType || 'sent').toUpperCase();
+          const product = (d.productId?.name || d.productName || 'Agri Commodity').replace(/"/g, '""');
+          const qty = `${d.quantity || 0} ${d.unit || 'MT'}`;
+          const vehicle = (d.vehicleNumber || '').replace(/"/g, '""');
+          const bilty = (d.biltyNumber || '').replace(/"/g, '""');
+          const status = (d.status || 'pending').toUpperCase();
+          const notes = (d.notes || '').replace(/"/g, '""');
+          const proof = d.attachmentUrl || d.receiptUrl ? resolveImageUrl(d.attachmentUrl || d.receiptUrl) : '';
+
+          csvRows.push(
+            `"${dDate}","${dealNo}","${dType}","${product}","${qty}","${vehicle}","${bilty}","${status}","${notes}","${proof}"`
+          );
+        });
+
+        const csvContent = csvRows.join('\n');
+        await Share.share({
+          title: `${companyLabel}_Delivery_Report_${dateStr}.csv`,
+          message: csvContent,
+        });
+      }
+    } catch (err) {
+      console.warn('Error exporting ledger:', err);
+    }
+  };
+
   /* ── Handle Submit Payment Entry ── */
   const handleRecordPayment = async () => {
     const amt = Number(paymentForm.amount);
@@ -550,19 +951,44 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     setIsSubmitting(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
+
+      // Normalize paymentMethod to match backend schema ('UPI', 'Bank Transfer', 'Cash', 'Cheque')
+      let normalizedMethod = 'Bank Transfer';
+      const m = (paymentForm.paymentMethod || '').toLowerCase();
+      if (m.includes('upi')) {
+        normalizedMethod = 'UPI';
+      } else if (m.includes('cash')) {
+        normalizedMethod = 'Cash';
+      } else if (m.includes('cheque') || m.includes('check')) {
+        normalizedMethod = 'Cheque';
+      } else {
+        normalizedMethod = 'Bank Transfer';
+      }
+
+      // STRICT BACKEND SCHEMA: dealId, amount, paymentType, paymentMethod, notes, attachmentUrl
       const payload = {
         dealId: paymentForm.dealId,
         amount: amt,
-        paymentType: paymentForm.paymentType,
-        paymentMethod: paymentForm.paymentMethod,
-        referenceNumber: paymentForm.referenceNumber.trim() || undefined,
-        notes: paymentForm.notes.trim() || undefined,
+        paymentType: paymentForm.paymentType === 'received' ? 'received' : 'sent',
+        paymentMethod: normalizedMethod,
+        notes: paymentForm.notes ? paymentForm.notes.trim() : undefined,
+        attachmentUrl: paymentAttachmentUrl || undefined,
       };
 
       const res = await recordPayment(payload, token);
       if (res?.success) {
         Alert.alert('Success 🎉', 'Payment transaction recorded successfully!');
         setShowPaymentModal(false);
+        setPaymentAttachmentUrl('');
+        setPaymentAttachmentAsset(null);
+        setPaymentForm({
+          dealId: '',
+          amount: '',
+          paymentType: 'sent',
+          paymentMethod: 'Bank Transfer',
+          referenceNumber: '',
+          notes: '',
+        });
         fetchData(false);
       } else {
         Alert.alert('Error', res?.message || 'Could not record payment. Please try again.');
@@ -595,18 +1021,45 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         deliveryForm.notes ? deliveryForm.notes.trim() : '',
       ].filter(Boolean);
 
+      // Find selected deal to ensure valid productId if not set
+      let prodId = deliveryForm.productId;
+      if (!prodId) {
+        const foundDeal = deals.find((d) => normalizeId(d._id || d.id) === normalizeId(deliveryForm.dealId));
+        if (foundDeal) {
+          if (foundDeal.products && foundDeal.products.length > 0) {
+            prodId = foundDeal.products[0]?.productId?._id || foundDeal.products[0]?.productId || '';
+          } else if (foundDeal.product) {
+            prodId = foundDeal.product?.productId?._id || foundDeal.product?.productId || '';
+          }
+        }
+      }
+
+      // STRICT BACKEND SCHEMA: dealId, productId, quantity, deliveryType, notes, attachmentUrl
       const payload = {
         dealId: deliveryForm.dealId,
-        productId: deliveryForm.productId || undefined,
+        productId: prodId || undefined,
         quantity: qty,
-        deliveryType: deliveryForm.deliveryType,
+        deliveryType: deliveryForm.deliveryType === 'received' ? 'received' : 'sent',
         notes: notesArray.join(' | ') || undefined,
+        attachmentUrl: deliveryAttachmentUrl || undefined,
       };
 
       const res = await createDelivery(payload, token);
       if (res?.success) {
         Alert.alert('Success 🚚', 'Delivery entry logged successfully!');
         setShowDeliveryModal(false);
+        setDeliveryAttachmentUrl('');
+        setDeliveryAttachmentAsset(null);
+        setDeliveryForm({
+          dealId: '',
+          productId: '',
+          productName: '',
+          quantity: '',
+          deliveryType: 'sent',
+          vehicleNumber: '',
+          biltyNumber: '',
+          notes: '',
+        });
         fetchData(false);
       } else {
         Alert.alert('Error', res?.message || 'Could not record delivery. Please try again.');
@@ -689,10 +1142,39 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     return `${dealCode} • ${counterparty}`;
   };
 
+  // Helper to get deal status badge info
+  const getDealStatusBadge = (status) => {
+    const s = String(status || 'active').toLowerCase().replace(/_/g, ' ');
+    if (s.includes('pend')) {
+      return { label: 'PENDING', bg: '#FEF3C7', color: '#D97706', border: '#FDE68A' };
+    }
+    if (s.includes('accept') || s.includes('complet') || s.includes('approv') || s.includes('deliver')) {
+      return { label: s.toUpperCase(), bg: '#ECFDF5', color: '#059669', border: '#A7F3D0' };
+    }
+    if (s.includes('reject') || s.includes('cancel')) {
+      return { label: s.toUpperCase(), bg: '#FEF2F2', color: '#DC2626', border: '#FECACA' };
+    }
+    return { label: s.toUpperCase(), bg: '#EFF6FF', color: '#1541D8', border: '#BFDBFE' };
+  };
+
   // Selected Deal in Form
   const currentFormDeal = useMemo(() => {
     return deals.find((d) => (d._id || d.id) === (activeTab === 'payments' ? paymentForm.dealId : deliveryForm.dealId));
   }, [deals, activeTab, paymentForm.dealId, deliveryForm.dealId]);
+
+  const currentPaymentDeal = useMemo(() => {
+    return deals.find((d) => normalizeId(d._id || d.id) === normalizeId(paymentForm.dealId));
+  }, [deals, paymentForm.dealId]);
+
+  // Selected Deal Label for Filter Dropdown
+  const selectedDealLabel = useMemo(() => {
+    if (selectedDealId === 'all') {
+      return `All Deals (${deals.length})`;
+    }
+    const found = deals.find((d) => normalizeId(d._id || d.id) === normalizeId(selectedDealId));
+    if (!found) return `All Deals (${deals.length})`;
+    return getDealLabel(found);
+  }, [deals, selectedDealId]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -715,6 +1197,15 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         </View>
 
         <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={handleExportLedger}
+            activeOpacity={0.75}
+            accessibilityLabel="Export Ledger"
+          >
+            <Download size={18} color="#1541D8" strokeWidth={2.2} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.headerIconBtn}
             onPress={() => setIsSearchVisible(!isSearchVisible)}
@@ -804,42 +1295,206 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         </TouchableOpacity>
       </View>
 
-      {/* ─── 4. DEAL FILTER CHIPS BAR ─── */}
+      {/* ─── 4. INLINE ON-SCREEN DEAL DROPDOWN ─── */}
       {deals.length > 0 && (
-        <View style={styles.dealFilterContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.dealFilterScroll}
+        <View style={styles.dealDropdownContainer}>
+          <TouchableOpacity
+            style={[
+              styles.dealDropdownButton,
+              isDealDropdownExpanded && styles.dealDropdownButtonExpanded,
+            ]}
+            onPress={() => setIsDealDropdownExpanded(!isDealDropdownExpanded)}
+            activeOpacity={0.75}
           >
-            <TouchableOpacity
-              style={[styles.dealChip, selectedDealId === 'all' && styles.dealChipActive]}
-              onPress={() => setSelectedDealId('all')}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.dealChipText, selectedDealId === 'all' && styles.dealChipTextActive]}>
-                All Deals ({deals.length})
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.dealDropdownLeft}>
+              <View style={styles.dealDropdownIconBox}>
+                <FileText size={15} color="#1541D8" strokeWidth={2.2} />
+              </View>
+              <View style={styles.dealDropdownTextWrap}>
+                <Text style={styles.dealDropdownLabel}>Filter by Deal</Text>
+                <Text style={styles.dealDropdownSelectedText} numberOfLines={1}>
+                  {selectedDealLabel}
+                </Text>
+              </View>
+            </View>
 
-            {deals.map((d) => {
-              const dId = d._id || d.id;
-              const isSelected = selectedDealId === dId;
-              const label = d.dealNumber ? `#${d.dealNumber}` : `#${dId.slice(-4).toUpperCase()}`;
-              return (
+            <View style={styles.dealDropdownRight}>
+              {selectedDealId !== 'all' && (
                 <TouchableOpacity
-                  key={dId}
-                  style={[styles.dealChip, isSelected && styles.dealChipActive]}
-                  onPress={() => setSelectedDealId(dId)}
+                  style={styles.dealDropdownClearBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    setSelectedDealId('all');
+                    setIsDealDropdownExpanded(false);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <X size={13} color="#64748B" strokeWidth={2.5} />
+                </TouchableOpacity>
+              )}
+              <ChevronDown
+                size={18}
+                color="#1541D8"
+                strokeWidth={2.2}
+                style={{
+                  transform: [{ rotate: isDealDropdownExpanded ? '180deg' : '0deg' }],
+                }}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {/* Inline on-screen list (No popup modal!) */}
+          {isDealDropdownExpanded && (
+            <View style={styles.inlineDropdownMenu}>
+              <ScrollView
+                style={styles.inlineDropdownScroll}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
+                {/* Option: All Deals */}
+                <TouchableOpacity
+                  style={[
+                    styles.inlineOptionItem,
+                    selectedDealId === 'all' && styles.inlineOptionItemSelected,
+                  ]}
+                  onPress={() => {
+                    setSelectedDealId('all');
+                    setIsDealDropdownExpanded(false);
+                  }}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.dealChipText, isSelected && styles.dealChipTextActive]}>
-                    Deal {label}
-                  </Text>
+                  <View style={styles.inlineOptionLeft}>
+                    <View
+                      style={[
+                        styles.inlineOptionBadge,
+                        selectedDealId === 'all' && styles.inlineOptionBadgeActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.inlineOptionBadgeText,
+                          selectedDealId === 'all' && styles.inlineOptionBadgeTextActive,
+                        ]}
+                      >
+                        ALL
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.inlineOptionTitle,
+                          selectedDealId === 'all' && styles.inlineOptionTitleActive,
+                        ]}
+                      >
+                        All Deals ({deals.length})
+                      </Text>
+                      <Text style={styles.inlineOptionSubtitle}>
+                        Show transactions for all deals
+                      </Text>
+                    </View>
+                  </View>
+                  {selectedDealId === 'all' && (
+                    <Check size={16} color="#1541D8" strokeWidth={2.5} />
+                  )}
                 </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+
+                {/* Individual Deals */}
+                {deals.map((deal) => {
+                  const dId = normalizeId(deal._id || deal.id);
+                  const isSelected = normalizeId(selectedDealId) === dId;
+                  const dealNumber = deal.dealNumber
+                    ? `#${deal.dealNumber}`
+                    : `#${dId.slice(-4).toUpperCase()}`;
+                  const party =
+                    deal.sellerCompanyId?.name ||
+                    deal.buyerCompanyId?.name ||
+                    deal.sellerCompanyName ||
+                    deal.buyerCompanyName ||
+                    'Deal';
+                  const product =
+                    deal.products?.[0]?.name ||
+                    deal.productName ||
+                    deal.product?.name ||
+                    'Commodity';
+                  const amount = deal.totalAmount || deal.amount;
+
+                  return (
+                    <TouchableOpacity
+                      key={dId}
+                      style={[
+                        styles.inlineOptionItem,
+                        isSelected && styles.inlineOptionItemSelected,
+                      ]}
+                      onPress={() => {
+                        setSelectedDealId(dId);
+                        setIsDealDropdownExpanded(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.inlineOptionLeft}>
+                        <View
+                          style={[
+                            styles.inlineOptionBadge,
+                            isSelected && styles.inlineOptionBadgeActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.inlineOptionBadgeText,
+                              isSelected && styles.inlineOptionBadgeTextActive,
+                            ]}
+                          >
+                            {dealNumber}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.inlineOptionTitle,
+                              isSelected && styles.inlineOptionTitleActive,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {product} • {party}
+                          </Text>
+                          <View style={styles.inlineOptionMetaRow}>
+                            {amount ? (
+                              <Text style={styles.inlineOptionAmount}>
+                                ₹{Number(amount).toLocaleString('en-IN')}
+                              </Text>
+                            ) : null}
+                            {deal.status ? (
+                              <View
+                                style={[
+                                  styles.dealStatusMiniPill,
+                                  {
+                                    backgroundColor: getDealStatusBadge(deal.status).bg,
+                                    borderColor: getDealStatusBadge(deal.status).border,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.dealStatusMiniText,
+                                    { color: getDealStatusBadge(deal.status).color },
+                                  ]}
+                                >
+                                  {getDealStatusBadge(deal.status).label}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
+                      </View>
+                      {isSelected && (
+                        <Check size={16} color="#1541D8" strokeWidth={2.5} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
         </View>
       )}
 
@@ -857,84 +1512,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
           />
         }
       >
-        {/* ── METRIC SUMMARY CARDS ── */}
-        {activeTab === 'payments' ? (
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryTopRow}>
-                <View style={styles.summaryIconBoxGreen}>
-                  <ArrowDownLeft size={12} color="#059669" strokeWidth={2.5} />
-                </View>
-                <Text style={styles.summaryLabel} numberOfLines={1}>Inflow</Text>
-              </View>
-              <Text style={styles.summaryValueGreen} numberOfLines={1} adjustsFontSizeToFit>
-                {formatCurrency(stats.totalReceived)}
-              </Text>
-            </View>
 
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryTopRow}>
-                <View style={styles.summaryIconBoxRed}>
-                  <ArrowUpRight size={12} color="#DC2626" strokeWidth={2.5} />
-                </View>
-                <Text style={styles.summaryLabel} numberOfLines={1}>Outflow</Text>
-              </View>
-              <Text style={styles.summaryValueRed} numberOfLines={1} adjustsFontSizeToFit>
-                {formatCurrency(stats.totalPaid)}
-              </Text>
-            </View>
-
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryTopRow}>
-                <View style={styles.summaryIconBoxAmber}>
-                  <Clock size={12} color="#D97706" strokeWidth={2.5} />
-                </View>
-                <Text style={styles.summaryLabel} numberOfLines={1}>Pending</Text>
-              </View>
-              <Text style={styles.summaryValueAmber} numberOfLines={1}>
-                {stats.pendingCount}
-              </Text>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryTopRow}>
-                <View style={styles.summaryIconBoxBlue}>
-                  <Truck size={12} color="#1541D8" strokeWidth={2.5} />
-                </View>
-                <Text style={styles.summaryLabel} numberOfLines={1}>Dispatched</Text>
-              </View>
-              <Text style={styles.summaryValueBlue} numberOfLines={1} adjustsFontSizeToFit>
-                {stats.totalDispatchedQty} MT
-              </Text>
-            </View>
-
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryTopRow}>
-                <View style={styles.summaryIconBoxGreen}>
-                  <CheckCircle2 size={12} color="#059669" strokeWidth={2.5} />
-                </View>
-                <Text style={styles.summaryLabel} numberOfLines={1}>Delivered</Text>
-              </View>
-              <Text style={styles.summaryValueGreen} numberOfLines={1} adjustsFontSizeToFit>
-                {stats.totalDeliveredQty} MT
-              </Text>
-            </View>
-
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryTopRow}>
-                <View style={styles.summaryIconBoxPurple}>
-                  <Box size={12} color="#7C3AED" strokeWidth={2.5} />
-                </View>
-                <Text style={styles.summaryLabel} numberOfLines={1}>Shipments</Text>
-              </View>
-              <Text style={styles.summaryValuePurple} numberOfLines={1}>
-                {deliveries.length}
-              </Text>
-            </View>
-          </View>
-        )}
 
         {/* ── SECTION HEADER WITH QUICK ENTRY BUTTON ── */}
         <View style={styles.sectionHeaderRow}>
@@ -954,9 +1532,9 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
             onPress={activeTab === 'payments' ? openRecordPaymentModal : openLogDeliveryModal}
             activeOpacity={0.8}
           >
-            <Plus size={14} color="#1541D8" strokeWidth={2.5} />
+            <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
             <Text style={styles.addEntryBtnText}>
-              {activeTab === 'payments' ? 'Record' : 'Add Entry'}
+              {activeTab === 'payments' ? 'Add Payment' : 'Add Entry'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -988,7 +1566,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                 activeOpacity={0.85}
               >
                 <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
-                <Text style={styles.emptyActionBtnText}>Record First Payment</Text>
+                <Text style={styles.emptyActionBtnText}>Add Payment</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -1000,7 +1578,15 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
               const isRejected = status === 'rejected';
 
               return (
-                <View key={item._id || item.id || `pay-${index}`} style={styles.transactionCard}>
+                <View
+                  key={item._id || item.id || `pay-${index}`}
+                  style={[
+                    styles.transactionCard,
+                    isPending && styles.transactionCardPending,
+                    isApproved && styles.transactionCardApproved,
+                    isRejected && styles.transactionCardRejected,
+                  ]}
+                >
                   {/* Card Header */}
                   <View style={styles.cardTopRow}>
                     <View style={styles.cardHeaderLeft}>
@@ -1093,8 +1679,60 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                     </View>
                   ) : null}
 
-                  {/* Pending Approval Action Buttons */}
-                  {isPending && (
+                  {/* Proof / Receipt Attachment Row with Visible Image Thumbnail */}
+                  {(item.attachmentUrl || item.receiptUrl || item.attachment || item.proofUrl || item.slipUrl || item.paymentProof) && (() => {
+                    const rawAttach = item.attachmentUrl || item.receiptUrl || item.attachment || item.proofUrl || item.slipUrl || item.paymentProof;
+                    const attachUrl = resolveImageUrl(rawAttach);
+                    const isImg = attachUrl && (attachUrl.match(/\.(jpg|jpeg|png|webp|gif)($|\?)/i) || !attachUrl.toLowerCase().endsWith('.pdf'));
+
+                    return (
+                      <View style={styles.cardAttachmentRow}>
+                        <TouchableOpacity
+                          style={styles.cardAttachmentBtn}
+                          onPress={() => {
+                            if (isImg) {
+                              setFullPreviewImage(attachUrl);
+                            } else {
+                              Linking.openURL(attachUrl).catch(() => Alert.alert('Receipt', 'Unable to open document'));
+                            }
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          {isImg ? (
+                            <Image
+                              source={{ uri: attachUrl }}
+                              style={styles.cardAttachmentThumb}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.cardAttachmentDocBadge}>
+                              <Text style={styles.cardAttachmentDocText}>DOC</Text>
+                            </View>
+                          )}
+                          <View style={{ flex: 1, marginLeft: 8 }}>
+                            <Text style={styles.cardAttachmentBtnText} numberOfLines={1}>
+                              Payment Receipt / Slip
+                            </Text>
+                            <Text style={styles.cardAttachmentSubText}>
+                              {isImg ? 'Tap to view full image' : 'Tap to open document'}
+                            </Text>
+                          </View>
+                          <Eye size={15} color="#1541D8" style={{ marginRight: 4 }} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.cardAttachmentDownloadBtn}
+                          onPress={() => downloadFileToDevice(attachUrl, null, 'Payment_Receipt')}
+                          activeOpacity={0.7}
+                        >
+                          <Download size={15} color="#1541D8" />
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })()}
+
+                  {/* Pending Approval Action Buttons (Only shown to counterparty, NOT entry creator!) */}
+                  {isPending && !isEntryCreatedByMe(item) && (
                     <View style={styles.actionButtonRow}>
                       <TouchableOpacity
                         style={[styles.quickStatusBtn, styles.approveBtn]}
@@ -1121,6 +1759,16 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                         <X size={14} color="#DC2626" strokeWidth={2.4} />
                         <Text style={styles.rejectBtnText}>Reject</Text>
                       </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Creator awaiting confirmation badge */}
+                  {isPending && isEntryCreatedByMe(item) && (
+                    <View style={styles.pendingAwaitingBox}>
+                      <Clock size={13} color="#D97706" strokeWidth={2.2} />
+                      <Text style={styles.pendingAwaitingText}>
+                        Entry recorded by you • Awaiting counterparty approval
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -1161,7 +1809,14 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
               const prodName = item.productId?.name || item.productName || item.product?.name || 'Commodity Material';
 
               return (
-                <View key={item._id || item.id || `del-${index}`} style={styles.transactionCard}>
+                <View
+                  key={item._id || item.id || `del-${index}`}
+                  style={[
+                    styles.transactionCard,
+                    isPending && styles.transactionCardPending,
+                    isDelivered && styles.transactionCardApproved,
+                  ]}
+                >
                   {/* Card Header */}
                   <View style={styles.cardTopRow}>
                     <View style={styles.cardHeaderLeft}>
@@ -1246,8 +1901,60 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                     </View>
                   ) : null}
 
-                  {/* Mark Delivered Action */}
-                  {!isDelivered && (
+                  {/* Proof / Bilty Attachment Row with Visible Image Thumbnail */}
+                  {(item.attachmentUrl || item.receiptUrl || item.biltyUrl || item.attachment || item.deliveryProof || item.proofUrl) && (() => {
+                    const rawAttach = item.attachmentUrl || item.receiptUrl || item.biltyUrl || item.attachment || item.deliveryProof || item.proofUrl;
+                    const attachUrl = resolveImageUrl(rawAttach);
+                    const isImg = attachUrl && (attachUrl.match(/\.(jpg|jpeg|png|webp|gif)($|\?)/i) || !attachUrl.toLowerCase().endsWith('.pdf'));
+
+                    return (
+                      <View style={styles.cardAttachmentRow}>
+                        <TouchableOpacity
+                          style={[styles.cardAttachmentBtn, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}
+                          onPress={() => {
+                            if (isImg) {
+                              setFullPreviewImage(attachUrl);
+                            } else {
+                              Linking.openURL(attachUrl).catch(() => Alert.alert('Delivery Proof', 'Unable to open document'));
+                            }
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          {isImg ? (
+                            <Image
+                              source={{ uri: attachUrl }}
+                              style={styles.cardAttachmentThumb}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={[styles.cardAttachmentDocBadge, { backgroundColor: '#059669' }]}>
+                              <Text style={styles.cardAttachmentDocText}>DOC</Text>
+                            </View>
+                          )}
+                          <View style={{ flex: 1, marginLeft: 8 }}>
+                            <Text style={[styles.cardAttachmentBtnText, { color: '#065F46' }]} numberOfLines={1}>
+                              Delivery Proof / Bilty
+                            </Text>
+                            <Text style={[styles.cardAttachmentSubText, { color: '#047857' }]}>
+                              {isImg ? 'Tap to view full image' : 'Tap to open document'}
+                            </Text>
+                          </View>
+                          <Eye size={15} color="#059669" style={{ marginRight: 4 }} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.cardAttachmentDownloadBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
+                          onPress={() => downloadFileToDevice(attachUrl, null, 'Delivery_Bilty')}
+                          activeOpacity={0.7}
+                        >
+                          <Download size={15} color="#059669" />
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })()}
+
+                  {/* Mark Delivered Action (Only shown to counterparty, NOT entry creator!) */}
+                  {!isDelivered && !isEntryCreatedByMe(item) && (
                     <View style={styles.actionButtonRow}>
                       <TouchableOpacity
                         style={[styles.quickStatusBtn, styles.approveBtn]}
@@ -1264,6 +1971,16 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                           </>
                         )}
                       </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Creator dispatched awaiting confirmation */}
+                  {!isDelivered && isEntryCreatedByMe(item) && (
+                    <View style={styles.pendingAwaitingBox}>
+                      <Clock size={13} color="#D97706" strokeWidth={2.2} />
+                      <Text style={styles.pendingAwaitingText}>
+                        Dispatched by you • Awaiting receiver confirmation
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -1292,7 +2009,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                   <CreditCard size={20} color="#1541D8" strokeWidth={2.2} />
                 </View>
                 <View>
-                  <Text style={styles.modalTitle}>Record Payment</Text>
+                  <Text style={styles.modalTitle}>Add Payment</Text>
                   <Text style={styles.modalSubtitle}>Log deal transaction entry</Text>
                 </View>
               </View>
@@ -1316,33 +2033,125 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                   </Text>
                 </View>
               ) : (
-                <View style={styles.dealPickerContainer}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dealPickerScroll}>
-                    {deals.map((d) => {
-                      const dId = d._id || d.id;
-                      const isSelected = paymentForm.dealId === dId;
-                      return (
-                        <TouchableOpacity
-                          key={dId}
-                          style={[styles.dealPickerCard, isSelected && styles.dealPickerCardSelected]}
-                          onPress={() => setPaymentForm({ ...paymentForm, dealId: dId })}
-                          activeOpacity={0.75}
+                <View style={{ marginBottom: 16 }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.formDropdownButton,
+                      isPaymentDealDropdownExpanded && styles.formDropdownButtonExpanded,
+                    ]}
+                    onPress={() => setIsPaymentDealDropdownExpanded(!isPaymentDealDropdownExpanded)}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.formDropdownLeft}>
+                      <FileText size={16} color="#1541D8" strokeWidth={2.2} />
+                      <Text style={styles.formDropdownValue} numberOfLines={1}>
+                        {paymentForm.dealId
+                          ? getDealLabel(deals.find((d) => normalizeId(d._id || d.id) === normalizeId(paymentForm.dealId)))
+                          : 'Select a deal...'}
+                      </Text>
+                    </View>
+                    <ChevronDown
+                      size={18}
+                      color="#64748B"
+                      style={{
+                        transform: [{ rotate: isPaymentDealDropdownExpanded ? '180deg' : '0deg' }],
+                      }}
+                    />
+                  </TouchableOpacity>
+
+                  {isPaymentDealDropdownExpanded && (
+                    <View style={styles.formInlineDropdownList}>
+                      <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
+                        {deals.map((d) => {
+                          const dId = normalizeId(d._id || d.id);
+                          const isSelected = normalizeId(paymentForm.dealId) === dId;
+                          const dealNumber = d.dealNumber ? `#${d.dealNumber}` : `#${dId.slice(-4).toUpperCase()}`;
+                          const party = d.sellerCompanyId?.name || d.buyerCompanyId?.name || d.sellerCompanyName || d.buyerCompanyName || 'Deal';
+                          const prod = d.products?.[0]?.name || d.productName || d.product?.name || 'Commodity';
+                          const amt = d.totalAmount || d.amount;
+                          const statusInfo = getDealStatusBadge(d.status);
+
+                          return (
+                            <TouchableOpacity
+                              key={dId}
+                              style={[styles.formInlineOption, isSelected && styles.formInlineOptionSelected]}
+                              onPress={() => {
+                                setPaymentForm({ ...paymentForm, dealId: dId });
+                                setIsPaymentDealDropdownExpanded(false);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                                  <View style={styles.inlineOptionBadge}>
+                                    <Text style={styles.inlineOptionBadgeText}>{dealNumber}</Text>
+                                  </View>
+                                  <View style={[styles.dealStatusMiniPill, { backgroundColor: statusInfo.bg, borderColor: statusInfo.border }]}>
+                                    <Text style={[styles.dealStatusMiniText, { color: statusInfo.color }]}>
+                                      {statusInfo.label}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <Text style={[styles.formInlineOptionText, isSelected && styles.formInlineOptionTextSelected]} numberOfLines={1}>
+                                  {prod} • {party}
+                                </Text>
+                                {amt ? (
+                                  <Text style={styles.inlineOptionAmount}>
+                                    Value: ₹{Number(amt).toLocaleString('en-IN')}
+                                  </Text>
+                                ) : null}
+                              </View>
+                              {isSelected && <Check size={16} color="#1541D8" strokeWidth={2.4} />}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  {/* Selected Deal Summary Banner */}
+                  {currentPaymentDeal && !isPaymentDealDropdownExpanded && (
+                    <View style={styles.selectedDealCard}>
+                      <View style={styles.selectedDealTopRow}>
+                        <View style={styles.selectedDealBadge}>
+                          <Text style={styles.selectedDealBadgeText}>
+                            {currentPaymentDeal.dealNumber ? `#${currentPaymentDeal.dealNumber}` : `#${normalizeId(currentPaymentDeal._id || currentPaymentDeal.id).slice(-4).toUpperCase()}`}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.dealStatusMiniPill,
+                            {
+                              backgroundColor: getDealStatusBadge(currentPaymentDeal.status).bg,
+                              borderColor: getDealStatusBadge(currentPaymentDeal.status).border,
+                            },
+                          ]}
                         >
-                          <Text style={[styles.dealPickerNumber, isSelected && styles.dealPickerTextSelected]}>
-                            {d.dealNumber ? `#${d.dealNumber}` : `#${dId.slice(-4).toUpperCase()}`}
+                          <Text
+                            style={[
+                              styles.dealStatusMiniText,
+                              { color: getDealStatusBadge(currentPaymentDeal.status).color },
+                            ]}
+                          >
+                            {getDealStatusBadge(currentPaymentDeal.status).label}
                           </Text>
-                          <Text style={[styles.dealPickerParty, isSelected && styles.dealPickerTextSelected]} numberOfLines={1}>
-                            {d.sellerCompanyId?.name || d.buyerCompanyId?.name || 'Deal'}
+                        </View>
+                      </View>
+                      <Text style={styles.selectedDealPartyText} numberOfLines={1}>
+                        {currentPaymentDeal.sellerCompanyId?.name || currentPaymentDeal.buyerCompanyId?.name || currentPaymentDeal.sellerCompanyName || currentPaymentDeal.buyerCompanyName || 'Counterparty'}
+                      </Text>
+                      <View style={styles.selectedDealMetaRow}>
+                        <Text style={styles.selectedDealProductText}>
+                          {currentPaymentDeal.products?.[0]?.name || currentPaymentDeal.productName || currentPaymentDeal.product?.name || 'Commodity Material'}
+                        </Text>
+                        {(currentPaymentDeal.totalAmount || currentPaymentDeal.amount) ? (
+                          <Text style={styles.selectedDealAmountText}>
+                            ₹{Number(currentPaymentDeal.totalAmount || currentPaymentDeal.amount).toLocaleString('en-IN')}
                           </Text>
-                          {d.totalAmount ? (
-                            <Text style={[styles.dealPickerAmount, isSelected && styles.dealPickerTextSelected]}>
-                              ₹{Number(d.totalAmount).toLocaleString('en-IN')}
-                            </Text>
-                          ) : null}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
+                        ) : null}
+                      </View>
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -1396,7 +2205,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                 <Text style={styles.rupeePrefix}>₹</Text>
                 <TextInput
                   style={styles.inputFlex}
-                  placeholder="e.g. 50000"
+                  placeholder="0.00"
                   placeholderTextColor="#94A3B8"
                   keyboardType="numeric"
                   value={paymentForm.amount}
@@ -1407,7 +2216,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
               {/* Payment Method */}
               <Text style={styles.formLabel}>Payment Method</Text>
               <View style={styles.chipsRow}>
-                {['NEFT / RTGS', 'UPI', 'Cheque', 'Cash', 'Net Banking'].map((method) => {
+                {['Bank Transfer', 'UPI', 'Cheque', 'Cash'].map((method) => {
                   const isSelected = paymentForm.paymentMethod === method;
                   return (
                     <TouchableOpacity
@@ -1429,31 +2238,52 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                 })}
               </View>
 
-              {/* UTR / Reference No */}
-              <Text style={styles.formLabel}>UTR / Reference / Cheque No.</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. UTR123498762 or CHQ-0012"
-                placeholderTextColor="#94A3B8"
-                value={paymentForm.referenceNumber}
-                onChangeText={(val) => setPaymentForm({ ...paymentForm, referenceNumber: val })}
-              />
-
-              {/* Notes */}
-              <Text style={styles.formLabel}>Notes / Remarks</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea]}
-                placeholder="Add optional transaction remarks or bank details..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                numberOfLines={3}
-                value={paymentForm.notes}
-                onChangeText={(val) => setPaymentForm({ ...paymentForm, notes: val })}
-              />
+              {/* Payment Proof / Slip Attachment */}
+              <Text style={styles.formLabel}>Attach Receipt / Payment Proof (Optional)</Text>
+              {paymentAttachmentUrl ? (
+                <View style={styles.proofAttachmentCard}>
+                  <Image
+                    source={{ uri: resolveImageUrl(paymentAttachmentUrl) }}
+                    style={styles.proofAttachmentThumbnail}
+                    resizeMode="cover"
+                  />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.proofAttachmentName} numberOfLines={1}>
+                      {paymentAttachmentAsset?.fileName || 'Receipt_Slip.jpg'}
+                    </Text>
+                    <Text style={styles.proofAttachmentStatus}>Uploaded Successfully ✓</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.proofRemoveBtn}
+                    onPress={() => {
+                      setPaymentAttachmentUrl('');
+                      setPaymentAttachmentAsset(null);
+                    }}
+                  >
+                    <X size={16} color="#DC2626" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.proofUploadBtn}
+                  onPress={pickPaymentReceipt}
+                  disabled={isUploadingPaymentAttachment}
+                  activeOpacity={0.8}
+                >
+                  {isUploadingPaymentAttachment ? (
+                    <ActivityIndicator size="small" color="#1541D8" />
+                  ) : (
+                    <>
+                      <Paperclip size={16} color="#1541D8" />
+                      <Text style={styles.proofUploadBtnText}>Attach Bank Slip / Screenshot</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
 
               {/* Submit Button */}
               <TouchableOpacity
-                style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+                style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled, { marginTop: 24 }]}
                 onPress={handleRecordPayment}
                 disabled={isSubmitting}
                 activeOpacity={0.85}
@@ -1463,7 +2293,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                 ) : (
                   <>
                     <Check size={18} color="#FFFFFF" strokeWidth={2.5} />
-                    <Text style={styles.submitButtonText}>Confirm & Record Payment</Text>
+                    <Text style={styles.submitButtonText}>Confirm & Add Payment</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -1515,49 +2345,86 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                   </Text>
                 </View>
               ) : (
-                <View style={styles.dealPickerContainer}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dealPickerScroll}>
-                    {deals.map((d) => {
-                      const dId = d._id || d.id;
-                      const isSelected = deliveryForm.dealId === dId;
-                      return (
-                        <TouchableOpacity
-                          key={dId}
-                          style={[styles.dealPickerCard, isSelected && styles.dealPickerCardSelected]}
-                          onPress={() => {
-                            let prodId = '';
-                            let prodName = '';
-                            if (d.products && d.products.length > 0) {
-                              prodId = d.products[0]?.productId?._id || d.products[0]?.productId || '';
-                              prodName = d.products[0]?.productId?.name || d.products[0]?.name || '';
-                            } else if (d.product) {
-                              prodId = d.product?.productId?._id || d.product?.productId || '';
-                              prodName = d.product?.productId?.name || d.product?.name || '';
-                            }
-                            setDeliveryForm({
-                              ...deliveryForm,
-                              dealId: dId,
-                              productId: prodId,
-                              productName: prodName,
-                            });
-                          }}
-                          activeOpacity={0.75}
-                        >
-                          <Text style={[styles.dealPickerNumber, isSelected && styles.dealPickerTextSelected]}>
-                            {d.dealNumber ? `#${d.dealNumber}` : `#${dId.slice(-4).toUpperCase()}`}
-                          </Text>
-                          <Text style={[styles.dealPickerParty, isSelected && styles.dealPickerTextSelected]} numberOfLines={1}>
-                            {d.sellerCompanyId?.name || d.buyerCompanyId?.name || 'Deal'}
-                          </Text>
-                          {d.totalAmount ? (
-                            <Text style={[styles.dealPickerAmount, isSelected && styles.dealPickerTextSelected]}>
-                              ₹{Number(d.totalAmount).toLocaleString('en-IN')}
-                            </Text>
-                          ) : null}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
+                <View style={{ marginBottom: 16 }}>
+                  <TouchableOpacity
+                    style={[styles.formDropdownButton, isDeliveryDealDropdownExpanded && styles.formDropdownButtonExpanded]}
+                    onPress={() => setIsDeliveryDealDropdownExpanded(!isDeliveryDealDropdownExpanded)}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.formDropdownLeft}>
+                      <FileText size={16} color="#1541D8" strokeWidth={2.2} />
+                      <Text style={styles.formDropdownValue} numberOfLines={1}>
+                        {deliveryForm.dealId
+                          ? getDealLabel(deals.find((d) => normalizeId(d._id || d.id) === normalizeId(deliveryForm.dealId)))
+                          : 'Select a deal...'}
+                      </Text>
+                    </View>
+                    <ChevronDown
+                      size={18}
+                      color="#64748B"
+                      style={{
+                        transform: [{ rotate: isDeliveryDealDropdownExpanded ? '180deg' : '0deg' }],
+                      }}
+                    />
+                  </TouchableOpacity>
+
+                  {isDeliveryDealDropdownExpanded && (
+                    <View style={styles.formInlineDropdownList}>
+                      <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
+                        {deals.map((d) => {
+                          const dId = normalizeId(d._id || d.id);
+                          const isSelected = normalizeId(deliveryForm.dealId) === dId;
+                          const dealNumber = d.dealNumber ? `#${d.dealNumber}` : `#${dId.slice(-4).toUpperCase()}`;
+                          const party = d.sellerCompanyId?.name || d.buyerCompanyId?.name || d.sellerCompanyName || d.buyerCompanyName || 'Deal';
+                          const prod = d.products?.[0]?.name || d.productName || d.product?.name || 'Commodity';
+                          const statusInfo = getDealStatusBadge(d.status);
+
+                          return (
+                            <TouchableOpacity
+                              key={dId}
+                              style={[styles.formInlineOption, isSelected && styles.formInlineOptionSelected]}
+                              onPress={() => {
+                                let prodId = '';
+                                let prodName = '';
+                                if (d.products && d.products.length > 0) {
+                                  prodId = d.products[0]?.productId?._id || d.products[0]?.productId || '';
+                                  prodName = d.products[0]?.productId?.name || d.products[0]?.name || '';
+                                } else if (d.product) {
+                                  prodId = d.product?.productId?._id || d.product?.productId || '';
+                                  prodName = d.product?.productId?.name || d.product?.name || '';
+                                }
+                                setDeliveryForm({
+                                  ...deliveryForm,
+                                  dealId: dId,
+                                  productId: prodId,
+                                  productName: prodName,
+                                });
+                                setIsDeliveryDealDropdownExpanded(false);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                                  <View style={styles.inlineOptionBadge}>
+                                    <Text style={styles.inlineOptionBadgeText}>{dealNumber}</Text>
+                                  </View>
+                                  <View style={[styles.dealStatusMiniPill, { backgroundColor: statusInfo.bg, borderColor: statusInfo.border }]}>
+                                    <Text style={[styles.dealStatusMiniText, { color: statusInfo.color }]}>
+                                      {statusInfo.label}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <Text style={[styles.formInlineOptionText, isSelected && styles.formInlineOptionTextSelected]} numberOfLines={1}>
+                                  {prod} • {party}
+                                </Text>
+                              </View>
+                              {isSelected && <Check size={16} color="#1541D8" strokeWidth={2.4} />}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -1675,6 +2542,49 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                 onChangeText={(val) => setDeliveryForm({ ...deliveryForm, notes: val })}
               />
 
+              {/* Delivery Proof / Bilty Attachment */}
+              <Text style={styles.formLabel}>Attach Bilty / Delivery Slip (Optional)</Text>
+              {deliveryAttachmentUrl ? (
+                <View style={styles.proofAttachmentCard}>
+                  <Image
+                    source={{ uri: resolveImageUrl(deliveryAttachmentUrl) }}
+                    style={styles.proofAttachmentThumbnail}
+                    resizeMode="cover"
+                  />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.proofAttachmentName} numberOfLines={1}>
+                      {deliveryAttachmentAsset?.fileName || 'Delivery_Document.jpg'}
+                    </Text>
+                    <Text style={styles.proofAttachmentStatus}>Uploaded Successfully ✓</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.proofRemoveBtn}
+                    onPress={() => {
+                      setDeliveryAttachmentUrl('');
+                      setDeliveryAttachmentAsset(null);
+                    }}
+                  >
+                    <X size={16} color="#DC2626" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.proofUploadBtn}
+                  onPress={pickDeliveryDocument}
+                  disabled={isUploadingDeliveryAttachment}
+                  activeOpacity={0.8}
+                >
+                  {isUploadingDeliveryAttachment ? (
+                    <ActivityIndicator size="small" color="#1541D8" />
+                  ) : (
+                    <>
+                      <Paperclip size={16} color="#1541D8" />
+                      <Text style={styles.proofUploadBtnText}>Attach Bilty / LR Document</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+
               {/* Submit Button */}
               <TouchableOpacity
                 style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
@@ -1757,6 +2667,64 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
             </ScrollView>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ─── FULL IMAGE PREVIEW MODAL ─── */}
+      <Modal
+        visible={Boolean(fullPreviewImage)}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setFullPreviewImage(null)}
+      >
+        <SafeAreaView style={styles.imageViewerOverlay}>
+          <View style={styles.imageViewerHeader}>
+            <TouchableOpacity
+              onPress={() => setFullPreviewImage(null)}
+              style={styles.imageViewerCloseBtn}
+              activeOpacity={0.8}
+            >
+              <X size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (fullPreviewImage) {
+                    downloadFileToDevice(fullPreviewImage, null, 'Attachment');
+                  }
+                }}
+                style={[styles.imageViewerActionBtn, { backgroundColor: '#2563EB', marginRight: 8 }]}
+                activeOpacity={0.8}
+              >
+                <Download size={16} color="#FFFFFF" />
+                <Text style={styles.imageViewerActionText}>Download</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  if (fullPreviewImage) {
+                    Linking.openURL(fullPreviewImage).catch(() => Alert.alert('Error', 'Cannot open link'));
+                  }
+                }}
+                style={styles.imageViewerActionBtn}
+                activeOpacity={0.8}
+              >
+                <ExternalLink size={16} color="#FFFFFF" />
+                <Text style={styles.imageViewerActionText}>Open Original</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.imageViewerBody}>
+            {fullPreviewImage ? (
+              <Image
+                source={{ uri: fullPreviewImage }}
+                style={styles.imageViewerContent}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -2020,36 +2988,322 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
-  /* ── 4. Deal Filter Chips ── */
-  dealFilterContainer: {
+  /* ── 4. Deal Filter Dropdown ── */
+  dealDropdownContainer: {
     backgroundColor: '#FFFFFF',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  dealFilterScroll: {
     paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  dealDropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  dealDropdownLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  dealDropdownIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  dealDropdownTextWrap: {
+    flex: 1,
+  },
+  dealDropdownLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 1,
+  },
+  dealDropdownSelectedText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  dealDropdownRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  dealChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  dealDropdownClearBtn: {
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
   },
-  dealChipActive: {
+
+  /* ── Main Screen Inline Deal Dropdown (No Popup Modal) ── */
+  inlineDropdownMenu: {
+    marginTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#DBEAFE',
+    overflow: 'hidden',
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  inlineDropdownScroll: {
+    maxHeight: 240,
+  },
+  inlineOptionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  inlineOptionItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  inlineOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  inlineOptionBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+    marginRight: 10,
+  },
+  inlineOptionBadgeActive: {
     backgroundColor: '#1541D8',
-    borderColor: '#1541D8',
   },
-  dealChipText: {
-    fontSize: 12,
+  inlineOptionBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  inlineOptionBadgeTextActive: {
+    color: '#FFFFFF',
+  },
+  inlineOptionTitle: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  inlineOptionTitleActive: {
+    color: '#1541D8',
+    fontWeight: '700',
+  },
+  inlineOptionSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  inlineOptionMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    gap: 4,
+  },
+  inlineOptionAmount: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  inlineOptionStatus: {
+    fontSize: 10,
     fontWeight: '600',
     color: '#64748B',
   },
-  dealChipTextActive: {
+
+  /* ── Form Modal Inline Deal Dropdown ── */
+  formDropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 6,
+  },
+  formDropdownButtonExpanded: {
+    borderColor: '#1541D8',
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  formDropdownLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+    gap: 8,
+  },
+  formDropdownValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+    flex: 1,
+  },
+  formInlineDropdownList: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: '#CBD5E1',
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  formInlineOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  formInlineOptionSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  formInlineOptionText: {
+    fontSize: 12.5,
+    color: '#334155',
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 8,
+  },
+  formInlineOptionTextSelected: {
+    color: '#1541D8',
+    fontWeight: '700',
+  },
+
+  /* ── Creator Pending Approval Badge (when I created entry) ── */
+  pendingAwaitingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  pendingAwaitingText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#92400E',
+    flex: 1,
+  },
+
+  /* ── Deal Status Mini Pill ── */
+  dealStatusMiniPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  dealStatusMiniText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+
+  /* ── Selected Deal Preview Card (in Form) ── */
+  selectedDealCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginTop: 8,
+  },
+  selectedDealTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  selectedDealBadge: {
+    backgroundColor: '#1541D8',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  selectedDealBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#FFFFFF',
+  },
+  selectedDealPartyText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 3,
+  },
+  selectedDealMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  selectedDealProductText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
+    flex: 1,
+    marginRight: 8,
+  },
+  selectedDealAmountText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#059669',
+  },
+
+  /* ── Quick Amount Presets ── */
+  amountPresetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    marginBottom: 16,
+    flexWrap: 'wrap',
+  },
+  amountPresetChip: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  amountPresetChipText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#475569',
   },
 
   /* ── 5. Scroll Content ── */
@@ -2180,18 +3434,21 @@ const styles = StyleSheet.create({
   addEntryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 8,
-    gap: 4,
+    gap: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
   },
   addEntryBtnText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#1541D8',
+    color: '#FFFFFF',
   },
 
   /* ── Loading & Empty States ── */
@@ -2213,7 +3470,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginTop: 10,
+    marginTop: 20,
+    marginBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
   },
   emptyIconCircle: {
     width: 68,
@@ -2241,11 +3504,16 @@ const styles = StyleSheet.create({
   emptyActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1541D8',
+    backgroundColor: '#0F172A',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
     gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
   },
   emptyActionBtnText: {
     fontSize: 13,
@@ -2258,7 +3526,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 14,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: '#E2E8F0',
     marginBottom: 10,
     shadowColor: '#000',
@@ -2266,6 +3534,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 2,
     elevation: 1,
+  },
+  transactionCardPending: {
+    borderColor: '#F59E0B',
+    borderWidth: 1.2,
+    backgroundColor: '#FFFCF5',
+  },
+  transactionCardApproved: {
+    borderColor: '#10B981',
+    borderWidth: 1.2,
+    backgroundColor: '#F8FDFB',
+  },
+  transactionCardRejected: {
+    borderColor: '#EF4444',
+    borderWidth: 1.2,
+    backgroundColor: '#FFFBFB',
   },
   cardTopRow: {
     flexDirection: 'row',
@@ -2679,15 +3962,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1541D8',
+    backgroundColor: '#0F172A',
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
     marginTop: 22,
     marginBottom: 20,
-    shadowColor: '#1541D8',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 5,
     elevation: 4,
   },
@@ -2698,5 +3981,159 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  /* ── Proof & Attachment Card Styles ── */
+  cardAttachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    gap: 8,
+  },
+  cardAttachmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  cardAttachmentThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#DBEAFE',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+  },
+  cardAttachmentDocBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#1541D8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardAttachmentDocText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  cardAttachmentBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1541D8',
+  },
+  cardAttachmentSubText: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  cardAttachmentDownloadBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  proofAttachmentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 8,
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  proofAttachmentThumbnail: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+  },
+  proofAttachmentName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  proofAttachmentStatus: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#059669',
+    marginTop: 2,
+  },
+  proofRemoveBtn: {
+    padding: 6,
+  },
+  proofUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+    borderStyle: 'dashed',
+    backgroundColor: '#EFF6FF',
+    marginTop: 6,
+    marginBottom: 12,
+    gap: 8,
+  },
+  proofUploadBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1541D8',
+  },
+
+  /* ── Image Viewer Modal ── */
+  imageViewerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+  },
+  imageViewerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  imageViewerCloseBtn: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  imageViewerActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  imageViewerActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  imageViewerBody: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageViewerContent: {
+    width: '100%',
+    height: '100%',
   },
 });

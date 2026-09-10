@@ -1,5 +1,5 @@
 // import Config from "react-native-config"; // Uncomment this if you install react-native-config
-const backendDomain = "https://pravisti-backend-538238931844.asia-southeast1.run.app";
+const backendDomain = "https://api.pravisti.com";
 
 const SummaryApi = {
   /* ================= AUTH ================= */
@@ -32,6 +32,10 @@ const SummaryApi = {
   getIndustries: {
     url: `${backendDomain}/api/industries`,
     method: "get",
+  },
+  createIndustry: {
+    url: `${backendDomain}/api/industries`,
+    method: "post",
   },
 
   /* ================= COMPANY ================= */

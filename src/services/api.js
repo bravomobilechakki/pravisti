@@ -305,6 +305,15 @@ export const getIndustries = async () => {
   }
 };
 
+export const createIndustry = async (industryData, token = null) => {
+  try {
+    return await postRequest(SummaryApi.createIndustry, industryData, token);
+  } catch (error) {
+    console.error('Error creating industry:', error.message || error);
+    throw error;
+  }
+};
+
 // --- COMPANY APIs ---
 
 export const createCompany = async (companyData, token) => {

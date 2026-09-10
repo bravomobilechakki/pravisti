@@ -1,7 +1,7 @@
 // API Configuration and Endpoints
 // In a real React Native environment with react-native-dotenv or react-native-config,
 // you would import this from an environment file.
-export const BASE_URL = 'https://pravisti-backend-538238931844.asia-southeast1.run.app';
+export const BASE_URL = 'https://api.pravisti.com';
 export const API_PREFIX = '/api';
 
 export const ENDPOINTS = {

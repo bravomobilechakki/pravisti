@@ -20,6 +20,7 @@ import {
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  Home,
   ArrowLeft,
   Edit3,
   Building2,
@@ -800,6 +801,9 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         fromScreen: 'CompanyDetails',
       }),
     },
+
+
+
     {
       id: 'parties',
       title: 'Onboarded',
@@ -1283,6 +1287,74 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           )}
         </View>
       </ScrollView>
+
+      {/* ─── BOTTOM FOOTER TAB BAR ─── */}
+      <View style={styles.bottomTabBar}>
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => onNavigate('Dashboard')}
+          activeOpacity={0.7}
+        >
+          <Home size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Home</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() =>
+            onNavigate('DealsList', {
+              companyId: company?._id || company?.id,
+              companyName: company?.name,
+              company,
+              initialTab: 'ALL',
+            })
+          }
+          activeOpacity={0.7}
+        >
+          <Handshake size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Deals</Text>
+        </TouchableOpacity>
+
+        {/* Center Quick Action (Create Deal) */}
+        <TouchableOpacity
+          style={styles.centerCircleButton}
+          onPress={() => onNavigate('CreateDeal', { originCompany: company, company })}
+          activeOpacity={0.85}
+        >
+          <Plus size={26} color="#FFFFFF" strokeWidth={2.8} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() =>
+            onNavigate('CompanyPayments', {
+              company,
+              companyId: company?._id || company?.id,
+              companyName: company?.name,
+              deals: fetchedDeals,
+              fromScreen: 'CompanyDetails',
+            })
+          }
+          activeOpacity={0.7}
+        >
+          <Wallet size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Payments</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() =>
+            onNavigate('ChatList', {
+              company,
+              companyId: company?._id || company?.id,
+            })
+          }
+          activeOpacity={0.7}
+        >
+          <MessageSquare size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Chats</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* ─── 7. COMPANY PICKER MODAL ─── */}
       <Modal
@@ -2577,5 +2649,48 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#DC2626',
+  },
+
+  /* ── Bottom Navigation Tab Bar ── */
+  bottomTabBar: {
+    height: 64,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  tabItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 62,
+    paddingVertical: 4,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 3,
+  },
+  centerCircleButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#1541D8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#1541D8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
   },
 });

@@ -65,23 +65,36 @@ export const resolveImageUrl = (url) => {
   const trimmed = url.trim();
   if (!trimmed) return '';
 
-  // Already an absolute remote URL
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    // If it points to an old localhost mock URL, rewrite it to current backend domain
-    if (trimmed.includes('localhost:') || trimmed.includes('127.0.0.1:')) {
-      const pathPart = trimmed.replace(/^https?:\/\/[^/]+/, '');
-      return `${backendDomain}${pathPart.startsWith('/') ? '' : '/'}${pathPart}`;
-    }
-    return trimmed;
-  }
-
   // Local device path or data URI
   if (
     trimmed.startsWith('file://') ||
     trimmed.startsWith('content://') ||
     trimmed.startsWith('ph://') ||
-    trimmed.startsWith('data:image/')
+    trimmed.startsWith('data:image/') ||
+    trimmed.startsWith('data:application/')
   ) {
+    return trimmed;
+  }
+
+  // Rewrite legacy Cloud Run, localhost, or outdated backend domains to current active backendDomain
+  if (
+    trimmed.includes('localhost:') ||
+    trimmed.includes('127.0.0.1:') ||
+    trimmed.includes('asia-southeast1') ||
+    trimmed.includes('run.app') ||
+    trimmed.includes('pravisti-backend') ||
+    trimmed.startsWith('http://api.pravisti.com')
+  ) {
+    const pathPart = trimmed.replace(
+      /^(?:https?:\/\/)?(?:[a-zA-Z0-9.-]+\.run\.app|[a-zA-Z0-9.-]*pravisti-backend[a-zA-Z0-9.-]*|localhost:\d+|127\.0\.0\.1:\d+|api\.pravisti\.com)/i,
+      ''
+    );
+    const cleanPath = pathPart.startsWith('/') ? pathPart : `/${pathPart}`;
+    return `${backendDomain}${cleanPath}`;
+  }
+
+  // Already an absolute remote URL (e.g. S3, Cloudinary, or already https://api.pravisti.com)
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed;
   }
 
@@ -93,6 +106,11 @@ export const resolveImageUrl = (url) => {
   // Relative path starting with api/uploads/ or uploads/
   if (trimmed.startsWith('api/uploads/') || trimmed.startsWith('uploads/')) {
     return `${backendDomain}/${trimmed}`;
+  }
+
+  // If it's a relative path starting with /
+  if (trimmed.startsWith('/')) {
+    return `${backendDomain}${trimmed}`;
   }
 
   // If it's just a filename like 'img_12345_abc.jpg'

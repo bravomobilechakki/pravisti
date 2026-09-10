@@ -14,6 +14,7 @@ import {
   Image,
 } from 'react-native';
 import {
+  Home,
   ArrowLeft,
   Building2,
   ShieldCheck,
@@ -760,24 +761,67 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
         </View>
       </ScrollView>
 
-      {/* ─── 17. STICKY BOTTOM ACTION BAR (Fintech Action Bar) ─── */}
-      <View style={styles.bottomFooter}>
+      {/* ─── BOTTOM FOOTER TAB BAR ─── */}
+      <View style={styles.bottomTabBar}>
         <TouchableOpacity
-          style={styles.secondaryBtn}
-          onPress={() => onNavigate('BrokerCreatedDeals', { company, companyId: company._id || company.id || companyId, companyName: firmName })}
-          activeOpacity={0.82}
+          style={styles.tabItem}
+          onPress={() => onNavigate('BrokerDashboard', { company, companyId: company._id || company.id || companyId })}
+          activeOpacity={0.7}
         >
-          <Handshake size={18} color={COLORS.primary} style={{ marginRight: 6 }} />
-          <Text style={styles.secondaryBtnText}>View Saudas</Text>
+          <Home size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Home</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.primaryBtn}
+          style={styles.tabItem}
+          onPress={() =>
+            onNavigate('BrokerCreatedDeals', {
+              company,
+              companyId: company._id || company.id || companyId,
+              companyName: firmName,
+            })
+          }
+          activeOpacity={0.7}
+        >
+          <Handshake size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Saudas</Text>
+        </TouchableOpacity>
+
+        {/* Center Quick Action (Issue Sauda) */}
+        <TouchableOpacity
+          style={styles.centerCircleButton}
           onPress={() => onNavigate('CreateBrokerDeal', { company, companyId: company._id || company.id || companyId })}
           activeOpacity={0.85}
         >
-          <Plus size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.primaryBtnText}>Issue Sauda</Text>
+          <Plus size={26} color="#FFFFFF" strokeWidth={2.8} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() =>
+            onNavigate('BrokerPendingQueue', {
+              company,
+              companyId: company._id || company.id || companyId,
+            })
+          }
+          activeOpacity={0.7}
+        >
+          <Users size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Onboard</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() =>
+            onNavigate('ChatList', {
+              company,
+              companyId: company._id || company.id || companyId,
+            })
+          }
+          activeOpacity={0.7}
+        >
+          <MessageSquare size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Chats</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -1336,25 +1380,47 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
 
-  // STICKY BOTTOM FOOTER
-  bottomFooter: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    backgroundColor: COLORS.cardBg,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 14,
+  /* ── Bottom Navigation Tab Bar ── */
+  bottomTabBar: {
+    height: 64,
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
+    borderTopColor: '#F1F5F9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  tabItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 62,
+    paddingVertical: 4,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 3,
+  },
+  centerCircleButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
     shadowRadius: 8,
-    gap: 10,
+    elevation: 6,
   },
   secondaryBtn: {
     flex: 1,

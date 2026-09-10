@@ -30,6 +30,7 @@ import {
   Sparkles,
   Award,
   Mail,
+  Plus,
 } from 'lucide-react-native';
 import { createCompany, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
 
@@ -69,6 +70,8 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
   const [industries, setIndustries] = useState([]);
   const [industriesLoading, setIndustriesLoading] = useState(false);
   const [showIndustryModal, setShowIndustryModal] = useState(false);
+  const [isCustomIndustry, setIsCustomIndustry] = useState(false);
+  const [customIndustryName, setCustomIndustryName] = useState('');
   const [showFirmTypeModal, setShowFirmTypeModal] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
 
@@ -259,15 +262,11 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
     setIsLoading(true);
 
     try {
-      const targetIndustryId = formData.industryId || (industries.length > 0 ? industries[0]._id : '650000000000000000000000');
-
       const payload = {
         name: formData.name,
         email: formData.email.trim(),
         type: 'broker',
         registrationNumber: formData.registrationNumber || formData.apmcLicense || `APMC-${Date.now().toString().slice(-6)}`,
-        industry: targetIndustryId,
-        industryId: targetIndustryId,
         address: {
           street: formData.street || 'APMC Yard',
           city: formData.city,
@@ -280,6 +279,18 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
         companyType: formData.firmType || 'Registered APMC Brokerage',
         commissionRate: formData.commissionRate || '1.0',
       };
+
+      if (isCustomIndustry) {
+        if (customIndustryName.trim()) {
+          payload.customIndustry = customIndustryName.trim();
+        }
+      } else {
+        const targetIndustryId = formData.industryId || (industries.length > 0 ? industries[0]._id : undefined);
+        if (targetIndustryId) {
+          payload.industry = targetIndustryId;
+          payload.industryId = targetIndustryId;
+        }
+      }
 
       const res = await createCompany(payload);
 
@@ -297,7 +308,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
           state: formData.state,
           street: formData.street,
           phone: formData.phone,
-          industryName: formData.industryName || 'Agro & Commodities',
+          industryName: isCustomIndustry ? customIndustryName : (formData.industryName || 'Agro & Commodities'),
           createdAt: new Date().toISOString(),
           verified: true,
         };
@@ -441,17 +452,59 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
               />
             </View>
             {/* Industry Selection */}
-            <Text style={styles.label}>Industry</Text>
-            <TouchableOpacity
-              style={styles.dropdownBtn}
-              onPress={() => setShowIndustryModal(true)}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.dropdownText, !formData.industryName && { color: COLORS.textPlaceholder }]}>
-                {formData.industryName || 'Select commodity market'}
-              </Text>
-              <ChevronDown size={18} color={COLORS.textMuted} />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, marginTop: 4 }}>
+              <Text style={[styles.label, { marginBottom: 0, marginTop: 0 }]}>Industry / Market</Text>
+              {isCustomIndustry ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsCustomIndustry(false);
+                    setCustomIndustryName('');
+                  }}
+                  style={{ paddingVertical: 2, paddingHorizontal: 4 }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.primary }}>Select from list</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsCustomIndustry(true);
+                    updateField('industryId', '');
+                    updateField('industryName', '');
+                  }}
+                  style={{ paddingVertical: 2, paddingHorizontal: 4 }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.primary }}>+ Custom Industry</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {isCustomIndustry ? (
+              <View style={[styles.inputWrapper, focusedField === 'customIndustry' && styles.inputFocused]}>
+                <View style={styles.inputIconCircle}>
+                  <Briefcase size={16} color={COLORS.primary} />
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter custom industry (e.g. Solar & Renewable)"
+                  placeholderTextColor={COLORS.textPlaceholder}
+                  value={customIndustryName}
+                  onFocus={() => setFocusedField('customIndustry')}
+                  onBlur={() => setFocusedField(null)}
+                  onChangeText={setCustomIndustryName}
+                />
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.dropdownBtn}
+                onPress={() => setShowIndustryModal(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.dropdownText, !formData.industryName && { color: COLORS.textPlaceholder }]}>
+                  {formData.industryName || 'Select commodity market'}
+                </Text>
+                <ChevronDown size={18} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            )}
 
             {/* Commission Rate (%) */}
 
@@ -635,6 +688,21 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
               </TouchableOpacity>
             </View>
 
+            <TouchableOpacity
+              style={[styles.modalOption, { borderBottomWidth: 1.5, borderBottomColor: COLORS.primaryBorder, backgroundColor: COLORS.primaryLight }]}
+              onPress={() => {
+                setShowIndustryModal(false);
+                setIsCustomIndustry(true);
+                updateField('industryId', '');
+                updateField('industryName', '');
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Plus size={16} color={COLORS.primary} style={{ marginRight: 8 }} />
+                <Text style={[styles.optionText, { color: COLORS.primary, fontWeight: '700' }]}>+ Other / Custom Industry</Text>
+              </View>
+            </TouchableOpacity>
+
             {industriesLoading ? (
               <View style={{ padding: 20, alignItems: 'center' }}>
                 <ActivityIndicator size="small" color={COLORS.primary} />
@@ -643,6 +711,8 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
               <TouchableOpacity
                 style={styles.modalOption}
                 onPress={() => {
+                  setIsCustomIndustry(false);
+                  setCustomIndustryName('');
                   updateField('industryId', '');
                   updateField('industryName', 'Agro & Commodities');
                   setShowIndustryModal(false);
@@ -657,6 +727,8 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
                   key={ind._id}
                   style={styles.modalOption}
                   onPress={() => {
+                    setIsCustomIndustry(false);
+                    setCustomIndustryName('');
                     updateField('industryId', ind._id);
                     updateField('industryName', ind.name);
                     setShowIndustryModal(false);

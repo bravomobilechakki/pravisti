@@ -69,6 +69,7 @@ import {
   updateDeliveryStatus,
   resolveImageUrl,
 } from '../../../services/api';
+import { downloadFileToDevice } from '../../../utils/fileDownloader';
 
 // Number to Indian Currency Words Formatter
 function numberToIndianWords(num) {
@@ -174,6 +175,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
   const [isGstModalVisible, setIsGstModalVisible] = useState(false);
   const [isMoreMenuVisible, setIsMoreMenuVisible] = useState(false);
+  const [previewAttachmentUrl, setPreviewAttachmentUrl] = useState(null);
 
   // Fetch current user identity once on mount
   useEffect(() => {
@@ -211,8 +213,8 @@ const DealDetails = ({ onNavigate, routeData }) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       const response = await getDealDetails(id, token);
-      if (response && response.success && response.data) {
-        setDeal(response.data);
+      if (response && (response.success || response.statusCode === 200 || response.statusCode === 201) && response.data) {
+        setDeal(response.data?.deal || response.data);
       }
     } catch (error) {
       console.warn('Error fetching deal details API, using fallback:', error);
@@ -579,6 +581,58 @@ const DealDetails = ({ onNavigate, routeData }) => {
     deal?.saudaNumber ||
     deal?.dealNo ||
     (deal?._id ? `PRV-${String(deal._id).slice(-8).toUpperCase()}` : '');
+
+  // Deal Attachment(s)
+  const actualDeal = deal?.deal || deal || routeData?.deal || {};
+  const dealAttachmentUrl =
+    actualDeal?.attachmentUrl ||
+    actualDeal?.attachment ||
+    deal?.attachmentUrl ||
+    deal?.attachment ||
+    routeData?.deal?.attachmentUrl ||
+    routeData?.deal?.attachment ||
+    null;
+
+  const allDealAttachments = useMemo(() => {
+    const list = [];
+    const pushIfValid = (u, label) => {
+      if (u && typeof u === 'string' && u.trim() && !list.some((item) => item.url === u.trim())) {
+        list.push({ url: u.trim(), label });
+      }
+    };
+
+    // Only files attached during Deal Creation
+    if (dealAttachmentUrl) {
+      pushIfValid(dealAttachmentUrl, 'Deal Attachment');
+    }
+
+    const atts = Array.isArray(actualDeal?.attachments)
+      ? actualDeal.attachments
+      : Array.isArray(deal?.attachments)
+        ? deal.attachments
+        : [];
+    atts.forEach((att, idx) => {
+      const u = typeof att === 'string' ? att : (att?.url || att?.uri);
+      pushIfValid(u, `Deal File ${idx + 1}`);
+    });
+
+    return list;
+  }, [actualDeal?.attachments, deal?.attachments, dealAttachmentUrl]);
+
+  const handleDownloadAttachment = async (rawUrl, label = 'Deal_Attachment') => {
+    const targetUrl = rawUrl || dealAttachmentUrl;
+    if (!targetUrl) {
+      Alert.alert('No Attachment', 'No attachment file is available for this deal.');
+      return;
+    }
+    const resolved = resolveImageUrl(targetUrl);
+    try {
+      await downloadFileToDevice(resolved, null, label);
+    } catch (e) {
+      console.warn('Download error:', e);
+      Alert.alert('Download Error', 'Could not download attachment. Please try again.');
+    }
+  };
 
   // Parties info
   const rawSellerCompany =
@@ -1633,82 +1687,82 @@ const DealDetails = ({ onNavigate, routeData }) => {
           </ScrollView>
         </View>
 
-        {/* ─── 6. DOCUMENTS SECTION ─── */}
-        <View style={styles.documentsSection}>
-          <View style={styles.documentsHeaderRow}>
-            <Text style={styles.sectionTitle}>Documents</Text>
-            <TouchableOpacity
-              style={styles.viewAllRow}
-              onPress={() => setIsGstModalVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.viewAllText}>View All</Text>
-              <ChevronRight size={16} color="#2563EB" />
-            </TouchableOpacity>
+        {/* ─── 6. DEAL ATTACHMENT SECTION ─── */}
+        <View style={styles.dealAttachmentSection}>
+          <View style={styles.dealAttachmentHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <FileText size={18} color="#1541D8" style={{ marginRight: 6 }} />
+              <Text style={styles.sectionTitle}>Deal Attachment</Text>
+            </View>
+            {allDealAttachments.length > 0 ? (
+              <View style={styles.attachmentVerifiedBadge}>
+                <ShieldCheck size={12} color="#15803D" style={{ marginRight: 4 }} />
+                <Text style={styles.attachmentVerifiedText}>
+                  {allDealAttachments.length} {allDealAttachments.length === 1 ? 'Document' : 'Documents'}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.docsScroll}
-          >
-            {/* Doc 1: Proforma Invoice */}
-            <View style={styles.docCard}>
-              <View style={styles.docIconBadgeRed}>
-                <Text style={styles.docBadgeTextRed}>PDF</Text>
-              </View>
-              <View style={styles.docInfoBox}>
-                <Text style={styles.docTitle} numberOfLines={1}>
-                  Proforma Invoice
-                </Text>
-                <Text style={styles.docSize}>{dealIdStr}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.docDownloadBtn}
-                onPress={() => setIsGstModalVisible(true)}
-              >
-                <Download size={16} color="#2563EB" />
-              </TouchableOpacity>
-            </View>
+          {allDealAttachments.length > 0 ? (
+            allDealAttachments.map((attItem, idx) => {
+              const resolvedUrl = resolveImageUrl(attItem.url);
+              const cleanUrl = (resolvedUrl || '').split('?')[0];
+              const ext = (cleanUrl.split('.').pop() || 'file').toLowerCase();
+              const isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext);
+              const fileName = cleanUrl.split('/').pop() || `${attItem.label || 'Attachment'}.${ext}`;
 
-            {/* Doc 2: Price Sheet */}
-            <View style={styles.docCard}>
-              <View style={styles.docIconBadgeGreen}>
-                <Text style={styles.docBadgeTextGreen}>XLS</Text>
-              </View>
-              <View style={styles.docInfoBox}>
-                <Text style={styles.docTitle} numberOfLines={1}>
-                  Price Sheet
-                </Text>
-                <Text style={styles.docSize}>Deal Pricing</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.docDownloadBtn}
-                onPress={() => Alert.alert('Price Sheet', 'Opening deal pricing sheet...')}
-              >
-                <Download size={16} color="#2563EB" />
-              </TouchableOpacity>
-            </View>
+              return (
+                <View key={`deal_att_${idx}`} style={styles.dealAttachmentCard}>
+                  <TouchableOpacity
+                    style={styles.attachmentCardLeft}
+                    onPress={() => {
+                      if (isImg) {
+                        setPreviewAttachmentUrl(resolvedUrl);
+                      } else {
+                        handleDownloadAttachment(attItem.url, `Deal_${dealIdStr}_${attItem.label}`);
+                      }
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    {isImg ? (
+                      <Image
+                        source={{ uri: resolvedUrl }}
+                        style={styles.attachmentThumbImg}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.attachmentBadgeBox}>
+                        <Text style={styles.attachmentBadgeText}>{ext.slice(0, 4).toUpperCase()}</Text>
+                      </View>
+                    )}
 
-            {/* Doc 3: Terms & Conditions */}
-            <View style={styles.docCard}>
-              <View style={styles.docIconBadgeRed}>
-                <Text style={styles.docBadgeTextRed}>PDF</Text>
-              </View>
-              <View style={styles.docInfoBox}>
-                <Text style={styles.docTitle} numberOfLines={1}>
-                  Terms & Conditions
-                </Text>
-                <Text style={styles.docSize}>Contract Terms</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.docDownloadBtn}
-                onPress={() => Alert.alert('Terms & Conditions', 'Opening contract terms & conditions...')}
-              >
-                <Download size={16} color="#2563EB" />
-              </TouchableOpacity>
+                    <View style={styles.attachmentCardInfo}>
+                      <Text style={styles.attachmentCardTitle} numberOfLines={1}>
+                        {attItem.label || fileName}
+                      </Text>
+                      <Text style={styles.attachmentCardSub} numberOfLines={1}>
+                        {isImg ? 'Image • Tap to preview' : 'Document • Tap to download'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.downloadAttachmentBtn}
+                    onPress={() => handleDownloadAttachment(attItem.url, `Deal_${dealIdStr}_${attItem.label}`)}
+                    activeOpacity={0.8}
+                  >
+                    <Download size={15} color="#FFFFFF" style={{ marginRight: 5 }} />
+                    <Text style={styles.downloadAttachmentBtnText}>Download</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })
+          ) : (
+            <View style={styles.noAttachmentBox}>
+              <Text style={styles.noAttachmentText}>No document or image attached to this deal.</Text>
             </View>
-          </ScrollView>
+          )}
         </View>
 
         {/* ─── 7. PENDING APPROVAL ACTION BUTTONS (If in review) ─── */}
@@ -1911,6 +1965,21 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
             <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 6 }} />
 
+            {dealAttachmentUrl ? (
+              <TouchableOpacity
+                style={styles.actionSheetItem}
+                onPress={() => {
+                  setIsMoreMenuVisible(false);
+                  handleDownloadAttachment(dealAttachmentUrl, `Deal_${dealIdStr}_Attachment`);
+                }}
+              >
+                <Download size={18} color="#2563EB" />
+                <Text style={[styles.actionSheetItemText, { color: '#2563EB', fontWeight: '700' }]}>
+                  Download Deal Attachment
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
             <TouchableOpacity
               style={styles.actionSheetItem}
               onPress={() => {
@@ -2097,6 +2166,52 @@ const DealDetails = ({ onNavigate, routeData }) => {
               </TouchableOpacity>
             </ScrollView>
           </View>
+        </View>
+      </Modal>
+
+      {/* ─── FULLSCREEN ATTACHMENT PREVIEW MODAL ─── */}
+      <Modal
+        visible={!!previewAttachmentUrl}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setPreviewAttachmentUrl(null)}
+      >
+        <View style={styles.previewBackdrop}>
+          <SafeAreaView style={styles.previewSafeArea}>
+            <View style={styles.previewTopBar}>
+              <TouchableOpacity
+                style={styles.previewBarBtn}
+                onPress={() => setPreviewAttachmentUrl(null)}
+                activeOpacity={0.8}
+              >
+                <X size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+              <Text style={styles.previewTitleText} numberOfLines={1}>
+                Attachment Preview
+              </Text>
+              <TouchableOpacity
+                style={styles.previewBarBtn}
+                onPress={() => {
+                  if (previewAttachmentUrl) {
+                    handleDownloadAttachment(previewAttachmentUrl, `Deal_${dealIdStr}_Attachment`);
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Download size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.previewImageWrapper}>
+              {previewAttachmentUrl && (
+                <Image
+                  source={{ uri: previewAttachmentUrl }}
+                  style={styles.previewImage}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+          </SafeAreaView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -2717,6 +2832,159 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF6FF',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  /* Deal Attachment Section */
+  dealAttachmentSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+  },
+  dealAttachmentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  attachmentVerifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  attachmentVerifiedText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  dealAttachmentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
+    marginTop: 6,
+  },
+  attachmentCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  attachmentThumbImg: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+  },
+  attachmentBadgeBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  attachmentBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1541D8',
+  },
+  attachmentCardInfo: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  attachmentCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  attachmentCardSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  downloadAttachmentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1541D8',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    shadowColor: '#1541D8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  downloadAttachmentBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  noAttachmentBox: {
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    marginTop: 4,
+  },
+  noAttachmentText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  previewBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+  },
+  previewSafeArea: {
+    flex: 1,
+  },
+  previewTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  previewBarBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewTitleText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  previewImageWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 12,
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
   },
 
   // 7. Action Buttons

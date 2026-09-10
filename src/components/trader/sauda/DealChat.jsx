@@ -549,6 +549,9 @@ const DealChat = ({ onNavigate, routeData }) => {
   const [paymentType, setPaymentType] = useState('sent');
   const [paymentMethod, setPaymentMethod] = useState('UPI');
   const [paymentNotes, setPaymentNotes] = useState('');
+  const [paymentAttachmentUrl, setPaymentAttachmentUrl] = useState('');
+  const [paymentAttachmentAsset, setPaymentAttachmentAsset] = useState(null);
+  const [isUploadingPaymentDoc, setIsUploadingPaymentDoc] = useState(false);
   const [isLoggingPayment, setIsLoggingPayment] = useState(false);
   const [paymentSummary, setPaymentSummary] = useState(null);
   const [dealPayments, setDealPayments] = useState([]);
@@ -563,6 +566,8 @@ const DealChat = ({ onNavigate, routeData }) => {
   const [deliveryType, setDeliveryType] = useState('sent');
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [deliveryAttachmentUrl, setDeliveryAttachmentUrl] = useState('');
+  const [deliveryAttachmentAsset, setDeliveryAttachmentAsset] = useState(null);
+  const [isUploadingDeliveryDoc, setIsUploadingDeliveryDoc] = useState(false);
   const [isLoggingDelivery, setIsLoggingDelivery] = useState(false);
   const [dealDeliveries, setDealDeliveries] = useState([]);
 
@@ -1137,6 +1142,60 @@ const DealChat = ({ onNavigate, routeData }) => {
     setIsDeliveryModalVisible(true);
   };
 
+  const pickPaymentAttachment = () => {
+    const options = {
+      mediaType: 'mixed',
+      quality: 0.8,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    };
+    launchImageLibrary(options, async (response) => {
+      if (response.didCancel || response.errorCode) return;
+      if (response.assets && response.assets.length > 0) {
+        const asset = response.assets[0];
+        setPaymentAttachmentAsset(asset);
+        setIsUploadingPaymentDoc(true);
+        try {
+          const uploadedUrl = await uploadImage(asset);
+          if (uploadedUrl) {
+            setPaymentAttachmentUrl(uploadedUrl);
+          }
+        } catch (err) {
+          Alert.alert('Upload Failed', err.message || 'Failed to upload receipt');
+        } finally {
+          setIsUploadingPaymentDoc(false);
+        }
+      }
+    });
+  };
+
+  const pickDeliveryAttachment = () => {
+    const options = {
+      mediaType: 'mixed',
+      quality: 0.8,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    };
+    launchImageLibrary(options, async (response) => {
+      if (response.didCancel || response.errorCode) return;
+      if (response.assets && response.assets.length > 0) {
+        const asset = response.assets[0];
+        setDeliveryAttachmentAsset(asset);
+        setIsUploadingDeliveryDoc(true);
+        try {
+          const uploadedUrl = await uploadImage(asset);
+          if (uploadedUrl) {
+            setDeliveryAttachmentUrl(uploadedUrl);
+          }
+        } catch (err) {
+          Alert.alert('Upload Failed', err.message || 'Failed to upload document');
+        } finally {
+          setIsUploadingDeliveryDoc(false);
+        }
+      }
+    });
+  };
+
   const handleLogPayment = async () => {
     const amt = Number(paymentAmount);
     if (isNaN(amt) || amt <= 0) {
@@ -1153,6 +1212,7 @@ const DealChat = ({ onNavigate, routeData }) => {
         paymentType,
         paymentMethod,
         notes: paymentNotes || undefined,
+        attachmentUrl: paymentAttachmentUrl || undefined,
       };
 
       const res = await recordPayment(payload, token);
@@ -1160,14 +1220,17 @@ const DealChat = ({ onNavigate, routeData }) => {
         setIsPaymentModalVisible(false);
         setPaymentAmount('');
         setPaymentNotes('');
+        const attachedImgUrl = paymentAttachmentUrl;
+        setPaymentAttachmentUrl('');
+        setPaymentAttachmentAsset(null);
         fetchPaymentDashboardData();
         refreshDealDetails();
         fetchDealPayments();
 
         const isBuyerPerspective = myRole === 'Buyer' || paymentType === 'sent';
         const msgContent = isBuyerPerspective
-          ? `💸 Payment entry of ₹${amt.toLocaleString('en-IN')} recorded by ${myName} via ${paymentMethod}. Pending Seller approval.`
-          : `💸 Payment receive request of ₹${amt.toLocaleString('en-IN')} recorded by ${myName} via ${paymentMethod}. Pending Buyer approval.`;
+          ? `💸 Payment entry of ₹${amt.toLocaleString('en-IN')} recorded by ${myName} via ${paymentMethod}.${attachedImgUrl ? ' Receipt attached.' : ''} Pending Seller approval.`
+          : `💸 Payment receive request of ₹${amt.toLocaleString('en-IN')} recorded by ${myName} via ${paymentMethod}.${attachedImgUrl ? ' Receipt attached.' : ''} Pending Buyer approval.`;
 
         const effectiveDealId = deal?._id || dealId;
         let activeConvId = conversationIdRef.current || conversationId;
@@ -1175,12 +1238,21 @@ const DealChat = ({ onNavigate, routeData }) => {
           activeConvId = await ensureConversation(token);
         }
 
+        const remoteMediaUrl = attachedImgUrl ? resolveImageUrl(attachedImgUrl) : null;
+
         if (socketRef.current) {
           const pPayload = {
             dealId: effectiveDealId,
             content: msgContent,
             type: 'system',
           };
+          if (remoteMediaUrl) {
+            pPayload.media = {
+              url: remoteMediaUrl,
+              type: 'image',
+            };
+            pPayload.mediaUrl = remoteMediaUrl;
+          }
           if (activeConvId) pPayload.conversationId = activeConvId;
           socketRef.current.emit('send_message', pPayload);
         }
@@ -1192,6 +1264,7 @@ const DealChat = ({ onNavigate, routeData }) => {
           id: 'pay_' + Date.now(),
           sender: 'You',
           text: msgContent,
+          mediaUrl: remoteMediaUrl || undefined,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
           dateRaw: new Date(),
           type: 'me',
@@ -1255,13 +1328,16 @@ const DealChat = ({ onNavigate, routeData }) => {
         setDeliveryQuantity('');
         setDeliveryVehicleNumber('');
         setDeliveryNotes('');
+        const attachedDocUrl = deliveryAttachmentUrl;
+        setDeliveryAttachmentUrl('');
+        setDeliveryAttachmentAsset(null);
         fetchDealDeliveries();
         refreshDealDetails();
 
         const isSellerPerspective = myRole === 'Seller' || deliveryType === 'sent';
         const msgContent = isSellerPerspective
-          ? `📦 Delivery of ${qty} ${productUnit || 'Units'} dispatched by ${myName}${deliveryVehicleNumber ? ` (Vehicle: ${deliveryVehicleNumber})` : ''}. Pending Buyer approval.`
-          : `📥 Delivery receive request of ${qty} ${productUnit || 'Units'} recorded by ${myName}. Pending Seller approval.`;
+          ? `📦 Delivery of ${qty} ${productUnit || 'Units'} dispatched by ${myName}${deliveryVehicleNumber ? ` (Vehicle: ${deliveryVehicleNumber})` : ''}.${attachedDocUrl ? ' Document attached.' : ''} Pending Buyer approval.`
+          : `📥 Delivery receive request of ${qty} ${productUnit || 'Units'} recorded by ${myName}.${attachedDocUrl ? ' Document attached.' : ''} Pending Seller approval.`;
 
         const effectiveDealId = deal?._id || dealId;
         let activeConvId = conversationIdRef.current || conversationId;
@@ -1269,24 +1345,39 @@ const DealChat = ({ onNavigate, routeData }) => {
           activeConvId = await ensureConversation(token);
         }
 
+        const remoteMediaUrl = attachedDocUrl ? resolveImageUrl(attachedDocUrl) : null;
+
         if (socketRef.current) {
           const dPayload = {
             dealId: effectiveDealId,
             content: msgContent,
             type: 'system',
           };
+          if (remoteMediaUrl) {
+            dPayload.media = {
+              url: remoteMediaUrl,
+              type: 'image',
+            };
+            dPayload.mediaUrl = remoteMediaUrl;
+          }
           if (activeConvId) dPayload.conversationId = activeConvId;
           socketRef.current.emit('send_message', dPayload);
         }
 
         if (activeConvId && token) {
-          sendMessage(activeConvId, { content: msgContent, type: 'system', dealId: effectiveDealId }, token).catch(() => { });
+          const sendMsgPayload = { content: msgContent, type: 'system', dealId: effectiveDealId };
+          if (remoteMediaUrl) {
+            sendMsgPayload.media = { url: remoteMediaUrl, type: 'image' };
+            sendMsgPayload.mediaUrl = remoteMediaUrl;
+          }
+          sendMessage(activeConvId, sendMsgPayload, token).catch(() => { });
         }
 
         const newDelMsg = {
           id: 'del_' + Date.now(),
           sender: 'You',
           text: msgContent,
+          mediaUrl: remoteMediaUrl || undefined,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
           dateRaw: new Date(),
           type: 'me',
@@ -2449,33 +2540,26 @@ const DealChat = ({ onNavigate, routeData }) => {
                   <View style={styles.paymentCardHeaderLeft}>
                     <View style={[styles.rupeeCircle, { backgroundColor: theme.headerBg }]}>
                       {isApproved ? (
-                        <Check size={14} color="#FFFFFF" strokeWidth={3} />
+                        <Check size={11} color="#FFFFFF" strokeWidth={3} />
                       ) : (
                         <Text style={styles.rupeeCircleText}>₹</Text>
                       )}
                     </View>
-                    <View style={{ flexShrink: 1 }}>
-                      <Text style={[styles.paymentCardTitle, { color: theme.accentColor }]} numberOfLines={1}>
-                        {cardTitle}
-                      </Text>
-                      {subtitleText ? (
-                        <Text style={styles.cardSubtitleText} numberOfLines={1}>
-                          {subtitleText}
-                        </Text>
-                      ) : null}
-                    </View>
+                    <Text style={[styles.paymentCardTitle, { color: theme.accentColor }]} numberOfLines={1}>
+                      {cardTitle}
+                    </Text>
                   </View>
 
                   <View style={[styles.statusTag, isApproved ? styles.statusTagApproved : (isRejected ? styles.statusTagRejected : styles.statusTagPending)]}>
                     {isApproved ? (
-                      <Check size={11} color="#15803D" strokeWidth={2.8} style={{ marginRight: 4 }} />
+                      <Check size={10} color="#15803D" strokeWidth={2.8} style={{ marginRight: 3 }} />
                     ) : isRejected ? (
-                      <X size={11} color="#DC2626" strokeWidth={2.8} style={{ marginRight: 4 }} />
+                      <X size={10} color="#DC2626" strokeWidth={2.8} style={{ marginRight: 3 }} />
                     ) : (
-                      <Clock size={11} color="#D97706" strokeWidth={2.5} style={{ marginRight: 4 }} />
+                      <Clock size={10} color="#D97706" strokeWidth={2.5} style={{ marginRight: 3 }} />
                     )}
                     <Text style={[styles.statusTagText, isApproved ? styles.statusTagTextApproved : (isRejected ? styles.statusTagTextRejected : styles.statusTagTextPending)]}>
-                      {isApproved ? 'Approved' : isRejected ? 'Rejected' : 'Pending Approval'}
+                      {isApproved ? 'Approved' : isRejected ? 'Rejected' : 'Pending'}
                     </Text>
                   </View>
                 </View>
@@ -2507,7 +2591,7 @@ const DealChat = ({ onNavigate, routeData }) => {
                         >
                           {txnDisplay}
                         </Text>
-                        <Copy size={13} color={theme.accentColor} style={{ marginLeft: 5, flexShrink: 0 }} />
+                        <Copy size={11} color={theme.accentColor} style={{ marginLeft: 4, flexShrink: 0 }} />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -2522,31 +2606,62 @@ const DealChat = ({ onNavigate, routeData }) => {
                   {remarksDisplay !== '' && (
                     <View style={styles.paymentDetailRow}>
                       <Text style={styles.paymentDetailKey}>Remark</Text>
-                      <Text style={styles.paymentDetailVal} numberOfLines={2}>{remarksDisplay}</Text>
+                      <Text style={styles.paymentDetailVal} numberOfLines={1}>{remarksDisplay}</Text>
                     </View>
                   )}
                 </View>
 
-                {/* Proof attachment if exists on payment record */}
-                {(matchedPayment?.attachmentUrl || matchedPayment?.receiptUrl) && (
-                  <View style={styles.docAttachmentBox}>
-                    <View style={styles.docAttachmentLeft}>
-                      <View style={[styles.pdfIconBadge, { backgroundColor: theme.badgeBg }]}>
-                        <Text style={[styles.pdfIconText, { color: theme.badgeText }]}>DOC</Text>
-                      </View>
-                      <View style={{ marginLeft: 8 }}>
-                        <Text style={styles.docFileName} numberOfLines={1}>Payment_Receipt</Text>
-                      </View>
+                {/* Proof attachment if exists on payment record or message media */}
+                {(matchedPayment?.attachmentUrl || matchedPayment?.receiptUrl || item.mediaUrl) && (() => {
+                  const rawAttach = matchedPayment?.attachmentUrl || matchedPayment?.receiptUrl || item.mediaUrl;
+                  const attachUrl = resolveImageUrl(rawAttach);
+                  const isImg = attachUrl && (attachUrl.match(/\.(jpg|jpeg|png|webp|gif)($|\?)/i) || !attachUrl.toLowerCase().endsWith('.pdf'));
+
+                  return (
+                    <View style={styles.docAttachmentBox}>
+                      <TouchableOpacity
+                        style={styles.docAttachmentLeft}
+                        onPress={() => {
+                          if (isImg) {
+                            setFullPreviewImage(attachUrl);
+                          } else {
+                            Linking.openURL(attachUrl).catch(() => Alert.alert('Receipt', 'Unable to open document'));
+                          }
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        {isImg ? (
+                          <Image
+                            source={{ uri: attachUrl }}
+                            style={styles.attachmentThumbnailImg}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={[styles.pdfIconBadge, { backgroundColor: theme.badgeBg }]}>
+                            <Text style={[styles.pdfIconText, { color: theme.badgeText }]}>DOC</Text>
+                          </View>
+                        )}
+                        <View style={{ marginLeft: 6, flex: 1 }}>
+                          <Text style={styles.docFileName} numberOfLines={1}>Payment_Receipt</Text>
+                          <Text style={styles.docFileHint}>Tap to view</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.docDownloadBtn}
+                        onPress={() => {
+                          if (isImg) {
+                            setFullPreviewImage(attachUrl);
+                          } else {
+                            Linking.openURL(attachUrl).catch(() => Alert.alert('Receipt', 'Unable to open document'));
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <ExternalLink size={13} color={theme.accentColor} />
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                      style={styles.docDownloadBtn}
-                      onPress={() => Linking.openURL(matchedPayment.attachmentUrl || matchedPayment.receiptUrl).catch(() => Alert.alert('Receipt', 'Unable to open document'))}
-                      activeOpacity={0.7}
-                    >
-                      <Download size={16} color={theme.accentColor} />
-                    </TouchableOpacity>
-                  </View>
-                )}
+                  );
+                })()}
 
                 {/* Prompt Box when Pending */}
                 {isPending && promptText ? (
@@ -2563,26 +2678,19 @@ const DealChat = ({ onNavigate, routeData }) => {
                       onPress={() => handleUpdatePaymentStatus(matchedPayment._id, 'approved')}
                       activeOpacity={0.8}
                     >
-                      <Check size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <Text style={styles.approveBtnText}>Approve & Confirm</Text>
+                      <Check size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                      <Text style={styles.approveBtnText}>Approve</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.approvalBtn, styles.rejectBtn]}
                       onPress={() => handleUpdatePaymentStatus(matchedPayment._id, 'rejected')}
                       activeOpacity={0.8}
                     >
-                      <X size={15} color="#DC2626" style={{ marginRight: 6 }} />
+                      <X size={13} color="#DC2626" style={{ marginRight: 4 }} />
                       <Text style={styles.rejectBtnText}>Reject</Text>
                     </TouchableOpacity>
                   </View>
                 )}
-
-                {/* Approved / Rejected Banner */}
-                {bannerText ? (
-                  <View style={[styles.approvedBanner, { backgroundColor: theme.approvedBannerBg }]}>
-                    <Text style={[styles.approvedBannerText, { color: theme.approvedBannerText }]}>{bannerText}</Text>
-                  </View>
-                ) : null}
               </View>
 
               <View style={styles.bubbleFooter}>
@@ -2764,30 +2872,23 @@ const DealChat = ({ onNavigate, routeData }) => {
                 <View style={styles.paymentCardHeader}>
                   <View style={styles.paymentCardHeaderLeft}>
                     <View style={[styles.rupeeCircle, { backgroundColor: delTheme.headerBg }]}>
-                      <Truck size={13} color="#FFFFFF" />
+                      <Truck size={10} color="#FFFFFF" />
                     </View>
-                    <View style={{ flexShrink: 1 }}>
-                      <Text style={[styles.paymentCardTitle, { color: delTheme.accentColor }]} numberOfLines={1}>
-                        {delCardTitle}
-                      </Text>
-                      {delSubtitleText ? (
-                        <Text style={styles.cardSubtitleText} numberOfLines={1}>
-                          {delSubtitleText}
-                        </Text>
-                      ) : null}
-                    </View>
+                    <Text style={[styles.paymentCardTitle, { color: delTheme.accentColor }]} numberOfLines={1}>
+                      {delCardTitle}
+                    </Text>
                   </View>
 
                   <View style={[styles.statusTag, isDelApproved ? styles.statusTagApproved : (isDelRejected ? styles.statusTagRejected : styles.statusTagPending)]}>
                     {isDelApproved ? (
-                      <Check size={11} color="#15803D" strokeWidth={2.8} style={{ marginRight: 4 }} />
+                      <Check size={10} color="#15803D" strokeWidth={2.8} style={{ marginRight: 3 }} />
                     ) : isDelRejected ? (
-                      <X size={11} color="#DC2626" strokeWidth={2.8} style={{ marginRight: 4 }} />
+                      <X size={10} color="#DC2626" strokeWidth={2.8} style={{ marginRight: 3 }} />
                     ) : (
-                      <Clock size={11} color="#D97706" strokeWidth={2.5} style={{ marginRight: 4 }} />
+                      <Clock size={10} color="#D97706" strokeWidth={2.5} style={{ marginRight: 3 }} />
                     )}
                     <Text style={[styles.statusTagText, isDelApproved ? styles.statusTagTextApproved : (isDelRejected ? styles.statusTagTextRejected : styles.statusTagTextPending)]}>
-                      {isDelApproved ? 'Approved' : isDelRejected ? 'Rejected' : 'Pending Approval'}
+                      {isDelApproved ? 'Approved' : isDelRejected ? 'Rejected' : 'Pending'}
                     </Text>
                   </View>
                 </View>
@@ -2819,7 +2920,7 @@ const DealChat = ({ onNavigate, routeData }) => {
                         >
                           {delTxnDisplay}
                         </Text>
-                        <Copy size={13} color={delTheme.accentColor} style={{ marginLeft: 5, flexShrink: 0 }} />
+                        <Copy size={11} color={delTheme.accentColor} style={{ marginLeft: 4, flexShrink: 0 }} />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -2841,31 +2942,62 @@ const DealChat = ({ onNavigate, routeData }) => {
                   {delNotesDisplay ? (
                     <View style={styles.paymentDetailRow}>
                       <Text style={styles.paymentDetailKey}>Notes</Text>
-                      <Text style={styles.paymentDetailVal} numberOfLines={2}>{delNotesDisplay}</Text>
+                      <Text style={styles.paymentDetailVal} numberOfLines={1}>{delNotesDisplay}</Text>
                     </View>
                   ) : null}
                 </View>
 
-                {/* Proof attachment if exists on delivery record */}
-                {delAttachment && (
-                  <View style={styles.docAttachmentBox}>
-                    <View style={styles.docAttachmentLeft}>
-                      <View style={[styles.pdfIconBadge, { backgroundColor: delTheme.badgeBg }]}>
-                        <Text style={[styles.pdfIconText, { color: delTheme.badgeText }]}>DOC</Text>
-                      </View>
-                      <View style={{ marginLeft: 8 }}>
-                        <Text style={styles.docFileName} numberOfLines={1}>Delivery_Slip</Text>
-                      </View>
+                {/* Proof attachment if exists on delivery record or message media */}
+                {(delAttachment || item.mediaUrl) && (() => {
+                  const rawAttach = delAttachment || item.mediaUrl;
+                  const attachUrl = resolveImageUrl(rawAttach);
+                  const isImg = attachUrl && (attachUrl.match(/\.(jpg|jpeg|png|webp|gif)($|\?)/i) || !attachUrl.toLowerCase().endsWith('.pdf'));
+
+                  return (
+                    <View style={styles.docAttachmentBox}>
+                      <TouchableOpacity
+                        style={styles.docAttachmentLeft}
+                        onPress={() => {
+                          if (isImg) {
+                            setFullPreviewImage(attachUrl);
+                          } else {
+                            Linking.openURL(attachUrl).catch(() => Alert.alert('Document', 'Unable to open document'));
+                          }
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        {isImg ? (
+                          <Image
+                            source={{ uri: attachUrl }}
+                            style={styles.attachmentThumbnailImg}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={[styles.pdfIconBadge, { backgroundColor: delTheme.badgeBg }]}>
+                            <Text style={[styles.pdfIconText, { color: delTheme.badgeText }]}>DOC</Text>
+                          </View>
+                        )}
+                        <View style={{ marginLeft: 6, flex: 1 }}>
+                          <Text style={styles.docFileName} numberOfLines={1}>Delivery_Proof</Text>
+                          <Text style={styles.docFileHint}>Tap to view</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.docDownloadBtn}
+                        onPress={() => {
+                          if (isImg) {
+                            setFullPreviewImage(attachUrl);
+                          } else {
+                            Linking.openURL(attachUrl).catch(() => Alert.alert('Document', 'Unable to open document'));
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <ExternalLink size={13} color={delTheme.accentColor} />
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                      style={styles.docDownloadBtn}
-                      onPress={() => Linking.openURL(delAttachment).catch(() => Alert.alert('Receipt', 'Unable to open document'))}
-                      activeOpacity={0.7}
-                    >
-                      <Download size={16} color={delTheme.accentColor} />
-                    </TouchableOpacity>
-                  </View>
-                )}
+                  );
+                })()}
 
                 {/* Prompt Box when Pending */}
                 {isDelPending && delPromptText ? (
@@ -2882,9 +3014,9 @@ const DealChat = ({ onNavigate, routeData }) => {
                       onPress={() => handleUpdateDeliveryStatus(matchedDelivery._id, 'approved')}
                       activeOpacity={0.8}
                     >
-                      <Check size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Check size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
                       <Text style={styles.approveBtnText}>
-                        {myRole === 'Buyer' ? 'Approve & Received' : 'Approve Delivery'}
+                        {myRole === 'Buyer' ? 'Approve' : 'Approve Delivery'}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -2892,18 +3024,11 @@ const DealChat = ({ onNavigate, routeData }) => {
                       onPress={() => handleUpdateDeliveryStatus(matchedDelivery._id, 'rejected')}
                       activeOpacity={0.8}
                     >
-                      <X size={15} color="#DC2626" style={{ marginRight: 6 }} />
+                      <X size={13} color="#DC2626" style={{ marginRight: 4 }} />
                       <Text style={styles.rejectBtnText}>Reject</Text>
                     </TouchableOpacity>
                   </View>
                 )}
-
-                {/* Approved / Rejected Banner */}
-                {delBannerText ? (
-                  <View style={[styles.approvedBanner, { backgroundColor: delTheme.approvedBannerBg }]}>
-                    <Text style={[styles.approvedBannerText, { color: delTheme.approvedBannerText }]}>{delBannerText}</Text>
-                  </View>
-                ) : null}
               </View>
 
               <View style={styles.bubbleFooter}>
@@ -3406,38 +3531,7 @@ const DealChat = ({ onNavigate, routeData }) => {
                 />
               </View>
 
-              {paymentPresets.length > 0 && (
-                <View style={styles.amountPresetsRow}>
-                  {paymentPresets.map((val) => (
-                    <TouchableOpacity
-                      key={val}
-                      style={[
-                        styles.presetChip,
-                        paymentAmount === String(val) && styles.presetChipActive
-                      ]}
-                      onPress={() => setPaymentAmount(String(val))}
-                    >
-                      <Text style={[
-                        styles.presetChipText,
-                        paymentAmount === String(val) && styles.presetChipTextActive
-                      ]}>
-                        ₹ {Number(val).toLocaleString('en-IN')}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                  <TouchableOpacity
-                    style={[styles.presetChip, !paymentPresets.map(String).includes(paymentAmount) && styles.presetChipActive]}
-                    onPress={() => setPaymentAmount('')}
-                  >
-                    <Text style={[
-                      styles.presetChipText,
-                      !paymentPresets.map(String).includes(paymentAmount) && styles.presetChipTextActive
-                    ]}>
-                      Custom
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+
 
               <Text style={[styles.fieldLabel, { marginTop: 18 }]}>Payment Method</Text>
               <View style={styles.paymentMethodsGroup}>
@@ -3497,7 +3591,56 @@ const DealChat = ({ onNavigate, routeData }) => {
                 </TouchableOpacity>
               </View>
 
-              <Text style={[styles.fieldLabel, { marginTop: 18 }]}>Remarks (Optional)</Text>
+              <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Attach Payment Proof / Screenshot (Optional)</Text>
+              {paymentAttachmentUrl ? (
+                <View style={styles.attachedPreviewRow}>
+                  <Image
+                    source={{ uri: resolveImageUrl(paymentAttachmentUrl) }}
+                    style={styles.attachedPreviewThumb}
+                    resizeMode="cover"
+                  />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.attachedPreviewName} numberOfLines={1}>
+                      {paymentAttachmentAsset?.fileName || 'Payment_Proof.jpg'}
+                    </Text>
+                    <Text style={styles.attachedPreviewStatus}>✓ Uploaded successfully</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.removeAttachedBtn}
+                    onPress={() => {
+                      setPaymentAttachmentUrl('');
+                      setPaymentAttachmentAsset(null);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={16} color="#DC2626" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.attachDocsCard}
+                  onPress={pickPaymentAttachment}
+                  disabled={isUploadingPaymentDoc}
+                  activeOpacity={0.7}
+                >
+                  {isUploadingPaymentDoc ? (
+                    <View style={styles.uploadingDocRow}>
+                      <ActivityIndicator size="small" color="#1541D8" style={{ marginRight: 10 }} />
+                      <Text style={styles.attachDocsTitle}>Uploading receipt...</Text>
+                    </View>
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <Paperclip size={18} color="#1541D8" style={{ marginRight: 10 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.attachDocsTitle}>Upload Receipt / Screenshot</Text>
+                        <Text style={styles.attachDocsSub}>JPG, PNG, WebP (Max 5 MB)</Text>
+                      </View>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Remarks (Optional)</Text>
               <View style={styles.remarksContainer}>
                 <TextInput
                   style={styles.remarksInput}
@@ -3640,17 +3783,53 @@ const DealChat = ({ onNavigate, routeData }) => {
               </View>
 
               <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Attach Documents (Optional)</Text>
-              <TouchableOpacity
-                style={styles.attachDocsCard}
-                onPress={() => Alert.alert('Upload Document', 'Select delivery challan or LR receipt (Max 5MB)')}
-                activeOpacity={0.7}
-              >
-                <Paperclip size={18} color="#1541D8" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.attachDocsTitle}>Upload LR / Delivery Challan</Text>
-                  <Text style={styles.attachDocsSub}>PDF, JPG, PNG (Max 5 MB)</Text>
+              {deliveryAttachmentUrl ? (
+                <View style={styles.attachedPreviewRow}>
+                  <Image
+                    source={{ uri: resolveImageUrl(deliveryAttachmentUrl) }}
+                    style={styles.attachedPreviewThumb}
+                    resizeMode="cover"
+                  />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.attachedPreviewName} numberOfLines={1}>
+                      {deliveryAttachmentAsset?.fileName || 'Delivery_Proof.jpg'}
+                    </Text>
+                    <Text style={styles.attachedPreviewStatus}>✓ Uploaded successfully</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.removeAttachedBtn}
+                    onPress={() => {
+                      setDeliveryAttachmentUrl('');
+                      setDeliveryAttachmentAsset(null);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <X size={16} color="#DC2626" />
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.attachDocsCard}
+                  onPress={pickDeliveryAttachment}
+                  disabled={isUploadingDeliveryDoc}
+                  activeOpacity={0.7}
+                >
+                  {isUploadingDeliveryDoc ? (
+                    <View style={styles.uploadingDocRow}>
+                      <ActivityIndicator size="small" color="#1541D8" style={{ marginRight: 10 }} />
+                      <Text style={styles.attachDocsTitle}>Uploading document...</Text>
+                    </View>
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <Paperclip size={18} color="#1541D8" style={{ marginRight: 10 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.attachDocsTitle}>Upload LR / Delivery Challan</Text>
+                        <Text style={styles.attachDocsSub}>PDF, JPG, PNG (Max 5 MB)</Text>
+                      </View>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
 
               <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Remarks (Optional)</Text>
               <View style={styles.remarksContainer}>
@@ -4515,11 +4694,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    borderRadius: 7,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 8,
-    marginTop: 6,
+    padding: 5,
+    marginTop: 3,
   },
   docAttachmentLeft: {
     flexDirection: 'row',
@@ -4528,35 +4707,89 @@ const styles = StyleSheet.create({
   },
   pdfIconBadge: {
     backgroundColor: '#EF4444',
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 2.5,
+    borderRadius: 4,
   },
   pdfIconText: {
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   docFileName: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#0F172A',
   },
   docDownloadBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+  attachmentThumbnailImg: {
+    width: 32,
+    height: 32,
+    borderRadius: 5,
+    backgroundColor: '#E2E8F0',
+  },
+  docFileHint: {
+    fontSize: 9,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 1,
+  },
+  attachedPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    padding: 8,
+    marginTop: 6,
+  },
+  attachedPreviewThumb: {
+    width: 38,
+    height: 38,
+    borderRadius: 6,
+    backgroundColor: '#E2E8F0',
+  },
+  attachedPreviewName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  attachedPreviewStatus: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#16A34A',
+    marginTop: 2,
+  },
+  removeAttachedBtn: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
   },
+  uploadingDocRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
 
   cardBubbleContainer: {
-    width: Math.min(SCREEN_WIDTH * 0.82, 320),
+    width: Math.min(SCREEN_WIDTH * 0.74, 270),
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 10,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    paddingBottom: 4,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
@@ -4570,10 +4803,11 @@ const styles = StyleSheet.create({
   },
   paymentInnerCard: {
     backgroundColor: '#FFFDF5',
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#FEF3C7',
-    padding: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     marginTop: 2,
   },
   paymentInnerCardApproved: {
@@ -4585,7 +4819,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   paymentCardHeaderLeft: {
     flexDirection: 'row',
@@ -4594,12 +4828,12 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   rupeeCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 6,
+    marginRight: 5,
     flexShrink: 0,
   },
   rupeeCircleOrange: {
@@ -4609,12 +4843,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
   },
   rupeeCircleText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   paymentCardTitle: {
-    fontSize: 12.5,
+    fontSize: 11,
     fontWeight: '700',
     color: '#78350F',
     flexShrink: 1,
@@ -4622,9 +4856,9 @@ const styles = StyleSheet.create({
   statusTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 5,
     borderWidth: 1,
     flexShrink: 0,
   },
@@ -4633,11 +4867,11 @@ const styles = StyleSheet.create({
     borderColor: '#FCD34D',
   },
   statusTagText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
   },
   statusTagTextPending: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     color: '#D97706',
   },
@@ -4646,56 +4880,56 @@ const styles = StyleSheet.create({
     borderColor: '#A7F3D0',
   },
   statusTagTextApproved: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     color: '#15803D',
   },
   paymentAmountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 4,
+    marginVertical: 2,
     minWidth: 0,
   },
   paymentAmountBig: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '900',
     color: '#0F172A',
-    marginRight: 6,
+    marginRight: 5,
   },
   paymentMethodPill: {
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
     flexShrink: 0,
   },
   paymentMethodPillText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     color: '#B45309',
   },
   paymentDetailsTable: {
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.05)',
-    paddingTop: 4,
+    paddingTop: 3,
     marginTop: 2,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   paymentDetailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 1.5,
+    marginVertical: 0.5,
     minWidth: 0,
   },
   paymentDetailKey: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     color: '#64748B',
-    width: 48,
+    width: 42,
     flexShrink: 0,
   },
   paymentDetailVal: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#1E293B',
     fontWeight: '600',
     flexShrink: 1,
@@ -4707,10 +4941,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     minWidth: 0,
-    marginLeft: 6,
+    marginLeft: 4,
   },
   cardSubtitleText: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     color: '#64748B',
     marginTop: 1,
     fontWeight: '500',
@@ -4720,32 +4954,27 @@ const styles = StyleSheet.create({
     borderColor: '#FCA5A5',
   },
   statusTagTextRejected: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     color: '#DC2626',
   },
   promptBox: {
-    borderRadius: 8,
+    borderRadius: 6,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginVertical: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginVertical: 3,
   },
   promptText: {
-    fontSize: 11.5,
-    lineHeight: 16,
+    fontSize: 10,
+    lineHeight: 14,
     fontWeight: '500',
   },
   approvedBanner: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginTop: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: 'none',
   },
   approvedBannerText: {
-    fontSize: 11.5,
+    fontSize: 10,
     fontWeight: '700',
   },
   systemPillContainer: {
@@ -4778,23 +5007,23 @@ const styles = StyleSheet.create({
   },
   paymentApprovalButtons: {
     flexDirection: 'row',
-    gap: 6,
-    marginTop: 6,
+    gap: 5,
+    marginTop: 4,
   },
   approvalBtn: {
     flex: 1,
-    height: 32,
-    borderRadius: 7,
+    height: 26,
+    borderRadius: 5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
   approveBtn: {
     backgroundColor: '#10B981',
   },
   approveBtnText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: '#FFFFFF',
   },
@@ -4804,7 +5033,7 @@ const styles = StyleSheet.create({
     borderColor: '#FCA5A5',
   },
   rejectBtnText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: '#DC2626',
   },

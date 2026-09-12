@@ -15,6 +15,7 @@ import ContactPicker from './sauda/ContactPicker';
 import TransactionHistory from './sauda/TransactionHistory';
 import OnboardedUsers from './profile/OnboardedUsers';
 import CompanyPayments from './dashboard/CompanyPayments';
+import DealInvoice from './sauda/DealInvoice';
 
 const Dashboard = TraderDashboard;
 
@@ -37,4 +38,5 @@ export {
   TransactionHistory,
   OnboardedUsers,
   CompanyPayments,
+  DealInvoice,
 };

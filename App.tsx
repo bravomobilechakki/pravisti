@@ -25,8 +25,11 @@ import {
   TransactionHistory,
   OnboardedUsers,
   CompanyPayments,
+  DealInvoice,
 } from './src/components/trader';
 import Notifications from './src/components/common/Notifications';
+import AIBotScreen from './src/components/common/AIBotScreen';
+import AIBotFloatingButton from './src/components/common/AIBotFloatingButton';
 import {
   BrokerDashboard,
   BrokerAddCompany,
@@ -61,6 +64,7 @@ const AddProductPageScreen = AddProductPage as any;
 const TransactionHistoryScreen = TransactionHistory as any;
 const OnboardedUsersScreen = OnboardedUsers as any;
 const CompanyPaymentsScreen = CompanyPayments as any;
+const DealInvoiceScreen = DealInvoice as any;
 const NotificationsScreen = Notifications as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
 const BrokerAddCompanyScreen = BrokerAddCompany as any;
@@ -72,6 +76,8 @@ const BrokerCreatedDealsScreen = BrokerCreatedDeals as any;
 const BrokerPendingQueueScreen = BrokerPendingQueue as any;
 const BrokerDealDetailsScreen = BrokerDealDetails as any;
 const VoicePreferencesScreenComponent = VoicePreferencesScreen as any;
+const AIBotScreenComponent = AIBotScreen as any;
+const AIBotFloatingButtonComponent = AIBotFloatingButton as any;
 
 const checkIsUserBroker = (userObj: any, explicitRole?: string): boolean => {
   if (explicitRole) {
@@ -97,6 +103,8 @@ const getScreenStatusBarConfig = (screenName: string) => {
     case 'AddCompany':
     case 'BrokerDashboard':
     case 'BrokerProfile':
+    case 'Profile':
+    case 'AIBot':
       return { bg: '#2327D8', barStyle: 'light-content' as const };
     case 'Notifications':
     case 'MyCompanies':
@@ -104,6 +112,7 @@ const getScreenStatusBarConfig = (screenName: string) => {
     case 'Login':
     case 'Signup':
     case 'ChooseIndustry':
+    case 'DealInvoice':
       return { bg: '#0F172A', barStyle: 'light-content' as const };
     case 'BrokerLogin':
     case 'BrokerOTPVerify':
@@ -157,7 +166,7 @@ function App() {
           if (storedProfileStr) {
             try {
               cachedUser = JSON.parse(storedProfileStr);
-            } catch (e) { }
+            } catch { }
           }
 
           // If we have cached profile, launch immediately without waiting for server!
@@ -419,6 +428,10 @@ function App() {
         return <BrokerProfileScreen onNavigate={onNavigate} routeData={data} />;
       case 'VoicePreferences':
         return <VoicePreferencesScreenComponent onBack={() => onNavigate('pop')} userToken={data?.token} routeData={data} />;
+      case 'AIBot':
+        return <AIBotScreenComponent onNavigate={onNavigate} routeData={data} />;
+      case 'DealInvoice':
+        return <DealInvoiceScreen onNavigate={onNavigate} routeData={data} />;
       default:
         if (data?.token || data?.user) {
           return isBrokerUser ? (
@@ -449,6 +462,19 @@ function App() {
         <View style={{ flex: 1, backgroundColor: statusBarConfig.bg === '#0F172A' ? '#0F172A' : '#FFFFFF' }}>
           {renderScreen()}
         </View>
+
+        {/* Global Draggable Pravisti AI Assistant across ALL screens */}
+        {!['Login', 'Signup', 'ChooseIndustry', 'AIBot'].includes(screen) && (
+          <AIBotFloatingButtonComponent
+            onPress={() => onNavigate('AIBot', {
+              user: data?.user || (checkUser && Object.keys(checkUser).length > 0 ? checkUser : undefined),
+              company: data?.company,
+              companyId: data?.companyId || data?.company?._id || data?.company?.id,
+              role: isBrokerUser ? 'Broker' : 'Trader',
+            })}
+          />
+        )}
+
         <OwnershipConfirmationModal
           visible={showOwnershipModal}
           onClose={() => setShowOwnershipModal(false)}

@@ -56,6 +56,8 @@ import {
   FolderTree,
   LayoutGrid,
   Wallet,
+  Bot,
+  Sparkles,
 } from 'lucide-react-native';
 import {
   getCompanyDetails,
@@ -75,6 +77,7 @@ import {
   resolveImageUrl,
 } from '../../../services/api';
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
+import AIBotFloatingButton from '../../common/AIBotFloatingButton';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -272,15 +275,23 @@ const CompanyLogoAvatar = ({
 
 // Dedicated Banner Card Item with Image loading state, Error resilience and Create Deal button
 const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
-  const [imageError, setImageError] = React.useState(false);
-  const [imageLoading, setImageLoading] = React.useState(true);
-
   const rawImg = item?.image || item?.imageUrl || item?.bannerImage || item?.bannerUrl || item?.banner || '';
   const bannerImgUrl = rawImg ? resolveImageUrl(rawImg) : '';
+  const [imageError, setImageError] = React.useState(!bannerImgUrl);
+  const [imageLoading, setImageLoading] = React.useState(Boolean(bannerImgUrl));
 
   React.useEffect(() => {
+    if (!bannerImgUrl) {
+      setImageError(true);
+      setImageLoading(false);
+      return;
+    }
     setImageError(false);
     setImageLoading(true);
+    const timer = setTimeout(() => {
+      setImageLoading(false);
+    }, 4000);
+    return () => clearTimeout(timer);
   }, [bannerImgUrl]);
 
   const hasValidImage = Boolean(bannerImgUrl) && !imageError;
@@ -312,6 +323,7 @@ const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
           )}
         </>
       ) : (
+
         <View style={styles.bannerFallbackInner}>
           <View style={styles.bannerFallbackDecorCircle1} />
           <View style={styles.bannerFallbackDecorCircle2} />
@@ -361,7 +373,6 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const [currentUser, setCurrentUser] = React.useState(routeData?.user || null);
   const [unreadNotifCount, setUnreadNotifCount] = React.useState(0);
   const [banners, setBanners] = React.useState([]);
-  const [isBannersLoading, setIsBannersLoading] = React.useState(true);
   const [activeBannerIndex, setActiveBannerIndex] = React.useState(0);
   const bannerScrollRef = React.useRef(null);
 
@@ -845,61 +856,144 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         ? comp.industryId._id || comp.industryId.id || null
         : String(comp.industryId);
     }
-    if (typeof comp.industry === 'string' && comp.industry.match(/^[0-9a-fA-F]{24}$/)) {
-      return comp.industry;
+    if (typeof comp.industry === 'string' && comp.industry.trim().length > 0) {
+      return comp.industry.trim();
     }
     return null;
   }, []);
 
+  const bannerMatchesCompanyIndustry = React.useCallback((banner, comp) => {
+    if (!banner || !comp) return false;
+
+    // 1. Target company industry ID & name
+    const compIndObj = typeof comp.industry === 'object' && comp.industry !== null ? comp.industry : null;
+    const compIndIdObj = typeof comp.industryId === 'object' && comp.industryId !== null ? comp.industryId : null;
+
+    const targetIndId = String(
+      compIndObj?._id || compIndObj?.id ||
+      compIndIdObj?._id || compIndIdObj?.id ||
+      (typeof comp.industryId === 'string' ? comp.industryId : '') ||
+      (typeof comp.industry === 'string' && comp.industry.match(/^[0-9a-fA-F]{24}$/) ? comp.industry : '')
+    ).toLowerCase().trim();
+
+    const targetIndName = String(
+      compIndObj?.name ||
+      compIndIdObj?.name ||
+      comp.industryName ||
+      (typeof comp.industry === 'string' && !comp.industry.match(/^[0-9a-fA-F]{24}$/) ? comp.industry : '')
+    ).toLowerCase().trim();
+
+    // 2. Banner industry ID & name
+    const bannerInd = banner.industryId || banner.industry;
+    const bannerIndObj = typeof bannerInd === 'object' && bannerInd !== null ? bannerInd : null;
+
+    const bannerIndId = String(
+      bannerIndObj?._id || bannerIndObj?.id ||
+      (typeof bannerInd === 'string' ? bannerInd : '')
+    ).toLowerCase().trim();
+
+    const bannerIndName = String(
+      bannerIndObj?.name ||
+      banner.industryName ||
+      ''
+    ).toLowerCase().trim();
+
+    // Match by ID if both have IDs
+    if (targetIndId && bannerIndId && targetIndId === bannerIndId) {
+      return true;
+    }
+
+    // Match by Name if available
+    if (targetIndName && bannerIndName) {
+      if (targetIndName === bannerIndName || targetIndName.includes(bannerIndName) || bannerIndName.includes(targetIndName)) {
+        return true;
+      }
+    }
+
+    return false;
+  }, []);
+
   const fetchBanners = React.useCallback(async (targetComp) => {
     try {
-      setIsBannersLoading(true);
       const c = targetComp || companyRef.current || routeData?.company;
+      if (!c) {
+        setBanners([]);
+        return;
+      }
+
       const indId = getActiveIndustryId(c);
+      const cacheKey = indId ? `@banners_cache_${indId}` : `@banners_cache_${c._id || c.id || 'comp'}`;
+
+      // 1. Immediately read from AsyncStorage cache for instant 0ms UI rendering
+      try {
+        const cached = await AsyncStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            // Strictly filter by this company's industry
+            const filteredCached = parsed.filter((b) => bannerMatchesCompanyIndustry(b, c));
+            setBanners(filteredCached);
+          }
+        }
+      } catch {
+        // ignore cache read failure
+      }
+
       const token = await AsyncStorage.getItem('userToken');
 
-      let bannerList = [];
-      // 1. First attempt to fetch banners for the active company's industry
+      // 2. Query API specifically for this company's industry
+      let rawBanners = [];
+
+      // If indId exists, call getActiveBanners with indId
       if (indId) {
         try {
-          const res = await getActiveBanners(indId, token);
-          if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
-            bannerList = res.data;
-          } else if (Array.isArray(res) && res.length > 0) {
-            bannerList = res;
+          const indRes = await getActiveBanners(indId, token);
+          const dataArr = Array.isArray(indRes?.data) ? indRes.data : Array.isArray(indRes) ? indRes : [];
+          if (dataArr.length > 0) {
+            rawBanners = dataArr;
           }
         } catch (e) {
-          console.warn('Failed to fetch industry banners:', e);
+          console.warn('Failed to fetch industry banners for ID:', indId, e);
         }
       }
 
-      // 2. Fallback: If no industry-specific banner was found, fetch all active/global banners!
-      if (bannerList.length === 0) {
+      // If rawBanners is still empty, query all active banners and strictly filter by the company's industry
+      if (rawBanners.length === 0) {
         try {
-          const globalRes = await getActiveBanners(null, token);
-          if (globalRes && globalRes.success && Array.isArray(globalRes.data) && globalRes.data.length > 0) {
-            bannerList = globalRes.data;
-          } else if (Array.isArray(globalRes) && globalRes.length > 0) {
-            bannerList = globalRes;
+          const allRes = await getActiveBanners(null, token);
+          const allArr = Array.isArray(allRes?.data) ? allRes.data : Array.isArray(allRes) ? allRes : [];
+          if (allArr.length > 0) {
+            rawBanners = allArr;
           }
         } catch (e) {
-          console.warn('Failed to fetch global banners:', e);
+          console.warn('Failed to fetch fallback banners:', e);
         }
       }
 
-      if (bannerList.length > 0) {
-        const sorted = [...bannerList].sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
+      // 3. STRICT FILTER: Only keep banners that match THIS company's industry!
+      const matchingBanners = rawBanners.filter((b) => bannerMatchesCompanyIndustry(b, c));
+
+      if (matchingBanners.length > 0) {
+        const sorted = [...matchingBanners].sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
         setBanners(sorted);
+        // Pre-fetch images in background for instant display
+        sorted.forEach((item) => {
+          const imgUrl = resolveImageUrl(item.imageUrl || item.image || item.bannerImage);
+          if (imgUrl) {
+            Image.prefetch(imgUrl).catch(() => {});
+          }
+        });
+        AsyncStorage.setItem(cacheKey, JSON.stringify(sorted)).catch(() => {});
       } else {
+        // If no banner exists for this industry, clear banners so single fallback card displays
         setBanners([]);
+        AsyncStorage.setItem(cacheKey, JSON.stringify([])).catch(() => {});
       }
     } catch (err) {
       console.warn('Failed to load active banners:', err);
       setBanners([]);
-    } finally {
-      setIsBannersLoading(false);
     }
-  }, [getActiveIndustryId, routeData?.company]);
+  }, [getActiveIndustryId, bannerMatchesCompanyIndustry, routeData?.company]);
 
   // Auto-scroll banner if multiple banners exist
   React.useEffect(() => {
@@ -1134,11 +1228,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       onPress: () => onNavigate('ChatList', { company, companyId: company?._id || company?.id }),
     },
     {
-      id: 'my_task',
-      title: 'My Task',
-      icon: <CheckCircle2 size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#059669',
-      onPress: () => Alert.alert('My Task', 'Tasks feature coming soon!'),
+      id: 'ai_bot',
+      title: 'Pravisti AI',
+      icon: <Bot size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#2327D8',
+      onPress: () => onNavigate('AIBot', { company, companyId: company?._id || company?.id }),
     },
     {
       id: 'company_profile',
@@ -1257,11 +1351,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
         {/* ─── 3. PROMOTIONAL BANNER (Industry-wise from backend) ─── */}
         <View style={styles.bannerOuterContainer}>
-          {isBannersLoading && banners.length === 0 ? (
-            <View style={styles.bannerLoadingCard}>
-              <ActivityIndicator size="small" color="#1541D8" />
-            </View>
-          ) : banners.length > 0 ? (
+          {banners.length > 0 ? (
             <View style={styles.bannerWrapper}>
               <ScrollView
                 ref={bannerScrollRef}

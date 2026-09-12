@@ -31,6 +31,8 @@ import {
   Mic,
   FileText,
   Lock,
+  Bot,
+  Sparkles,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BrokerSuccessReceipt from '../../common/BrokerSuccessReceipt';
@@ -274,6 +276,29 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
                 <Text style={styles.rightValueText}>{companiesCount}</Text>
                 <ChevronRight size={16} color="#CBD5E1" />
               </View>
+            </TouchableOpacity>
+
+            {/* Pravisti AI Assistant */}
+            <TouchableOpacity
+              style={[styles.listItemRow, { backgroundColor: '#F5F7FF', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12, marginVertical: 4, borderWidth: 1, borderColor: '#E0E7FF' }]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('AIBot', { user: profileData, role: 'Broker' })}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: THEME, justifyContent: 'center', alignItems: 'center' }}>
+                  <Bot size={20} color="#FFFFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.listItemTitle, { color: THEME, fontWeight: '800' }]}>Pravisti AI Assistant</Text>
+                    <View style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#C7D2FE' }}>
+                      <Text style={{ fontSize: 9.5, fontWeight: '800', color: THEME }}>AI BOT</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.subWorkspaceText}>Instant deals, saudas & APMC Q&A</Text>
+                </View>
+              </View>
+              <ChevronRight size={16} color={THEME} />
             </TouchableOpacity>
 
             {/* Languages */}

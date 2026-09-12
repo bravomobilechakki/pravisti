@@ -74,11 +74,12 @@ const CompanyLogoAvatar = ({ logo, name, size = 46, radius = 14, textColor, bgCo
   );
 };
 
-const MyCompanies = ({ onNavigate }) => {
+const MyCompanies = ({ onNavigate, routeData }) => {
   const [companies, setCompanies] = React.useState([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
-  const [currentUser, setCurrentUser] = React.useState(null);
+  const [currentUser, setCurrentUser] = React.useState(routeData?.user || null);
+  const [selectedFilter, setSelectedFilter] = React.useState('all');
 
   React.useEffect(() => {
     const fetchUser = async () => {
@@ -168,6 +169,16 @@ const MyCompanies = ({ onNavigate }) => {
   const activeCount = companies.filter(c => c.status === 'active' || c.isVerified).length;
   const totalDeals = companies.reduce((sum, c) => sum + (c.recentDeals?.length || c.deals || 0), 0);
 
+  const filteredCompanies = React.useMemo(() => {
+    if (selectedFilter === 'verified') {
+      return companies.filter(c => c.status === 'active' || c.isVerified);
+    }
+    if (selectedFilter === 'saudas') {
+      return companies.filter(c => (c.recentDeals?.length || c.deals || 0) > 0);
+    }
+    return companies;
+  }, [companies, selectedFilter]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1A56DB" />
@@ -229,42 +240,78 @@ const MyCompanies = ({ onNavigate }) => {
             </View>
 
             <Text style={styles.heroTitle}>Manage Your Companies</Text>
-            {/* <Text style={styles.heroSubtitle}>
-              Create Saudais, link trade accounts & track real-time mandi operations across all registered companies.
-            </Text> */}
           </View>
 
-          {/* ── Dynamic Stats Cards Strip ── */}
+          {/* ── Dynamic Stats / Filter Tabs Strip ── */}
           <View style={styles.statsRow}>
-            <View style={[styles.statCard, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+            {/* Total Companies Tab */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => setSelectedFilter('all')}
+              style={[
+                styles.statCard,
+                {
+                  backgroundColor: selectedFilter === 'all' ? '#EFF6FF' : '#FFFFFF',
+                  borderColor: selectedFilter === 'all' ? '#1A56DB' : '#E2E8F0',
+                  borderWidth: selectedFilter === 'all' ? 1.8 : 1,
+                  elevation: selectedFilter === 'all' ? 3 : 1,
+                },
+              ]}
+            >
               <View style={[styles.statIconBadge, { backgroundColor: '#DBEAFE' }]}>
                 <Building2 size={16} color="#1A56DB" />
               </View>
-              <View>
-                <Text style={[styles.statNumber, { color: '#1A56DB' }]}>{companies.length}</Text>
-                <Text style={styles.statLabel}>Total Companies</Text>
-              </View>
-            </View>
+              <Text style={[styles.statNumber, { color: '#1A56DB' }]}>{companies.length}</Text>
+              <Text style={styles.statLabel} numberOfLines={1}>Total</Text>
+              <Text style={styles.statSubLabel} numberOfLines={1}>Companies</Text>
+              {selectedFilter === 'all' && <View style={[styles.activeIndicatorDot, { backgroundColor: '#1A56DB' }]} />}
+            </TouchableOpacity>
 
-            <View style={[styles.statCard, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+            {/* Verified Companies Tab */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => setSelectedFilter(prev => prev === 'verified' ? 'all' : 'verified')}
+              style={[
+                styles.statCard,
+                {
+                  backgroundColor: selectedFilter === 'verified' ? '#ECFDF5' : '#FFFFFF',
+                  borderColor: selectedFilter === 'verified' ? '#059669' : '#E2E8F0',
+                  borderWidth: selectedFilter === 'verified' ? 1.8 : 1,
+                  elevation: selectedFilter === 'verified' ? 3 : 1,
+                },
+              ]}
+            >
               <View style={[styles.statIconBadge, { backgroundColor: '#D1FAE5' }]}>
                 <ShieldCheck size={16} color="#059669" />
               </View>
-              <View>
-                <Text style={[styles.statNumber, { color: '#059669' }]}>{activeCount}</Text>
-                <Text style={styles.statLabel}>Verified</Text>
-              </View>
-            </View>
+              <Text style={[styles.statNumber, { color: '#059669' }]}>{activeCount}</Text>
+              <Text style={styles.statLabel} numberOfLines={1}>Verified</Text>
+              <Text style={styles.statSubLabel} numberOfLines={1}>Companies</Text>
+              {selectedFilter === 'verified' && <View style={[styles.activeIndicatorDot, { backgroundColor: '#059669' }]} />}
+            </TouchableOpacity>
 
-            <View style={[styles.statCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+            {/* Saudas Tab */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => setSelectedFilter(prev => prev === 'saudas' ? 'all' : 'saudas')}
+              style={[
+                styles.statCard,
+                {
+                  backgroundColor: selectedFilter === 'saudas' ? '#FEF3C7' : '#FFFFFF',
+                  borderColor: selectedFilter === 'saudas' ? '#D97706' : '#E2E8F0',
+                  borderWidth: selectedFilter === 'saudas' ? 1.8 : 1,
+                  elevation: selectedFilter === 'saudas' ? 3 : 1,
+                },
+              ]}
+            >
               <View style={[styles.statIconBadge, { backgroundColor: '#FDE68A' }]}>
                 <TrendingUp size={16} color="#D97706" />
               </View>
-              <View>
-                <Text style={[styles.statNumber, { color: '#D97706' }]}>{totalDeals}</Text>
-                <Text style={styles.statLabel}>Saudas</Text>
-              </View>
-            </View>
+              <Text style={[styles.statNumber, { color: '#D97706' }]}>{totalDeals}</Text>
+              <Text style={styles.statLabel} numberOfLines={1}>Saudas</Text>
+              <Text style={styles.statSubLabel} numberOfLines={1}>Deals</Text>
+              {selectedFilter === 'saudas' && <View style={[styles.activeIndicatorDot, { backgroundColor: '#D97706' }]} />}
+            </TouchableOpacity>
           </View>
 
           {/* ── Company List Section ── */}
@@ -287,9 +334,22 @@ const MyCompanies = ({ onNavigate }) => {
                 <Text style={styles.emptyStateButtonText}>Register First Business</Text>
               </TouchableOpacity>
             </View>
+          ) : filteredCompanies.length === 0 ? (
+            <View style={styles.filterEmptyContainer}>
+              <Text style={styles.filterEmptyTitle}>
+                No {selectedFilter === 'verified' ? 'Verified Companies' : 'Companies with Saudas'} found
+              </Text>
+              <TouchableOpacity
+                style={styles.filterResetBtn}
+                onPress={() => setSelectedFilter('all')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.filterResetBtnText}>Show All Companies ({companies.length})</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             /* Premium Company Cards */
-            companies.map(item => {
+            filteredCompanies.map(item => {
               const gstNumber = item.registrationNumber || item.gstin || 'NOT REGISTERED';
               const contactInfo = item.phone || item.email || 'No contact specified';
               const dealsCount = item.recentDeals?.length || item.deals || 0;
@@ -545,29 +605,80 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1.2,
-    gap: 8,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderRadius: 16,
+    minHeight: 112,
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
   },
   statIconBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 6,
   },
   statNumber: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 2,
   },
   statLabel: {
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+  statSubLabel: {
+    fontSize: 9.5,
     fontWeight: '600',
     color: '#64748B',
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  activeIndicatorDot: {
+    position: 'absolute',
+    top: 7,
+    right: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  filterEmptyContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  filterEmptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 12,
+  },
+  filterResetBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  filterResetBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1A56DB',
   },
 
   // ── COMPANY CARD ──

@@ -27,12 +27,8 @@ import {
   Mail,
   MapPin,
   Trash2,
-  Plus,
-  ChevronRight,
   Info,
-  Paperclip,
   MoreVertical,
-  Home,
   Briefcase,
   FileText,
   CreditCard,
@@ -44,8 +40,9 @@ import {
   Calendar,
   Layers,
   X,
-  CheckCircle2,
   Camera,
+  User,
+  Globe,
 } from 'lucide-react-native';
 import {
   getCompanyDetails,
@@ -59,7 +56,7 @@ import {
 } from '../../../services/api';
 
 const CompanyProfileDetails = ({ onNavigate, routeData }) => {
-  const [activeTab, setActiveTab] = useState('Overview'); // 'Overview' | 'Contacts' | 'Addresses' | 'Bank Details' | 'Notes'
+  const [activeTab, setActiveTab] = useState('Overview'); // 'Overview' | 'Contacts'
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [company, setCompany] = useState(routeData?.company || null);
@@ -172,7 +169,7 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
           setIsDealsLoading(false);
         }
       }
-    } catch (ce) {}
+    } catch (ce) { }
 
     // 2. Fetch fresh deals from API
     try {
@@ -196,7 +193,7 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
               allDeals = [...allDeals, ...expD];
             }
           }
-        } catch (ee) {}
+        } catch (ee) { }
       }
 
       const filtered = allDeals.filter((deal) => {
@@ -215,7 +212,7 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
       });
 
       setDeals(filtered);
-      AsyncStorage.setItem(cacheKey, JSON.stringify(filtered)).catch(() => {});
+      AsyncStorage.setItem(cacheKey, JSON.stringify(filtered)).catch(() => { });
     } catch (e) {
       console.warn('Failed to fetch deals in CompanyProfileDetails:', e);
     } finally {
@@ -432,6 +429,20 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
     (displayGSTIN.length >= 12 && displayGSTIN !== 'N/A' ? displayGSTIN.substring(2, 12) : 'N/A');
   const displayPhone = company?.phone || 'N/A';
   const displayEmail = company?.email || 'N/A';
+
+  const contactPersonName =
+    company?.contactPerson ||
+    company?.owner?.name ||
+    company?.owner?.fullName ||
+    (typeof company?.owner === 'string' ? company.owner : null) ||
+    currentUser?.name ||
+    '';
+
+  const contactPersonRole =
+    company?.owner?.role ||
+    company?.owner?.userType ||
+    (company?.type ? `${company.type} Admin` : 'Authorized Representative');
+
   const displayCompanyType = company?.type || 'N/A';
   const displayBusinessType =
     company?.businessType || (company?.type ? String(company.type).toUpperCase() : 'Trader');
@@ -439,10 +450,27 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
     typeof company?.industry === 'object' && company?.industry !== null
       ? company.industry.name || 'N/A'
       : company?.industry || 'N/A';
+
   const displayCustomerSince = company?.createdAt
     ? new Date(company.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    : 'N/A';
-  const displayStatus = company?.isVerified ? 'Verified' : (company?.status || 'Active');
+    : '';
+
+  const isVerified = Boolean(company?.isVerified);
+  const rawStatus = company?.status ? String(company.status).trim() : '';
+  const displayStatus = isVerified
+    ? 'Verified'
+    : rawStatus
+    ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1)
+    : 'Active';
+
+  const businessRole =
+    company?.businessType ||
+    company?.type ||
+    (currentUser?.userType ? currentUser.userType.charAt(0).toUpperCase() + currentUser.userType.slice(1) : 'Business');
+
+  const companyMetaText = displayCustomerSince
+    ? `${businessRole} • Since ${displayCustomerSince}`
+    : businessRole;
 
   const addr = company?.address;
   const street = addr?.street || '';
@@ -455,7 +483,7 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
   const fullAddress =
     addressLine1 || addressLine2
       ? `${addressLine1 ? addressLine1 + '\n' : ''}${addressLine2}`
-      : 'Address not specified';
+      : '';
 
   const totalDealsCount = deals.length;
   const confirmedOrdersCount = deals.filter(
@@ -463,9 +491,9 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
   ).length;
   const latestDealDate = deals[0]?.createdAt
     ? new Date(deals[0].createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    : 'No Deals Yet';
+    : 'None';
 
-  const tabs = ['Overview', 'Contacts', 'Addresses', 'Bank Details', 'Notes'];
+  const tabs = ['Overview', 'Contacts'];
 
   if (isLoading) {
     return (
@@ -503,7 +531,7 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
             }}
             activeOpacity={0.75}
           >
-            <Paperclip size={18} color="#2563EB" strokeWidth={2.2} />
+            <Edit3 size={18} color="#2563EB" strokeWidth={2.2} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -559,43 +587,58 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
             </Text>
 
             <View style={styles.activeTagRow}>
-              <View style={styles.activeCompanyPill}>
-                <View style={styles.greenDot} />
-                <Text style={styles.activeCompanyPillText}>Active Company</Text>
+              <View
+                style={[
+                  styles.activeCompanyPill,
+                  !isVerified && rawStatus.toLowerCase() === 'pending' && styles.pendingCompanyPill,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.greenDot,
+                    !isVerified && rawStatus.toLowerCase() === 'pending' && styles.yellowDot,
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.activeCompanyPillText,
+                    !isVerified && rawStatus.toLowerCase() === 'pending' && styles.yellowPillText,
+                  ]}
+                >
+                  {isVerified ? 'Verified Company' : `${displayStatus} Company`}
+                </Text>
               </View>
             </View>
 
             <Text style={styles.companyCardMeta}>
-              Customer • Since {displayCustomerSince}
+              {companyMetaText}
             </Text>
           </View>
 
           {/* Right Action Circle Buttons */}
           <View style={styles.companyContactActions}>
             <TouchableOpacity
-              style={styles.contactCircleBtn}
-              onPress={() => Linking.openURL(`tel:${displayPhone}`)}
+              style={[styles.contactCircleBtn, displayPhone === 'N/A' && { opacity: 0.4 }]}
+              onPress={() => displayPhone !== 'N/A' && Linking.openURL(`tel:${displayPhone}`)}
               activeOpacity={0.75}
+              disabled={displayPhone === 'N/A'}
             >
               <Phone size={16} color="#2563EB" strokeWidth={2.2} />
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.contactCircleBtn}
-              onPress={() => Linking.openURL(`mailto:${displayEmail}`)}
+              style={[styles.contactCircleBtn, displayEmail === 'N/A' && { opacity: 0.4 }]}
+              onPress={() => displayEmail !== 'N/A' && Linking.openURL(`mailto:${displayEmail}`)}
               activeOpacity={0.75}
+              disabled={displayEmail === 'N/A'}
             >
               <Mail size={16} color="#2563EB" strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ─── 3. HORIZONTAL SEGMENTED TABS ─── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabsContainer}
-        >
+        {/* ─── 3. SEGMENTED TABS (OVERVIEW & CONTACTS) ─── */}
+        <View style={styles.tabsContainer}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab;
             return (
@@ -611,7 +654,7 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </View>
 
         {/* ─── 4. OVERVIEW TAB CONTENT ─── */}
         {activeTab === 'Overview' && (
@@ -736,107 +779,64 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
                 <View style={styles.infoRow}>
                   <View style={styles.infoLabelGroup}>
                     <Calendar size={15} color="#64748B" strokeWidth={2} />
-                    <Text style={styles.infoRowLabel}>Customer Since</Text>
+                    <Text style={styles.infoRowLabel}>Registered On</Text>
                   </View>
-                  <Text style={styles.infoRowValue}>{displayCustomerSince}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Section 2: Addresses Card */}
-            <View style={styles.sectionCard}>
-              <View style={styles.sectionCardHeader}>
-                <View style={styles.sectionHeaderLeft}>
-                  <View style={[styles.infoIconCircle, { backgroundColor: '#F5F3FF' }]}>
-                    <MapPin size={16} color="#7C3AED" strokeWidth={2.4} />
-                  </View>
-                  <Text style={styles.sectionCardTitle}>Addresses</Text>
+                  <Text style={styles.infoRowValue}>{displayCustomerSince || 'N/A'}</Text>
                 </View>
 
-                <TouchableOpacity
-                  style={styles.editLinkBtn}
-                  onPress={() => {
-                    setEditErrors({ name: '', phone: '', registrationNumber: '' });
-                    setIsEditModalVisible(true);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Plus size={14} color="#2563EB" strokeWidth={2.4} style={{ marginRight: 3 }} />
-                  <Text style={styles.editLinkText}>Add New</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Address Item 1: Registered Address */}
-              <View style={styles.addressItem}>
-                <View style={styles.addressIconSquircle}>
-                  <Home size={18} color="#7C3AED" strokeWidth={2.2} />
-                </View>
-
-                <View style={styles.addressContent}>
-                  <View style={styles.addressTitleRow}>
-                    <Text style={styles.addressTitle}>Registered Address</Text>
-                    <View style={styles.primaryBadge}>
-                      <Text style={styles.primaryBadgeText}>Primary</Text>
+                {Boolean(fullAddress) && (
+                  <>
+                    <View style={styles.rowDivider} />
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoLabelGroup}>
+                        <MapPin size={15} color="#64748B" strokeWidth={2} />
+                        <Text style={styles.infoRowLabel}>Registered Address</Text>
+                      </View>
+                      <Text style={[styles.infoRowValue, { maxWidth: '58%', textAlign: 'right' }]}>
+                        {fullAddress}
+                      </Text>
                     </View>
-                  </View>
-                  <Text style={styles.addressText}>{fullAddress}</Text>
-                </View>
+                  </>
+                )}
 
-                <TouchableOpacity
-                  style={styles.addressEditBtn}
-                  onPress={() => {
-                    setEditErrors({ name: '', phone: '', registrationNumber: '' });
-                    setIsEditModalVisible(true);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Edit3 size={16} color="#2563EB" strokeWidth={2.2} />
-                </TouchableOpacity>
+                {Boolean(company?.website) && (
+                  <>
+                    <View style={styles.rowDivider} />
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoLabelGroup}>
+                        <Globe size={15} color="#64748B" strokeWidth={2} />
+                        <Text style={styles.infoRowLabel}>Website</Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => Linking.openURL(company.website.startsWith('http') ? company.website : `https://${company.website}`)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.infoRowValue, { color: '#2563EB', textDecorationLine: 'underline' }]}>
+                          {company.website}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+
+                {Boolean(company?.description) && (
+                  <>
+                    <View style={styles.rowDivider} />
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoLabelGroup}>
+                        <FileText size={15} color="#64748B" strokeWidth={2} />
+                        <Text style={styles.infoRowLabel}>About / Terms</Text>
+                      </View>
+                      <Text style={[styles.infoRowValue, { maxWidth: '58%', textAlign: 'right' }]}>
+                        {company.description}
+                      </Text>
+                    </View>
+                  </>
+                )}
               </View>
-
-              <View style={styles.rowDivider} />
-
-              {/* Address Item 2: Billing Address */}
-              <View style={styles.addressItem}>
-                <View style={[styles.addressIconSquircle, { backgroundColor: '#EFF6FF' }]}>
-                  <Briefcase size={18} color="#2563EB" strokeWidth={2.2} />
-                </View>
-
-                <View style={styles.addressContent}>
-                  <View style={styles.addressTitleRow}>
-                    <Text style={styles.addressTitle}>Billing Address</Text>
-                  </View>
-                  <Text style={styles.addressText}>{fullAddress}</Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.addressEditBtn}
-                  onPress={() => {
-                    setEditErrors({ name: '', phone: '', registrationNumber: '' });
-                    setIsEditModalVisible(true);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Edit3 size={16} color="#2563EB" strokeWidth={2.2} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.rowDivider} />
-
-              <TouchableOpacity
-                style={styles.viewAllAddressesBtn}
-                onPress={() => {
-                  setEditErrors({ name: '', phone: '', registrationNumber: '' });
-                  setIsEditModalVisible(true);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.viewAllAddressesText}>View All Addresses</Text>
-                <ChevronRight size={16} color="#2563EB" strokeWidth={2.2} />
-              </TouchableOpacity>
             </View>
 
-            {/* Section 3: Quick Stats */}
+            {/* Quick Stats */}
             <View style={styles.sectionCard}>
               <View style={styles.sectionCardHeader}>
                 <View style={styles.sectionHeaderLeft}>
@@ -862,19 +862,19 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
                   <Text style={styles.quickStatValue}>{confirmedOrdersCount}</Text>
                 </View>
 
-                {/* 3. Total Receivable */}
+                {/* 3. Trade Volume */}
                 <View style={[styles.quickStatTile, { backgroundColor: '#FFF7ED' }]}>
                   <IndianRupee size={15} color="#EA580C" strokeWidth={2.2} style={{ marginBottom: 3 }} />
-                  <Text style={styles.quickStatLabel} numberOfLines={1}>Receivable</Text>
+                  <Text style={styles.quickStatLabel} numberOfLines={1}>Trade Volume</Text>
                   <Text style={styles.quickStatValue} numberOfLines={1}>
                     {totalVolumeCalculated > 0 ? `₹${totalVolumeCalculated.toLocaleString('en-IN')}` : '₹0'}
                   </Text>
                 </View>
 
-                {/* 4. Last Order Date */}
+                {/* 4. Latest Deal */}
                 <View style={[styles.quickStatTile, { backgroundColor: '#F5F3FF' }]}>
                   <Clock size={15} color="#7C3AED" strokeWidth={2.2} style={{ marginBottom: 3 }} />
-                  <Text style={styles.quickStatLabel} numberOfLines={1}>Last Order</Text>
+                  <Text style={styles.quickStatLabel} numberOfLines={1}>Latest Deal</Text>
                   <Text style={[styles.quickStatValue, { fontSize: 10, marginTop: 2 }]} numberOfLines={1}>
                     {latestDealDate}
                   </Text>
@@ -884,19 +884,129 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
           </>
         )}
 
-        {/* Other Tabs Fallback Content */}
-        {activeTab !== 'Overview' && (
-          <View style={[styles.sectionCard, { paddingVertical: 40, alignItems: 'center' }]}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>{activeTab}</Text>
-            <Text style={{ fontSize: 13, color: '#64748B', marginTop: 6, textAlign: 'center' }}>
-              Detailed {activeTab} information for {displayCompanyName}
-            </Text>
-            <TouchableOpacity
-              style={{ marginTop: 14, backgroundColor: '#2563EB', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 }}
-              onPress={() => setActiveTab('Overview')}
-            >
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Back to Overview</Text>
-            </TouchableOpacity>
+        {/* ─── 4B. CONTACTS TAB CONTENT ─── */}
+        {activeTab === 'Contacts' && (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionCardHeader}>
+              <View style={styles.sectionHeaderLeft}>
+                <View style={[styles.infoIconCircle, { backgroundColor: '#EFF6FF' }]}>
+                  <Phone size={16} color="#2563EB" strokeWidth={2.4} />
+                </View>
+                <Text style={styles.sectionCardTitle}>Contact Information</Text>
+              </View>
+            </View>
+
+            {/* Representative Card (Rendered only if real contact person name exists) */}
+            {Boolean(contactPersonName) && (
+              <View style={styles.contactRepCard}>
+                <View style={styles.contactRepAvatar}>
+                  <Text style={styles.contactRepAvatarText}>
+                    {contactPersonName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.contactRepName}>{contactPersonName}</Text>
+                  <Text style={styles.contactRepRole}>{contactPersonRole}</Text>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.infoTable}>
+              {Boolean(contactPersonName) && (
+                <>
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoLabelGroup}>
+                      <User size={15} color="#64748B" strokeWidth={2} />
+                      <Text style={styles.infoRowLabel}>Contact Person</Text>
+                    </View>
+                    <Text style={styles.infoRowValue}>{contactPersonName}</Text>
+                  </View>
+                  <View style={styles.rowDivider} />
+                </>
+              )}
+
+              {/* Phone Row */}
+              <View style={styles.infoRow}>
+                <View style={styles.infoLabelGroup}>
+                  <Phone size={15} color="#64748B" strokeWidth={2} />
+                  <Text style={styles.infoRowLabel}>Phone Number</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => displayPhone !== 'N/A' && Linking.openURL(`tel:${displayPhone}`)}
+                  activeOpacity={0.7}
+                  disabled={displayPhone === 'N/A'}
+                  style={styles.contactActionLink}
+                >
+                  <Text style={[styles.infoRowValue, displayPhone !== 'N/A' && { color: '#2563EB', fontWeight: '700' }]}>
+                    {displayPhone !== 'N/A' ? displayPhone : 'Not Provided'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.rowDivider} />
+
+              {/* Email Row */}
+              <View style={styles.infoRow}>
+                <View style={styles.infoLabelGroup}>
+                  <Mail size={15} color="#64748B" strokeWidth={2} />
+                  <Text style={styles.infoRowLabel}>Email Address</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => displayEmail !== 'N/A' && Linking.openURL(`mailto:${displayEmail}`)}
+                  activeOpacity={0.7}
+                  disabled={displayEmail === 'N/A'}
+                  style={styles.contactActionLink}
+                >
+                  <Text style={[styles.infoRowValue, displayEmail !== 'N/A' && { color: '#2563EB', fontWeight: '700' }]}>
+                    {displayEmail !== 'N/A' ? displayEmail : 'Not Provided'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.rowDivider} />
+
+              {/* Office Address Row */}
+              <View style={styles.infoRow}>
+                <View style={styles.infoLabelGroup}>
+                  <MapPin size={15} color="#64748B" strokeWidth={2} />
+                  <Text style={styles.infoRowLabel}>Office Location</Text>
+                </View>
+                <Text style={[styles.infoRowValue, { maxWidth: '60%', textAlign: 'right' }]}>
+                  {fullAddress || 'Not Provided'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Quick Contact Action Buttons */}
+            <View style={styles.quickContactBtnRow}>
+              <TouchableOpacity
+                style={[
+                  styles.quickContactBtn,
+                  { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
+                  displayPhone === 'N/A' && { opacity: 0.4 },
+                ]}
+                onPress={() => displayPhone !== 'N/A' && Linking.openURL(`tel:${displayPhone}`)}
+                activeOpacity={0.75}
+                disabled={displayPhone === 'N/A'}
+              >
+                <Phone size={15} color="#2563EB" strokeWidth={2.2} />
+                <Text style={[styles.quickContactBtnText, { color: '#2563EB' }]}>Call Now</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.quickContactBtn,
+                  { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' },
+                  displayEmail === 'N/A' && { opacity: 0.4 },
+                ]}
+                onPress={() => displayEmail !== 'N/A' && Linking.openURL(`mailto:${displayEmail}`)}
+                activeOpacity={0.75}
+                disabled={displayEmail === 'N/A'}
+              >
+                <Mail size={15} color="#16A34A" strokeWidth={2.2} />
+                <Text style={[styles.quickContactBtnText, { color: '#16A34A' }]}>Send Email</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -1336,16 +1446,25 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     gap: 5,
   },
+  pendingCompanyPill: {
+    backgroundColor: '#FEF3C7',
+  },
   greenDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#10B981',
   },
+  yellowDot: {
+    backgroundColor: '#F59E0B',
+  },
   activeCompanyPillText: {
     fontSize: 10.5,
     fontWeight: '700',
     color: '#10B981',
+  },
+  yellowPillText: {
+    color: '#D97706',
   },
   companyCardMeta: {
     fontSize: 11.5,
@@ -1368,32 +1487,93 @@ const styles = StyleSheet.create({
     borderColor: '#DBEAFE',
   },
 
-  /* ── 3. Horizontal Segmented Tabs ── */
+  /* ── 3. Segmented Tabs ── */
   tabsContainer: {
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
     marginBottom: 14,
-    paddingHorizontal: 4,
-    gap: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
   },
   tabItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderBottomWidth: 2,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 2.5,
     borderBottomColor: 'transparent',
   },
   tabItemActive: {
     borderBottomColor: '#2563EB',
   },
   tabItemText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '600',
     color: '#64748B',
   },
   tabItemTextActive: {
     fontWeight: '800',
     color: '#2563EB',
+  },
+  contactRepCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 12,
+  },
+  contactRepAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contactRepAvatarText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+  contactRepName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  contactRepRole: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  contactActionLink: {
+    paddingVertical: 2,
+  },
+  quickContactBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  quickContactBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1.2,
+    gap: 6,
+  },
+  quickContactBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   /* ── 4. Section Card ── */
@@ -1486,70 +1666,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#10B981',
-  },
-
-  /* Addresses Section */
-  addressItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-  },
-  addressIconSquircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: '#F5F3FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-    marginTop: 2,
-  },
-  addressContent: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  addressTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 3,
-  },
-  addressTitle: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  primaryBadge: {
-    backgroundColor: '#E8F8F0',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  primaryBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#10B981',
-  },
-  addressText: {
-    fontSize: 12,
-    color: '#64748B',
-    lineHeight: 18,
-    fontWeight: '500',
-  },
-  addressEditBtn: {
-    padding: 6,
-    marginTop: 2,
-  },
-  viewAllAddressesBtn: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-  },
-  viewAllAddressesText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#2563EB',
   },
 
   /* Quick Stats Row */

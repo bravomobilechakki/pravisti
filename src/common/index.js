@@ -573,6 +573,32 @@ const SummaryApi = {
       : `${backendDomain}/api/banners`,
     method: "get",
   }),
+
+  /* ================= PRAVISTI AI BOT ================= */
+  botChat: {
+    url: `${backendDomain}/api/v1/bot/chat`,
+    method: "post",
+  },
+  getBotConversations: (limit = 20, page = 1) => ({
+    url: `${backendDomain}/api/v1/bot/conversations?limit=${limit}&page=${page}`,
+    method: "get",
+  }),
+  createBotConversation: {
+    url: `${backendDomain}/api/v1/bot/conversations`,
+    method: "post",
+  },
+  getBotConversation: (id) => ({
+    url: `${backendDomain}/api/v1/bot/conversations/${id}`,
+    method: "get",
+  }),
+  deleteBotConversation: (id) => ({
+    url: `${backendDomain}/api/v1/bot/conversations/${id}`,
+    method: "delete",
+  }),
+  clearBotAction: (id) => ({
+    url: `${backendDomain}/api/v1/bot/conversations/${id}/clear-action`,
+    method: "post",
+  }),
 };
 
 export { backendDomain };

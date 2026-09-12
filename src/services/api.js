@@ -88,7 +88,7 @@ const postRequest = async (apiConfig, body, token = null) => {
 /**
  * Standard GET request helper
  */
-const getRequest = async (apiConfig, token = null) => {
+const getRequest = async (apiConfig, token = null, timeoutMs = null) => {
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
@@ -110,7 +110,7 @@ const getRequest = async (apiConfig, token = null) => {
   const response = await fetchWithTimeout(apiConfig.url, {
     method: apiConfig.method || 'GET',
     headers,
-  });
+  }, timeoutMs);
   return await handleResponse(response);
 };
 
@@ -1403,9 +1403,100 @@ export const clearAllNotifications = async (token = null, companyId = null) => {
  */
 export const getActiveBanners = async (industryId = null, token = null) => {
   try {
-    return await getRequest(SummaryApi.getActiveBanners(industryId), token);
+    return await getRequest(SummaryApi.getActiveBanners(industryId), token, 5000);
   } catch (error) {
     console.warn('Error fetching active banners:', error?.message || error);
     return { success: false, data: [] };
   }
 };
+
+/* ================= PRAVISTI AI BOT APIs ================= */
+/**
+ * Send user prompt/message to Pravisti AI Bot
+ * Endpoint: POST /api/v1/bot/chat
+ */
+export const sendBotMessage = async ({ message, conversationId = null, companyId = null }, token = null) => {
+  try {
+    const authToken = token || await AsyncStorage.getItem('userToken');
+    const body = { message };
+    if (conversationId) body.conversationId = conversationId;
+    if (companyId) body.companyId = companyId;
+    return await postRequest(SummaryApi.botChat, body, authToken);
+  } catch (error) {
+    console.error('Error sending bot message:', error?.message || error);
+    throw error;
+  }
+};
+
+/**
+ * Get user conversations with Pravisti AI Bot
+ * Endpoint: GET /api/v1/bot/conversations
+ */
+export const getBotConversations = async (limit = 20, page = 1, token = null) => {
+  try {
+    const authToken = token || await AsyncStorage.getItem('userToken');
+    return await getRequest(SummaryApi.getBotConversations(limit, page), authToken);
+  } catch (error) {
+    console.warn('Error fetching bot conversations:', error?.message || error);
+    return { success: false, data: { conversations: [] } };
+  }
+};
+
+/**
+ * Create a new conversation thread with Pravisti AI Bot
+ * Endpoint: POST /api/v1/bot/conversations
+ */
+export const createBotConversation = async ({ title = 'New Conversation', companyId = null }, token = null) => {
+  try {
+    const authToken = token || await AsyncStorage.getItem('userToken');
+    const body = { title };
+    if (companyId) body.companyId = companyId;
+    return await postRequest(SummaryApi.createBotConversation, body, authToken);
+  } catch (error) {
+    console.error('Error creating bot conversation:', error?.message || error);
+    throw error;
+  }
+};
+
+/**
+ * Get specific conversation & full message history
+ * Endpoint: GET /api/v1/bot/conversations/:id
+ */
+export const getBotConversation = async (id, token = null) => {
+  try {
+    const authToken = token || await AsyncStorage.getItem('userToken');
+    return await getRequest(SummaryApi.getBotConversation(id), authToken);
+  } catch (error) {
+    console.error('Error getting bot conversation history:', error?.message || error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a bot conversation thread
+ * Endpoint: DELETE /api/v1/bot/conversations/:id
+ */
+export const deleteBotConversation = async (id, token = null) => {
+  try {
+    const authToken = token || await AsyncStorage.getItem('userToken');
+    return await deleteRequest(SummaryApi.deleteBotConversation(id), authToken);
+  } catch (error) {
+    console.error('Error deleting bot conversation:', error?.message || error);
+    throw error;
+  }
+};
+
+/**
+ * Clear/reset ongoing action draft
+ * Endpoint: POST /api/v1/bot/conversations/:id/clear-action
+ */
+export const clearBotAction = async (id, token = null) => {
+  try {
+    const authToken = token || await AsyncStorage.getItem('userToken');
+    return await postRequest(SummaryApi.clearBotAction(id), {}, authToken);
+  } catch (error) {
+    console.error('Error clearing bot action:', error?.message || error);
+    throw error;
+  }
+};
+

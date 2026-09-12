@@ -31,10 +31,12 @@ import {
   Users,
   ChevronRight,
   FileText,
+  Bot,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCompanyDetails, getBrokerMyDeals, getDeals, getBrokerProductAccessRequests, getBrokerPendingQueue, resolveImageUrl } from '../../../services/api';
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
+import AIBotFloatingButton from '../../common/AIBotFloatingButton';
 
 const COLORS = {
   primaryDark: '#2327D8',   // Royal Blue (Login & Signup Theme)

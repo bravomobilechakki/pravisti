@@ -11,43 +11,51 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Image,
   Alert,
+  StatusBar,
+  Image,
 } from 'react-native';
 import {
-  ArrowLeft,
-  Edit3,
-  Phone,
-  Mail,
-  Building2,
-  Handshake,
-  Users,
-  TrendingUp,
-  Bell,
-  Lock,
-  HelpCircle,
+  ChevronLeft,
   ChevronRight,
+  Camera,
   LogOut,
   X,
-  Mic,
-  Camera,
+  Check,
+  User,
+  Mail,
+  Building2,
+  MapPin,
+  ShieldCheck,
+  Lock,
   Image as ImageIcon,
   Trash2,
+  Bot,
+  Sparkles,
 } from 'lucide-react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  resolveImageUrl,
-  updateUserProfile,
   getUserProfile,
   getCompanies,
+  updateUserProfile,
+  logoutUser,
+  resolveImageUrl,
 } from '../../../services/api';
 import uploadService from '../../../services/uploadService';
 
+const THEME = '#2327D8';
+const DARK_NAVY = '#1E1C38';
+
 const Profile = ({ onNavigate, routeData }) => {
   const [profileData, setProfileData] = useState(routeData?.user || null);
+  const [companiesCount, setCompaniesCount] = useState(routeData?.user?.totalCompanies || 0);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isPrivacyModalVisible, setIsPrivacyModalVisible] = useState(false);
+  const [isImagePickerModalVisible, setIsImagePickerModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [focusedField, setFocusedField] = useState(null);
 
   // Edit fields state
   const [editName, setEditName] = useState(routeData?.user?.name || '');
@@ -58,67 +66,110 @@ const Profile = ({ onNavigate, routeData }) => {
   const [editProfilePicture, setEditProfilePicture] = useState(
     routeData?.user?.profilePicture || routeData?.user?.avatar || routeData?.user?.image || ''
   );
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [isImagePickerModalVisible, setIsImagePickerModalVisible] = useState(false);
 
-  const [companiesCount, setCompaniesCount] = useState(0);
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const storedProfile = await AsyncStorage.getItem('user_completed_profile');
-        if (storedProfile) {
+  const loadProfile = async () => {
+    try {
+      // 1. Cached Profile
+      const storedProfile = await AsyncStorage.getItem('user_completed_profile');
+      if (storedProfile) {
+        try {
           const parsed = JSON.parse(storedProfile);
           setProfileData(parsed);
+          if (typeof parsed.totalCompanies === 'number') {
+            setCompaniesCount(parsed.totalCompanies);
+          }
           setEditName(parsed.name || '');
           setEditEmail(parsed.email || '');
-          setEditCompany(parsed.company || '');
-          setEditGstin(parsed.gstin || '');
-          setEditAddress(parsed.address || '');
+          setEditCompany(parsed.company || parsed.firmName || '');
+          setEditGstin(parsed.gstin || parsed.apmcLicense || '');
+          setEditAddress(parsed.address || parsed.mandiLocation || '');
           setEditProfilePicture(parsed.profilePicture || parsed.avatar || parsed.image || '');
-          return;
-        }
-
-        const response = await getUserProfile();
-        if (response && response.success && response.data) {
-          setProfileData(response.data);
-          setEditName(response.data.name || '');
-          setEditEmail(response.data.email || '');
-          setEditCompany(response.data.company || '');
-          setEditGstin(response.data.gstin || '');
-          setEditAddress(response.data.address || '');
-          setEditProfilePicture(response.data.profilePicture || response.data.avatar || response.data.image || '');
-        }
-      } catch (error) {
-        console.warn('Failed to load profile:', error);
+        } catch (e) {}
       }
-    };
-    fetchProfile();
-  }, []);
+
+      // 2. Cached Companies Count
+      const storedCompsStr = await AsyncStorage.getItem('trader_companies_cache');
+      if (storedCompsStr) {
+        try {
+          const cachedComps = JSON.parse(storedCompsStr);
+          if (Array.isArray(cachedComps)) {
+            setCompaniesCount(cachedComps.length);
+          }
+        } catch (e) {}
+      }
+
+      // 3. API Profile Fetch
+      const token = await AsyncStorage.getItem('userToken');
+      if (token) {
+        const res = await getUserProfile(token);
+        if (res && res.success && res.data) {
+          setProfileData(res.data);
+          if (typeof res.data.totalCompanies === 'number') {
+            setCompaniesCount(res.data.totalCompanies);
+          }
+          setEditName(res.data.name || '');
+          setEditEmail(res.data.email || '');
+          setEditCompany(res.data.company || res.data.firmName || '');
+          setEditGstin(res.data.gstin || res.data.apmcLicense || '');
+          setEditAddress(res.data.address || res.data.mandiLocation || '');
+          setEditProfilePicture(res.data.profilePicture || res.data.avatar || res.data.image || '');
+          await AsyncStorage.setItem('user_completed_profile', JSON.stringify(res.data));
+        }
+      }
+
+      // 4. API Companies Count Fetch
+      try {
+        const compRes = await getCompanies(1, 100);
+        if (compRes && compRes.success && compRes.data?.companies) {
+          const freshComps = compRes.data.companies;
+          setCompaniesCount(freshComps.length);
+          await AsyncStorage.setItem('trader_companies_cache', JSON.stringify(freshComps));
+        }
+      } catch (e) {}
+    } catch (err) {
+      console.warn('Failed to load profile:', err);
+    }
+  };
 
   useEffect(() => {
-    const fetchCompanies = async () => {
-      try {
-        const response = await getCompanies(1, 100);
-        if (response && response.success && response.data?.companies) {
-          setCompaniesCount(response.data.companies.length);
-        }
-      } catch (error) {
-        console.warn('Failed to fetch companies count:', error);
-      }
-    };
-    fetchCompanies();
+    loadProfile();
   }, []);
 
+  // Dynamic user details
+  const displayName = profileData?.name || routeData?.user?.name || routeData?.user?.fullName || 'Trader Partner';
+  const displayMobile =
+    profileData?.mobileNumber ||
+    profileData?.phone ||
+    routeData?.user?.mobileNumber ||
+    routeData?.user?.phone ||
+    'Not Available';
+  const rawRole = profileData?.userType || (routeData?.user?.roles && routeData.user.roles[0]) || 'Trader';
+  const displayRole = rawRole.charAt(0).toUpperCase() + rawRole.slice(1);
+  const displayCompany =
+    profileData?.company ||
+    profileData?.firmName ||
+    routeData?.user?.company ||
+    routeData?.user?.firmName ||
+    '';
+  const displayEmail = profileData?.email || routeData?.user?.email || '';
+  const displayGstin = profileData?.gstin || '';
+  const displayAddress = profileData?.address || '';
+
+  const userAvatarUri =
+    profileData?.profilePicture ||
+    profileData?.avatar ||
+    profileData?.image ||
+    routeData?.user?.profilePicture ||
+    routeData?.user?.avatar ||
+    routeData?.user?.image;
+
   const openEditModal = () => {
-    setEditName(profileData?.name || routeData?.user?.name || '');
-    setEditEmail(profileData?.email || routeData?.user?.email || '');
-    setEditCompany(profileData?.company || routeData?.user?.company || '');
-    setEditGstin(profileData?.gstin || routeData?.user?.gstin || '');
-    setEditAddress(profileData?.address || routeData?.user?.address || '');
-    setEditProfilePicture(
-      profileData?.profilePicture || profileData?.avatar || profileData?.image || routeData?.user?.profilePicture || ''
-    );
+    setEditName(displayName !== 'Trader Partner' ? displayName : '');
+    setEditEmail(displayEmail);
+    setEditCompany(displayCompany);
+    setEditGstin(displayGstin);
+    setEditAddress(displayAddress);
+    setEditProfilePicture(userAvatarUri || '');
     setIsEditModalVisible(true);
   };
 
@@ -188,9 +239,10 @@ const Profile = ({ onNavigate, routeData }) => {
         profilePicture: editProfilePicture,
         avatar: editProfilePicture,
         image: editProfilePicture,
-        company: editCompany,
-        gstin: editGstin,
-        address: editAddress,
+        company: editCompany.trim(),
+        firmName: editCompany.trim(),
+        gstin: editGstin.trim(),
+        address: editAddress.trim(),
       };
 
       await AsyncStorage.setItem('user_completed_profile', JSON.stringify(updatedProfile));
@@ -205,357 +257,458 @@ const Profile = ({ onNavigate, routeData }) => {
     }
   };
 
-  const displayName = profileData?.name || routeData?.user?.name || 'Rahul Sharma';
-  const rawRole = profileData?.userType || (routeData?.user?.roles && routeData.user.roles[0]) || 'Trader';
-  const displayRole = rawRole.charAt(0).toUpperCase() + rawRole.slice(1);
-  const displayMobile = profileData?.mobileNumber || routeData?.user?.mobileNumber || '+91 98765 43210';
-  const displayEmail = profileData?.email || routeData?.user?.email || '';
-  const totalCompaniesCount = companiesCount;
-
-  const menuItems = [
-    {
-      Icon: Building2,
-      label: 'My Companies',
-      subtitle: `${totalCompaniesCount} registered companies`,
-      color: '#3B82F6',
-    },
-    { Icon: Handshake, label: 'My Deals', subtitle: 'View all sauda deals', color: '#10B981' },
-    { Icon: Mic, label: 'Voice Preferences', subtitle: 'Voice AI, custom phrases & speed', color: '#0B2265' },
-    { Icon: Users, label: 'Onboarded Users', subtitle: 'Users onboarded during deal creation', color: '#6366F1' },
-    { Icon: Users, label: 'Contacts', subtitle: 'Saved parties & brokers', color: '#8B5CF6' },
-    { Icon: TrendingUp, label: 'Reports', subtitle: 'Commission & analytics', color: '#EC4899' },
-    { Icon: Bell, label: 'Notifications', subtitle: 'Manage alerts', color: '#F59E0B' },
-    { Icon: Lock, label: 'Privacy & Security', subtitle: 'Account settings', color: '#06B6D4' },
-    { Icon: HelpCircle, label: 'Help & Support', subtitle: 'FAQs & contact us', color: '#64748B' },
-  ];
+  const handleLogout = async () => {
+    Alert.alert('Logout Trader', 'Are you sure you want to log out of your Trader Account?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const token = await AsyncStorage.getItem('userToken');
+            if (token) {
+              try {
+                await logoutUser(token);
+              } catch (apiErr) {
+                console.warn('Backend logout API notice:', apiErr);
+              }
+              await AsyncStorage.removeItem('userToken');
+            }
+            await AsyncStorage.removeItem('user_completed_profile');
+          } catch (e) {
+            console.warn('Error logging out:', e);
+          } finally {
+            if (onNavigate) onNavigate('Login', {}, { replace: true });
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
+      <StatusBar barStyle="light-content" backgroundColor={THEME} />
+
+      {/* ─── TOP ROYAL BLUE HEADER BAR ─── */}
+      <View style={styles.topHeader}>
         <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => onNavigate('pop')}
-          activeOpacity={0.7}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={styles.backBtnRow}
+          onPress={() => onNavigate && onNavigate('pop')}
+          activeOpacity={0.75}
         >
-          <ArrowLeft size={20} color="#0F172A" />
+          <ChevronLeft size={24} color="#FFFFFF" />
+          <Text style={styles.settingTitleText}>Setting</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={openEditModal}
-          activeOpacity={0.7}
-        >
-          <Edit3 size={16} color="#0F172A" />
-        </TouchableOpacity>
+
+        <Text style={styles.brandTitleText}>PRAVISTI</Text>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Unified Profile Card */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            <TouchableOpacity
-              style={styles.avatar}
-              onPress={openEditModal}
-              activeOpacity={0.8}
-            >
-              {(profileData?.profilePicture || profileData?.avatar || profileData?.image || routeData?.user?.profilePicture) ? (
-                <Image
-                  source={{ uri: resolveImageUrl(profileData?.profilePicture || profileData?.avatar || profileData?.image || routeData?.user?.profilePicture) }}
-                  style={{ width: '100%', height: '100%', borderRadius: 40 }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <Text style={styles.avatarText}>{(displayName || 'T').charAt(0).toUpperCase()}</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.mainAvatarCameraBadge}
-              onPress={openEditModal}
-              activeOpacity={0.85}
-            >
-              <Camera size={11} color="#FFFFFF" strokeWidth={2.4} />
-            </TouchableOpacity>
-            <View style={styles.roleBadge}>
-              <Text style={styles.roleBadgeText}>{displayRole}</Text>
-            </View>
+      {/* ─── OVERLAPPING AVATAR ROW ─── */}
+      <View style={styles.avatarWrapperRow}>
+        <View style={styles.avatarContainer}>
+          <View style={[styles.avatarCircle, !userAvatarUri && { backgroundColor: THEME }]}>
+            {userAvatarUri ? (
+              <Image
+                source={{ uri: resolveImageUrl(userAvatarUri) }}
+                style={styles.userAvatarCustomImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={styles.avatarInitialText}>
+                {displayName ? displayName.trim().charAt(0).toUpperCase() : 'T'}
+              </Text>
+            )}
           </View>
-          <Text style={styles.userName}>{displayName}</Text>
+          <TouchableOpacity style={styles.cameraBadge} onPress={openEditModal} activeOpacity={0.8}>
+            <Camera size={14} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-          <View style={styles.divider} />
+      {/* ─── WHITE CURVED CONTAINER ─── */}
+      <View style={styles.whiteCardContainer}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* DYNAMIC USER IDENTITY */}
+          <View style={styles.heroSection}>
+            <Text style={styles.userNameText}>{displayName}</Text>
+            <Text style={styles.userSubText}>
+              {displayMobile !== 'Not Available'
+                ? displayMobile.startsWith('+91')
+                  ? displayMobile
+                  : `+91 ${displayMobile}`
+                : displayMobile}
+              {displayCompany ? (
+                <>
+                  {' '}•{' '}
+                  <Text style={{ color: THEME, fontWeight: '700' }}>{displayCompany}</Text>
+                </>
+              ) : (
+                <>
+                  {' '}•{' '}
+                  <Text style={{ color: THEME, fontWeight: '700' }}>{displayRole}</Text>
+                </>
+              )}
+            </Text>
+          </View>
 
-          <View style={styles.infoList}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconContainer}>
-                <Phone size={18} color="#4F46E5" />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Mobile Number</Text>
-                <Text style={styles.infoValue}>{displayMobile}</Text>
-              </View>
-            </View>
+          <View style={styles.cardDivider} />
 
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconContainer}>
-                <Mail size={18} color="#4F46E5" />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Email Address</Text>
-                <Text style={[styles.infoValue, !displayEmail && styles.infoValuePlaceholder]}>
-                  {displayEmail || 'Add email address'}
+          {/* LIST ITEMS */}
+          <View style={styles.listContainer}>
+            {/* Registered Companies Count */}
+            <TouchableOpacity
+              style={styles.listItemRow}
+              activeOpacity={0.7}
+              onPress={() => onNavigate && onNavigate('MyCompanies', { user: profileData, role: 'Trader' })}
+            >
+              <View>
+                <Text style={styles.listItemTitle}>Registered Companies</Text>
+                <Text style={styles.subWorkspaceText}>
+                  {companiesCount} {companiesCount === 1 ? 'Company' : 'Companies'} Linked
                 </Text>
               </View>
-            </View>
+              <View style={styles.rightInfoRow}>
+                <Text style={styles.rightValueText}>{companiesCount}</Text>
+                <ChevronRight size={16} color="#CBD5E1" />
+              </View>
+            </TouchableOpacity>
 
-            <View style={[styles.infoRow, { borderBottomWidth: 0, paddingBottom: 0 }]}>
-              <View style={styles.infoIconContainer}>
-                <Building2 size={18} color="#4F46E5" />
+            {/* Pravisti AI Assistant */}
+            <TouchableOpacity
+              style={[styles.listItemRow, { backgroundColor: '#F5F7FF', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12, marginVertical: 4, borderWidth: 1, borderColor: '#E0E7FF' }]}
+              activeOpacity={0.75}
+              onPress={() => onNavigate && onNavigate('AIBot', { user: profileData, role: 'Trader' })}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: THEME, justifyContent: 'center', alignItems: 'center' }}>
+                  <Bot size={20} color="#FFFFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.listItemTitle, { color: THEME, fontWeight: '800' }]}>Pravisti AI Assistant</Text>
+                    <View style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#C7D2FE' }}>
+                      <Text style={{ fontSize: 9.5, fontWeight: '800', color: THEME }}>AI BOT</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.subWorkspaceText}>Instant deals, saudas & trade Q&A</Text>
+                </View>
               </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>Linked Companies</Text>
-                <Text style={styles.infoValue}>{totalCompaniesCount} registered</Text>
+              <ChevronRight size={16} color={THEME} />
+            </TouchableOpacity>
+
+            {/* Voice Preferences */}
+            <TouchableOpacity
+              style={styles.listItemRow}
+              activeOpacity={0.7}
+              onPress={() => onNavigate && onNavigate('VoicePreferences')}
+            >
+              <View>
+                <Text style={styles.listItemTitle}>Voice Preferences</Text>
+                <Text style={styles.subWorkspaceText}>Voice AI, custom phrases & speed</Text>
               </View>
-            </View>
+              <ChevronRight size={16} color="#CBD5E1" />
+            </TouchableOpacity>
+
+            {/* Notifications */}
+            <TouchableOpacity
+              style={styles.listItemRow}
+              activeOpacity={0.7}
+              onPress={() => onNavigate && onNavigate('Notifications')}
+            >
+              <Text style={styles.listItemTitle}>Notifications</Text>
+              <ChevronRight size={16} color="#CBD5E1" />
+            </TouchableOpacity>
+
+            {/* Privacy Policy */}
+            <TouchableOpacity
+              style={styles.listItemRow}
+              activeOpacity={0.7}
+              onPress={() => setIsPrivacyModalVisible(true)}
+            >
+              <Text style={styles.listItemTitle}>Privacy Policy</Text>
+              <ChevronRight size={16} color="#CBD5E1" />
+            </TouchableOpacity>
+
+            {/* App Information */}
+            <TouchableOpacity
+              style={styles.listItemRow}
+              activeOpacity={0.7}
+              onPress={() => Alert.alert('App Information', 'Pravisti Trader Mobile v1.0.6\nBuild: 2026.03')}
+            >
+              <Text style={styles.listItemTitle}>App Information</Text>
+              <ChevronRight size={16} color="#CBD5E1" />
+            </TouchableOpacity>
+
+            {/* Customer Care */}
+            <TouchableOpacity
+              style={styles.listItemRow}
+              activeOpacity={0.7}
+              onPress={() => Alert.alert('Customer Care', 'Calling Mandi Support: 18008989')}
+            >
+              <Text style={styles.listItemTitle}>Customer Care</Text>
+              <View style={styles.rightInfoRow}>
+                <Text style={styles.rightValueText}>18008989</Text>
+                <ChevronRight size={16} color="#CBD5E1" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Edit Profile Details */}
+            <TouchableOpacity style={styles.listItemRow} activeOpacity={0.7} onPress={openEditModal}>
+              <Text style={styles.listItemTitle}>Edit Profile Details</Text>
+              <ChevronRight size={16} color="#CBD5E1" />
+            </TouchableOpacity>
+
+            {/* Sign Out */}
+            <TouchableOpacity
+              style={[styles.listItemRow, { borderBottomWidth: 0 }]}
+              activeOpacity={0.7}
+              onPress={handleLogout}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <LogOut size={16} color="#EF4444" style={{ marginRight: 10 }} />
+                <Text style={styles.signOutTitle}>Sign Out</Text>
+              </View>
+              <ChevronRight size={16} color="#EF4444" />
+            </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
+      </View>
 
-        {/* Menu Items */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          {menuItems.map((item, index) => {
-            const Icon = item.Icon;
-            return (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.menuItem,
-                  index === menuItems.length - 1 && { borderBottomWidth: 0 },
-                ]}
-                onPress={() => {
-                  if (item.label === 'My Companies') {
-                    onNavigate('MyCompanies');
-                  } else if (item.label === 'My Deals') {
-                    onNavigate('DealsList');
-                  } else if (item.label === 'Voice Preferences') {
-                    onNavigate('VoicePreferences');
-                  } else if (item.label === 'Onboarded Users') {
-                    onNavigate('OnboardedUsers', { fromScreen: 'Profile' });
-                  } else if (item.label === 'Contacts') {
-                    onNavigate('ChatList');
-                  } else if (item.label === 'Notifications') {
-                    onNavigate('Notifications');
-                  } else {
-                    const { Alert } = require('react-native');
-                    Alert.alert(item.label, `${item.label} settings coming soon!`);
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: item.color + '15' }]}>
-                  <Icon size={18} color={item.color} />
-                </View>
-                <View style={styles.menuContent}>
-                  <Text style={styles.menuLabel}>{item.label}</Text>
-                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-                </View>
-                <ChevronRight size={18} color="#CBD5E1" />
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Logout */}
-        <TouchableOpacity
-          style={styles.logoutButton}
-          activeOpacity={0.8}
-          onPress={async () => {
-            try {
-              const { logoutUser } = require('../../services/api');
-              const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-              const token = await AsyncStorage.getItem('userToken');
-              if (token) {
-                try {
-                  await logoutUser(token);
-                } catch (apiErr) {
-                  console.log("Backend logout API failed:", apiErr);
-                }
-                await AsyncStorage.removeItem('userToken');
-              }
-              await AsyncStorage.removeItem('user_completed_profile');
-            } catch (e) {
-              console.log("Error logging out", e);
-            }
-            onNavigate('Login');
-          }}
-        >
-          <LogOut size={18} color="#EF4444" />
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-
-        {/* App Version */}
-        <Text style={styles.versionText}>Pravisti v1.0.0</Text>
-      </ScrollView>
-
-      {/* Complete Profile Modal */}
+      {/* ─── PRIVACY POLICY MODAL ─── */}
       <Modal
-        visible={isEditModalVisible}
-        transparent={true}
+        visible={isPrivacyModalVisible}
         animationType="slide"
-        onRequestClose={() => setIsEditModalVisible(false)}
+        transparent={true}
+        onRequestClose={() => setIsPrivacyModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.keyboardView}
-          >
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Complete Profile</Text>
-                <TouchableOpacity
-                  style={styles.closeButton}
-                  onPress={() => setIsEditModalVisible(false)}
-                  activeOpacity={0.7}
-                >
-                  <X size={18} color="#64748B" />
-                </TouchableOpacity>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeaderBar}>
+              <Text style={styles.modalTitleText}>Privacy Policy</Text>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setIsPrivacyModalVisible(false)}
+              >
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalBody}>
+              <View style={{ alignItems: 'center', marginVertical: 12 }}>
+                <Lock size={32} color={THEME} />
+                <Text style={{ fontSize: 18, fontWeight: '800', color: '#0F172A', marginTop: 8 }}>
+                  Pravisti Data Protection
+                </Text>
+                <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                  Last Updated: March 2026
+                </Text>
               </View>
 
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.modalForm}
+              <Text style={styles.privacySectionHeading}>1. Information We Collect</Text>
+              <Text style={styles.privacyBodyText}>
+                We collect your company registration numbers, GSTIN, mandi credentials, and verified phone numbers to facilitate authentic commodity trade ledgering between registered traders and brokers.
+              </Text>
+
+              <Text style={styles.privacySectionHeading}>2. How Your Data Is Protected</Text>
+              <Text style={styles.privacyBodyText}>
+                All commodity sauda records, counterparties, invoices, and ledger details are encrypted in transit and at rest using bank-grade industry security protocols.
+              </Text>
+
+              <Text style={styles.privacySectionHeading}>3. Compliance & Confidentiality</Text>
+              <Text style={styles.privacyBodyText}>
+                Your data is stored securely in accordance with government commodity market regulations and is strictly accessible by authorized counterparties to the transactions.
+              </Text>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.saveBtn, { width: '100%' }]}
+                onPress={() => setIsPrivacyModalVisible(false)}
               >
-                {/* Profile Picture Upload Section */}
-                <View style={styles.avatarEditWrapper}>
-                  <View style={styles.avatarEditCircleWrapper}>
-                    <TouchableOpacity
-                      style={styles.avatarEditCircle}
-                      onPress={() => setIsImagePickerModalVisible(true)}
-                      activeOpacity={0.8}
-                      disabled={isUploadingImage}
-                    >
-                      {editProfilePicture ? (
-                        <Image
-                          source={{ uri: resolveImageUrl(editProfilePicture) }}
-                          style={styles.avatarEditImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <Text style={styles.avatarEditText}>
-                          {(editName || displayName || 'T').charAt(0).toUpperCase()}
-                        </Text>
-                      )}
-                      {isUploadingImage && (
-                        <View style={styles.avatarUploadingOverlay}>
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.avatarEditBadge}
-                      onPress={() => setIsImagePickerModalVisible(true)}
-                      activeOpacity={0.85}
-                      disabled={isUploadingImage}
-                    >
-                      <Camera size={13} color="#FFFFFF" strokeWidth={2.4} />
-                    </TouchableOpacity>
-                  </View>
-
-                  <TouchableOpacity
-                    onPress={() => setIsImagePickerModalVisible(true)}
-                    activeOpacity={0.7}
-                    style={styles.changePhotoBtn}
-                    disabled={isUploadingImage}
-                  >
-                    <Text style={styles.changePhotoBtnText}>
-                      {editProfilePicture ? 'Change Profile Picture' : 'Upload Profile Picture'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.inputLabel}>Full Name*</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editName}
-                    onChangeText={setEditName}
-                    placeholder="Enter full name"
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
-
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.inputLabel}>Email Address</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editEmail}
-                    onChangeText={setEditEmail}
-                    placeholder="name@example.com"
-                    placeholderTextColor="#94A3B8"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </View>
-
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.inputLabel}>Company Name</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editCompany}
-                    onChangeText={setEditCompany}
-                    placeholder="e.g. Mahansh Traders"
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
-
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.inputLabel}>GSTIN</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editGstin}
-                    onChangeText={setEditGstin}
-                    placeholder="15-digit GSTIN"
-                    placeholderTextColor="#94A3B8"
-                    autoCapitalize="characters"
-                  />
-                </View>
-
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.inputLabel}>Address</Text>
-                  <TextInput
-                    style={[styles.input, styles.textArea]}
-                    value={editAddress}
-                    onChangeText={setEditAddress}
-                    placeholder="Enter street, city, state and PIN"
-                    placeholderTextColor="#94A3B8"
-                    multiline={true}
-                    numberOfLines={3}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.saveButton, (isLoading || isUploadingImage) && { opacity: 0.7 }]}
-                  onPress={handleSaveProfile}
-                  disabled={isLoading || isUploadingImage}
-                  activeOpacity={0.8}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.saveButtonText}>Save Details</Text>
-                  )}
-                </TouchableOpacity>
-              </ScrollView>
+                <Text style={styles.saveBtnText}>Close Privacy Policy</Text>
+              </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
+          </View>
         </View>
       </Modal>
 
-      {/* Photo Picker Options Modal */}
+      {/* ─── EDIT PROFILE DETAILS MODAL ─── */}
+      <Modal
+        visible={isEditModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeaderBar}>
+              <Text style={styles.modalTitleText}>Edit Profile Details</Text>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setIsEditModalVisible(false)}
+              >
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalBody}>
+              {/* Profile Photo Selector */}
+              <View style={styles.avatarEditWrapper}>
+                <View style={styles.avatarEditCircleWrapper}>
+                  <TouchableOpacity
+                    style={styles.avatarEditCircle}
+                    onPress={() => setIsImagePickerModalVisible(true)}
+                    activeOpacity={0.8}
+                    disabled={isUploadingImage}
+                  >
+                    {editProfilePicture ? (
+                      <Image
+                        source={{ uri: resolveImageUrl(editProfilePicture) }}
+                        style={styles.avatarEditImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={styles.avatarEditText}>
+                        {(editName || displayName || 'T').charAt(0).toUpperCase()}
+                      </Text>
+                    )}
+                    {isUploadingImage && (
+                      <View style={styles.avatarUploadingOverlay}>
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.avatarEditBadge}
+                    onPress={() => setIsImagePickerModalVisible(true)}
+                    activeOpacity={0.85}
+                    disabled={isUploadingImage}
+                  >
+                    <Camera size={13} color="#FFFFFF" strokeWidth={2.4} />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => setIsImagePickerModalVisible(true)}
+                  activeOpacity={0.7}
+                  style={styles.changePhotoBtn}
+                  disabled={isUploadingImage}
+                >
+                  <Text style={styles.changePhotoBtnText}>
+                    {editProfilePicture ? 'Change Profile Picture' : 'Upload Profile Picture'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.fieldLabel}>Full Name *</Text>
+              <View style={[styles.inputBox, focusedField === 'name' && styles.inputFocused]}>
+                <User size={16} color={THEME} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.textInput}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Enter full name"
+                  placeholderTextColor="#94A3B8"
+                  onFocus={() => setFocusedField('name')}
+                  onBlur={() => setFocusedField(null)}
+                />
+              </View>
+
+              <Text style={styles.fieldLabel}>Company / Workspace Name</Text>
+              <View style={[styles.inputBox, focusedField === 'company' && styles.inputFocused]}>
+                <Building2 size={16} color={THEME} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.textInput}
+                  value={editCompany}
+                  onChangeText={setEditCompany}
+                  placeholder="e.g. Mahansh Traders"
+                  placeholderTextColor="#94A3B8"
+                  onFocus={() => setFocusedField('company')}
+                  onBlur={() => setFocusedField(null)}
+                />
+              </View>
+
+              <Text style={styles.fieldLabel}>Email Address</Text>
+              <View style={[styles.inputBox, focusedField === 'email' && styles.inputFocused]}>
+                <Mail size={16} color={THEME} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.textInput}
+                  value={editEmail}
+                  onChangeText={setEditEmail}
+                  placeholder="Enter email address"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField(null)}
+                />
+              </View>
+
+              <Text style={styles.fieldLabel}>GSTIN / APMC License</Text>
+              <View style={[styles.inputBox, focusedField === 'gstin' && styles.inputFocused]}>
+                <ShieldCheck size={16} color={THEME} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.textInput}
+                  value={editGstin}
+                  onChangeText={setEditGstin}
+                  placeholder="15-digit GSTIN or License"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="characters"
+                  onFocus={() => setFocusedField('gstin')}
+                  onBlur={() => setFocusedField(null)}
+                />
+              </View>
+
+              <Text style={styles.fieldLabel}>Address / Mandi Location</Text>
+              <View style={[styles.inputBox, focusedField === 'address' && styles.inputFocused]}>
+                <MapPin size={16} color={THEME} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.textInput}
+                  value={editAddress}
+                  onChangeText={setEditAddress}
+                  placeholder="Enter street, mandi, city, state"
+                  placeholderTextColor="#94A3B8"
+                  onFocus={() => setFocusedField('address')}
+                  onBlur={() => setFocusedField(null)}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setIsEditModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={handleSaveProfile}
+                disabled={isLoading || isUploadingImage}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Check size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.saveBtnText}>Save Details</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── IMAGE PICKER MODAL ─── */}
       <Modal
         visible={isImagePickerModalVisible}
         transparent={true}
@@ -577,7 +730,7 @@ const Profile = ({ onNavigate, routeData }) => {
               }}
               activeOpacity={0.7}
             >
-              <Camera size={20} color="#2563EB" style={{ marginRight: 12 }} />
+              <Camera size={20} color={THEME} style={{ marginRight: 12 }} />
               <Text style={styles.imagePickerModalOptionText}>Take Photo</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -588,7 +741,7 @@ const Profile = ({ onNavigate, routeData }) => {
               }}
               activeOpacity={0.7}
             >
-              <ImageIcon size={20} color="#2563EB" style={{ marginRight: 12 }} />
+              <ImageIcon size={20} color={THEME} style={{ marginRight: 12 }} />
               <Text style={styles.imagePickerModalOptionText}>Choose from Gallery</Text>
             </TouchableOpacity>
             {editProfilePicture ? (
@@ -621,411 +774,267 @@ const Profile = ({ onNavigate, routeData }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7FF',
+    backgroundColor: THEME,
   },
-  header: {
+  topHeader: {
+    backgroundColor: THEME,
+    height: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 90 : 130) : 120,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 32) : 14,
   },
-  backButton: {
-    padding: 8,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#0F172A',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  editButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
+  backBtnRow: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  editIcon: {
-    fontSize: 16,
+  settingTitleText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginLeft: 6,
+  },
+  brandTitleText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+    marginTop: 4,
+  },
+  whiteCardContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 56,
+  },
+  avatarWrapperRow: {
+    alignItems: 'center',
+    marginTop: -52,
+    marginBottom: -52,
+    zIndex: 99,
+    elevation: 10,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 100,
+    paddingBottom: 80,
   },
-  profileCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
+  heroSection: {
     alignItems: 'center',
+    paddingHorizontal: 20,
     marginBottom: 16,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
   },
   avatarContainer: {
     position: 'relative',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#4F46E5',
+  avatarCircle: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  roleBadge: {
-    position: 'absolute',
-    bottom: -4,
-    right: -4,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 2,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    borderWidth: 4,
     borderColor: '#FFFFFF',
   },
-  roleBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#10B981',
+  userAvatarCustomImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
-  userName: {
+  avatarInitialText: {
+    fontSize: 38,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: THEME,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    elevation: 4,
+  },
+  userNameText: {
     fontSize: 22,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontWeight: '900',
+    color: THEME,
     marginBottom: 4,
   },
-  divider: {
+  userSubText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  cardDivider: {
     height: 1,
     backgroundColor: '#F1F5F9',
-    width: '100%',
-    marginVertical: 16,
+    marginHorizontal: 24,
+    marginBottom: 10,
   },
-  infoList: {
-    width: '100%',
+  listContainer: {
+    paddingHorizontal: 24,
   },
-  sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+  listItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  sectionTitle: {
-    fontSize: 14,
+  listItemTitle: {
+    fontSize: 15,
     fontWeight: '700',
     color: '#0F172A',
-    marginBottom: 16,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
-  infoRow: {
+  rightInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    gap: 8,
   },
-  infoIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#F5F7FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  infoIcon: {
-    fontSize: 18,
-  },
-  infoContent: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: 11,
+  rightValueText: {
+    fontSize: 13,
+    fontWeight: '600',
     color: '#94A3B8',
-    fontWeight: '600',
-    marginBottom: 2,
   },
-  infoValue: {
-    fontSize: 14,
-    color: '#1E293B',
-    fontWeight: '500',
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  menuIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  menuIcon: {
-    fontSize: 18,
-  },
-  menuContent: {
-    flex: 1,
-  },
-  menuLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 2,
-  },
-  menuSubtitle: {
+  subWorkspaceText: {
     fontSize: 12,
+    fontWeight: '600',
     color: '#94A3B8',
+    marginTop: 2,
   },
-  menuArrow: {
-    fontSize: 22,
-    color: '#CBD5E1',
-    fontWeight: '300',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    height: 54,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-    gap: 10,
-  },
-  logoutIcon: {
-    fontSize: 18,
-  },
-  logoutText: {
+  signOutTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: '#EF4444',
   },
-  versionText: {
-    textAlign: 'center',
-    fontSize: 12,
-    color: '#CBD5E1',
-    marginBottom: 16,
-  },
-  tabBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingBottom: 25,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    justifyContent: 'space-around',
-    alignItems: 'flex-end',
-    height: 85,
-  },
-  centerTabItem: {
-    top: -25,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  centerButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#4F46E5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
-  },
-  centerButtonIcon: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '300',
-    marginTop: -2,
-  },
-  tabItem: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  tabIcon: {
-    fontSize: 20,
-    color: '#9CA3AF',
-  },
-  tabLabel: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    fontWeight: '600',
-  },
-  tabLabelActive: {
-    fontSize: 10,
-    color: '#3B82F6',
-    fontWeight: 'bold',
-  },
-  completeProfileBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  completeProfileBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#D97706',
-  },
-  infoValuePlaceholder: {
-    color: '#94A3B8',
-    fontStyle: 'italic',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    justifyContent: 'flex-end',
-  },
-  keyboardView: {
-    width: '100%',
-  },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    maxHeight: '90%',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
+  privacySectionHeading: {
+    fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
+    marginTop: 14,
+    marginBottom: 4,
   },
-  closeButton: {
+  privacyBodyText: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+  },
+  // MODAL STYLES
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContainer: {
+    backgroundColor: '#F4F6FB',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '88%',
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+  },
+  modalHeaderBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: DARK_NAVY,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  modalTitleText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  modalCloseBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  closeButtonText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: 'bold',
+  modalBody: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
   },
-  modalForm: {
-    gap: 16,
-    paddingBottom: 40,
-  },
-  fieldContainer: {
-    gap: 8,
-  },
-  inputLabel: {
-    fontSize: 13,
+  fieldLabel: {
+    fontSize: 12,
     fontWeight: '700',
     color: '#334155',
+    marginBottom: 6,
+    marginTop: 10,
   },
-  input: {
-    height: 48,
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 16,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+  },
+  inputFocused: {
+    borderColor: THEME,
+    borderWidth: 1.5,
+  },
+  textInput: {
+    flex: 1,
     fontSize: 14,
     color: '#0F172A',
-    backgroundColor: '#F8FAFC',
+    fontWeight: '600',
   },
-  textArea: {
-    height: 80,
-    paddingTop: 12,
-    textAlignVertical: 'top',
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 16,
   },
-  saveButton: {
-    height: 50,
-    backgroundColor: '#4F46E5',
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
     borderRadius: 12,
-    justifyContent: 'center',
+    backgroundColor: '#E2E8F0',
     alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  cancelBtnText: {
+    fontSize: 14,
     fontWeight: '700',
+    color: '#475569',
   },
-  mainAvatarCameraBadge: {
-    position: 'absolute',
-    bottom: -2,
-    left: 56,
-    width: 24,
-    height: 24,
+  saveBtn: {
+    flex: 1.5,
+    flexDirection: 'row',
+    paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#2563EB',
-    justifyContent: 'center',
+    backgroundColor: THEME,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    justifyContent: 'center',
+  },
+  saveBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   avatarEditWrapper: {
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     marginTop: 4,
   },
   avatarEditCircleWrapper: {
@@ -1049,7 +1058,7 @@ const styles = StyleSheet.create({
   avatarEditText: {
     fontSize: 34,
     fontWeight: '800',
-    color: '#4F46E5',
+    color: THEME,
   },
   avatarUploadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1064,7 +1073,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#2563EB',
+    backgroundColor: THEME,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2.5,
@@ -1087,7 +1096,7 @@ const styles = StyleSheet.create({
   changePhotoBtnText: {
     fontSize: 12.5,
     fontWeight: '700',
-    color: '#2563EB',
+    color: THEME,
   },
   imagePickerModalOverlay: {
     flex: 1,

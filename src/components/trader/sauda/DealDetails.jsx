@@ -1811,7 +1811,13 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
           <TouchableOpacity
             style={styles.viewInvoiceBtn}
-            onPress={() => setIsGstModalVisible(true)}
+            onPress={() => onNavigate('DealInvoice', {
+              deal,
+              sellerCompanyDetails,
+              buyerCompanyDetails,
+              isSeller,
+              isBuyer,
+            })}
             activeOpacity={0.85}
           >
             <FileText size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
@@ -1823,7 +1829,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
         <View style={styles.aiHelpCard}>
           <View style={styles.aiHelpLeft}>
             <Image
-              source={require('../../../images/charter.png')}
+              source={require('../../../images/bot_img.png')}
               style={styles.mascotImage}
               resizeMode="contain"
             />
@@ -1837,7 +1843,11 @@ const DealDetails = ({ onNavigate, routeData }) => {
 
           <TouchableOpacity
             style={styles.askAiBtn}
-            onPress={() => onNavigate('DealChat', { dealId: deal._id || deal.id, deal })}
+            onPress={() => onNavigate('AIBot', {
+              dealId: deal._id || deal.id,
+              deal,
+              message: `Mujhe Deal #${deal?.dealNumber || ''} ke baare mein assist karo.`,
+            })}
             activeOpacity={0.85}
           >
             <Sparkles size={16} color="#1541D8" style={{ marginRight: 6 }} />
@@ -1871,22 +1881,39 @@ const DealDetails = ({ onNavigate, routeData }) => {
           <View style={styles.activeTabIndicator} />
         </TouchableOpacity>
 
-        {/* Center Mic Button */}
+        {/* Center AI Bot Button */}
         <TouchableOpacity
           style={styles.micCircleButton}
-          onPress={() => onNavigate('DealChat', { dealId: deal._id || deal.id, deal })}
-          activeOpacity={0.9}
+          onPress={() => onNavigate('AIBot', {
+            dealId: deal._id || deal.id,
+            deal,
+            message: `Mujhe Deal #${deal?.dealNumber || ''} ke baare mein assist karo.`,
+          })}
+          activeOpacity={0.88}
         >
-          <Mic size={24} color="#FFFFFF" />
+          <Image
+            source={require('../../../images/bot_img.png')}
+            style={{ width: 34, height: 34 }}
+            resizeMode="contain"
+          />
         </TouchableOpacity>
 
+        {/* Need Help Tab */}
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => onNavigate('TransactionHistory', { dealId: deal._id })}
+          onPress={() => onNavigate('AIBot', {
+            dealId: deal._id || deal.id,
+            deal,
+            message: `Mujhe Deal #${deal?.dealNumber || ''} ke baare mein help chahiye.`,
+          })}
           activeOpacity={0.7}
         >
-          <PieChart size={22} color="#64748B" />
-          <Text style={styles.tabLabel}>Reports</Text>
+          <Image
+            source={require('../../../images/bot_img.png')}
+            style={{ width: 22, height: 22 }}
+            resizeMode="contain"
+          />
+          <Text style={styles.tabLabel}>Need Help</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1911,86 +1938,201 @@ const DealDetails = ({ onNavigate, routeData }) => {
           activeOpacity={1}
           onPress={() => setIsMoreMenuVisible(false)}
         >
-          <View style={styles.actionSheetCard}>
-            <Text style={styles.actionSheetTitle}>Deal Options</Text>
+          <TouchableOpacity
+            style={styles.actionSheetCard}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Top Pull Handle */}
+            <View style={styles.sheetHandle} />
 
-            <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                setIsMoreMenuVisible(false);
-                onNavigate('DealChat', { dealId: deal._id || deal.id, deal });
-              }}
-            >
-              <MessageSquare size={18} color="#1541D8" />
-              <Text style={styles.actionSheetItemText}>Current Deal Chat & Ledger</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                setIsMoreMenuVisible(false);
-                const activeCid =
-                  (isSeller ? sellerCid : buyerCid) ||
-                  currentUserCompanyIds[0] ||
-                  deal?.sellerCompanyId?._id ||
-                  deal?.buyerCompanyId?._id;
-                onNavigate('ChatList', { companyId: activeCid, deal });
-              }}
-            >
-              <Users size={18} color="#2563EB" />
-              <Text style={styles.actionSheetItemText}>All Active Sauda Chats</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                setIsMoreMenuVisible(false);
-                openPaymentModal();
-              }}
-            >
-              <CreditCard size={18} color="#16A34A" />
-              <Text style={styles.actionSheetItemText}>Record Payment</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                setIsMoreMenuVisible(false);
-                setIsGstModalVisible(true);
-              }}
-            >
-              <Percent size={18} color="#2563EB" />
-              <Text style={styles.actionSheetItemText}>GST & Invoice Summary</Text>
-            </TouchableOpacity>
-
-            <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 6 }} />
-
-            {dealAttachmentUrl ? (
+            {/* Header */}
+            <View style={styles.sheetHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.actionSheetTitle}>Deal Options & Actions</Text>
+                <Text style={styles.actionSheetSub}>Manage payments, contracts, ledger & AI help</Text>
+              </View>
               <TouchableOpacity
-                style={styles.actionSheetItem}
+                style={styles.sheetCloseBtn}
+                onPress={() => setIsMoreMenuVisible(false)}
+                activeOpacity={0.8}
+              >
+                <X size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* List of Option Cards */}
+            <View style={styles.sheetOptionsList}>
+              {/* Option 1: AI Assistant */}
+              <TouchableOpacity
+                style={styles.actionSheetTile}
                 onPress={() => {
                   setIsMoreMenuVisible(false);
-                  handleDownloadAttachment(dealAttachmentUrl, `Deal_${dealIdStr}_Attachment`);
+                  onNavigate('AIBot', {
+                    dealId: deal._id || deal.id,
+                    deal,
+                    message: `Mujhe Deal #${deal?.dealNumber || ''} ke baare mein complete help aur analysis chahiye.`,
+                  });
                 }}
+                activeOpacity={0.75}
               >
-                <Download size={18} color="#2563EB" />
-                <Text style={[styles.actionSheetItemText, { color: '#2563EB', fontWeight: '700' }]}>
-                  Download Deal Attachment
-                </Text>
+                <View style={[styles.sheetIconBox, { backgroundColor: '#EFF6FF' }]}>
+                  <Image
+                    source={require('../../../images/bot_img.png')}
+                    style={{ width: 26, height: 26 }}
+                    resizeMode="contain"
+                  />
+                </View>
+                <View style={styles.sheetTileTextCol}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.sheetTileTitle}>Pravisti AI Assistant</Text>
+                    <View style={styles.sheetAiBadge}>
+                      <Sparkles size={8} color="#FFFFFF" />
+                      <Text style={styles.sheetAiBadgeText}>AI BOT</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.sheetTileSub}>Ask questions, check party status & get advice</Text>
+                </View>
+                <ChevronRight size={18} color="#94A3B8" />
               </TouchableOpacity>
-            ) : null}
 
+              {/* Option 2: Record Payment */}
+              <TouchableOpacity
+                style={styles.actionSheetTile}
+                onPress={() => {
+                  setIsMoreMenuVisible(false);
+                  openPaymentModal();
+                }}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.sheetIconBox, { backgroundColor: '#ECFDF5' }]}>
+                  <CreditCard size={20} color="#059669" />
+                </View>
+                <View style={styles.sheetTileTextCol}>
+                  <Text style={styles.sheetTileTitle}>Record Payment</Text>
+                  <Text style={styles.sheetTileSub}>Add receipt, amount & payment transaction</Text>
+                </View>
+                <ChevronRight size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              {/* Option 3: Current Deal Chat & Ledger */}
+              <TouchableOpacity
+                style={styles.actionSheetTile}
+                onPress={() => {
+                  setIsMoreMenuVisible(false);
+                  onNavigate('DealChat', { dealId: deal._id || deal.id, deal });
+                }}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.sheetIconBox, { backgroundColor: '#EEF2FE' }]}>
+                  <MessageSquare size={20} color="#2327D8" />
+                </View>
+                <View style={styles.sheetTileTextCol}>
+                  <Text style={styles.sheetTileTitle}>Deal Chat & Ledger</Text>
+                  <Text style={styles.sheetTileSub}>Direct negotiation channel with counterparty</Text>
+                </View>
+                <ChevronRight size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              {/* Option 4: All Active Sauda Chats */}
+              <TouchableOpacity
+                style={styles.actionSheetTile}
+                onPress={() => {
+                  setIsMoreMenuVisible(false);
+                  const activeCid =
+                    (isSeller ? sellerCid : buyerCid) ||
+                    currentUserCompanyIds[0] ||
+                    deal?.sellerCompanyId?._id ||
+                    deal?.buyerCompanyId?._id;
+                  onNavigate('ChatList', { companyId: activeCid, deal });
+                }}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.sheetIconBox, { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' }]}>
+                  <Users size={20} color="#475569" />
+                </View>
+                <View style={styles.sheetTileTextCol}>
+                  <Text style={styles.sheetTileTitle}>All Active Sauda Chats</Text>
+                  <Text style={styles.sheetTileSub}>Browse conversations across all parties</Text>
+                </View>
+                <ChevronRight size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              {/* Option 5: Official Tax Invoice / Contract */}
+              <TouchableOpacity
+                style={styles.actionSheetTile}
+                onPress={() => {
+                  setIsMoreMenuVisible(false);
+                  onNavigate('DealInvoice', {
+                    deal,
+                    sellerCompanyDetails,
+                    buyerCompanyDetails,
+                    isSeller,
+                    isBuyer,
+                  });
+                }}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.sheetIconBox, { backgroundColor: '#FEF3C7' }]}>
+                  <FileText size={20} color="#D97706" />
+                </View>
+                <View style={styles.sheetTileTextCol}>
+                  <Text style={styles.sheetTileTitle}>View A4 Tax Invoice / Contract</Text>
+                  <Text style={styles.sheetTileSub}>Full invoice breakdown with Pravisti official seal</Text>
+                </View>
+                <ChevronRight size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              {/* Option 6: Download Deal Attachment (if exists) */}
+              {dealAttachmentUrl ? (
+                <TouchableOpacity
+                  style={styles.actionSheetTile}
+                  onPress={() => {
+                    setIsMoreMenuVisible(false);
+                    handleDownloadAttachment(dealAttachmentUrl, `Deal_${dealIdStr}_Attachment`);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.sheetIconBox, { backgroundColor: '#EFF6FF' }]}>
+                    <Download size={20} color="#2563EB" />
+                  </View>
+                  <View style={styles.sheetTileTextCol}>
+                    <Text style={[styles.sheetTileTitle, { color: '#2563EB' }]}>Download Deal Attachment</Text>
+                    <Text style={styles.sheetTileSub}>View uploaded invoice or mandi receipt</Text>
+                  </View>
+                  <ChevronRight size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              ) : null}
+
+              {/* Option 7: Download PDF Contract */}
+              <TouchableOpacity
+                style={styles.actionSheetTile}
+                onPress={() => {
+                  setIsMoreMenuVisible(false);
+                  Alert.alert('Download Contract', 'Downloading verified PDF contract...');
+                }}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.sheetIconBox, { backgroundColor: '#F1F5F9' }]}>
+                  <Download size={20} color="#475569" />
+                </View>
+                <View style={styles.sheetTileTextCol}>
+                  <Text style={styles.sheetTileTitle}>Download PDF Contract</Text>
+                  <Text style={styles.sheetTileSub}>Official signed B2B contract document</Text>
+                </View>
+                <ChevronRight size={18} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Dismiss Button */}
             <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                setIsMoreMenuVisible(false);
-                Alert.alert('Download Contract', 'Downloading verified PDF contract...');
-              }}
+              style={styles.sheetCancelBtn}
+              onPress={() => setIsMoreMenuVisible(false)}
+              activeOpacity={0.8}
             >
-              <Download size={18} color="#475569" />
-              <Text style={styles.actionSheetItemText}>Download PDF Contract</Text>
+              <Text style={styles.sheetCancelBtnText}>Dismiss</Text>
             </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
@@ -3167,15 +3309,17 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#1541D8',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
     shadowColor: '#1541D8',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 6,
+    borderWidth: 1.5,
+    borderColor: '#DBEAFE',
   },
 
   // Modals & Action Sheet
@@ -3186,27 +3330,106 @@ const styles = StyleSheet.create({
   },
   actionSheetCard: {
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 32,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    maxHeight: '85%',
   },
-  actionSheetTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
+  sheetHandle: {
+    width: 38,
+    height: 4.5,
+    borderRadius: 3,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
     marginBottom: 14,
   },
-  actionSheetItem: {
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  actionSheetTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  actionSheetSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  sheetCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sheetOptionsList: {
+    gap: 8,
+    marginBottom: 14,
+  },
+  actionSheetTile: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  actionSheetItemText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginLeft: 12,
+  sheetIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  sheetTileTextCol: {
+    flex: 1,
+  },
+  sheetTileTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  sheetTileSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  sheetAiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2327D8',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    gap: 3,
+  },
+  sheetAiBadgeText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  sheetCancelBtn: {
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  sheetCancelBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#475569',
   },
 
   modalOverlay: {

@@ -1049,7 +1049,7 @@ const CategoryPage = ({ onNavigate, routeData }) => {
         onRequestClose={() => setIsCategoryModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalCard}>
@@ -1150,7 +1150,7 @@ const CategoryPage = ({ onNavigate, routeData }) => {
         onRequestClose={() => setIsSubCategoryModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalCard}>

@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -11,9 +10,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
-  Alert,
+  Keyboard,
   Image,
+  Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ArrowLeft,
@@ -27,8 +28,7 @@ import {
   ShoppingBag,
   Building2,
   CreditCard,
-  ChevronRight,
-  Globe,
+  ArrowUpRight,
 } from 'lucide-react-native';
 import { sendBotMessage, clearBotAction } from '../../services/api';
 
@@ -45,14 +45,10 @@ const AIBotScreen = ({ onNavigate, routeData }) => {
   const [activeAction, setActiveAction] = useState(null);
   const [detectedLanguage, setDetectedLanguage] = useState('en');
 
-  const scrollViewRef = useRef(null);
+  const insets = useSafeAreaInsets();
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
-  const quickPrompts = [
-    { label: 'Create a deal', text: 'I want to create a deal', icon: FileText },
-    { label: 'Check my saudas', text: 'Show my active saudas and deals', icon: ShoppingBag },
-    { label: 'Search partner', text: 'Search verified trading companies', icon: Building2 },
-    { label: 'Record payment', text: 'Help me record a payment for a deal', icon: CreditCard },
-  ];
+  const scrollViewRef = useRef(null);
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -61,6 +57,60 @@ const AIBotScreen = ({ onNavigate, routeData }) => {
       }
     }, 150);
   };
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+      scrollToBottom();
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const quickPrompts = [
+    {
+      id: 'create_company',
+      title: 'Register a new company',
+      text: 'Help me register and add a new company',
+      icon: Building2,
+      color: '#0284C7',
+      bg: '#F0F9FF',
+    },
+    {
+      id: 'create_deal',
+      title: 'Create a new trade deal',
+      text: 'I want to create a new deal',
+      icon: FileText,
+      color: '#2563EB',
+      bg: '#EFF6FF',
+    },
+    {
+      id: 'check_saudas',
+      title: 'Check active saudas & orders',
+      text: 'Show my active saudas and deals',
+      icon: ShoppingBag,
+      color: '#059669',
+      bg: '#ECFDF5',
+    },
+    {
+      id: 'record_payment',
+      title: 'Record a deal payment in khata',
+      text: 'Help me record a payment for a deal',
+      icon: CreditCard,
+      color: '#D97706',
+      bg: '#FFFBEB',
+    },
+  ];
 
   const handleSend = useCallback(async (customMessage = null) => {
     const textToSend = (customMessage || inputText).trim();
@@ -209,7 +259,7 @@ const AIBotScreen = ({ onNavigate, routeData }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={THEME} />
 
       {/* ─── 1. TOP HEADER ─── */}
@@ -329,45 +379,33 @@ const AIBotScreen = ({ onNavigate, routeData }) => {
         >
           {/* Welcome Screen when chat is empty */}
           {messages.length === 0 && (
-            <View style={styles.welcomeContainer}>
-              <View style={styles.welcomeBotIconCircle}>
+            <View style={styles.cleanWelcomeBox}>
+              <View style={styles.cleanBotAvatar}>
                 <Image
                   source={require('../../images/bot_img.png')}
-                  style={{ width: 44, height: 44 }}
+                  style={{ width: 34, height: 34 }}
                   resizeMode="contain"
                 />
               </View>
-              <Text style={styles.welcomeTitle}>Namaste! Pravisti AI Assistant</Text>
-              <Text style={styles.welcomeSub}>
-                I can help you create deals, verify parties, check market catalog, track payments, and answer trading questions in Hindi, Hinglish, English, or your regional language.
-              </Text>
 
-              {/* Language pill */}
-              <View style={styles.langPill}>
-                <Globe size={13} color="#64748B" />
-                <Text style={styles.langPillText}>Auto-detects Hindi, Hinglish, Gujarati, Marathi & more</Text>
-              </View>
+              <Text style={styles.cleanGreetingTitle}>Namaste! How can I help?</Text>
+              <Text style={styles.cleanGreetingSub}>Choose a quick action or type below:</Text>
 
-              {/* Quick Prompts Title */}
-              <Text style={styles.quickPromptsHeader}>QUICK ACTIONS</Text>
-              <View style={styles.quickPromptsGrid}>
+              <View style={styles.cleanPromptsList}>
                 {quickPrompts.map((qp, idx) => {
                   const IconComp = qp.icon;
                   return (
                     <TouchableOpacity
                       key={`qp_${idx}`}
-                      style={styles.quickPromptCard}
+                      style={styles.cleanPromptItem}
                       onPress={() => handleSend(qp.text)}
-                      activeOpacity={0.75}
+                      activeOpacity={0.7}
                     >
-                      <View style={styles.qpIconDisk}>
-                        <IconComp size={16} color={THEME} />
+                      <View style={[styles.cleanIconDot, { backgroundColor: qp.bg }]}>
+                        <IconComp size={15} color={qp.color} strokeWidth={2.2} />
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.quickPromptCardTitle}>{qp.label}</Text>
-                        <Text style={styles.quickPromptCardSub} numberOfLines={1}>{qp.text}</Text>
-                      </View>
-                      <ChevronRight size={15} color="#94A3B8" />
+                      <Text style={styles.cleanPromptText}>{qp.title}</Text>
+                      <ArrowUpRight size={15} color="#94A3B8" strokeWidth={2} />
                     </TouchableOpacity>
                   );
                 })}
@@ -431,14 +469,32 @@ const AIBotScreen = ({ onNavigate, routeData }) => {
         </ScrollView>
 
         {/* ─── 4. INPUT BAR ─── */}
-        <View style={styles.inputContainer}>
+        <View
+          style={[
+            styles.inputContainer,
+            {
+              paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom, 10),
+            },
+          ]}
+        >
           <TextInput
-            style={styles.textInput}
+            style={[
+              styles.textInput,
+              {
+                color: '#0F172A',
+                backgroundColor: '#F8FAFC',
+              },
+            ]}
             value={inputText}
             onChangeText={setInputText}
             placeholder="Type in English, Hindi, or Hinglish..."
             placeholderTextColor="#94A3B8"
+            cursorColor={THEME}
+            selectionColor="rgba(35, 39, 216, 0.25)"
             multiline
+            textAlignVertical="center"
+            returnKeyType="send"
+            blurOnSubmit={false}
             maxLength={1000}
             onSubmitEditing={() => handleSend()}
           />
@@ -456,7 +512,7 @@ const AIBotScreen = ({ onNavigate, routeData }) => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -636,90 +692,73 @@ const styles = StyleSheet.create({
     padding: 14,
     paddingBottom: 24,
   },
-  welcomeContainer: {
+  /* Clean Minimal Welcome */
+  cleanWelcomeBox: {
     alignItems: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 10,
+    paddingVertical: 28,
+    paddingHorizontal: 16,
   },
-  welcomeBotIconCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 2,
-    borderColor: '#BFDBFE',
+  cleanBotAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
+    shadowColor: THEME,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  welcomeTitle: {
-    fontSize: 18,
+  cleanGreetingTitle: {
+    fontSize: 17.5,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'center',
   },
-  welcomeSub: {
-    fontSize: 13,
+  cleanGreetingSub: {
+    fontSize: 12.5,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 19,
-    marginTop: 6,
-    marginBottom: 14,
+    marginTop: 5,
+    marginBottom: 22,
   },
-  langPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 14,
-    gap: 5,
-    marginBottom: 20,
-  },
-  langPillText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  quickPromptsHeader: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#94A3B8',
-    letterSpacing: 0.8,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  quickPromptsGrid: {
+  cleanPromptsList: {
     width: '100%',
-    gap: 8,
+    gap: 9,
   },
-  quickPromptCard: {
+  cleanPromptItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 13,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    gap: 10,
+    gap: 11,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  qpIconDisk: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#EFF6FF',
+  cleanIconDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  quickPromptCardTitle: {
+  cleanPromptText: {
+    flex: 1,
     fontSize: 13.5,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  quickPromptCardSub: {
-    fontSize: 11.5,
-    color: '#64748B',
-    marginTop: 1,
+    fontWeight: '600',
+    color: '#1E293B',
   },
 
   /* Messages */
@@ -835,7 +874,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingTop: 8,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
@@ -843,16 +882,18 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    minHeight: 42,
-    maxHeight: 100,
+    minHeight: 44,
+    maxHeight: 110,
     backgroundColor: '#F8FAFC',
-    borderRadius: 20,
+    borderRadius: 22,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingTop: Platform.OS === 'ios' ? 10 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
+    fontSize: 15,
     color: '#0F172A',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
+    textAlignVertical: 'center',
   },
   sendBtn: {
     width: 42,

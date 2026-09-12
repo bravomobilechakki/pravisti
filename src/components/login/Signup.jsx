@@ -260,7 +260,7 @@ const Signup = ({ onNavigate, routeData }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
         <ScrollView
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
     marginTop: -25,
     paddingHorizontal: 26,
     paddingTop: 36,
-    paddingBottom: 24,
+    paddingBottom: 80,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: -12 },
     shadowOpacity: 0.05,

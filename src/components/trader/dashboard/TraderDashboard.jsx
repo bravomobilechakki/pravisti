@@ -504,36 +504,6 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
         >
           {/* ─── BODY CONTENT ─── */}
           <View style={styles.bodyContent}>
-            {/* ─── PRAVISTI AI ASSISTANT BANNER ─── */}
-            <TouchableOpacity
-              style={styles.aiAssistantBanner}
-              onPress={() => onNavigate('AIBot', { user: currentUser || routeData?.user, role: 'Trader' })}
-              activeOpacity={0.88}
-            >
-              <View style={styles.aiBannerBotDisk}>
-                <Image
-                  source={require('../../../images/bot_img.png')}
-                  style={styles.aiBannerBotImg}
-                  resizeMode="contain"
-                />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.aiBannerTitle}>Pravisti AI Assistant</Text>
-                  <View style={styles.aiBannerBadge}>
-                    <Sparkles size={9} color="#FFFFFF" strokeWidth={2.5} />
-                    <Text style={styles.aiBannerBadgeText}>SMART BOT</Text>
-                  </View>
-                </View>
-                <Text style={styles.aiBannerSubtitle}>
-                  Sauda create karein, rates aur companies verify karein Hindi/English mein
-                </Text>
-              </View>
-              <View style={styles.aiBannerArrowCircle}>
-                <ChevronRight size={16} color="#2327D8" strokeWidth={2.5} />
-              </View>
-            </TouchableOpacity>
-
             {/* ─── MY REGISTERED COMPANIES (WITH SAUDA COUNT) ─── */}
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
@@ -604,8 +574,8 @@ const TraderDashboard = ({ onNavigate, routeData }) => {
                     <CompanyLogoAvatar
                       logo={companyLogo}
                       name={company.name}
-                      size={44}
-                      radius={22}
+                      size={48}
+                      radius={24}
                     />
 
                     {/* Middle: Details & Sauda Count Badge */}
@@ -1088,70 +1058,7 @@ const styles = StyleSheet.create({
   bodyContent: {
     paddingHorizontal: 16,
   },
-  aiAssistantBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#DBEAFE',
-    shadowColor: '#2327D8',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  aiBannerBotDisk: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1.5,
-    borderColor: '#C7D2FE',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  aiBannerBotImg: {
-    width: 34,
-    height: 34,
-  },
-  aiBannerTitle: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  aiBannerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2327D8',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 3,
-  },
-  aiBannerBadgeText: {
-    fontSize: 8.5,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 0.4,
-  },
-  aiBannerSubtitle: {
-    fontSize: 11.5,
-    color: '#64748B',
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  aiBannerArrowCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 6,
-  },
+
 
   /* Section Header */
   sectionHeader: {
@@ -1209,15 +1116,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1.2,
-    borderColor: '#E2E8F0',
-    shadowColor: THEME,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    minHeight: 80,
+    marginBottom: 11,
+    borderWidth: 1,
+    borderColor: '#EDF2F7',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
   },
   companyMiddleCol: {
     flex: 1,
@@ -1228,7 +1137,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 3,
+    marginBottom: 5,
   },
   companyNameText: {
     fontSize: 14,

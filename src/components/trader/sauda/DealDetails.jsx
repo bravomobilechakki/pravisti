@@ -2144,7 +2144,7 @@ const DealDetails = ({ onNavigate, routeData }) => {
         onRequestClose={() => setIsPaymentModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>

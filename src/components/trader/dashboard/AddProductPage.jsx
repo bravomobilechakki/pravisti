@@ -1080,7 +1080,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         onRequestClose={() => setIsProductModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalCard}>

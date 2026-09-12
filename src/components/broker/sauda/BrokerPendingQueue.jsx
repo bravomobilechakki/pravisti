@@ -1133,7 +1133,7 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
         onRequestClose={() => setEditModalOpen(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalFormCard}>

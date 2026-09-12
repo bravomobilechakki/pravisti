@@ -305,12 +305,16 @@ export const logoutUser = async (token) => {
 
 // --- INDUSTRY APIs ---
 
-export const getIndustries = async () => {
+export const getIndustries = async (token = null) => {
   try {
-    return await getRequest(SummaryApi.getIndustries);
+    return await getRequest(SummaryApi.getIndustries, token);
   } catch (error) {
-    console.error('Error fetching industries:', error.message || error);
-    throw error;
+    try {
+      return await getRequest({ url: 'https://api.pravisti.com/api/industries', method: 'get' }, token);
+    } catch (fallbackErr) {
+      console.error('Error fetching industries:', error.message || error);
+      throw error;
+    }
   }
 };
 

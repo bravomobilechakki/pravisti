@@ -1111,7 +1111,7 @@ const CompanyProfileDetails = ({ onNavigate, routeData }) => {
         onRequestClose={() => setIsEditModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
           <View style={styles.modalCard}>

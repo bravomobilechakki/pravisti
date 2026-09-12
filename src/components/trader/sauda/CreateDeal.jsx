@@ -4423,7 +4423,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 24,
+    paddingBottom: 120,
   },
   stepSection: {
     gap: 16,

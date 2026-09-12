@@ -322,7 +322,7 @@ const OwnershipConfirmationModal = ({
     <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
       <StatusBar barStyle="dark-content" backgroundColor="rgba(17, 24, 39, 0.5)" />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.modalOverlay}
       >
         <View style={styles.modalContent}>

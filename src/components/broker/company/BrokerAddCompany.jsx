@@ -7,11 +7,13 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Modal,
   StatusBar,
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BrokerSuccessReceipt from '../../common/BrokerSuccessReceipt';
@@ -25,6 +27,7 @@ import {
   Percent,
   Briefcase,
   ChevronDown,
+  ChevronRight,
   X,
   Phone,
   Sparkles,
@@ -33,6 +36,115 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { createCompany, createIndustry, getIndustries, fetchPincodeDetails, getUserProfile } from '../../../services/api';
+
+const resolveIndustryImage = (img) => {
+  if (!img || typeof img !== 'string') return null;
+  const trimmed = img.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  if (trimmed.startsWith('/')) return `https://api.pravisti.com${trimmed}`;
+  return `https://api.pravisti.com/${trimmed}`;
+};
+
+const getIndustryMeta = (name = '') => {
+  const lower = (name || '').toLowerCase();
+  if (lower.includes('agri') || lower.includes('farm') || lower.includes('crop')) {
+    return { bg: '#DCFCE7', color: '#16A34A', label: 'AG' };
+  }
+  if (lower.includes('chem') || lower.includes('fertil')) {
+    return { bg: '#F3E8FF', color: '#9333EA', label: 'CH' };
+  }
+  if (lower.includes('construct') || lower.includes('real')) {
+    return { bg: '#FEF3C7', color: '#D97706', label: 'CR' };
+  }
+  if (lower.includes('tech') || lower.includes('it') || lower.includes('soft')) {
+    return { bg: '#DBEAFE', color: '#2563EB', label: 'IT' };
+  }
+  if (lower.includes('auto') || lower.includes('vehic')) {
+    return { bg: '#CCFBF1', color: '#0D9488', label: 'AU' };
+  }
+  if (lower.includes('food') || lower.includes('bever')) {
+    return { bg: '#FFE4E6', color: '#E11D48', label: 'FB' };
+  }
+  if (lower.includes('finan') || lower.includes('bank')) {
+    return { bg: '#E0E7FF', color: '#4F46E5', label: 'FN' };
+  }
+  if (lower.includes('educ')) {
+    return { bg: '#FEF9C3', color: '#CA8A04', label: 'ED' };
+  }
+  if (lower.includes('energy') || lower.includes('power')) {
+    return { bg: '#FFEDD5', color: '#EA580C', label: 'EN' };
+  }
+  return { bg: '#EFF6FF', color: '#2327D8', label: (name || 'IN').slice(0, 2).toUpperCase() };
+};
+
+const BrokerIndustryRowItem = ({ item, isSelected, onSelect }) => {
+  const [imgError, setImgError] = useState(false);
+  const imgUri = resolveIndustryImage(item.image);
+  const meta = getIndustryMeta(item.name);
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.industryItemCard,
+        isSelected && styles.industryItemCardSelected,
+      ]}
+      onPress={() => onSelect(item)}
+      activeOpacity={0.72}
+    >
+      {/* Industry Image / Logo */}
+      <View style={styles.industryItemLogoContainer}>
+        {imgUri && !imgError ? (
+          <Image
+            source={{ uri: imgUri }}
+            style={styles.industryItemLogoImg}
+            resizeMode="contain"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <View style={[styles.industryItemLogoFallback, { backgroundColor: meta.bg }]}>
+            <Text style={[styles.industryItemLogoFallbackText, { color: meta.color }]}>
+              {meta.label}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Title & Description */}
+      <View style={styles.industryItemInner}>
+        <Text
+          style={[
+            styles.industryItemName,
+            isSelected && styles.industryItemNameSelected,
+          ]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </Text>
+        {item.description ? (
+          <Text
+            style={[
+              styles.industryItemDesc,
+              isSelected && styles.industryItemDescSelected,
+            ]}
+            numberOfLines={1}
+          >
+            {item.description}
+          </Text>
+        ) : null}
+      </View>
+
+      {/* Selection Indicator */}
+      {isSelected ? (
+        <View style={styles.industryCheckCircle}>
+          <Check size={13} color="#FFFFFF" strokeWidth={3} />
+        </View>
+      ) : (
+        <ChevronRight size={16} color="#CBD5E1" />
+      )}
+    </TouchableOpacity>
+  );
+};
 
 const COLORS = {
   primaryDark: '#2327D8',   // Royal Blue (Login & Signup Theme)
@@ -86,6 +198,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
     commissionRate: '',
     industryId: '',
     industryName: '',
+    industryImage: '',
     street: '',
     city: '',
     state: '',
@@ -562,9 +675,40 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
                 onPress={() => setShowIndustryModal(true)}
                 activeOpacity={0.85}
               >
-                <Text style={[styles.dropdownText, !formData.industryName && { color: COLORS.textPlaceholder }]}>
-                  {formData.industryName || 'Select commodity market'}
-                </Text>
+                {formData.industryName ? (
+                  <View style={styles.dropdownSelectedRow}>
+                    {resolveIndustryImage(formData.industryImage) ? (
+                      <Image
+                        source={{ uri: resolveIndustryImage(formData.industryImage) }}
+                        style={styles.dropdownSelectedLogo}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <View
+                        style={[
+                          styles.dropdownSelectedFallback,
+                          { backgroundColor: getIndustryMeta(formData.industryName).bg },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.dropdownSelectedFallbackText,
+                            { color: getIndustryMeta(formData.industryName).color },
+                          ]}
+                        >
+                          {getIndustryMeta(formData.industryName).label}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.dropdownText} numberOfLines={1}>
+                      {formData.industryName}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={[styles.dropdownText, { color: COLORS.textPlaceholder }]} numberOfLines={1}>
+                    Select commodity market
+                  </Text>
+                )}
                 <ChevronDown size={18} color={COLORS.textMuted} />
               </TouchableOpacity>
             )}
@@ -742,70 +886,74 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
       </Modal>
 
       {/* Industry Modal */}
-      <Modal visible={showIndustryModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+      <Modal visible={showIndustryModal} transparent animationType="slide" onRequestClose={() => setShowIndustryModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowIndustryModal(false)}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Commodity Market</Text>
-              <TouchableOpacity onPress={() => setShowIndustryModal(false)}>
+              <TouchableOpacity onPress={() => setShowIndustryModal(false)} style={{ padding: 4 }}>
                 <X size={20} color={COLORS.textMuted} />
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={[styles.modalOption, { borderBottomWidth: 1.5, borderBottomColor: COLORS.primaryBorder, backgroundColor: COLORS.primaryLight }]}
-              onPress={() => {
-                setShowIndustryModal(false);
-                setIsCustomIndustry(true);
-                updateField('industryId', '');
-                updateField('industryName', '');
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Plus size={16} color={COLORS.primary} style={{ marginRight: 8 }} />
-                <Text style={[styles.optionText, { color: COLORS.primary, fontWeight: '700' }]}>+ Other / Custom Industry</Text>
-              </View>
-            </TouchableOpacity>
-
             {industriesLoading ? (
-              <View style={{ padding: 20, alignItems: 'center' }}>
+              <View style={{ padding: 30, alignItems: 'center' }}>
                 <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={{ marginTop: 10, color: COLORS.textMuted, fontSize: 13 }}>Loading markets...</Text>
               </View>
             ) : industries.length === 0 ? (
-              <TouchableOpacity
-                style={styles.modalOption}
-                onPress={() => {
-                  setIsCustomIndustry(false);
-                  setCustomIndustryName('');
-                  updateField('industryId', '');
-                  updateField('industryName', 'Agro & Commodities');
-                  setShowIndustryModal(false);
-                }}
-              >
-                <Text style={styles.optionText}>Agro & Commodities</Text>
-                <Check size={18} color={COLORS.primary} />
-              </TouchableOpacity>
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={{ color: COLORS.textMuted, fontSize: 14 }}>No commodity markets available</Text>
+              </View>
             ) : (
-              industries.map(ind => (
-                <TouchableOpacity
-                  key={ind._id}
-                  style={styles.modalOption}
-                  onPress={() => {
-                    setIsCustomIndustry(false);
-                    setCustomIndustryName('');
-                    updateField('industryId', ind._id);
-                    updateField('industryName', ind.name);
-                    if (errors.industry) setErrors(prev => ({ ...prev, industry: null }));
-                    setShowIndustryModal(false);
-                  }}
-                >
-                  <Text style={styles.optionText}>{ind.name}</Text>
-                  {formData.industryId === ind._id && <Check size={18} color={COLORS.primary} />}
-                </TouchableOpacity>
-              ))
+              <FlatList
+                data={industries}
+                keyExtractor={(item, idx) => item._id || item.id || `b_ind_${idx}`}
+                contentContainerStyle={{ paddingBottom: 16 }}
+                showsVerticalScrollIndicator={false}
+                ListHeaderComponent={
+                  <TouchableOpacity
+                    style={styles.customIndustryBrokerBtn}
+                    onPress={() => {
+                      setShowIndustryModal(false);
+                      setIsCustomIndustry(true);
+                      updateField('industryId', '');
+                      updateField('industryName', '');
+                      updateField('industryImage', '');
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Plus size={16} color={COLORS.primary} style={{ marginRight: 8 }} />
+                    <Text style={[styles.optionText, { color: COLORS.primary, fontWeight: '700' }]}>+ Other / Custom Industry</Text>
+                  </TouchableOpacity>
+                }
+                renderItem={({ item }) => {
+                  const itemId = item._id || item.id;
+                  const isSelected = formData.industryId === itemId;
+                  return (
+                    <BrokerIndustryRowItem
+                      item={item}
+                      isSelected={isSelected}
+                      onSelect={(selectedItem) => {
+                        setIsCustomIndustry(false);
+                        setCustomIndustryName('');
+                        updateField('industryId', selectedItem._id || selectedItem.id);
+                        updateField('industryName', selectedItem.name);
+                        updateField('industryImage', selectedItem.image || '');
+                        if (errors.industry) setErrors(prev => ({ ...prev, industry: null }));
+                        setShowIndustryModal(false);
+                      }}
+                    />
+                  );
+                }}
+              />
             )}
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Success Receipt Modal */}
@@ -1079,7 +1227,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: '60%',
+    maxHeight: '75%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1107,6 +1255,118 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.textPrimary,
+  },
+  customIndustryBrokerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.primaryBorder,
+    borderStyle: 'dashed',
+    backgroundColor: COLORS.primaryLight,
+    marginBottom: 8,
+  },
+  industryItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    marginVertical: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  industryItemCardSelected: {
+    backgroundColor: '#EEF2FF',
+    borderColor: COLORS.primary,
+    borderWidth: 1.5,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.08,
+  },
+  industryItemLogoContainer: {
+    width: 44,
+    height: 44,
+    marginRight: 12,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  industryItemLogoImg: {
+    width: 44,
+    height: 44,
+    backgroundColor: 'transparent',
+  },
+  industryItemLogoFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  industryItemLogoFallbackText: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  industryItemInner: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  industryItemName: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  industryItemNameSelected: {
+    color: COLORS.primary,
+    fontWeight: '800',
+  },
+  industryItemDesc: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  industryItemDescSelected: {
+    color: '#475569',
+  },
+  industryCheckCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  dropdownSelectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 10,
+  },
+  dropdownSelectedLogo: {
+    width: 26,
+    height: 26,
+    backgroundColor: 'transparent',
+  },
+  dropdownSelectedFallback: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dropdownSelectedFallbackText: {
+    fontSize: 10,
+    fontWeight: '800',
   },
 
   successModalCard: {

@@ -34,7 +34,7 @@ const SummaryApi = {
 
   /* ================= INDUSTRIES ================= */
   getIndustries: {
-    url: `${backendDomain}/api/industries`,
+    url: `${backendDomain}/api/v1/industries`,
     method: "get",
   },
   createIndustry: {

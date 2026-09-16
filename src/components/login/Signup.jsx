@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { signUpUser, verifyOtp } from '../../services/api';
-import { Edit3, Phone, ShieldCheck, ArrowRight, User, ArrowLeft } from 'lucide-react-native';
+import { Edit3, Phone, ShieldCheck, ArrowRight, User, ArrowLeft, Briefcase } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const THEME = '#2327D8';
@@ -447,6 +447,23 @@ const Signup = ({ onNavigate, routeData }) => {
                     <Text style={[styles.switchRoleLabel, { color: THEME, fontWeight: '700' }]}>Login</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Staff Login Section */}
+                <View style={styles.staffLoginSection}>
+                  <View style={styles.dividerRow}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>OR</Text>
+                    <View style={styles.dividerLine} />
+                  </View>
+                  <TouchableOpacity
+                    style={styles.staffLoginBtn}
+                    onPress={() => onNavigate && onNavigate('StaffLogin')}
+                    activeOpacity={0.8}
+                  >
+                    <Briefcase size={15} color="#2327D8" />
+                    <Text style={styles.staffLoginBtnText}>Staff Login</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </TouchableWithoutFeedback>
@@ -742,6 +759,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     fontWeight: '500',
+  },
+  staffLoginSection: {
+    marginTop: 10,
+    marginBottom: 16,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 12,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+  },
+  staffLoginBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    borderRadius: 12,
+    height: 48,
+  },
+  staffLoginBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#2327D8',
   },
 });
 

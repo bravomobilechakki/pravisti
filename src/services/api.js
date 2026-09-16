@@ -276,6 +276,30 @@ export const verifyOtp = async (mobileNumber, otp) => {
   }
 };
 
+export const staffLoginUser = async (mobileNumber, password) => {
+  const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').slice(-10);
+  const cleanPass = String(password || '').trim();
+
+  try {
+    return await postRequest(SummaryApi.staffLogin, {
+      mobileNumber: cleanMobile,
+      password: cleanPass,
+    });
+  } catch (error) {
+    // If dedicated staff-login endpoint fails or is not yet deployed, fallback to auth login with password
+    try {
+      return await postRequest(SummaryApi.sendOTP, {
+        mobileNumber: cleanMobile,
+        password: cleanPass,
+        role: 'staff',
+      });
+    } catch (fallbackError) {
+      console.error('Error in staffLoginUser:', error.message || fallbackError.message);
+      throw error;
+    }
+  }
+};
+
 export const getUserProfile = async (token) => {
   try {
     return await getRequest(SummaryApi.getUserProfile, token);
@@ -323,6 +347,116 @@ export const createIndustry = async (industryData, token = null) => {
     return await postRequest(SummaryApi.createIndustry, industryData, token);
   } catch (error) {
     console.error('Error creating industry:', error.message || error);
+    throw error;
+  }
+};
+
+// --- PROJECTS & JOBS APIs ---
+
+export const createProject = async (projectData, token = null) => {
+  try {
+    return await postRequest(SummaryApi.createProject, projectData, token);
+  } catch (error) {
+    console.error('Error creating project:', error.message || error);
+    throw error;
+  }
+};
+
+export const getProjects = async (params = {}, token = null) => {
+  try {
+    return await getRequest(SummaryApi.getProjects(params), token);
+  } catch (error) {
+    console.error('Error fetching projects:', error.message || error);
+    throw error;
+  }
+};
+
+export const getProjectDetails = async (id, token = null) => {
+  try {
+    return await getRequest(SummaryApi.getProjectDetails(id), token);
+  } catch (error) {
+    console.error('Error fetching project details:', error.message || error);
+    throw error;
+  }
+};
+
+export const updateProject = async (id, projectData, token = null) => {
+  try {
+    return await patchRequest(SummaryApi.updateProject(id), projectData, token);
+  } catch (error) {
+    console.error('Error updating project:', error.message || error);
+    throw error;
+  }
+};
+
+export const deleteProject = async (id, token = null) => {
+  try {
+    return await deleteRequest(SummaryApi.deleteProject(id), null, token);
+  } catch (error) {
+    console.error('Error deleting project:', error.message || error);
+    throw error;
+  }
+};
+
+export const addProjectStage = async (id, stageData, token = null) => {
+  try {
+    return await postRequest(SummaryApi.addProjectStage(id), stageData, token);
+  } catch (error) {
+    console.error('Error adding project stage:', error.message || error);
+    throw error;
+  }
+};
+
+export const reorderProjectStages = async (id, stageOrders, token = null) => {
+  try {
+    return await patchRequest(SummaryApi.reorderProjectStages(id), { stageOrders }, token);
+  } catch (error) {
+    console.error('Error reordering project stages:', error.message || error);
+    throw error;
+  }
+};
+
+export const addProjectMilestone = async (id, stageId, milestoneData, token = null) => {
+  try {
+    return await postRequest(SummaryApi.addProjectMilestone(id, stageId), milestoneData, token);
+  } catch (error) {
+    console.error('Error adding project milestone:', error.message || error);
+    throw error;
+  }
+};
+
+export const reorderProjectMilestones = async (id, stageId, milestoneOrders, token = null) => {
+  try {
+    return await patchRequest(SummaryApi.reorderProjectMilestones(id, stageId), { milestoneOrders }, token);
+  } catch (error) {
+    console.error('Error reordering project milestones:', error.message || error);
+    throw error;
+  }
+};
+
+export const addProjectTask = async (id, stageId, milestoneId, taskData, token = null) => {
+  try {
+    return await postRequest(SummaryApi.addProjectTask(id, stageId, milestoneId), taskData, token);
+  } catch (error) {
+    console.error('Error adding project task:', error.message || error);
+    throw error;
+  }
+};
+
+export const updateProjectTaskStatus = async (id, taskId, status, token = null) => {
+  try {
+    return await patchRequest(SummaryApi.updateProjectTaskStatus(id, taskId), { status }, token);
+  } catch (error) {
+    console.error('Error updating task status:', error.message || error);
+    throw error;
+  }
+};
+
+export const getMyAssignedTasks = async (status = null, token = null) => {
+  try {
+    return await getRequest(SummaryApi.getMyAssignedTasks(status), token);
+  } catch (error) {
+    console.error('Error fetching assigned tasks:', error.message || error);
     throw error;
   }
 };
@@ -494,9 +628,29 @@ export const createDeal = async (dealData, token) => {
 
 // Get deals of user's company only.................................................................................................................................................................
 
-export const getDeals = async (token, page = 1, limit = 10, companyId = null, status = null) => {
+export const getDeals = async (arg1, page = 1, limit = 50, companyId = null, status = null) => {
   try {
-    return await getRequest(SummaryApi.getDeals(page, limit, companyId, status), token);
+    let token = null;
+    let p = page;
+    let l = limit;
+    let cid = companyId;
+    let st = status;
+
+    if (arg1 && typeof arg1 === 'object') {
+      token = arg1.token || null;
+      p = arg1.page || 1;
+      l = arg1.limit || 50;
+      cid = arg1.companyId || null;
+      st = arg1.status || null;
+    } else {
+      token = arg1 || null;
+      p = page || 1;
+      l = limit || 50;
+      cid = companyId || null;
+      st = status || null;
+    }
+
+    return await getRequest(SummaryApi.getDeals(p, l, cid, st), token);
   } catch (error) {
     console.warn('Error fetching deals:', error.message || error);
     throw error;

@@ -6,6 +6,7 @@ import { getUserProfile, getPendingVerificationStatus } from './src/services/api
 
 import Login from './src/components/login/login';
 import Signup from './src/components/login/Signup';
+import StaffLogin from './src/components/login/StaffLogin';
 import ChooseIndustry from './src/components/login/ChooseIndustry';
 import {
   Dashboard,
@@ -26,6 +27,9 @@ import {
   OnboardedUsers,
   CompanyPayments,
   DealInvoice,
+  ProjectsList,
+  CreateProject,
+  ProjectDetails,
 } from './src/components/trader';
 import Notifications from './src/components/common/Notifications';
 import AIBotScreen from './src/components/common/AIBotScreen';
@@ -42,10 +46,13 @@ import {
   BrokerPendingQueue,
   OwnershipConfirmationModal,
 } from './src/components/broker';
+import { StaffDashboard, StaffProfile } from './src/components/staff';
 import { VoicePreferencesScreen } from './src/modules/voice';
 
 const LoginScreen = Login as any;
 const SignupScreen = Signup as any;
+const StaffLoginScreen = StaffLogin as any;
+const StaffProfileScreen = StaffProfile as any;
 const ChooseIndustryScreen = ChooseIndustry as any;
 const DashboardScreen = Dashboard as any;
 const AddCompanyScreen = AddCompany as any;
@@ -65,8 +72,12 @@ const TransactionHistoryScreen = TransactionHistory as any;
 const OnboardedUsersScreen = OnboardedUsers as any;
 const CompanyPaymentsScreen = CompanyPayments as any;
 const DealInvoiceScreen = DealInvoice as any;
+const ProjectsListScreen = ProjectsList as any;
+const CreateProjectScreen = CreateProject as any;
+const ProjectDetailsScreen = ProjectDetails as any;
 const NotificationsScreen = Notifications as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
+const StaffDashboardScreen = StaffDashboard as any;
 const BrokerAddCompanyScreen = BrokerAddCompany as any;
 const BrokerCompanyDetailsScreen = BrokerCompanyDetails as any;
 const BrokerOnboardUserScreen = BrokerOnboardUser as any;
@@ -97,6 +108,20 @@ const checkIsUserBroker = (userObj: any, explicitRole?: string): boolean => {
   return uRole.includes('broker');
 };
 
+const isAuthOrStaffScreen = (screenName: string): boolean => {
+  if (!screenName) return true;
+  const s = String(screenName).toLowerCase().replace(/[^a-z]/g, '');
+  return [
+    'login',
+    'signup',
+    'stafflogin',
+    'staffdashboard',
+    'staffprofile',
+    'chooseindustry',
+    'aibot',
+  ].includes(s);
+};
+
 const getScreenStatusBarConfig = (screenName: string) => {
   switch (screenName) {
     case 'Dashboard':
@@ -105,6 +130,8 @@ const getScreenStatusBarConfig = (screenName: string) => {
     case 'BrokerProfile':
     case 'Profile':
     case 'AIBot':
+    case 'ProjectsList':
+    case 'StaffDashboard':
       return { bg: '#2327D8', barStyle: 'light-content' as const };
     case 'Notifications':
     case 'MyCompanies':
@@ -131,7 +158,7 @@ const getScreenStatusBarConfig = (screenName: string) => {
 
 function App() {
   const [navigationStack, setNavigationStack] = useState([
-    { screen: 'Login', data: {} as any },
+    { screen: 'StaffDashboard', data: {} as any },
   ]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
@@ -332,7 +359,7 @@ function App() {
       checkPendingVerification();
     }
 
-    if (options.replace || finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'Login') {
+    if (options.replace || finalTarget === 'Dashboard' || finalTarget === 'BrokerDashboard' || finalTarget === 'StaffDashboard' || finalTarget === 'Login' || finalTarget === 'StaffLogin') {
       replaceScreen(finalTarget, finalData);
     } else {
       pushScreen(finalTarget, finalData);
@@ -345,6 +372,8 @@ function App() {
         return <LoginScreen onNavigate={onNavigate} routeData={data} />;
       case 'Signup':
         return <SignupScreen onNavigate={onNavigate} routeData={data} />;
+      case 'StaffLogin':
+        return <StaffLoginScreen onNavigate={onNavigate} routeData={data} />;
       case 'ChooseIndustry':
         return <ChooseIndustryScreen onNavigate={onNavigate} routeData={data} />;
       case 'Dashboard':
@@ -420,6 +449,10 @@ function App() {
         return <CompanyPaymentsScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerDashboard':
         return <BrokerDashboardScreen onNavigate={onNavigate} routeData={data} />;
+      case 'StaffDashboard':
+        return <StaffDashboardScreen onNavigate={onNavigate} routeData={data} />;
+      case 'StaffProfile':
+        return <StaffProfileScreen onNavigate={onNavigate} routeData={data} onBack={() => onNavigate('pop')} />;
       case 'BrokerAddCompany':
         return <BrokerAddCompanyScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerOnboardUser':
@@ -432,6 +465,12 @@ function App() {
         return <AIBotScreenComponent onNavigate={onNavigate} routeData={data} />;
       case 'DealInvoice':
         return <DealInvoiceScreen onNavigate={onNavigate} routeData={data} />;
+      case 'ProjectsList':
+        return <ProjectsListScreen onNavigate={onNavigate} routeData={data} />;
+      case 'CreateProject':
+        return <CreateProjectScreen onNavigate={onNavigate} routeData={data} />;
+      case 'ProjectDetails':
+        return <ProjectDetailsScreen onNavigate={onNavigate} routeData={data} />;
       default:
         if (data?.token || data?.user) {
           return isBrokerUser ? (
@@ -463,8 +502,8 @@ function App() {
           {renderScreen()}
         </View>
 
-        {/* Global Draggable Pravisti AI Assistant across ALL screens */}
-        {!['Login', 'Signup', 'ChooseIndustry', 'AIBot'].includes(screen) && (
+        {/* Global Draggable Pravisti AI Assistant across main trading screens only */}
+        {!isAuthOrStaffScreen(screen) && (
           <AIBotFloatingButtonComponent
             onPress={() => onNavigate('AIBot', {
               user: data?.user || (checkUser && Object.keys(checkUser).length > 0 ? checkUser : undefined),

@@ -58,6 +58,7 @@ import {
   Wallet,
   Bot,
   Sparkles,
+  FolderKanban,
 } from 'lucide-react-native';
 import {
   getCompanyDetails,
@@ -1235,11 +1236,15 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       onPress: () => onNavigate('AIBot', { company, companyId: company?._id || company?.id }),
     },
     {
-      id: 'company_profile',
-      title: 'Company Profile',
-      icon: <Building2 size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#4F46E5',
-      onPress: () => onNavigate('CompanyProfileDetails', { company, companyId: company?._id || company?.id }),
+      id: 'projects_jobs',
+      title: 'Projects & Jobs',
+      icon: <FolderKanban size={24} color="#FFFFFF" strokeWidth={2.2} />,
+      bgColor: '#2327D8',
+      onPress: () => onNavigate('ProjectsList', {
+        company,
+        companyId: company?._id || company?.id,
+        user: currentUser || routeData?.user,
+      }),
     },
   ];
 

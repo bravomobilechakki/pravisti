@@ -18,6 +18,11 @@ const SummaryApi = {
     method: "post",
   },
 
+  staffLogin: {
+    url: `${backendDomain}/api/auth/staff-login`,
+    method: "post",
+  },
+
   logOut: {
     url: `${backendDomain}/api/auth/logout`,
     method: "post",
@@ -73,6 +78,66 @@ const SummaryApi = {
     method: "post",
   }),
 
+  /* ================= PROJECTS & JOBS ================= */
+  createProject: {
+    url: `${backendDomain}/api/projects`,
+    method: "post",
+  },
+  getProjects: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.append('status', params.status);
+    if (params.search) query.append('search', params.search);
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.dealId) query.append('dealId', params.dealId);
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/projects${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  getProjectDetails: (id) => ({
+    url: `${backendDomain}/api/projects/${id}`,
+    method: "get",
+  }),
+  updateProject: (id) => ({
+    url: `${backendDomain}/api/projects/${id}`,
+    method: "patch",
+  }),
+  deleteProject: (id) => ({
+    url: `${backendDomain}/api/projects/${id}`,
+    method: "delete",
+  }),
+  addProjectStage: (id) => ({
+    url: `${backendDomain}/api/projects/${id}/stages`,
+    method: "post",
+  }),
+  reorderProjectStages: (id) => ({
+    url: `${backendDomain}/api/projects/${id}/stages/reorder`,
+    method: "patch",
+  }),
+  addProjectMilestone: (id, stageId) => ({
+    url: `${backendDomain}/api/projects/${id}/stages/${stageId}/milestones`,
+    method: "post",
+  }),
+  reorderProjectMilestones: (id, stageId) => ({
+    url: `${backendDomain}/api/projects/${id}/stages/${stageId}/milestones/reorder`,
+    method: "patch",
+  }),
+  addProjectTask: (id, stageId, milestoneId) => ({
+    url: `${backendDomain}/api/projects/${id}/stages/${stageId}/milestones/${milestoneId}/tasks`,
+    method: "post",
+  }),
+  updateProjectTaskStatus: (id, taskId) => ({
+    url: `${backendDomain}/api/projects/${id}/tasks/${taskId}/status`,
+    method: "patch",
+  }),
+  getMyAssignedTasks: (status = null) => ({
+    url: `${backendDomain}/api/projects/my-tasks${status ? `?status=${status}` : ''}`,
+    method: "get",
+  }),
+
   /* ================= DEALS ================= */
   createDeal: {
     url: `${backendDomain}/api/deals`,
@@ -100,7 +165,10 @@ const SummaryApi = {
   }),
 
   getDeals: (page = 1, limit = 50, companyId = null, status = null) => {
-    let url = `${backendDomain}/api/v1/deals?page=${page}&limit=${limit}`;
+    let url = `${backendDomain}/api/deals?limit=${limit}`;
+    if (page && page > 1) {
+      url += `&page=${page}`;
+    }
     if (companyId) {
       url += `&companyId=${encodeURIComponent(companyId)}`;
     }

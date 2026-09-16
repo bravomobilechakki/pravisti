@@ -16,6 +16,9 @@ import TransactionHistory from './sauda/TransactionHistory';
 import OnboardedUsers from './profile/OnboardedUsers';
 import CompanyPayments from './dashboard/CompanyPayments';
 import DealInvoice from './sauda/DealInvoice';
+import ProjectsList from './projects/ProjectsList';
+import CreateProject from './projects/CreateProject';
+import ProjectDetails from './projects/ProjectDetails';
 
 const Dashboard = TraderDashboard;
 
@@ -39,4 +42,8 @@ export {
   OnboardedUsers,
   CompanyPayments,
   DealInvoice,
+  ProjectsList,
+  CreateProject,
+  ProjectDetails,
 };
+

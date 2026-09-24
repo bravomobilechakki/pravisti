@@ -13,11 +13,8 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Platform,
-  TouchableWithoutFeedback,
   Keyboard,
   StatusBar,
-  Animated,
-  Easing,
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { signUpUser, verifyOtp } from '../../services/api';
@@ -100,7 +97,31 @@ const Signup = ({ onNavigate, routeData }) => {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [timer, setTimer] = useState(60);
   const [errorMessage, setErrorMessage] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const scrollViewRef = useRef(null);
   const isVerifyingRef = useRef(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardVisible(true);
+        setKeyboardHeight(e?.endCoordinates?.height || 280);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+      }
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Timer Effect
   useEffect(() => {
@@ -113,11 +134,12 @@ const Signup = ({ onNavigate, routeData }) => {
     return () => clearInterval(interval);
   }, [otpSent, timer]);
 
-  // Auto-focus first OTP input when sent
+  // Auto-focus first OTP input when sent & scroll into view
   useEffect(() => {
     if (otpSent && !isLoading) {
       setTimeout(() => {
         otpRefs.current[0]?.focus();
+        scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 300);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -261,15 +283,22 @@ const Signup = ({ onNavigate, routeData }) => {
       <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         style={{ flex: 1 }}
       >
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: keyboardVisible ? (Platform.OS === 'ios' ? 40 : Math.max(keyboardHeight * 0.35, 70)) : 24 },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          bounces={true}
+          alwaysBounceVertical={false}
+          overScrollMode="always"
         >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={{ flex: 1 }}>
+          <View style={styles.scrollInner}>
 
               {/* Modern Mesh Top Bar Header */}
               <ModernHeader width={width} height={headerHeight} onBack={() => onNavigate('pop')} />
@@ -466,7 +495,6 @@ const Signup = ({ onNavigate, routeData }) => {
                 </View>
               </View>
             </View>
-          </TouchableWithoutFeedback>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -551,15 +579,21 @@ const styles = StyleSheet.create({
     height: 68,
     marginLeft: 6,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  scrollInner: {
+    flexGrow: 1,
+  },
   formCard: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,
     marginTop: -25,
     paddingHorizontal: 26,
     paddingTop: 36,
-    paddingBottom: 80,
+    paddingBottom: 24,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: -12 },
     shadowOpacity: 0.05,

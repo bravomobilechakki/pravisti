@@ -228,6 +228,8 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
   const fetchQueue = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
+      const delStr = await AsyncStorage.getItem('deleted_deal_ids');
+      const deletedIds = delStr ? JSON.parse(delStr) : [];
       let compId = activeCompanyId;
       if (!compId) {
         compId = (await AsyncStorage.getItem('selectedCompanyId')) || (await AsyncStorage.getItem('activeCompanyId')) || null;
@@ -274,10 +276,23 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
         }
       }
 
-      // Normalize items
+      // Normalize items and filter out deleted
       let normalized = rawItems
         .map((item, idx) => normalizeItem(item, idx))
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter(item => {
+          if (item.isDeleted === true || item.deleted === true) return false;
+          const st = String(item.status || '').toLowerCase();
+          if (st === 'deleted' || st === 'cancelled_deleted') return false;
+          const i1 = String(item._id || '');
+          const i2 = String(item.id || '');
+          const i3 = String(item.dealId || '');
+          const i4 = String(item.registrationId || '');
+          if (deletedIds.includes(i1) || (i2 && deletedIds.includes(i2)) || (i3 && deletedIds.includes(i3)) || (i4 && deletedIds.includes(i4))) {
+            return false;
+          }
+          return true;
+        });
 
       // Filter by companyId if specified and matches exist
       if (compId && normalized.length > 0) {
@@ -547,26 +562,23 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header & Top Action Bar */}
       <View style={styles.headerBar}>
-        {/* Back Button Row if Navigated from Company Details */}
         <View style={styles.topHeaderNavRow}>
           {onNavigate && (
             <TouchableOpacity
               style={styles.backBtn}
               onPress={() => onNavigate('pop')}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
             >
-              <ArrowLeft size={18} color={COLORS.text900} />
+              <ArrowLeft size={18} color="#0F172A" />
             </TouchableOpacity>
           )}
 
           <View style={styles.headerLeftCol}>
-
-            <Text style={styles.headerTitle}>Broker Onboarding Deals</Text>
-
+            <Text style={styles.headerTitle}>Onboarding Deals</Text>
             {activeCompanyId ? (
               <View style={styles.companyFilterBadge}>
                 <Building2 size={12} color={COLORS.primary} style={{ marginRight: 4 }} />
@@ -574,15 +586,9 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
                   Company: {activeCompanyName || activeCompanyId}
                 </Text>
               </View>
-            ) : (
-              <Text style={styles.headerSubtitle}>
-                Verify business ownership, send WhatsApp invitations, and track registrations.
-              </Text>
-            )}
+            ) : null}
           </View>
         </View>
-
-
       </View>
 
       {/* Scrollable Main Area */}
@@ -609,9 +615,9 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
             onPress={() => setActiveFilter('ALL')}
           >
             <View style={styles.metricHeaderRow}>
-              <Text style={styles.metricLabel}>TOTAL REQUESTS</Text>
+              <Text style={styles.metricLabel} numberOfLines={1}>Total</Text>
               <View style={[styles.metricIconBox, { backgroundColor: COLORS.primaryBg }]}>
-                <Building2 size={16} color={COLORS.primary} />
+                <Building2 size={13} color={COLORS.primary} />
               </View>
             </View>
             <Text style={[styles.metricCountText, { color: COLORS.primary }]}>
@@ -629,9 +635,9 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
             onPress={() => setActiveFilter('PENDING')}
           >
             <View style={styles.metricHeaderRow}>
-              <Text style={styles.metricLabel}>PENDING VERIFICATION</Text>
+              <Text style={styles.metricLabel} numberOfLines={1}>Pending</Text>
               <View style={[styles.metricIconBox, { backgroundColor: COLORS.amberBg }]}>
-                <Clock size={16} color={COLORS.amber} />
+                <Clock size={13} color={COLORS.amber} />
               </View>
             </View>
             <Text style={[styles.metricCountText, { color: COLORS.amber }]}>
@@ -649,9 +655,9 @@ const BrokerPendingQueue = ({ onNavigate, companyId: propCompanyId, company: pro
             onPress={() => setActiveFilter('APPROVED')}
           >
             <View style={styles.metricHeaderRow}>
-              <Text style={styles.metricLabel}>APPROVED / ACTIVE</Text>
+              <Text style={styles.metricLabel} numberOfLines={1}>Approved</Text>
               <View style={[styles.metricIconBox, { backgroundColor: COLORS.emeraldBg }]}>
-                <CheckCircle2 size={16} color={COLORS.emerald} />
+                <CheckCircle2 size={13} color={COLORS.emerald} />
               </View>
             </View>
             <Text style={[styles.metricCountText, { color: COLORS.emerald }]}>
@@ -1405,46 +1411,42 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
   },
   headerBar: {
+    height: 56,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 14,
-    backgroundColor: '#1427d2ff',
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: '#E2E8F0',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
   },
   topHeaderNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
   backBtn: {
-    padding: 6,
-    marginRight: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#F1F5F9',
-    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   headerLeftCol: {
     flex: 1,
-    marginBottom: 8,
-  },
-  breadcrumbText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: COLORS.text500,
-    letterSpacing: 0.8,
-
+    justifyContent: 'center',
   },
   headerTitle: {
-    marginTop: 10,
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.4,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: COLORS.text600,
-    marginTop: 2,
-    lineHeight: 16,
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
   companyFilterBadge: {
     flexDirection: 'row',
@@ -1506,21 +1508,22 @@ const styles = StyleSheet.create({
   /* Metrics Summary Cards Grid */
   metricsGrid: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
+    gap: 8,
+    marginBottom: 14,
   },
   metricCard: {
     flex: 1,
     backgroundColor: COLORS.cardBg,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderWidth: 1,
     borderColor: COLORS.border,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
   metricCardActiveAll: {
     borderColor: COLORS.primary,
@@ -1538,25 +1541,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   metricLabel: {
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 9,
+    fontWeight: '700',
     color: COLORS.text500,
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
     flex: 1,
+    marginRight: 2,
+    textTransform: 'uppercase',
   },
   metricIconBox: {
     width: 20,
     height: 20,
-    borderRadius: 8,
+    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
   metricCountText: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 17,
+    fontWeight: '800',
   },
 
   /* Section Header */

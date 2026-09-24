@@ -32,5 +32,26 @@ target 'Pravisti' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+      end
+    end
+
+    # Ensure React modulemap and headers are present in all React.framework slices
+    xcframework_path = File.join(installer.sandbox.root, 'React-Core-prebuilt', 'React.xcframework')
+    source_modulemap = File.join(xcframework_path, 'Modules', 'module.modulemap')
+    source_headers = File.join(xcframework_path, 'Headers')
+    if File.exist?(source_modulemap)
+      Dir.glob(File.join(xcframework_path, '**/React.framework/Modules')).each do |mod_dir|
+        FileUtils.mkdir_p(mod_dir)
+        FileUtils.cp(source_modulemap, mod_dir)
+      end
+    end
+    if File.directory?(source_headers)
+      Dir.glob(File.join(xcframework_path, '**/React.framework/Headers')).each do |h_dir|
+        FileUtils.cp_r(File.join(source_headers, '.'), h_dir)
+      end
+    end
   end
 end

@@ -457,510 +457,510 @@ const DealsList = ({ onNavigate, routeData }) => {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#1541D8']}
-            tintColor="#1541D8"
-          />
-        }
-      >
-        {/* ─── 2. TOP 4 SUMMARY METRIC CARDS (Exact Reference Match) ─── */}
-        <View style={styles.metricsRow}>
-          {/* 1. Total Deals */}
-          <TouchableOpacity
-            style={[styles.metricCard, selectedFilterTab === 'ALL' && styles.metricCardSelected]}
-            onPress={() => setSelectedFilterTab('ALL')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.metricIconCircle, { backgroundColor: '#EFF6FF' }]}>
-              <Package size={17} color="#2563EB" strokeWidth={2.2} />
-            </View>
-            <Text style={styles.metricLabel} numberOfLines={1}>
-              Total Deals
-            </Text>
-            <Text style={styles.metricValue}>{totalDealsCount}</Text>
-            <Text style={styles.metricSubtext}>All Time</Text>
-          </TouchableOpacity>
-
-          {/* 2. Active Deals */}
-          <TouchableOpacity
-            style={[styles.metricCard, selectedFilterTab === 'ACTIVE' && styles.metricCardSelected]}
-            onPress={() => setSelectedFilterTab('ACTIVE')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.metricIconCircle, { backgroundColor: '#F0FDF4' }]}>
-              <CheckCircle2 size={17} color="#16A34A" strokeWidth={2.2} />
-            </View>
-            <Text style={styles.metricLabel} numberOfLines={1}>
-              Active Deals
-            </Text>
-            <Text style={[styles.metricValue, { color: '#16A34A' }]}>{activeDealsCount}</Text>
-            <Text style={[styles.metricSubtext, { color: '#16A34A' }]}>{activePct}% of Total</Text>
-          </TouchableOpacity>
-
-          {/* 3. In Progress */}
-          <TouchableOpacity
-            style={[styles.metricCard, selectedFilterTab === 'IN_PROGRESS' && styles.metricCardSelected]}
-            onPress={() => setSelectedFilterTab('IN_PROGRESS')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.metricIconCircle, { backgroundColor: '#FFF7ED' }]}>
-              <Clock size={17} color="#EA580C" strokeWidth={2.2} />
-            </View>
-            <Text style={styles.metricLabel} numberOfLines={1}>
-              In Progress
-            </Text>
-            <Text style={[styles.metricValue, { color: '#EA580C' }]}>{inProgressCount}</Text>
-            <Text style={[styles.metricSubtext, { color: '#EA580C' }]}>{inProgressPct}% of Total</Text>
-          </TouchableOpacity>
-
-          {/* 4. Completed */}
-          <TouchableOpacity
-            style={[styles.metricCard, selectedFilterTab === 'COMPLETED' && styles.metricCardSelected]}
-            onPress={() => setSelectedFilterTab('COMPLETED')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.metricIconCircle, { backgroundColor: '#F5F3FF' }]}>
-              <FileText size={17} color="#7C3AED" strokeWidth={2.2} />
-            </View>
-            <Text style={styles.metricLabel} numberOfLines={1}>
-              Completed
-            </Text>
-            <Text style={[styles.metricValue, { color: '#7C3AED' }]}>{completedCount}</Text>
-            <Text style={[styles.metricSubtext, { color: '#7C3AED' }]}>{completedPct}% of Total</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── 3. SEARCH & CONTROLS BAR ─── */}
-        <View style={styles.controlsBarRow}>
-          {/* Search Input Box */}
-          <View style={styles.searchBarBox}>
-            <Search size={16} color="#94A3B8" style={{ marginRight: 6 }} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search deals by name, ID, product..."
-              placeholderTextColor="#94A3B8"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#1541D8']}
+              tintColor="#1541D8"
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <X size={15} color="#94A3B8" />
-              </TouchableOpacity>
-            )}
+          }
+        >
+          {/* ─── 2. TOP 4 SUMMARY METRIC CARDS (Exact Reference Match) ─── */}
+          <View style={styles.metricsRow}>
+            {/* 1. Total Deals */}
+            <TouchableOpacity
+              style={[styles.metricCard, selectedFilterTab === 'ALL' && styles.metricCardSelected]}
+              onPress={() => setSelectedFilterTab('ALL')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.metricIconCircle, { backgroundColor: '#EFF6FF' }]}>
+                <Package size={17} color="#2563EB" strokeWidth={2.2} />
+              </View>
+              <Text style={styles.metricLabel} numberOfLines={1}>
+                Total Deals
+              </Text>
+              <Text style={styles.metricValue}>{totalDealsCount}</Text>
+              <Text style={styles.metricSubtext}>All Time</Text>
+            </TouchableOpacity>
+
+            {/* 2. Active Deals */}
+            <TouchableOpacity
+              style={[styles.metricCard, selectedFilterTab === 'ACTIVE' && styles.metricCardSelected]}
+              onPress={() => setSelectedFilterTab('ACTIVE')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.metricIconCircle, { backgroundColor: '#F0FDF4' }]}>
+                <CheckCircle2 size={17} color="#16A34A" strokeWidth={2.2} />
+              </View>
+              <Text style={styles.metricLabel} numberOfLines={1}>
+                Active Deals
+              </Text>
+              <Text style={[styles.metricValue, { color: '#16A34A' }]}>{activeDealsCount}</Text>
+              <Text style={[styles.metricSubtext, { color: '#16A34A' }]}>{activePct}% of Total</Text>
+            </TouchableOpacity>
+
+            {/* 3. In Progress */}
+            <TouchableOpacity
+              style={[styles.metricCard, selectedFilterTab === 'IN_PROGRESS' && styles.metricCardSelected]}
+              onPress={() => setSelectedFilterTab('IN_PROGRESS')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.metricIconCircle, { backgroundColor: '#FFF7ED' }]}>
+                <Clock size={17} color="#EA580C" strokeWidth={2.2} />
+              </View>
+              <Text style={styles.metricLabel} numberOfLines={1}>
+                In Progress
+              </Text>
+              <Text style={[styles.metricValue, { color: '#EA580C' }]}>{inProgressCount}</Text>
+              <Text style={[styles.metricSubtext, { color: '#EA580C' }]}>{inProgressPct}% of Total</Text>
+            </TouchableOpacity>
+
+            {/* 4. Completed */}
+            <TouchableOpacity
+              style={[styles.metricCard, selectedFilterTab === 'COMPLETED' && styles.metricCardSelected]}
+              onPress={() => setSelectedFilterTab('COMPLETED')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.metricIconCircle, { backgroundColor: '#F5F3FF' }]}>
+                <FileText size={17} color="#7C3AED" strokeWidth={2.2} />
+              </View>
+              <Text style={styles.metricLabel} numberOfLines={1}>
+                Completed
+              </Text>
+              <Text style={[styles.metricValue, { color: '#7C3AED' }]}>{completedCount}</Text>
+              <Text style={[styles.metricSubtext, { color: '#7C3AED' }]}>{completedPct}% of Total</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Calendar Button */}
-          <TouchableOpacity
-            style={styles.controlIconBtn}
-            onPress={() => {
-              // Toggle sorting by date
-              setSortOrder((prev) => (prev === 'LATEST' ? 'NAME' : 'LATEST'));
-            }}
-            activeOpacity={0.75}
-          >
-            <Calendar size={18} color="#475569" strokeWidth={2.2} />
-          </TouchableOpacity>
-
-          {/* Sort Dropdown Button */}
-          <TouchableOpacity
-            style={styles.sortDropdownBtn}
-            onPress={() => setIsSortModalVisible(true)}
-            activeOpacity={0.75}
-          >
-            <Text style={styles.sortDropdownBtnText}>
-              {sortOrder === 'PRICE_HIGH' ? 'Price ↓' : sortOrder === 'PRICE_LOW' ? 'Price ↑' : 'Sort'}
-            </Text>
-            <SlidersHorizontal size={13} color="#475569" strokeWidth={2.2} />
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── 4. SEGMENTED FILTER TABS ─── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabsScrollContent}
-          style={styles.tabsContainer}
-        >
-          {[
-            { label: 'All Deals', value: 'ALL' },
-            { label: 'Active', value: 'ACTIVE' },
-            { label: 'In Progress', value: 'IN_PROGRESS' },
-            { label: 'Completed', value: 'COMPLETED' },
-            { label: 'Draft', value: 'DRAFT' },
-            { label: 'Cancelled', value: 'CANCELLED' },
-          ].map((tab) => {
-            const isSelected = selectedFilterTab === tab.value;
-            return (
-              <TouchableOpacity
-                key={tab.value}
-                style={[styles.tabPill, isSelected && styles.tabPillActive]}
-                onPress={() => setSelectedFilterTab(tab.value)}
-                activeOpacity={0.75}
-              >
-                <Text style={[styles.tabPillText, isSelected && styles.tabPillTextActive]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* ─── 5. DEALS LIST SECTION ─── */}
-        <View style={styles.dealsSection}>
-          {isLoading && deals.length === 0 ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="large" color="#1541D8" />
-              <Text style={styles.loadingText}>Loading deals and contracts...</Text>
+          {/* ─── 3. SEARCH & CONTROLS BAR ─── */}
+          <View style={styles.controlsBarRow}>
+            {/* Search Input Box */}
+            <View style={styles.searchBarBox}>
+              <Search size={16} color="#94A3B8" style={{ marginRight: 6 }} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search deals by name, ID, product..."
+                placeholderTextColor="#94A3B8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <X size={15} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
             </View>
-          ) : filteredDeals.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Package size={38} color="#94A3B8" strokeWidth={1.8} />
-              <Text style={styles.emptyTitle}>No Deals Found</Text>
-              <Text style={styles.emptySubtitle}>
-                {searchQuery
-                  ? 'No contracts match your search filters.'
-                  : 'Tap "+ Create Deal" button to start your first trade.'}
+
+            {/* Calendar Button */}
+            <TouchableOpacity
+              style={styles.controlIconBtn}
+              onPress={() => {
+                // Toggle sorting by date
+                setSortOrder((prev) => (prev === 'LATEST' ? 'NAME' : 'LATEST'));
+              }}
+              activeOpacity={0.75}
+            >
+              <Calendar size={18} color="#475569" strokeWidth={2.2} />
+            </TouchableOpacity>
+
+            {/* Sort Dropdown Button */}
+            <TouchableOpacity
+              style={styles.sortDropdownBtn}
+              onPress={() => setIsSortModalVisible(true)}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.sortDropdownBtnText}>
+                {sortOrder === 'PRICE_HIGH' ? 'Price ↓' : sortOrder === 'PRICE_LOW' ? 'Price ↑' : 'Sort'}
               </Text>
-              <TouchableOpacity
-                style={styles.emptyAddBtn}
-                onPress={() => onNavigate('CreateDeal', {
-                  company: routeData?.company,
-                  companyId: activeCompanyId,
-                  companyName: routeData?.companyName || routeData?.company?.name,
-                })}
-                activeOpacity={0.8}
-              >
-                <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
-                <Text style={styles.emptyAddBtnText}>Create Deal</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            filteredDeals.map((deal, idx) => {
-              const dealId = deal._id || deal.id || idx;
-              const firstProd = deal.products?.[0] || {};
-              const prodObj = firstProd.productId || deal.product || {};
-              const productName =
-                deal.title ||
-                deal.dealName ||
-                prodObj?.name ||
-                deal.productName ||
-                (firstProd?.name ? firstProd.name : 'Deal');
+              <SlidersHorizontal size={13} color="#475569" strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
 
-              // Category tag
-              const categoryName =
-                prodObj?.categoryId?.name ||
-                prodObj?.categoryName ||
-                deal.categoryName ||
-                '';
-
-              // Deal ID string
-              const dealNumber =
-                deal.dealNumber ||
-                deal.dealNo ||
-                deal.saudaNumber ||
-                deal.contractNumber ||
-                `#${String(deal._id || '').substring(Math.max(0, String(deal._id || '').length - 6)).toUpperCase()}`;
-
-              // Buyer & Seller
-              const sellerName = resolveName(deal.sellerCompanyId, 'Seller');
-              const buyerName = resolveName(deal.buyerCompanyId, 'Buyer');
-
-              // Amount & Date
-              const totalAmt = deal.totalAmount || deal.totalPrice || deal.estimatedAmount || 0;
-              const formattedPrice = totalAmt ? `₹${Number(totalAmt).toLocaleString('en-IN')}` : '₹0';
-
-              const dealDate = deal.dealDate || deal.createdAt || new Date();
-              const formattedDate = new Date(dealDate).toLocaleDateString('en-IN', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-              });
-
-              // Status normalization
-              const rawStatus = (deal.status || 'Active').toLowerCase();
-              let statusLabel = 'Active';
-              let statusBg = '#E8F8F0';
-              let statusColor = '#10B981';
-
-              if (['completed', 'settled', 'delivered'].includes(rawStatus)) {
-                statusLabel = 'Completed';
-                statusBg = '#F1F5F9';
-                statusColor = '#64748B';
-              } else if (['in progress', 'inprogress', 'pending', 'negotiation', 'processing'].includes(rawStatus)) {
-                statusLabel = 'In Progress';
-                statusBg = '#EFF6FF';
-                statusColor = '#2563EB';
-              } else if (['draft', 'created'].includes(rawStatus)) {
-                statusLabel = 'Draft';
-                statusBg = '#FEF3C7';
-                statusColor = '#D97706';
-              } else if (['cancelled', 'rejected', 'expired'].includes(rawStatus)) {
-                statusLabel = 'Cancelled';
-                statusBg = '#FEF2F2';
-                statusColor = '#EF4444';
-              }
-
-              // Commodity Avatar Color Themes
-              const themeColor =
-                idx % 4 === 0
-                  ? { bg: '#EFF6FF', icon: '#2563EB' }
-                  : idx % 4 === 1
-                    ? { bg: '#FFFBEB', icon: '#D97706' }
-                    : idx % 4 === 2
-                      ? { bg: '#F0FDF4', icon: '#16A34A' }
-                      : { bg: '#F5F3FF', icon: '#7C3AED' };
-
+          {/* ─── 4. SEGMENTED FILTER TABS ─── */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabsScrollContent}
+            style={styles.tabsContainer}
+          >
+            {[
+              { label: 'All Deals', value: 'ALL' },
+              { label: 'Active', value: 'ACTIVE' },
+              { label: 'In Progress', value: 'IN_PROGRESS' },
+              { label: 'Completed', value: 'COMPLETED' },
+              { label: 'Draft', value: 'DRAFT' },
+              { label: 'Cancelled', value: 'CANCELLED' },
+            ].map((tab) => {
+              const isSelected = selectedFilterTab === tab.value;
               return (
                 <TouchableOpacity
-                  key={dealId}
-                  style={styles.dealCard}
-                  onPress={() => onNavigate('DealDetails', { dealId: deal._id || deal.id, deal })}
-                  activeOpacity={0.85}
+                  key={tab.value}
+                  style={[styles.tabPill, isSelected && styles.tabPillActive]}
+                  onPress={() => setSelectedFilterTab(tab.value)}
+                  activeOpacity={0.75}
                 >
-                  {/* Left: Commodity Avatar */}
-                  <View style={[styles.dealAvatarCircle, { backgroundColor: themeColor.bg }]}>
-                    {prodObj?.image ? (
-                      <Image
-                        source={{ uri: resolveImageUrl(prodObj.image) }}
-                        style={styles.dealAvatarImg}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Package size={22} color={themeColor.icon} strokeWidth={2.2} />
-                    )}
-                  </View>
+                  <Text style={[styles.tabPillText, isSelected && styles.tabPillTextActive]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
-                  {/* Center: Details */}
-                  <View style={styles.dealCenterDetails}>
-                    <Text style={styles.dealTitle} numberOfLines={1}>
-                      {productName}
-                    </Text>
+          {/* ─── 5. DEALS LIST SECTION ─── */}
+          <View style={styles.dealsSection}>
+            {isLoading && deals.length === 0 ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="large" color="#1541D8" />
+                <Text style={styles.loadingText}>Loading deals and contracts...</Text>
+              </View>
+            ) : filteredDeals.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Package size={38} color="#94A3B8" strokeWidth={1.8} />
+                <Text style={styles.emptyTitle}>No Deals Found</Text>
+                <Text style={styles.emptySubtitle}>
+                  {searchQuery
+                    ? 'No contracts match your search filters.'
+                    : 'Tap "+ Create Deal" button to start your first trade.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.emptyAddBtn}
+                  onPress={() => onNavigate('CreateDeal', {
+                    company: routeData?.company,
+                    companyId: activeCompanyId,
+                    companyName: routeData?.companyName || routeData?.company?.name,
+                  })}
+                  activeOpacity={0.8}
+                >
+                  <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
+                  <Text style={styles.emptyAddBtnText}>Create Deal</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              filteredDeals.map((deal, idx) => {
+                const dealId = deal._id || deal.id || idx;
+                const firstProd = deal.products?.[0] || {};
+                const prodObj = firstProd.productId || deal.product || {};
+                const productName =
+                  deal.title ||
+                  deal.dealName ||
+                  prodObj?.name ||
+                  deal.productName ||
+                  (firstProd?.name ? firstProd.name : 'Deal');
 
-                    <Text style={styles.dealNumberText} numberOfLines={1}>
-                      {dealNumber}
-                    </Text>
+                // Category tag
+                const categoryName =
+                  prodObj?.categoryId?.name ||
+                  prodObj?.categoryName ||
+                  deal.categoryName ||
+                  '';
 
-                    <View style={styles.partiesRow}>
-                      <Text style={styles.partyName} numberOfLines={1}>
-                        {sellerName}
-                      </Text>
-                      <ArrowRight size={11} color="#94A3B8" style={{ marginHorizontal: 4 }} />
-                      <Text style={styles.partyName} numberOfLines={1}>
-                        {buyerName}
-                      </Text>
+                // Deal ID string
+                const dealNumber =
+                  deal.dealNumber ||
+                  deal.dealNo ||
+                  deal.saudaNumber ||
+                  deal.contractNumber ||
+                  `#${String(deal._id || '').substring(Math.max(0, String(deal._id || '').length - 6)).toUpperCase()}`;
+
+                // Buyer & Seller
+                const sellerName = resolveName(deal.sellerCompanyId, 'Seller');
+                const buyerName = resolveName(deal.buyerCompanyId, 'Buyer');
+
+                // Amount & Date
+                const totalAmt = deal.totalAmount || deal.totalPrice || deal.estimatedAmount || 0;
+                const formattedPrice = totalAmt ? `₹${Number(totalAmt).toLocaleString('en-IN')}` : '₹0';
+
+                const dealDate = deal.dealDate || deal.createdAt || new Date();
+                const formattedDate = new Date(dealDate).toLocaleDateString('en-IN', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                });
+
+                // Status normalization
+                const rawStatus = (deal.status || 'Active').toLowerCase();
+                let statusLabel = 'Active';
+                let statusBg = '#E8F8F0';
+                let statusColor = '#10B981';
+
+                if (['completed', 'settled', 'delivered'].includes(rawStatus)) {
+                  statusLabel = 'Completed';
+                  statusBg = '#F1F5F9';
+                  statusColor = '#64748B';
+                } else if (['in progress', 'inprogress', 'pending', 'negotiation', 'processing'].includes(rawStatus)) {
+                  statusLabel = 'In Progress';
+                  statusBg = '#EFF6FF';
+                  statusColor = '#2563EB';
+                } else if (['draft', 'created'].includes(rawStatus)) {
+                  statusLabel = 'Draft';
+                  statusBg = '#FEF3C7';
+                  statusColor = '#D97706';
+                } else if (['cancelled', 'rejected', 'expired'].includes(rawStatus)) {
+                  statusLabel = 'Cancelled';
+                  statusBg = '#FEF2F2';
+                  statusColor = '#EF4444';
+                }
+
+                // Commodity Avatar Color Themes
+                const themeColor =
+                  idx % 4 === 0
+                    ? { bg: '#EFF6FF', icon: '#2563EB' }
+                    : idx % 4 === 1
+                      ? { bg: '#FFFBEB', icon: '#D97706' }
+                      : idx % 4 === 2
+                        ? { bg: '#F0FDF4', icon: '#16A34A' }
+                        : { bg: '#F5F3FF', icon: '#7C3AED' };
+
+                return (
+                  <TouchableOpacity
+                    key={dealId}
+                    style={styles.dealCard}
+                    onPress={() => onNavigate('DealDetails', { dealId: deal._id || deal.id, deal })}
+                    activeOpacity={0.85}
+                  >
+                    {/* Left: Commodity Avatar */}
+                    <View style={[styles.dealAvatarCircle, { backgroundColor: themeColor.bg }]}>
+                      {prodObj?.image ? (
+                        <Image
+                          source={{ uri: resolveImageUrl(prodObj.image) }}
+                          style={styles.dealAvatarImg}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Package size={22} color={themeColor.icon} strokeWidth={2.2} />
+                      )}
                     </View>
 
-                    {/* Category Tag Badge */}
-                    {categoryName ? (
-                      <View style={styles.categoryTagPill}>
-                        <Text style={styles.categoryTagText}>{categoryName}</Text>
-                      </View>
-                    ) : null}
-                  </View>
+                    {/* Center: Details */}
+                    <View style={styles.dealCenterDetails}>
+                      <Text style={styles.dealTitle} numberOfLines={1}>
+                        {productName}
+                      </Text>
 
-                  {/* Right: Status, Price, Date & Menu */}
-                  <View style={styles.dealRightDetails}>
-                    <View style={styles.rightTopRow}>
-                      <View style={[styles.statusBadgePill, { backgroundColor: statusBg }]}>
-                        <Text style={[styles.statusBadgeText, { color: statusColor }]}>
-                          {statusLabel}
+                      <Text style={styles.dealNumberText} numberOfLines={1}>
+                        {dealNumber}
+                      </Text>
+
+                      <View style={styles.partiesRow}>
+                        <Text style={styles.partyName} numberOfLines={1}>
+                          {sellerName}
+                        </Text>
+                        <ArrowRight size={11} color="#94A3B8" style={{ marginHorizontal: 4 }} />
+                        <Text style={styles.partyName} numberOfLines={1}>
+                          {buyerName}
                         </Text>
                       </View>
 
-                      <TouchableOpacity
-                        style={styles.moreBtn}
-                        onPress={() => setActionSheetDeal(deal)}
-                        activeOpacity={0.7}
-                      >
-                        <MoreVertical size={16} color="#64748B" strokeWidth={2.2} />
-                      </TouchableOpacity>
+                      {/* Category Tag Badge */}
+                      {categoryName ? (
+                        <View style={styles.categoryTagPill}>
+                          <Text style={styles.categoryTagText}>{categoryName}</Text>
+                        </View>
+                      ) : null}
                     </View>
 
-                    <Text style={styles.dealPriceText}>{formattedPrice}</Text>
-                    <Text style={styles.dealDateText}>{formattedDate}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          )}
+                    {/* Right: Status, Price, Date & Menu */}
+                    <View style={styles.dealRightDetails}>
+                      <View style={styles.rightTopRow}>
+                        <View style={[styles.statusBadgePill, { backgroundColor: statusBg }]}>
+                          <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                            {statusLabel}
+                          </Text>
+                        </View>
 
-          {/* Results Summary text */}
-          {filteredDeals.length > 0 && (
-            <View style={styles.resultsSummaryRow}>
-              <Text style={styles.resultsSummaryText}>
-                Showing 1 to {filteredDeals.length} of {totalDealsCount} deals
+                        <TouchableOpacity
+                          style={styles.moreBtn}
+                          onPress={() => setActionSheetDeal(deal)}
+                          activeOpacity={0.7}
+                        >
+                          <MoreVertical size={16} color="#64748B" strokeWidth={2.2} />
+                        </TouchableOpacity>
+                      </View>
+
+                      <Text style={styles.dealPriceText}>{formattedPrice}</Text>
+                      <Text style={styles.dealDateText}>{formattedDate}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+
+            {/* Results Summary text */}
+            {filteredDeals.length > 0 && (
+              <View style={styles.resultsSummaryRow}>
+                <Text style={styles.resultsSummaryText}>
+                  Showing 1 to {filteredDeals.length} of {totalDealsCount} deals
+                </Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+
+        {/* ─── 6. CREATE NEW DEAL BOTTOM BANNER (Exact Screenshot Match) ─── */}
+        <View style={styles.createDealBannerWrapper}>
+          <TouchableOpacity
+            style={styles.createDealBannerCard}
+            onPress={() => onNavigate('CreateDeal', {
+              company: routeData?.company,
+              companyId: activeCompanyId,
+              companyName: routeData?.companyName || routeData?.company?.name,
+            })}
+            activeOpacity={0.9}
+          >
+            {/* Mascot Character Image */}
+            <Image
+              source={require('../../../images/createdeal.png')}
+              style={styles.createDealMascotImg}
+              resizeMode="contain"
+            />
+
+            {/* Center Text */}
+            <View style={styles.createDealTextContainer}>
+              <Text style={styles.createDealBannerTitle}>Create New Deal</Text>
+              <Text style={styles.createDealBannerSubtitle}>
+                Add a new deal quickly and manage everything digitally.
               </Text>
             </View>
-          )}
+
+            {/* Right White Plus Button Box */}
+            <View style={styles.createDealPlusBtnBox}>
+              <Plus size={22} color="#0048DA" strokeWidth={2.8} />
+            </View>
+          </TouchableOpacity>
         </View>
-      </ScrollView>
 
-      {/* ─── 6. CREATE NEW DEAL BOTTOM BANNER (Exact Screenshot Match) ─── */}
-      <View style={styles.createDealBannerWrapper}>
-        <TouchableOpacity
-          style={styles.createDealBannerCard}
-          onPress={() => onNavigate('CreateDeal', {
-            company: routeData?.company,
-            companyId: activeCompanyId,
-            companyName: routeData?.companyName || routeData?.company?.name,
-          })}
-          activeOpacity={0.9}
+        {/* ─── 7. DEAL ACTION SHEET MODAL ─── */}
+        <Modal
+          visible={actionSheetDeal !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setActionSheetDeal(null)}
         >
-          {/* Mascot Character Image */}
-          <Image
-            source={require('../../../images/createdeal.png')}
-            style={styles.createDealMascotImg}
-            resizeMode="contain"
-          />
-
-          {/* Center Text */}
-          <View style={styles.createDealTextContainer}>
-            <Text style={styles.createDealBannerTitle}>Create New Deal</Text>
-            <Text style={styles.createDealBannerSubtitle}>
-              Add a new deal quickly and manage everything digitally.
-            </Text>
-          </View>
-
-          {/* Right White Plus Button Box */}
-          <View style={styles.createDealPlusBtnBox}>
-            <Plus size={22} color="#0048DA" strokeWidth={2.8} />
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* ─── 7. DEAL ACTION SHEET MODAL ─── */}
-      <Modal
-        visible={actionSheetDeal !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setActionSheetDeal(null)}
-      >
-        <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => setActionSheetDeal(null)}
-        >
-          <View style={styles.actionSheetCard}>
-            <Text style={styles.actionSheetTitle} numberOfLines={1}>
-              {actionSheetDeal?.dealNumber || actionSheetDeal?.productName || 'Deal Actions'}
-            </Text>
-
-            <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                const d = actionSheetDeal;
-                setActionSheetDeal(null);
-                onNavigate('DealChat', { dealId: d._id || d.id, deal: d });
-              }}
-              activeOpacity={0.7}
-            >
-              <MessageSquare size={18} color="#1541D8" />
-              <Text style={styles.actionSheetItemText}>Open Deal Chat & Ledger</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                const d = actionSheetDeal;
-                setActionSheetDeal(null);
-                onNavigate('DealDetails', { dealId: d._id || d.id, deal: d });
-              }}
-              activeOpacity={0.7}
-            >
-              <Eye size={18} color="#2563EB" />
-              <Text style={styles.actionSheetItemText}>View Contract Details</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                const d = actionSheetDeal;
-                setActionSheetDeal(null);
-                onNavigate('CreateDeal', {
-                  prefillDeal: d,
-                  company: routeData?.company,
-                  companyId: activeCompanyId,
-                  companyName: routeData?.companyName || routeData?.company?.name,
-                });
-              }}
-              activeOpacity={0.7}
-            >
-              <FilePlus size={18} color="#16A34A" />
-              <Text style={styles.actionSheetItemText}>Recreate Similar Sauda</Text>
-            </TouchableOpacity>
-
-            <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 6 }} />
-
-            <TouchableOpacity
-              style={styles.actionSheetItem}
-              onPress={() => {
-                const d = actionSheetDeal;
-                setActionSheetDeal(null);
-                handleDeleteDeal(d);
-              }}
-              activeOpacity={0.7}
-            >
-              <Trash2 size={18} color="#DC2626" />
-              <Text style={[styles.actionSheetItemText, { color: '#DC2626', fontWeight: '700' }]}>
-                Delete Deal Contract
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setActionSheetDeal(null)}
+          >
+            <View style={styles.actionSheetCard}>
+              <Text style={styles.actionSheetTitle} numberOfLines={1}>
+                {actionSheetDeal?.dealNumber || actionSheetDeal?.productName || 'Deal Actions'}
               </Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
-      {/* ─── 8. SORT MODAL ─── */}
-      <Modal
-        visible={isSortModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsSortModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalIndicator} />
-            <Text style={styles.modalHeading}>Sort Deals By</Text>
-
-            {[
-              { label: 'Latest Date (Newest First)', value: 'LATEST' },
-              { label: 'Deal Amount: High to Low', value: 'PRICE_HIGH' },
-              { label: 'Deal Amount: Low to High', value: 'PRICE_LOW' },
-              { label: 'Product Name (A-Z)', value: 'NAME' },
-            ].map((opt) => (
               <TouchableOpacity
-                key={opt.value}
-                style={[styles.sortOptionItem, sortOrder === opt.value && styles.sortOptionItemSelected]}
+                style={styles.actionSheetItem}
                 onPress={() => {
-                  setSortOrder(opt.value);
-                  setIsSortModalVisible(false);
+                  const d = actionSheetDeal;
+                  setActionSheetDeal(null);
+                  onNavigate('DealChat', { dealId: d._id || d.id, deal: d });
                 }}
-                activeOpacity={0.75}
+                activeOpacity={0.7}
               >
-                <Text
-                  style={[
-                    styles.sortOptionText,
-                    sortOrder === opt.value && styles.sortOptionTextSelected,
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-                {sortOrder === opt.value && <Check size={16} color="#1541D8" strokeWidth={2.5} />}
+                <MessageSquare size={18} color="#1541D8" />
+                <Text style={styles.actionSheetItemText}>Open Deal Chat & Ledger</Text>
               </TouchableOpacity>
-            ))}
 
-            <TouchableOpacity
-              style={styles.modalCloseBtn}
-              onPress={() => setIsSortModalVisible(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.modalCloseBtnText}>Close</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionSheetItem}
+                onPress={() => {
+                  const d = actionSheetDeal;
+                  setActionSheetDeal(null);
+                  onNavigate('DealDetails', { dealId: d._id || d.id, deal: d });
+                }}
+                activeOpacity={0.7}
+              >
+                <Eye size={18} color="#2563EB" />
+                <Text style={styles.actionSheetItemText}>View Contract Details</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionSheetItem}
+                onPress={() => {
+                  const d = actionSheetDeal;
+                  setActionSheetDeal(null);
+                  onNavigate('CreateDeal', {
+                    prefillDeal: d,
+                    company: routeData?.company,
+                    companyId: activeCompanyId,
+                    companyName: routeData?.companyName || routeData?.company?.name,
+                  });
+                }}
+                activeOpacity={0.7}
+              >
+                <FilePlus size={18} color="#16A34A" />
+                <Text style={styles.actionSheetItemText}>Recreate Similar Sauda</Text>
+              </TouchableOpacity>
+
+              <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 6 }} />
+
+              <TouchableOpacity
+                style={styles.actionSheetItem}
+                onPress={() => {
+                  const d = actionSheetDeal;
+                  setActionSheetDeal(null);
+                  handleDeleteDeal(d);
+                }}
+                activeOpacity={0.7}
+              >
+                <Trash2 size={18} color="#DC2626" />
+                <Text style={[styles.actionSheetItemText, { color: '#DC2626', fontWeight: '700' }]}>
+                  Delete Deal Contract
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* ─── 8. SORT MODAL ─── */}
+        <Modal
+          visible={isSortModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setIsSortModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalIndicator} />
+              <Text style={styles.modalHeading}>Sort Deals By</Text>
+
+              {[
+                { label: 'Latest Date (Newest First)', value: 'LATEST' },
+                { label: 'Deal Amount: High to Low', value: 'PRICE_HIGH' },
+                { label: 'Deal Amount: Low to High', value: 'PRICE_LOW' },
+                { label: 'Product Name (A-Z)', value: 'NAME' },
+              ].map((opt) => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.sortOptionItem, sortOrder === opt.value && styles.sortOptionItemSelected]}
+                  onPress={() => {
+                    setSortOrder(opt.value);
+                    setIsSortModalVisible(false);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[
+                      styles.sortOptionText,
+                      sortOrder === opt.value && styles.sortOptionTextSelected,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                  {sortOrder === opt.value && <Check size={16} color="#1541D8" strokeWidth={2.5} />}
+                </TouchableOpacity>
+              ))}
+
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setIsSortModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modalCloseBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
       </View>
     </SafeAreaView>
   );

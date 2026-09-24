@@ -32,6 +32,8 @@ import {
   ChevronRight,
   FileText,
   Bot,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCompanyDetails, getBrokerMyDeals, getDeals, getBrokerProductAccessRequests, getBrokerPendingQueue, resolveImageUrl } from '../../../services/api';
@@ -87,6 +89,7 @@ const extractCompanyIdsFromDeal = (d) => {
     } else if (typeof val === 'object') {
       if (val._id) ids.push(String(val._id));
       if (val.id) ids.push(String(val.id));
+      if (val.companyId) ids.push(String(val.companyId));
     }
   };
 
@@ -100,6 +103,10 @@ const extractCompanyIdsFromDeal = (d) => {
   add(d.sellerCompany);
   add(d.creatorCompanyId);
   add(d.createdByCompany);
+  add(d.party1CompanyId);
+  add(d.party2CompanyId);
+  add(d.buyerParty?.companyId);
+  add(d.sellerParty?.companyId);
 
   return ids;
 };
@@ -114,21 +121,29 @@ const extractCompanyNamesFromDeal = (d) => {
     } else if (typeof val === 'object') {
       if (val.name) names.push(String(val.name).trim().toLowerCase());
       if (val.companyName) names.push(String(val.companyName).trim().toLowerCase());
+      if (val.businessName) names.push(String(val.businessName).trim().toLowerCase());
+      if (val.tradeName) names.push(String(val.tradeName).trim().toLowerCase());
     }
   };
 
   add(d.brokerCompanyName);
   add(d.brokerCompany);
+  add(d.brokerCompanyId);
   add(d.companyName);
   add(d.company);
+  add(d.companyId);
   add(d.buyerCompanyName);
   add(d.buyerCompany);
+  add(d.buyerCompanyId);
   add(d.buyer);
   add(d.buyerName);
+  add(d.buyerParty?.company);
   add(d.sellerCompanyName);
   add(d.sellerCompany);
+  add(d.sellerCompanyId);
   add(d.seller);
   add(d.sellerName);
+  add(d.sellerParty?.company);
 
   return names;
 };
@@ -164,72 +179,166 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
   };
 
   const formatDeal = (d) => {
-    let cropName = 'Agricultural Commodity';
+    let cropName = '';
     if (typeof d.crop === 'string' && d.crop) cropName = d.crop;
     else if (typeof d.productName === 'string' && d.productName) cropName = d.productName;
     else if (typeof d.cropName === 'string' && d.cropName) cropName = d.cropName;
     else if (d.products && d.products.length > 0) {
       const p = d.products[0];
-      if (typeof p === 'string') {
-        cropName = p;
-      } else if (p) {
+      if (typeof p === 'string') cropName = p;
+      else if (p) {
         const pid = p.productId;
         if (pid && typeof pid === 'object') {
-          cropName = pid.name || pid.productName || pid.title || pid.cropName || cropName;
+          cropName = pid.name || pid.productName || pid.title || pid.cropName || '';
         }
-        if (cropName === 'Agricultural Commodity') {
-          cropName = p.name || p.productName || p.crop || p.cropName || p.title || cropName;
+        if (!cropName) {
+          cropName = p.name || p.productName || p.crop || p.cropName || p.title || '';
         }
       }
     }
+    if (!cropName) cropName = null;
 
-    let sellerName = 'Seller Business';
-    if (typeof d.seller === 'string' && d.seller) sellerName = d.seller;
-    else if (d.sellerCompany) {
-      if (typeof d.sellerCompany === 'string') sellerName = d.sellerCompany;
-      else if (d.sellerCompany.name) sellerName = d.sellerCompany.name;
-      else if (d.sellerCompany.companyName) sellerName = d.sellerCompany.companyName;
-    } else if (d.sellerName) sellerName = d.sellerName;
+    // Quantity & Unit
+    let quantityStr = '';
+    const noteUnit =
+      d.notes?.match(/Unit:\s*([^|\n\r,()]+)/i)?.[1]?.trim() ||
+      d.notes?.match(/\(\s*\d+(?:\.\d+)?\s+([a-zA-Z\u0900-\u097F]+(?:\s+[a-zA-Z\u0900-\u097F]+)?)\s*\)/)?.[1]?.trim() ||
+      d.notes?.match(/\d+(?:\.\d+)?\s+([a-zA-Z\u0900-\u097F]+)\s*@/)?.[1]?.trim() ||
+      '';
+    if (d.products?.[0]?.quantity) {
+      const p0 = d.products[0];
+      const u = p0.unit || p0.unitName || p0.selectedUnitObj?.name || d.unit || d.unitName || noteUnit || p0.unitShortName || p0.selectedUnitObj?.shortName || '';
+      quantityStr = `${p0.quantity}${u ? ` ${u}` : ''}`;
+    } else if (d.quantity) {
+      // Include unit from top-level fields if present
+      const topUnit = d.unit || d.unitName || d.quantityUnit || noteUnit || d.unitShortName || '';
+      const cleanQty = String(d.quantity).replace(/\s*units?/gi, '').trim();
+      quantityStr = cleanQty ? `${cleanQty}${topUnit ? ` ${topUnit}` : ''}` : '';
+    }
 
-    let buyerName = 'Buyer Business';
-    if (typeof d.buyer === 'string' && d.buyer) buyerName = d.buyer;
-    else if (d.buyerCompany) {
-      if (typeof d.buyerCompany === 'string') buyerName = d.buyerCompany;
-      else if (d.buyerCompany.name) buyerName = d.buyerCompany.name;
-      else if (d.buyerCompany.companyName) buyerName = d.buyerCompany.companyName;
-    } else if (d.buyerName) buyerName = d.buyerName;
+    const targetCompId = companyId || routeData?.companyId || routeData?.firmId || company?._id || company?.id;
+    const targetCompName = company?.name || company?.companyName || firmName;
 
-    let rateStr = '₹60,000';
-    if (d.rate) rateStr = String(d.rate);
-    else if (d.totalAmount) rateStr = `₹${parseFloat(d.totalAmount).toLocaleString('en-IN')}`;
-    else if (d.grandTotal) rateStr = `₹${parseFloat(d.grandTotal).toLocaleString('en-IN')}`;
-    else if (d.products?.[0]?.price) rateStr = `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}`;
+    // Resolve Seller Company Name
+    const rawSellerComp = d.sellerCompanyId || d.sellerCompany || d.seller;
+    let sellerName = '';
+    if (typeof rawSellerComp === 'object' && rawSellerComp !== null) {
+      sellerName = rawSellerComp.companyName || rawSellerComp.name || rawSellerComp.businessName || rawSellerComp.tradeName || '';
+    } else if (typeof rawSellerComp === 'string' && rawSellerComp.trim() && rawSellerComp.trim() !== '[object Object]') {
+      const isHexId = /^[0-9a-fA-F]{24}$/.test(rawSellerComp.trim());
+      if (!isHexId) sellerName = rawSellerComp.trim();
+    }
+    if (!sellerName && typeof d.sellerCompanyName === 'string' && d.sellerCompanyName.trim()) {
+      sellerName = d.sellerCompanyName.trim();
+    }
+    if (!sellerName && typeof d.sellerName === 'string' && d.sellerName.trim()) {
+      sellerName = d.sellerName.trim();
+    }
+    if (!sellerName && d.sellerParty?.company) {
+      sellerName = d.sellerParty.company.companyName || d.sellerParty.company.name || d.sellerParty.company.businessName || '';
+    }
+    if (!sellerName && d.sellerParty?.name) {
+      sellerName = d.sellerParty.name;
+    }
+    if (!sellerName && d.party1) {
+      sellerName = (typeof d.party1 === 'object' ? (d.party1.companyName || d.party1.name) : d.party1) || '';
+    }
+    if (!sellerName && d.party1CompanyName) {
+      sellerName = d.party1CompanyName;
+    }
 
-    let statusStr = 'Confirmed';
+    // Check if seller matches current firm
+    const sId = typeof rawSellerComp === 'object' ? (rawSellerComp?._id || rawSellerComp?.id) : rawSellerComp;
+    const isSellerThisFirm = Boolean(
+      (sId && targetCompId && String(sId) === String(targetCompId)) ||
+      (sellerName && targetCompName && sellerName.toLowerCase() === targetCompName.toLowerCase())
+    );
+    if ((!sellerName || sellerName === 'Seller Business') && isSellerThisFirm) {
+      sellerName = targetCompName;
+    }
+    if (!sellerName || sellerName === 'Seller Business') sellerName = 'Seller Company';
+
+    // Resolve Buyer Company Name
+    const rawBuyerComp = d.buyerCompanyId || d.buyerCompany || d.buyer;
+    let buyerName = '';
+    if (typeof rawBuyerComp === 'object' && rawBuyerComp !== null) {
+      buyerName = rawBuyerComp.companyName || rawBuyerComp.name || rawBuyerComp.businessName || rawBuyerComp.tradeName || '';
+    } else if (typeof rawBuyerComp === 'string' && rawBuyerComp.trim() && rawBuyerComp.trim() !== '[object Object]') {
+      const isHexId = /^[0-9a-fA-F]{24}$/.test(rawBuyerComp.trim());
+      if (!isHexId) buyerName = rawBuyerComp.trim();
+    }
+    if (!buyerName && typeof d.buyerCompanyName === 'string' && d.buyerCompanyName.trim()) {
+      buyerName = d.buyerCompanyName.trim();
+    }
+    if (!buyerName && typeof d.buyerName === 'string' && d.buyerName.trim()) {
+      buyerName = d.buyerName.trim();
+    }
+    if (!buyerName && d.buyerParty?.company) {
+      buyerName = d.buyerParty.company.companyName || d.buyerParty.company.name || d.buyerParty.company.businessName || '';
+    }
+    if (!buyerName && d.buyerParty?.name) {
+      buyerName = d.buyerParty.name;
+    }
+    if (!buyerName && d.party2) {
+      buyerName = (typeof d.party2 === 'object' ? (d.party2.companyName || d.party2.name) : d.party2) || '';
+    }
+    if (!buyerName && d.party2CompanyName) {
+      buyerName = d.party2CompanyName;
+    }
+
+    // Check if buyer matches current firm
+    const bId = typeof rawBuyerComp === 'object' ? (rawBuyerComp?._id || rawBuyerComp?.id) : rawBuyerComp;
+    const isBuyerThisFirm = Boolean(
+      (bId && targetCompId && String(bId) === String(targetCompId)) ||
+      (buyerName && targetCompName && buyerName.toLowerCase() === targetCompName.toLowerCase())
+    );
+    if ((!buyerName || buyerName === 'Buyer Business') && isBuyerThisFirm) {
+      buyerName = targetCompName;
+    }
+    if (!buyerName || buyerName === 'Buyer Business') buyerName = 'Buyer Company';
+
+    // Financial calculations
+    let totalAmt = 0;
+    if (d.totalAmount) totalAmt = parseFloat(d.totalAmount) || 0;
+    else if (d.grandTotal) totalAmt = parseFloat(d.grandTotal) || 0;
+    else if (d.totalValue) {
+      totalAmt = parseFloat(String(d.totalValue).replace(/[^0-9.]/g, '')) || 0;
+    } else if (d.products?.[0]) {
+      const q = parseFloat(d.products[0].quantity) || 0;
+      const p = parseFloat(d.products[0].price) || 0;
+      totalAmt = q * p;
+    }
+
+    let rateStr = totalAmt > 0 ? `₹${totalAmt.toLocaleString('en-IN')}` : (d.rate ? String(d.rate) : null);
+
+    let statusStr = null;
     if (typeof d.status === 'string' && d.status) {
       statusStr = d.status.charAt(0).toUpperCase() + d.status.slice(1);
     }
 
-    let dateStr = 'Today';
+    let dateStr = null;
     if (d.date) dateStr = String(d.date);
     else if (d.createdAt) {
       try {
         dateStr = new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
       } catch (e) {
-        dateStr = 'Today';
+        dateStr = null;
       }
     }
 
     return {
-      id: toSafeStr(d.dealNumber || d.id || d._id, `SAUDA-${Math.floor(100 + Math.random() * 900)}`),
+      id: d.dealNumber || d.id || d._id || null,
       _id: String(d._id || d.id || ''),
-      crop: toSafeStr(cropName, 'Agricultural Commodity'),
-      quantity: d.quantity ? String(d.quantity).replace(/\s*units?/gi, '').trim() : (d.products?.[0]?.quantity ? `${d.products[0].quantity}` : '100'),
-      rate: toSafeStr(rateStr, '₹60,000'),
-      buyer: toSafeStr(buyerName, 'Buyer Business'),
-      seller: toSafeStr(sellerName, 'Seller Business'),
-      status: toSafeStr(statusStr, 'Confirmed'),
-      date: toSafeStr(dateStr, 'Today'),
+      crop: cropName || null,
+      quantity: quantityStr || null,
+      rate: rateStr,
+      formattedTotal: totalAmt > 0 ? `₹${totalAmt.toLocaleString('en-IN')}` : rateStr,
+      buyer: buyerName || null,
+      seller: sellerName || null,
+      isSellerThisFirm,
+      isBuyerThisFirm,
+      status: statusStr,
+      date: dateStr,
       rawDeal: d,
     };
   };
@@ -244,15 +353,23 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
         if (!targetIdStr && !targetNameClean) return true;
 
         const dealIds = extractCompanyIdsFromDeal(d);
-        const matchesId = Boolean(targetIdStr && dealIds.includes(targetIdStr));
 
-        const dealNames = extractCompanyNamesFromDeal(d);
-        const matchesName = Boolean(
-          targetNameClean &&
-          dealNames.some(n => n === targetNameClean || n.includes(targetNameClean) || targetNameClean.includes(n))
-        );
+        // If we have a target ID and the deal has any company IDs, match strictly by ID only.
+        // Do NOT fall through to name matching — that causes cross-company leaks.
+        if (targetIdStr) {
+          if (dealIds.length > 0) {
+            return dealIds.includes(targetIdStr);
+          }
+          // Deal has no IDs at all (pure local draft) — allow name fallback below
+        }
 
-        return matchesId || matchesName;
+        // Name fallback: only for deals with zero company IDs (pure local drafts)
+        if (targetNameClean && dealIds.length === 0) {
+          const dealNames = extractCompanyNamesFromDeal(d);
+          return dealNames.some(n => n === targetNameClean);
+        }
+
+        return false;
       })
       .map(formatDeal);
   };
@@ -264,9 +381,31 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
 
     try {
       // 1. INSTANT LOCAL HYDRATION
+      const delStr = await AsyncStorage.getItem('deleted_deal_ids');
+      const deletedIds = delStr ? JSON.parse(delStr) : [];
+
+      const isNotDeleted = (d) => {
+        if (!d) return false;
+        if (d.isDeleted === true || d.deleted === true) return false;
+        const st = String(d.status || '').toLowerCase();
+        if (st === 'deleted' || st === 'cancelled_deleted') return false;
+        const id1 = String(d._id || '');
+        const id2 = String(d.id || '');
+        const id3 = String(d.dealNumber || '');
+        if (deletedIds.includes(id1) || (id2 && deletedIds.includes(id2)) || (id3 && deletedIds.includes(id3))) {
+          return false;
+        }
+        return true;
+      };
+
+      // 1. INSTANT LOCAL HYDRATION — only use cache if we have no companyId to avoid stale cross-company data
       const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
-      const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
-      setFirmDeals(filterDealsForFirm(localDeals, effectiveCompId, effectiveCompName));
+      if (!effectiveCompId) {
+        // No company filter — safe to show cached deals immediately
+        const localDeals = (storedDealsStr ? JSON.parse(storedDealsStr) : []).filter(isNotDeleted);
+        setFirmDeals(filterDealsForFirm(localDeals, effectiveCompId, effectiveCompName));
+      }
+      // When effectiveCompId is known, skip stale cache — wait for API to return the correct deals
       checkProductAccessRequests(effectiveCompId);
 
       // 2. PARALLEL BACKGROUND API SYNC
@@ -275,7 +414,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
       const [compResResult, brokerDealsRes, allDealsRes, pendingQueueRes] = await Promise.allSettled([
         effectiveCompId ? getCompanyDetails(effectiveCompId) : Promise.resolve(null),
         token ? getBrokerMyDeals(effectiveCompId, token) : Promise.resolve(null),
-        token ? getDeals(token, 1, 100, effectiveCompId) : Promise.resolve(null),
+        token ? getDeals(token, 1, 50, effectiveCompId) : Promise.resolve(null),
         token ? getBrokerPendingQueue(effectiveCompId, token) : Promise.resolve(null),
       ]);
 
@@ -288,7 +427,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
       const queueList = [];
       const seenQueueIds = new Set();
       const addQueueItem = (item) => {
-        if (!item) return;
+        if (!item || !isNotDeleted(item)) return;
         const qid = item._id || item.id || item.registrationId || item.mobileNumber || item.name;
         if (qid && !seenQueueIds.has(String(qid))) {
           seenQueueIds.add(String(qid));
@@ -314,24 +453,32 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
       if (brokerDealsRes.status === 'fulfilled' && brokerDealsRes.value?.success) {
         const bRes = brokerDealsRes.value;
         const list = Array.isArray(bRes.data) ? bRes.data : (bRes.data?.deals || bRes.data?.myDeals || []);
-        apiDeals = [...apiDeals, ...list];
+        apiDeals = [...apiDeals, ...list.filter(isNotDeleted)];
       }
 
       if (allDealsRes.status === 'fulfilled' && allDealsRes.value?.success) {
         const aRes = allDealsRes.value;
         const list = Array.isArray(aRes.data) ? aRes.data : (aRes.data?.deals || aRes.data?.myDeals || []);
-        apiDeals = [...apiDeals, ...list];
+        apiDeals = [...apiDeals, ...list.filter(isNotDeleted)];
       }
 
       // Fast O(N) deduplication using Map
+      // When effectiveCompId is known, the API already filtered by companyId — use API data only.
+      // Merging the local cache would leak other companies' deals into the count.
       const dealMap = new Map();
-      localDeals.forEach(d => {
-        if (!d) return;
-        const key = d._id || d.id || d.dealNumber;
-        if (key) dealMap.set(String(key), d);
-      });
+
+      if (!effectiveCompId) {
+        // No company filter — merge local cache (safe since no cross-company concern)
+        const localDeals2 = (storedDealsStr ? JSON.parse(storedDealsStr) : []).filter(isNotDeleted);
+        localDeals2.forEach(d => {
+          if (!isNotDeleted(d)) return;
+          const key = d._id || d.id || d.dealNumber;
+          if (key) dealMap.set(String(key), d);
+        });
+      }
+
       apiDeals.forEach(d => {
-        if (!d) return;
+        if (!isNotDeleted(d)) return;
         const key = d._id || d.id || d.dealNumber;
         if (key) dealMap.set(String(key), d);
       });
@@ -398,25 +545,49 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* ─── UNIFIED INTEGRATED HERO HEADER SECTION ─── */}
+      {/* ─── PREMIUM HERO HEADER SECTION ─── */}
       <View style={styles.heroSection}>
-        {/* Unified Company Identity Card (Single Row Header Layout) */}
-        <View style={styles.companyIdentityCard}>
-          <View style={styles.identityTopRow}>
-            {/* Back Navigation Button */}
+        {/* Top Navigation Bar */}
+        <View style={styles.topNavBar}>
+          <TouchableOpacity
+            style={styles.navBackBtn}
+            onPress={() => onNavigate('pop')}
+            activeOpacity={0.75}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ArrowLeft size={20} color="#0F172A" strokeWidth={2.5} />
+          </TouchableOpacity>
+
+          <Text style={styles.navScreenTitle} numberOfLines={1}>Company Details</Text>
+
+          <View style={styles.navRightActions}>
             <TouchableOpacity
-              style={styles.cardBackBtnInline}
-              onPress={() => onNavigate('pop')}
-              activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.navActionBtn}
+              onPress={handleShareFirm}
+              activeOpacity={0.75}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+              <Share2 size={17} color="#0F172A" strokeWidth={2.2} />
             </TouchableOpacity>
 
-            {/* Firm Logo / Avatar */}
-            <View style={styles.firmAvatarBox}>
+            <TouchableOpacity
+              style={styles.navActionBtn}
+              onPress={handleCallMandi}
+              activeOpacity={0.75}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Phone size={17} color="#0F172A" strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Elevated Royal Blue Modern Company Card */}
+        <View style={styles.companyHeroCard}>
+          {/* Identity Header */}
+          <View style={styles.heroCardHeaderRow}>
+            <View style={styles.firmAvatarWrapper}>
               {companyLogo ? (
                 <Image
                   source={{ uri: resolveImageUrl(companyLogo) }}
@@ -424,26 +595,49 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
                   resizeMode="cover"
                 />
               ) : (
-                <Text style={styles.firmAvatarInitial}>
-                  {(firmName || 'C').charAt(0).toUpperCase()}
-                </Text>
+                <View style={styles.firmAvatarFallback}>
+                  <Text style={styles.firmAvatarInitial}>
+                    {(firmName || 'C').charAt(0).toUpperCase()}
+                  </Text>
+                </View>
               )}
             </View>
 
-            {/* Firm Info */}
-            <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text style={styles.firmNameText} numberOfLines={2}>
-                {firmName}
-              </Text>
-              <Text style={styles.firmSubtitleText} numberOfLines={1}>{firmType}</Text>
+            <View style={styles.firmInfoCol}>
+              <View style={styles.firmTitleRow}>
+                <Text style={styles.firmNameText} numberOfLines={1}>
+                  {firmName}
+                </Text>
+                <View style={styles.activeStatusPill}>
+                  <View style={styles.activeStatusDot} />
+                  <Text style={styles.activeStatusText}>Active</Text>
+                </View>
+              </View>
+
+              <View style={styles.firmLocationRow}>
+                <MapPin size={11} color="#BFDBFE" />
+                <Text style={styles.firmLocationText} numberOfLines={1}>
+                  {city}{state ? `, ${state}` : ''}
+                </Text>
+              </View>
+
+              <View style={styles.firmBadgesRow}>
+                <View style={styles.verifiedPill}>
+                  <ShieldCheck size={11} color="#4ADE80" strokeWidth={2.4} />
+                  <Text style={styles.verifiedPillText}>APMC Verified</Text>
+                </View>
+                <View style={styles.firmTypePill}>
+                  <Text style={styles.firmTypePillText} numberOfLines={1}>{firmType}</Text>
+                </View>
+              </View>
             </View>
           </View>
 
-          {/* ─── 5. BUSINESS OVERVIEW METRICS STRIP ─── */}
+          {/* Clean 3-Column Fintech Metrics Strip */}
           <View style={styles.heroMetricsStrip}>
             <View style={styles.heroMetricItem}>
               <Text style={styles.heroMetricLabel}>COMMISSION</Text>
-              <Text style={styles.heroMetricVal}>{commRate}</Text>
+              <Text style={styles.heroMetricValPrimary}>{commRate}</Text>
             </View>
 
             <View style={styles.heroMetricDivider} />
@@ -453,18 +647,22 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
               onPress={() => onNavigate('BrokerCreatedDeals', { company, companyId: company._id || company.id || companyId, companyName: firmName })}
               activeOpacity={0.75}
             >
-              <Text style={styles.heroMetricLabel}>SAUDAS</Text>
-              <Text style={styles.heroMetricVal}>{firmDeals.length}</Text>
+              <Text style={styles.heroMetricLabel}>TOTAL SAUDAS</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <Text style={styles.heroMetricVal}>{firmDeals.length}</Text>
+                <Text style={styles.heroMetricSubHint}>Deals →</Text>
+              </View>
             </TouchableOpacity>
 
             <View style={styles.heroMetricDivider} />
 
             <View style={styles.heroMetricItem}>
-              <Text style={styles.heroMetricLabel}>LOCATION</Text>
-              <Text style={styles.heroMetricVal} numberOfLines={1}>{city}</Text>
+              <Text style={styles.heroMetricLabel}>APMC LICENSE</Text>
+              <Text style={styles.heroMetricVal} numberOfLines={1}>{apmcLicense || 'Registered'}</Text>
             </View>
           </View>
         </View>
+
       </View>
 
       <ScrollView
@@ -472,6 +670,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+
         {/* ─── 6. BROKER ACTION CENTER (2x2 Grid) ─── */}
         <View style={styles.actionGridContainer}>
           {/* Row 1 */}
@@ -592,47 +791,67 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
                 <TouchableOpacity
                   key={deal.id || deal._id || idx}
                   style={[styles.transactionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                  activeOpacity={0.85}
-                  onPress={() => onNavigate('BrokerDealDetails', { dealId: deal._id || deal.id, deal, company })}
+                  activeOpacity={0.88}
+                  onPress={() => onNavigate('BrokerDealDetails', { dealId: deal._id || deal.id, deal: deal.rawDeal || deal, company })}
                 >
-                  {/* Top Row: Crop Name + Status Pill */}
+                  {/* Top Row: Crop Name & Quantity + Amount & Status */}
                   <View style={styles.txHeaderRow}>
-                    <Text style={styles.txCropNameText} numberOfLines={1}>
-                      {deal.crop}
-                    </Text>
-                    <View style={[styles.txStatusPill, { backgroundColor: badgeBg }]}>
-                      <Text style={[styles.txStatusPillText, { color: badgeText }]}>
-                        ● {statusPillText}
+                    <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.txCropNameText} numberOfLines={1}>
+                          {deal.crop}
+                        </Text>
+                        {deal.quantity ? (
+                          <View style={styles.txQuantityBadge}>
+                            <Text style={styles.txQuantityBadgeText}>{deal.quantity}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={styles.txRefIdText}>#{deal.id} • {deal.date}</Text>
+                    </View>
+
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.txRateText}>{deal.formattedTotal || deal.rate}</Text>
+                      <View style={[styles.txStatusPill, { backgroundColor: badgeBg }]}>
+                        <Text style={[styles.txStatusPillText, { color: badgeText }]}>
+                          ● {statusPillText}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Compact Side-by-Side Trade Bridge: Seller ➔ Buyer */}
+                  <View style={styles.txCompactTradeRow}>
+                    <View style={styles.txPartySideCol}>
+                      <View style={styles.txPartyBadgeNameRow}>
+                        <Text style={styles.txRoleLabelSeller}>SELLER</Text>
+                        {deal.isSellerThisFirm && (
+                          <View style={styles.thisFirmTag}>
+                            <Text style={styles.thisFirmTagText}>This Firm</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.txPartyNameText} numberOfLines={1}>
+                        {deal.seller}
                       </Text>
                     </View>
-                  </View>
 
-                  {/* Middle Flow: Seller -> Buyer */}
-                  <View style={styles.txFlowContainer}>
-                    <View style={styles.txPartyRow}>
-                      <Text style={styles.txRoleLabel}>Seller Company</Text>
-                      <Text style={styles.txPartyName} numberOfLines={1}>{deal.seller}</Text>
+                    <View style={styles.txFlowArrowCircle}>
+                      <ArrowRight size={11} color="#2327D8" strokeWidth={2.2} />
                     </View>
 
-                    <View style={styles.txFlowArrowRow}>
-                      <Text style={styles.txArrowText}>↓</Text>
-                    </View>
-
-                    <View style={styles.txPartyRow}>
-                      <Text style={styles.txRoleLabel}>Buyer Company</Text>
-                      <Text style={styles.txPartyName} numberOfLines={1}>{deal.buyer}</Text>
-                    </View>
-                  </View>
-
-                  {/* Footer Row: Rate / Amount + Date + Ref ID */}
-                  <View style={styles.txFooterRow}>
-                    <View>
-                      <Text style={styles.txRateText}>{deal.rate}</Text>
-                      <Text style={styles.txRefIdText}>Ref #{deal.id}</Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.txDateText}>{deal.date}</Text>
-                      <Text style={styles.txViewLinkText}>View →</Text>
+                    <View style={styles.txPartySideCol}>
+                      <View style={styles.txPartyBadgeNameRow}>
+                        <Text style={styles.txRoleLabelBuyer}>BUYER</Text>
+                        {deal.isBuyerThisFirm && (
+                          <View style={styles.thisFirmTag}>
+                            <Text style={styles.thisFirmTagText}>This Firm</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.txPartyNameText} numberOfLines={1}>
+                        {deal.buyer}
+                      </Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -749,7 +968,7 @@ const BrokerCompanyDetails = ({ onNavigate, routeData }) => {
           <View style={styles.divider} />
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel} numberOfLines={1}>Contact Mobile</Text>
+            <Text style={styles.infoLabel} numberOfLines={1}>Mobile No.</Text>
             <TouchableOpacity
               onPress={handleCallMandi}
               activeOpacity={0.7}
@@ -840,144 +1059,236 @@ const sectionSubtitleStyle = {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.bgMain,
+    backgroundColor: '#F8FAFC',
   },
   heroSection: {
-    backgroundColor: COLORS.primaryDark,
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 26) : 14,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    elevation: 8,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingTop: Platform.OS === 'android' ? 6 : 4,
+    paddingBottom: 12,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
-  cardBackBtnInline: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+  topNavBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingVertical: 2,
+  },
+  navBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
   },
-  cardShareBtnInline: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+  navScreenTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 0.2,
+  },
+  navRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  navActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
   },
-  companyIdentityCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 18,
-    padding: 16,
+  companyHeroCard: {
+    backgroundColor: '#1E40AF',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderColor: '#1D4ED8',
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  identityTopRow: {
+  heroCardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  firmAvatarBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+  firmAvatarWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.28)',
+    borderColor: '#BFDBFE',
     overflow: 'hidden',
   },
   firmLogoImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 14,
+    borderRadius: 12,
+  },
+  firmAvatarFallback: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   firmAvatarInitial: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: '#1E40AF',
   },
-  firmNameText: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    lineHeight: 28,
-    letterSpacing: 0.3,
-    textShadowColor: 'rgba(0, 0, 0, 0.25)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  firmInfoCol: {
+    flex: 1,
+    marginLeft: 12,
   },
-  firmSubtitleText: {
-    fontSize: 13,
-    color: '#E0E7FF',
-    fontWeight: '600',
-    marginTop: 4,
-    letterSpacing: 0.2,
-  },
-  apmcTagInline: {
+  firmTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  firmNameText: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.1,
+    flex: 1,
+  },
+  activeStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 12,
-    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    gap: 4,
+  },
+  activeStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4ADE80',
+  },
+  activeStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  firmLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  firmLocationText: {
+    fontSize: 11.5,
+    color: '#DBEAFE',
+    fontWeight: '500',
+    flex: 1,
+  },
+  firmBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 5,
     marginTop: 6,
   },
-  apmcTagText: {
+  verifiedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: 0.8,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    gap: 3,
+  },
+  verifiedPillText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#15803D',
+    color: '#FFFFFF',
+  },
+  firmTypePill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: 0.8,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  firmTypePillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#EFF6FF',
   },
   heroMetricsStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginTop: 16,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginTop: 11,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   heroMetricItem: {
     alignItems: 'center',
     flex: 1,
   },
   heroMetricLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
-    color: '#CBD5E1',
+    color: '#BFDBFE',
     letterSpacing: 0.5,
-    marginBottom: 3,
+    marginBottom: 2,
   },
-  heroMetricVal: {
-    fontSize: 17,
+  heroMetricValPrimary: {
+    fontSize: 14.5,
     fontWeight: '900',
     color: '#FFFFFF',
   },
+  heroMetricVal: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  heroMetricSubHint: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#93C5FD',
+  },
   heroMetricDivider: {
     width: 1,
-    height: 26,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    height: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
 
   scrollArea: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 110,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 100,
   },
 
   // BROKER ACTION CENTER (2x2 GRID)
@@ -1094,103 +1405,123 @@ const styles = StyleSheet.create({
   // TRANSACTION CARDS
   transactionCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
     elevation: 2,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1.5 },
     shadowOpacity: 0.04,
-    shadowRadius: 6,
+    shadowRadius: 4,
   },
   txHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
   txCropNameText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-    flex: 1,
-    marginRight: 8,
-  },
-  txStatusPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  txStatusPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  txFlowContainer: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    marginVertical: 4,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  txPartyRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  txRoleLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  txPartyName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-    maxWidth: '65%',
-    textAlign: 'right',
-  },
-  txFlowArrowRow: {
-    alignItems: 'center',
-    marginVertical: 2,
-  },
-  txArrowText: {
-    fontSize: 11,
-    color: COLORS.primary,
-    fontWeight: '900',
-  },
-  txFooterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  txRateText: {
     fontSize: 14,
-    fontWeight: '900',
-    color: COLORS.primaryDark,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  txQuantityBadge: {
+    backgroundColor: '#EEF2FE',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  txQuantityBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#2327D8',
   },
   txRefIdText: {
-    fontSize: 10,
+    fontSize: 10.5,
     color: '#94A3B8',
     fontWeight: '600',
-    marginTop: 2,
+    marginTop: 1,
   },
-  txDateText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '500',
+  txRateText: {
+    fontSize: 14.5,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 2,
   },
-  txViewLinkText: {
-    fontSize: 12,
+  txStatusPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  txStatusPillText: {
+    fontSize: 9,
     fontWeight: '800',
-    color: COLORS.primary,
-    marginTop: 2,
+  },
+  txCompactTradeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  txPartySideCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  txPartyBadgeNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 1,
+  },
+  txRoleLabelSeller: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#15803D',
+    letterSpacing: 0.4,
+  },
+  txRoleLabelBuyer: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#2327D8',
+    letterSpacing: 0.4,
+  },
+  txPartyNameText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  thisFirmTag: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 4,
+    paddingVertical: 0.5,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  thisFirmTagText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  txFlowArrowCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
   },
 
   // EMPTY STATE
@@ -1458,6 +1789,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  aiAssistantCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 6,
+    borderWidth: 1.5,
+    borderColor: '#DBEAFE',
+    shadowColor: COLORS.primaryDark,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  aiAssistantIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  aiAssistantTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  aiAssistantBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryDark,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+  },
+  aiAssistantBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+  },
+  aiAssistantSubtitle: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  aiAssistantArrowCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
   },
 });
 

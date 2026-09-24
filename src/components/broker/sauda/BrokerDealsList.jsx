@@ -104,8 +104,26 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
   const fetchBrokerDeals = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
+      const delStr = await AsyncStorage.getItem('deleted_deal_ids');
+      const deletedIds = delStr ? JSON.parse(delStr) : [];
+
+      const isNotDeleted = (d) => {
+        if (!d) return false;
+        if (d.isDeleted === true || d.deleted === true) return false;
+        const st = String(d.status || '').toLowerCase();
+        if (st === 'deleted' || st === 'cancelled_deleted') return false;
+        const id1 = String(d._id || '');
+        const id2 = String(d.id || '');
+        const id3 = String(d.dealNumber || '');
+        if (deletedIds.includes(id1) || (id2 && deletedIds.includes(id2)) || (id3 && deletedIds.includes(id3))) {
+          return false;
+        }
+        return true;
+      };
+
       const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
-      const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
+      const localDealsRaw = storedDealsStr ? JSON.parse(storedDealsStr) : [];
+      const localDeals = localDealsRaw.filter(isNotDeleted);
 
       // 1. INSTANT LOCAL RENDER (0.001s) - Render stored/cached deals immediately
       setDeals(localDeals);
@@ -113,7 +131,7 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
 
       // 2. PARALLEL BACKGROUND API FETCH for fast updates including status=draft deals
       const [brokerResResult, dealsResResult, draftDealsResult] = await Promise.allSettled([
-        getBrokerMyDeals(token),
+        getBrokerMyDeals(companyId || null, token),
         getDeals(token, 1, 50, companyId || null),
         getDeals(token, 1, 50, companyId || null, 'draft'),
       ]);
@@ -126,7 +144,7 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
           ? brokerRes.data
           : (brokerRes.data?.deals || brokerRes.data?.myDeals || []);
 
-        fetchedDeals = rawList.map(d => {
+        fetchedDeals = rawList.filter(isNotDeleted).map(d => {
           const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : '';
           const p0 = d.products?.[0];
           const pid0 = p0?.productId;
@@ -153,7 +171,7 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
       }
 
       const processDealsArray = (rawDeals) => {
-        return rawDeals.map(d => {
+        return rawDeals.filter(isNotDeleted).map(d => {
           const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : '';
           const p0 = d.products?.[0];
           const pid0 = p0?.productId;
@@ -191,20 +209,29 @@ const BrokerDealsList = ({ onNavigate, routeData }) => {
 
       // Fast O(N) deduplication using Map
       const dealMap = new Map();
-      localDeals.forEach(d => {
-        const key = d._id || d.id || d.dealNumber;
-        if (key) dealMap.set(String(key), d);
-      });
       fetchedDeals.forEach(fD => {
-        const key = fD._id || fD.id || fD.dealNumber;
-        if (key) dealMap.set(String(key), fD);
+        if (!isNotDeleted(fD)) return;
+        const key = String(fD._id || fD.id || fD.dealNumber || '');
+        if (key) {
+          dealMap.set(key, fD);
+        }
+      });
+
+      // Keep only purely offline local drafts (that don't have a server _id yet)
+      localDeals.forEach(d => {
+        if (!isNotDeleted(d)) return;
+        const key = String(d._id || d.id || d.dealNumber || '');
+        if (key && !dealMap.has(key)) {
+          const isLocalDraft = !d._id || String(d.id || '').startsWith('SAUDA-');
+          if (isLocalDraft) {
+            dealMap.set(key, d);
+          }
+        }
       });
 
       const combined = Array.from(dealMap.values());
       setDeals(combined);
-      if (combined.length > 0) {
-        AsyncStorage.setItem('broker_deals_storage', JSON.stringify(combined)).catch(() => { });
-      }
+      AsyncStorage.setItem('broker_deals_storage', JSON.stringify(combined)).catch(() => { });
     } catch (err) {
       console.warn('Error loading broker deals:', err);
     } finally {

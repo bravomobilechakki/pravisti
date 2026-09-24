@@ -359,10 +359,10 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
   const validate = () => {
     const newErrors = {};
     if (!formData.name.trim()) newErrors.name = 'Brokerage Firm Name is required';
-    if (!formData.email.trim()) {
-      newErrors.email = 'Company Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
-      newErrors.email = 'Please enter a valid email address';
+    if (formData.email && formData.email.trim()) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+        newErrors.email = 'Please enter a valid email address';
+      }
     }
     if (!formData.city.trim()) newErrors.city = 'City / APMC Mandi Yard is required';
     if (!formData.state.trim()) newErrors.state = 'State is required';
@@ -435,7 +435,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
 
       const payload = {
         name: formData.name,
-        email: formData.email.trim(),
+        email: formData.email ? formData.email.trim() : '',
         type: 'broker',
         registrationNumber: formData.registrationNumber || formData.apmcLicense || `APMC-${Date.now().toString().slice(-6)}`,
         address: {
@@ -565,8 +565,10 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
             </View>
             {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
 
-            {/* Company Email */}
-            <Text style={styles.label}>Company Email <Text style={styles.requiredStar}>*</Text></Text>
+            {/* Company Email (Optional) */}
+            <Text style={styles.label}>
+              Company Email <Text style={{ fontSize: 11, fontWeight: '500', color: COLORS.textMuted }}>(Optional)</Text>
+            </Text>
             <View
               style={[
                 styles.inputWrapper,
@@ -579,7 +581,7 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
               </View>
               <TextInput
                 style={styles.input}
-                placeholder="email"
+                placeholder="email (Optional)"
                 placeholderTextColor={COLORS.textPlaceholder}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -592,14 +594,16 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
             {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
 
             {/* APMC License / GST */}
-            <Text style={styles.label}>GSTIN NO.</Text>
+            <Text style={styles.label}>
+              GSTIN NO. <Text style={{ fontSize: 11, fontWeight: '500', color: COLORS.textMuted }}>(Optional)</Text>
+            </Text>
             <View style={[styles.inputWrapper, focusedField === 'apmc' && styles.inputFocused]}>
               <View style={styles.inputIconCircle}>
                 <ShieldCheck size={16} color={COLORS.primary} />
               </View>
               <TextInput
                 style={styles.input}
-                placeholder="GSTIN"
+                placeholder="GSTIN (Optional)"
                 placeholderTextColor={COLORS.textPlaceholder}
                 value={formData.apmcLicense}
                 onFocus={() => setFocusedField('apmc')}
@@ -607,21 +611,24 @@ const BrokerAddCompany = ({ onNavigate, routeData }) => {
                 onChangeText={v => updateField('apmcLicense', v)}
               />
             </View>
-            <Text style={styles.label}>Office Contact Mobile</Text>
-            <View style={[styles.inputWrapper, focusedField === 'phone' && styles.inputFocused]}>
-              <View style={styles.inputIconCircle}>
+
+            {/* Mobile No. (Non-changeable) */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={[styles.label, { marginBottom: 0 }]}>Mobile No.</Text>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textMuted }}>(Non-changeable)</Text>
+            </View>
+            <View style={[styles.inputWrapper, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }]}>
+              <View style={[styles.inputIconCircle, { backgroundColor: '#F1F5F9' }]}>
                 <Phone size={16} color={COLORS.primary} />
               </View>
               <TextInput
-                style={styles.input}
-                placeholder="Enter 10-digit mobile number"
+                style={[styles.input, { color: COLORS.textPrimary, fontWeight: '600' }]}
+                placeholder="Mobile number"
                 placeholderTextColor={COLORS.textPlaceholder}
                 keyboardType="phone-pad"
                 maxLength={10}
                 value={formData.phone}
-                onFocus={() => setFocusedField('phone')}
-                onBlur={() => setFocusedField(null)}
-                onChangeText={v => updateField('phone', v)}
+                editable={false}
               />
             </View>
             {/* Industry Selection */}
@@ -1090,7 +1097,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 120,
+    paddingBottom: 160,
   },
   card: {
     backgroundColor: COLORS.cardBg,

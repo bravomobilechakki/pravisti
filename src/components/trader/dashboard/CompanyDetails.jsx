@@ -16,6 +16,7 @@ import {
   RefreshControl,
   Image,
   Dimensions,
+  useWindowDimensions,
   Linking,
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
@@ -80,32 +81,18 @@ import {
 import ProductAccessRequestModal from '../../common/ProductAccessRequestModal';
 import AIBotFloatingButton from '../../common/AIBotFloatingButton';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const BANNER_CARD_WIDTH = SCREEN_WIDTH - 32;
-const BANNER_CARD_HEIGHT = 152;
+const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
+const { width: FALLBACK_SCREEN_WIDTH } = Dimensions.get('window');
+const FALLBACK_BANNER_CARD_WIDTH = Math.max(FALLBACK_SCREEN_WIDTH - 32, 280);
+const FALLBACK_BANNER_CARD_HEIGHT = Math.round(clamp(FALLBACK_BANNER_CARD_WIDTH / 2.3, 130, 190));
 
-// Reusable SVG Sparkline Wave Component matching reference image
-const SparklineWave = ({ color, gradientId, pathD, fillD }) => (
-  <View style={styles.sparklineContainer}>
-    <Svg width="100%" height="100%" viewBox="0 0 100 24" preserveAspectRatio="none">
-      <Defs>
-        <LinearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0%" stopColor={color} stopOpacity="0.25" />
-          <Stop offset="100%" stopColor={color} stopOpacity="0.0" />
-        </LinearGradient>
-      </Defs>
-      <Path d={fillD} fill={`url(#${gradientId})`} />
-      <Path d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  </View>
-);
+
 
 const extractApiArray = (res) => {
   if (!res) return [];
   if (Array.isArray(res)) return res;
   if (res.data) {
     if (Array.isArray(res.data)) return res.data;
-    if (Array.isArray(res.data.queue)) return res.data.queue;
     if (Array.isArray(res.data.onboardings)) return res.data.onboardings;
     if (Array.isArray(res.data.onboardedUsers)) return res.data.onboardedUsers;
     if (Array.isArray(res.data.myDeals)) return res.data.myDeals;
@@ -274,8 +261,93 @@ const CompanyLogoAvatar = ({
   );
 };
 
+
+
+const checkBannerMatchesCompany = (banner, comp) => {
+  if (!banner || !comp) return false;
+
+  const compIndObj = typeof comp.industry === 'object' && comp.industry !== null ? comp.industry : null;
+  const compIndIdObj = typeof comp.industryId === 'object' && comp.industryId !== null ? comp.industryId : null;
+
+  const targetIndId = String(
+    compIndObj?._id || compIndObj?.id ||
+    compIndIdObj?._id || compIndIdObj?.id ||
+    (typeof comp.industryId === 'string' ? comp.industryId : '') ||
+    (typeof comp.industry === 'string' && comp.industry.match(/^[0-9a-fA-F]{24}$/) ? comp.industry : '')
+  ).toLowerCase().trim();
+
+  const targetIndName = String(
+    compIndObj?.name ||
+    compIndIdObj?.name ||
+    comp.industryName ||
+    (typeof comp.industry === 'string' && !comp.industry.match(/^[0-9a-fA-F]{24}$/) ? comp.industry : '') ||
+    comp.type ||
+    ''
+  ).toLowerCase().trim();
+
+  const bannerInd = banner.industryId || banner.industry;
+  const bannerIndObj = typeof bannerInd === 'object' && bannerInd !== null ? bannerInd : null;
+
+  const bannerIndId = String(
+    bannerIndObj?._id || bannerIndObj?.id ||
+    (typeof bannerInd === 'string' ? bannerInd : '')
+  ).toLowerCase().trim();
+
+  const bannerIndName = String(
+    bannerIndObj?.name ||
+    banner.industryName ||
+    ''
+  ).toLowerCase().trim();
+
+  const bannerTitle = String(banner.title || '').toLowerCase().trim();
+
+  // Direct ID match
+  if (targetIndId && bannerIndId && targetIndId === bannerIndId) {
+    return true;
+  }
+
+  // Direct exact or substring match
+  if (targetIndName && bannerIndName) {
+    if (targetIndName === bannerIndName || targetIndName.includes(bannerIndName) || bannerIndName.includes(targetIndName)) {
+      return true;
+    }
+  }
+
+  // Match banner title with target industry
+  if (targetIndName && bannerTitle) {
+    if (targetIndName.includes(bannerTitle) || bannerTitle.includes(targetIndName)) {
+      return true;
+    }
+  }
+
+  // Keyword & root stem matching (e.g. "agri", "farm", "jewel", "tech", "food", "health", "bank", "edu", "retail")
+  const commonStems = [
+    ['agri', 'farm', 'crop', 'grain', 'mandi'],
+    ['jewel', 'precious', 'gold', 'silver', 'diamond'],
+    ['tech', 'software', 'it', 'computer'],
+    ['food', 'beverage', 'snack', 'spice'],
+    ['health', 'pharma', 'med'],
+    ['bank', 'finan', 'money', 'loan'],
+    ['edu', 'school', 'learn', 'college'],
+    ['retail', 'ecom', 'shop', 'market', 'store'],
+  ];
+
+  const allTargetText = `${targetIndName} ${comp.name || ''} ${comp.description || ''}`.toLowerCase();
+  const allBannerText = `${bannerIndName} ${bannerTitle} ${banner.description || ''}`.toLowerCase();
+
+  for (const stemGroup of commonStems) {
+    const targetHasStem = stemGroup.some((s) => allTargetText.includes(s));
+    const bannerHasStem = stemGroup.some((s) => allBannerText.includes(s));
+    if (targetHasStem && bannerHasStem) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 // Dedicated Banner Card Item with Image loading state, Error resilience and Create Deal button
-const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
+const BannerCardItem = ({ item, onPress, onCreateDeal, cardWidth = FALLBACK_BANNER_CARD_WIDTH, cardHeight = FALLBACK_BANNER_CARD_HEIGHT }) => {
   const rawImg = item?.image || item?.imageUrl || item?.bannerImage || item?.bannerUrl || item?.banner || '';
   const bannerImgUrl = rawImg ? resolveImageUrl(rawImg) : '';
   const [imageError, setImageError] = React.useState(!bannerImgUrl);
@@ -289,6 +361,7 @@ const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
     }
     setImageError(false);
     setImageLoading(true);
+
     const timer = setTimeout(() => {
       setImageLoading(false);
     }, 4000);
@@ -296,10 +369,11 @@ const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
   }, [bannerImgUrl]);
 
   const hasValidImage = Boolean(bannerImgUrl) && !imageError;
+  const isCompact = cardWidth < 340;
 
   return (
     <TouchableOpacity
-      style={styles.bannerCard}
+      style={[styles.bannerCard, { width: cardWidth, height: cardHeight }]}
       activeOpacity={0.92}
       onPress={() => onPress(item)}
     >
@@ -307,7 +381,7 @@ const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
         <>
           <Image
             source={{ uri: bannerImgUrl }}
-            style={styles.bannerImage}
+            style={[styles.bannerImage, { width: cardWidth, height: cardHeight }]}
             resizeMode="cover"
             onLoadStart={() => setImageLoading(true)}
             onLoadEnd={() => setImageLoading(false)}
@@ -330,13 +404,13 @@ const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
           <View style={styles.bannerFallbackDecorCircle2} />
           <View style={styles.bannerFallbackTextCol}>
             <View style={styles.bannerFallbackHeader}>
-              <Tag size={15} color="#93C5FD" style={{ marginRight: 6 }} />
-              <Text style={styles.bannerFallbackTag}>SPECIAL PROMOTION</Text>
+              <Tag size={isCompact ? 13 : 15} color="#93C5FD" style={{ marginRight: 6 }} />
+              <Text style={[styles.bannerFallbackTag, isCompact && { fontSize: 9.5 }]}>SPECIAL PROMOTION</Text>
             </View>
-            <Text style={styles.bannerFallbackTitle} numberOfLines={1}>
+            <Text style={[styles.bannerFallbackTitle, isCompact && { fontSize: 14 }]} numberOfLines={1}>
               {item.title || 'Pravisti Trade Offer'}
             </Text>
-            <Text style={styles.bannerFallbackSubtitle} numberOfLines={2}>
+            <Text style={[styles.bannerFallbackSubtitle, isCompact && { fontSize: 11 }]} numberOfLines={2}>
               {item.description || 'Verified mandi deals, live tracking & secure settlements.'}
             </Text>
           </View>
@@ -345,18 +419,30 @@ const BannerCardItem = ({ item, onPress, onCreateDeal }) => {
 
       {/* Small Create Deal Button on Left Side Bottom */}
       <TouchableOpacity
-        style={styles.bannerSmallCreateDealBtn}
+        style={[
+          styles.bannerSmallCreateDealBtn,
+          isCompact && { left: 8, bottom: 8, paddingHorizontal: 8, paddingVertical: 4 }
+        ]}
         onPress={onCreateDeal}
         activeOpacity={0.85}
       >
-        <Plus size={13} color="#1541D8" strokeWidth={2.8} />
-        <Text style={styles.bannerSmallCreateDealBtnText}>Create Deal</Text>
+        <Plus size={isCompact ? 11 : 13} color="#1541D8" strokeWidth={2.8} />
+        <Text style={[styles.bannerSmallCreateDealBtnText, isCompact && { fontSize: 10.5 }]}>Create Deal</Text>
       </TouchableOpacity>
     </TouchableOpacity>
   );
 };
 
 const CompanyDetails = ({ onNavigate, routeData }) => {
+  const { width: windowWidth } = useWindowDimensions();
+  const [containerWidth, setContainerWidth] = React.useState(0);
+
+  // Dynamic responsive banner card width based on measured layout or window width minus padding
+  const bannerCardWidth = containerWidth > 0
+    ? containerWidth
+    : Math.max(windowWidth - 32, 280);
+  const bannerCardHeight = Math.round(clamp(bannerCardWidth / 2.3, 130, 190));
+
   const [isLoading, setIsLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [company, setCompany] = React.useState(routeData?.company || null);
@@ -482,6 +568,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       fetchAllCompanies();
       fetchBanners();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeData?.company?._id, routeData?.company?.id, routeData?.refresh]);
 
   const fetchAllCompanies = React.useCallback(async () => {
@@ -557,6 +644,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       setIsLoading(false);
       setRefreshing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?._id, company?.id, routeData?.company?._id, routeData?.company?.id]);
 
   const fetchDealsList = React.useCallback(async () => {
@@ -866,7 +954,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const bannerMatchesCompanyIndustry = React.useCallback((banner, comp) => {
     if (!banner || !comp) return false;
 
-    // 1. Target company industry ID & name
+    // 1. Target company industry ID & name & company details
     const compIndObj = typeof comp.industry === 'object' && comp.industry !== null ? comp.industry : null;
     const compIndIdObj = typeof comp.industryId === 'object' && comp.industryId !== null ? comp.industryId : null;
 
@@ -881,10 +969,12 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       compIndObj?.name ||
       compIndIdObj?.name ||
       comp.industryName ||
-      (typeof comp.industry === 'string' && !comp.industry.match(/^[0-9a-fA-F]{24}$/) ? comp.industry : '')
+      (typeof comp.industry === 'string' && !comp.industry.match(/^[0-9a-fA-F]{24}$/) ? comp.industry : '') ||
+      comp.type ||
+      ''
     ).toLowerCase().trim();
 
-    // 2. Banner industry ID & name
+    // 2. Banner industry ID, name & title
     const bannerInd = banner.industryId || banner.industry;
     const bannerIndObj = typeof bannerInd === 'object' && bannerInd !== null ? bannerInd : null;
 
@@ -899,14 +989,46 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       ''
     ).toLowerCase().trim();
 
-    // Match by ID if both have IDs
+    const bannerTitle = String(banner.title || '').toLowerCase().trim();
+
+    // Direct ID match
     if (targetIndId && bannerIndId && targetIndId === bannerIndId) {
       return true;
     }
 
-    // Match by Name if available
+    // Direct exact or substring match
     if (targetIndName && bannerIndName) {
       if (targetIndName === bannerIndName || targetIndName.includes(bannerIndName) || bannerIndName.includes(targetIndName)) {
+        return true;
+      }
+    }
+
+    // Match banner title with target industry
+    if (targetIndName && bannerTitle) {
+      if (targetIndName.includes(bannerTitle) || bannerTitle.includes(targetIndName)) {
+        return true;
+      }
+    }
+
+    // Keyword & root stem matching (e.g. "agri", "farm", "jewel", "tech", "food", "health", "bank", "edu", "retail")
+    const commonStems = [
+      ['agri', 'farm', 'crop', 'grain', 'mandi'],
+      ['jewel', 'precious', 'gold', 'silver', 'diamond'],
+      ['tech', 'software', 'it', 'computer'],
+      ['food', 'beverage', 'snack', 'spice'],
+      ['health', 'pharma', 'med'],
+      ['bank', 'finan', 'money', 'loan'],
+      ['edu', 'school', 'learn', 'college'],
+      ['retail', 'ecom', 'shop', 'market', 'store'],
+    ];
+
+    const allTargetText = `${targetIndName} ${comp.name || ''} ${comp.description || ''}`.toLowerCase();
+    const allBannerText = `${bannerIndName} ${bannerTitle} ${banner.description || ''}`.toLowerCase();
+
+    for (const stemGroup of commonStems) {
+      const targetHasStem = stemGroup.some((s) => allTargetText.includes(s));
+      const bannerHasStem = stemGroup.some((s) => allBannerText.includes(s));
+      if (targetHasStem && bannerHasStem) {
         return true;
       }
     }
@@ -917,10 +1039,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   const fetchBanners = React.useCallback(async (targetComp) => {
     try {
       const c = targetComp || companyRef.current || routeData?.company;
-      if (!c) {
-        setBanners([]);
-        return;
-      }
+      if (!c) return;
 
       const indId = getActiveIndustryId(c);
       const cacheKey = indId ? `@banners_cache_${indId}` : `@banners_cache_${c._id || c.id || 'comp'}`;
@@ -930,10 +1049,8 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         const cached = await AsyncStorage.getItem(cacheKey);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
-            // Strictly filter by this company's industry
-            const filteredCached = parsed.filter((b) => bannerMatchesCompanyIndustry(b, c));
-            setBanners(filteredCached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setBanners((prev) => (prev.length > 0 ? prev : parsed));
           }
         }
       } catch {
@@ -942,11 +1059,11 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
       const token = await AsyncStorage.getItem('userToken');
 
-      // 2. Query API specifically for this company's industry
+      // 2. Query active banners from backend
       let rawBanners = [];
 
-      // If indId exists, call getActiveBanners with indId
-      if (indId) {
+      // If indId exists, query specifically for industry
+      if (indId && String(indId).match(/^[0-9a-fA-F]{24}$/)) {
         try {
           const indRes = await getActiveBanners(indId, token);
           const dataArr = Array.isArray(indRes?.data) ? indRes.data : Array.isArray(indRes) ? indRes : [];
@@ -958,7 +1075,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         }
       }
 
-      // If rawBanners is still empty, query all active banners and strictly filter by the company's industry
+      // If rawBanners is still empty, query all active banners
       if (rawBanners.length === 0) {
         try {
           const allRes = await getActiveBanners(null, token);
@@ -971,30 +1088,37 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         }
       }
 
-      // 3. STRICT FILTER: Only keep banners that match THIS company's industry!
-      const matchingBanners = rawBanners.filter((b) => bannerMatchesCompanyIndustry(b, c));
+      // 3. Match banners for THIS company's industry
+      const matchingBanners = rawBanners.filter((b) => checkBannerMatchesCompany(b, c));
 
-      if (matchingBanners.length > 0) {
-        const sorted = [...matchingBanners].sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
+      // 4. Use matching banners if found; otherwise fallback to the active platform banners
+      const bannersToDisplay = matchingBanners.length > 0 ? matchingBanners : rawBanners;
+
+      if (bannersToDisplay.length > 0) {
+        const sorted = [...bannersToDisplay].sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
         setBanners(sorted);
         // Pre-fetch images in background for instant display
         sorted.forEach((item) => {
           const imgUrl = resolveImageUrl(item.imageUrl || item.image || item.bannerImage);
           if (imgUrl) {
-            Image.prefetch(imgUrl).catch(() => {});
+            Image.prefetch(imgUrl).catch(() => { });
           }
         });
-        AsyncStorage.setItem(cacheKey, JSON.stringify(sorted)).catch(() => {});
-      } else {
-        // If no banner exists for this industry, clear banners so single fallback card displays
-        setBanners([]);
-        AsyncStorage.setItem(cacheKey, JSON.stringify([])).catch(() => {});
+        AsyncStorage.setItem(cacheKey, JSON.stringify(sorted)).catch(() => { });
       }
     } catch (err) {
       console.warn('Failed to load active banners:', err);
-      setBanners([]);
+      // NEVER setBanners([]) on error! Retain current banners!
     }
-  }, [getActiveIndustryId, bannerMatchesCompanyIndustry, routeData?.company]);
+  }, [getActiveIndustryId, routeData?.company]);
+
+  // Reset banner scroll index whenever banners change
+  React.useEffect(() => {
+    setActiveBannerIndex(0);
+    if (bannerScrollRef.current) {
+      bannerScrollRef.current.scrollTo({ x: 0, animated: false });
+    }
+  }, [banners]);
 
   // Auto-scroll banner if multiple banners exist
   React.useEffect(() => {
@@ -1002,9 +1126,9 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     const interval = setInterval(() => {
       setActiveBannerIndex((prev) => {
         const next = (prev + 1) % banners.length;
-        if (bannerScrollRef.current) {
+        if (bannerScrollRef.current && bannerCardWidth > 0) {
           bannerScrollRef.current.scrollTo({
-            x: next * BANNER_CARD_WIDTH,
+            x: next * bannerCardWidth,
             animated: true,
           });
         }
@@ -1013,7 +1137,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [banners]);
+  }, [banners, bannerCardWidth]);
 
   const handleBannerPress = (banner) => {
     if (!banner) return;
@@ -1028,13 +1152,13 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     if (target === 'deals' || target === 'saudas') {
       onNavigate('Deals', { company, originCompany: company });
     } else if (target === 'products' || target === 'catalog') {
-      onNavigate('Products', { company, originCompany: company });
-    } else if (target === 'chat' || target === 'messages') {
-      onNavigate('Messages', { company, originCompany: company });
-    } else if (target === 'ledger' || target === 'payments') {
+      onNavigate('AddProductPage', { company });
+    } else if (target === 'payments') {
       onNavigate('CompanyPayments', { company, originCompany: company });
-    } else if (target === 'onboarding' || target === 'profile') {
-      onNavigate('CompanyProfileDetails', { company, companyId: company?._id || company?.id });
+    } else if (target === 'ai' || target === 'bot') {
+      onNavigate('AIBot', { company, originCompany: company });
+    } else if (target === 'projects' || target === 'jobs') {
+      onNavigate('ProjectsList', { company, originCompany: company });
     } else {
       onNavigate('CreateDeal', { originCompany: company, company });
     }
@@ -1044,6 +1168,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     fetchAllCompanies();
     fetchDetails();
     fetchBanners();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const currentActiveCompanyId = company?._id || company?.id;
@@ -1070,8 +1195,8 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   }, [fetchDetails, fetchDealsList, fetchOnboardedUsers, fetchAllCompanies, fetchBanners]);
 
   const handleUpdate = async () => {
-    if (!editData.name || !editData.phone || !editData.registrationNumber) {
-      Alert.alert('Required Fields', 'Company Name, Phone, and Registration / GSTIN are mandatory.');
+    if (!editData.name || !editData.phone) {
+      Alert.alert('Required Fields', 'Company Name and Phone are mandatory.');
       return;
     }
     const id = company?._id || company?.id;
@@ -1084,44 +1209,27 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         phone: editData.phone,
         type: editData.type,
         registrationNumber: editData.registrationNumber,
-        industry: editData.industryId || editData.industry,
-        address: {
-          street: editData.street,
-          city: editData.city,
-          state: editData.state,
-          postalCode: editData.postalCode,
-          country: editData.country,
-        },
-        website: editData.website,
-        description: editData.description,
       };
+
+      if (editData.industry) {
+        payload.industry = editData.industry;
+      }
 
       const response = await updateCompany(id, payload, token);
       if (response && response.success) {
-        Alert.alert('Success', 'Company profile updated successfully!');
+        Alert.alert('Success', 'Company details updated successfully!');
         setIsEditModalVisible(false);
-        fetchDetails();
+        fetchDetails(id, true);
+        fetchAllCompanies();
       } else {
-        const errMsg = response.message || 'Failed to update company';
-        const lowerMsg = errMsg.toLowerCase();
-        if (lowerMsg.includes('already exists') || lowerMsg.includes('duplicate') || lowerMsg.includes('registration') || lowerMsg.includes('gst')) {
-          setEditErrors((prev) => ({ ...prev, registrationNumber: errMsg }));
-        } else {
-          Alert.alert('Error', errMsg);
-        }
+        Alert.alert('Error', response?.message || 'Failed to update company.');
       }
-    } catch (error) {
-      const errMsg = error.message || 'Failed to update company';
-      const lowerMsg = errMsg.toLowerCase();
-      if (lowerMsg.includes('already exists') || lowerMsg.includes('duplicate') || lowerMsg.includes('registration') || lowerMsg.includes('gst')) {
-        setEditErrors((prev) => ({ ...prev, registrationNumber: errMsg }));
-      } else {
-        Alert.alert('Error', errMsg);
-      }
+    } catch (e) {
+      Alert.alert('Error', e.message || 'An error occurred while updating.');
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     Alert.alert(
       'Delete Company',
       'Are you sure you want to delete this company? This action cannot be undone.',
@@ -1134,13 +1242,15 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             const id = company?._id || company?.id;
             try {
               const token = await AsyncStorage.getItem('userToken');
-              const response = await deleteCompany(id, token);
-              if (response && response.success) {
-                Alert.alert('Success', 'Company deleted successfully');
-                onNavigate('Dashboard', routeData, { refresh: true });
+              const res = await deleteCompany(id, token);
+              if (res && res.success) {
+                Alert.alert('Success', 'Company deleted.');
+                onNavigate('TraderDashboard');
+              } else {
+                Alert.alert('Error', res?.message || 'Failed to delete company.');
               }
-            } catch (error) {
-              Alert.alert('Error', error.message || 'Failed to delete company');
+            } catch (e) {
+              Alert.alert('Error', e.message || 'Error occurred while deleting.');
             }
           },
         },
@@ -1148,55 +1258,49 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
     );
   };
 
-  const deals = React.useMemo(() => {
-    return Array.isArray(fetchedDeals) ? fetchedDeals : [];
-  }, [fetchedDeals]);
+  const totalDealsCount = (fetchedDeals || []).length;
+  const confirmedDealsCount = (fetchedDeals || []).filter(
+    (d) => (d.status || '').toLowerCase() === 'confirmed' || (d.status || '').toLowerCase() === 'completed'
+  ).length;
+  const pendingDealsCount = (fetchedDeals || []).filter(
+    (d) => (d.status || '').toLowerCase() === 'pending' || (d.status || '').toLowerCase() === 'draft'
+  ).length;
 
-  const confirmedDealsCount = React.useMemo(() => {
-    return deals.filter((d) => ['confirmed', 'active', 'completed', 'approved'].includes((d.status || '').toLowerCase())).length;
-  }, [deals]);
+  const getInitials = (name) => {
+    if (!name) return 'CO';
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
 
-  const pendingDealsCount = React.useMemo(() => {
-    return deals.filter((d) => ['pending', 'in progress', 'inprogress', 'created'].includes((d.status || '').toLowerCase()) || !d.status).length;
-  }, [deals]);
+  const companyLogo = company?.logo || company?.logoUrl || null;
+  const companyInitials = getInitials(company?.name || company?.businessName || '');
+  const displayCompanyName = company?.name || company?.businessName || routeData?.company?.name || 'Company';
+  const deals = Array.isArray(fetchedDeals) ? fetchedDeals : [];
 
-  const totalDealsCount = React.useMemo(() => {
-    return deals.length;
-  }, [deals]);
-
-  const userName = currentUser?.name || routeData?.user?.name || 'Trader';
-  const displayCompanyName = company?.name || 'Company';
-  const companyFirstLetter = (company?.name || displayCompanyName || 'C').trim().charAt(0).toUpperCase();
-  const userInitial = (userName || 'U').charAt(0).toUpperCase();
-
-  // 8 Quick Action Items (Row 1: Trading & Catalog, Row 2: Parties, Comms, Finance & Reports)
-  const quickActions = [
-    {
-      id: 'create_deal',
-      title: 'Create Deal',
-      icon: <FilePlus size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#1D64F2',
-      onPress: () => onNavigate('CreateDeal', { originCompany: company, company }),
-    },
+  // 6 Compact Quick Action Grid Items (English only, simple and user-friendly)
+  const quickActionGridItems = [
     {
       id: 'add_product',
       title: 'Add Product',
-      icon: <Package size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#FF9900',
+      icon: <Package size={20} color="#FFFFFF" strokeWidth={2.4} />,
+      iconBg: '#F59E0B',
       onPress: () => onNavigate('AddProductPage', { company }),
     },
     {
       id: 'categories',
-      title: 'Add Categories',
-      icon: <LayoutGrid size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#9333EA',
-      onPress: () => onNavigate('CategoryPage', { company, initialTab: 'category' }),
+      title: 'Categories',
+      icon: <Layers size={20} color="#FFFFFF" strokeWidth={2.4} />,
+      iconBg: '#6366F1',
+      onPress: () => onNavigate('CategoryPage', { company, companyId: company?._id || company?.id }),
     },
     {
       id: 'payments',
       title: 'Payments',
-      icon: <Wallet size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#10B981',
+      icon: <Wallet size={20} color="#FFFFFF" strokeWidth={2.4} />,
+      iconBg: '#10B981',
       onPress: () => onNavigate('CompanyPayments', {
         company,
         companyId: company?._id || company?.id || routeData?.companyId,
@@ -1205,46 +1309,38 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         fromScreen: 'CompanyDetails',
       }),
     },
-
-
-
     {
-      id: 'parties',
-      title: 'Onboarded',
-      icon: <Users size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#0D9488',
-      onPress: () => onNavigate('OnboardedUsers', {
-        companyId: company?._id || company?.id,
-        companyName: company?.name,
+      id: 'deliveries',
+      title: 'Deliveries',
+      icon: <Truck size={20} color="#FFFFFF" strokeWidth={2.4} />,
+      iconBg: '#0284C7',
+      onPress: () => onNavigate('CompanyDeliveries', {
         company,
+        companyId: company?._id || company?.id || routeData?.companyId,
+        companyName: company?.name || company?.businessName || routeData?.companyName,
+        deals: fetchedDeals,
         fromScreen: 'CompanyDetails',
-        initialUsers: onboardedUsers,
       }),
     },
     {
-      id: 'messages',
-      title: 'View Chats',
-      icon: <MessageSquare size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#FF1E56',
-      onPress: () => onNavigate('ChatList', { company, companyId: company?._id || company?.id }),
-    },
-    {
-      id: 'ai_bot',
-      title: 'Pravisti AI',
-      icon: <Bot size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#2327D8',
-      onPress: () => onNavigate('AIBot', { company, companyId: company?._id || company?.id }),
-    },
-    {
-      id: 'projects_jobs',
-      title: 'Projects & Jobs',
-      icon: <FolderKanban size={24} color="#FFFFFF" strokeWidth={2.2} />,
-      bgColor: '#2327D8',
-      onPress: () => onNavigate('ProjectsList', {
+      id: 'ledger',
+      title: 'Ledger',
+      icon: <BookOpen size={20} color="#FFFFFF" strokeWidth={2.4} />,
+      iconBg: '#8B5CF6',
+      onPress: () => onNavigate('CompanyLedger', {
         company,
-        companyId: company?._id || company?.id,
-        user: currentUser || routeData?.user,
+        companyId: company?._id || company?.id || routeData?.companyId,
+        companyName: company?.name || company?.businessName || routeData?.companyName,
+        deals: fetchedDeals,
+        fromScreen: 'CompanyDetails',
       }),
+    },
+    {
+      id: 'onboard_users',
+      title: 'Onboard Users',
+      icon: <Users size={20} color="#FFFFFF" strokeWidth={2.4} />,
+      iconBg: '#0D9488',
+      onPress: () => onNavigate('OnboardedUsers', { company, companyId: company?._id || company?.id }),
     },
   ];
 
@@ -1308,6 +1404,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1355,21 +1452,29 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         </View>
 
         {/* ─── 3. PROMOTIONAL BANNER (Industry-wise from backend) ─── */}
-        <View style={styles.bannerOuterContainer}>
+        <View
+          style={styles.bannerOuterContainer}
+          onLayout={(e) => {
+            const { width } = e.nativeEvent.layout;
+            if (width > 0 && Math.abs(width - containerWidth) > 1) {
+              setContainerWidth(width);
+            }
+          }}
+        >
           {banners.length > 0 ? (
-            <View style={styles.bannerWrapper}>
+            <View style={[styles.bannerWrapper, { width: bannerCardWidth, height: bannerCardHeight }]}>
               <ScrollView
                 ref={bannerScrollRef}
                 horizontal
-                pagingEnabled
+                pagingEnabled={Platform.OS === 'ios'}
                 showsHorizontalScrollIndicator={false}
                 decelerationRate="fast"
-                snapToInterval={BANNER_CARD_WIDTH}
+                snapToInterval={bannerCardWidth}
                 snapToAlignment="center"
-                style={styles.bannerScrollView}
+                style={[styles.bannerScrollView, { width: bannerCardWidth, height: bannerCardHeight }]}
                 onMomentumScrollEnd={(e) => {
                   const xOffset = e.nativeEvent.contentOffset.x;
-                  const idx = Math.round(xOffset / BANNER_CARD_WIDTH);
+                  const idx = Math.round(xOffset / bannerCardWidth);
                   if (idx >= 0 && idx < banners.length) {
                     setActiveBannerIndex(idx);
                   }
@@ -1380,6 +1485,8 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                   <BannerCardItem
                     key={item._id || item.id || `banner_${idx}`}
                     item={item}
+                    cardWidth={bannerCardWidth}
+                    cardHeight={bannerCardHeight}
                     onPress={handleBannerPress}
                     onCreateDeal={() => onNavigate('CreateDeal', { originCompany: company, company })}
                   />
@@ -1388,7 +1495,13 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
               {/* Dots Pagination Indicator (if > 1 banner) */}
               {banners.length > 1 && (
-                <View style={styles.bannerDotsWrap} pointerEvents="none">
+                <View
+                  style={[
+                    styles.bannerDotsWrap,
+                    bannerCardWidth < 340 && { right: 8, bottom: 8, paddingHorizontal: 5, paddingVertical: 2.5 }
+                  ]}
+                  pointerEvents="none"
+                >
                   {banners.map((_, dotIdx) => (
                     <View
                       key={`banner_dot_${dotIdx}`}
@@ -1404,60 +1517,75 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           ) : (
             /* Fallback banner if backend has no banners configured yet */
             <TouchableOpacity
-              style={styles.bannerCardFallback}
+              style={[styles.bannerCardFallback, { width: bannerCardWidth, height: bannerCardHeight }]}
               activeOpacity={0.92}
               onPress={() => onNavigate('CreateDeal', { originCompany: company, company })}
             >
               <View style={styles.bannerFallbackDecorCircle1} />
               <View style={styles.bannerFallbackDecorCircle2} />
               <View style={styles.bannerFallbackTextCol}>
-                <Text style={styles.bannerFallbackTitle}>Promote & Grow Business</Text>
-                <Text style={styles.bannerFallbackSubtitle}>Create and manage deals with verified traders</Text>
+                <Text style={[styles.bannerFallbackTitle, bannerCardWidth < 340 && { fontSize: 14 }]} numberOfLines={1}>
+                  Promote & Grow Business
+                </Text>
+                <Text style={[styles.bannerFallbackSubtitle, bannerCardWidth < 340 && { fontSize: 11 }]} numberOfLines={2}>
+                  Create and manage deals with verified traders
+                </Text>
               </View>
 
               {/* Small Create Deal Button on Left Side Bottom */}
               <TouchableOpacity
-                style={styles.bannerSmallCreateDealBtn}
+                style={[
+                  styles.bannerSmallCreateDealBtn,
+                  bannerCardWidth < 340 && { left: 8, bottom: 8, paddingHorizontal: 8, paddingVertical: 4 }
+                ]}
                 onPress={() => onNavigate('CreateDeal', { originCompany: company, company })}
                 activeOpacity={0.85}
               >
-                <Plus size={13} color="#1541D8" strokeWidth={2.8} />
-                <Text style={styles.bannerSmallCreateDealBtnText}>Create Deal</Text>
+                <Plus size={bannerCardWidth < 340 ? 11 : 13} color="#1541D8" strokeWidth={2.8} />
+                <Text style={[styles.bannerSmallCreateDealBtnText, bannerCardWidth < 340 && { fontSize: 10.5 }]}>Create Deal</Text>
               </TouchableOpacity>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* ─── 4. QUICK ACTIONS SECTION (4x2 Grid) ─── */}
+        {/* ─── 4. QUICK ACTIONS SECTION (Clean, English-only, Compact) ─── */}
         <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <TouchableOpacity
-              style={styles.customizeBtn}
-              onPress={() => {
-                Alert.alert('Quick Actions', 'Select any tile to navigate directly to management, trade, catalog, or reports.');
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.customizeBtnText}>View All</Text>
-              <ChevronRight size={15} color="#2563EB" strokeWidth={2.4} style={{ marginLeft: 2 }} />
-            </TouchableOpacity>
-          </View>
+          {/* Hero Create Deal Button */}
+          <TouchableOpacity
+            style={styles.heroCreateDealCard}
+            activeOpacity={0.88}
+            onPress={() => onNavigate('CreateDeal', { originCompany: company, company })}
+          >
+            <View style={styles.heroCreateDealLeft}>
+              <View style={styles.heroCreateDealIconBadge}>
+                <FilePlus size={20} color="#FFFFFF" strokeWidth={2.4} />
+              </View>
+              <View style={styles.heroCreateDealTextCol}>
+                <Text style={styles.heroCreateDealTitle}>Create Deal</Text>
+              </View>
+            </View>
+            <View style={styles.heroCreateDealArrow}>
+              <ChevronRight size={18} color="#FFFFFF" strokeWidth={2.6} />
+            </View>
+          </TouchableOpacity>
 
-          <View style={styles.quickActionsGrid}>
-            {quickActions.map((action) => (
+          {/* Compact 2x2 Grid */}
+          <View style={styles.compactActionsGrid}>
+            {quickActionGridItems.map((action) => (
               <TouchableOpacity
                 key={action.id}
-                style={styles.quickActionItem}
+                style={styles.compactActionTile}
                 onPress={action.onPress}
-                activeOpacity={0.75}
+                activeOpacity={0.78}
               >
-                <View style={[styles.quickActionIconBox, { backgroundColor: action.bgColor }]}>
+                <View style={[styles.compactActionIconBox, { backgroundColor: action.iconBg }]}>
                   {action.icon}
                 </View>
-                <Text style={styles.quickActionTitle} numberOfLines={1}>
-                  {action.title}
-                </Text>
+                <View style={styles.compactActionTextCol}>
+                  <Text style={styles.compactActionTitle} numberOfLines={1}>
+                    {action.title}
+                  </Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -1465,7 +1593,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
 
         {/* ─── 5. BUSINESS OVERVIEW SECTION (3 Stat Cards with Sparklines) ─── */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Business Overview</Text>
+
 
           <View style={styles.statsRow}>
             {/* 1. Total Deals */}
@@ -1483,12 +1611,6 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             >
               <Text style={styles.statLabel}>Total Deals</Text>
               <Text style={styles.statValue}>{totalDealsCount}</Text>
-              <SparklineWave
-                color="#2563EB"
-                gradientId="blueGrad"
-                pathD="M0,18 C20,18 35,9 55,12 C72,15 85,5 100,3"
-                fillD="M0,18 C20,18 35,9 55,12 C72,15 85,5 100,3 L100,24 L0,24 Z"
-              />
             </TouchableOpacity>
 
             {/* 2. Confirmed Deals */}
@@ -1506,12 +1628,6 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             >
               <Text style={styles.statLabel}>Confirmed Deals</Text>
               <Text style={styles.statValue}>{confirmedDealsCount}</Text>
-              <SparklineWave
-                color="#10B981"
-                gradientId="greenGrad"
-                pathD="M0,19 C25,20 40,11 65,11 C80,11 90,4 100,2"
-                fillD="M0,19 C25,20 40,11 65,11 C80,11 90,4 100,2 L100,24 L0,24 Z"
-              />
             </TouchableOpacity>
 
             {/* 3. Pending Deals */}
@@ -1529,12 +1645,6 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
             >
               <Text style={styles.statLabel}>Pending Deals</Text>
               <Text style={styles.statValue}>{pendingDealsCount}</Text>
-              <SparklineWave
-                color="#F97316"
-                gradientId="orangeGrad"
-                pathD="M0,16 C20,12 35,20 55,14 C75,8 88,15 100,9"
-                fillD="M0,16 C20,12 35,20 55,14 C75,8 88,15 100,9 L100,24 L0,24 Z"
-              />
             </TouchableOpacity>
           </View>
         </View>
@@ -1594,12 +1704,19 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 firstProd.name ||
                 (typeof firstProd === 'string' ? firstProd : '') ||
                 deal.title ||
-                'Commodity Sauda';
+                dealNumber ||
+                'Deal';
 
               // Quantity & Unit
+              const rawNoteUnit =
+                deal.notes?.match(/Unit:\s*([^|\n\r,()]+)/i)?.[1]?.trim() ||
+                deal.notes?.match(/\(\s*\d+(?:\.\d+)?\s+([a-zA-Z\u0900-\u097F]+(?:\s+[a-zA-Z\u0900-\u097F]+)?)\s*\)/)?.[1]?.trim() ||
+                deal.notes?.match(/\d+(?:\.\d+)?\s+([a-zA-Z\u0900-\u097F]+)\s*@/)?.[1]?.trim() ||
+                firstProd.notes?.match(/\(\s*\d+(?:\.\d+)?\s+([a-zA-Z\u0900-\u097F]+)\s*\)/)?.[1]?.trim() ||
+                '';
               const rawQty = firstProd.quantity || deal.quantity || deal.qty || '';
-              const rawUnit = firstProd.unit || firstProd.quantityUnit || prodObj?.unit || deal.unit || 'Bags';
-              const formattedQty = rawQty ? `${rawQty} ${rawUnit}` : '100 Bags';
+              const rawUnit = firstProd.unit || firstProd.unitName || firstProd.quantityUnit || prodObj?.unit || deal.unit || deal.unitName || rawNoteUnit || firstProd.unitShortName || '';
+              const formattedQty = rawQty ? `${rawQty} ${rawUnit}`.trim() : '';
 
               // Price & Total Amount
               const price = firstProd.price || deal.price || 0;
@@ -1615,7 +1732,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 deal.sellerCompanyId?.name ||
                 deal.party1?.company?.name ||
                 deal.party1?.name ||
-                'Seller';
+                '';
 
               const buyerName =
                 deal.buyerCompany?.name ||
@@ -1623,7 +1740,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 deal.buyerCompanyId?.name ||
                 deal.party2?.company?.name ||
                 deal.party2?.name ||
-                'Buyer';
+                '';
 
               // Date
               const formattedDate = deal.createdAt
@@ -1632,7 +1749,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                   month: 'short',
                   year: 'numeric',
                 })
-                : 'Recent';
+                : '';
 
               const statusInfo = getDealStatusInfo(deal);
 
@@ -1685,23 +1802,29 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                       </View>
                     </View>
 
-                    <Text style={styles.recentDealParties} numberOfLines={1}>
-                      {sellerName} → {buyerName}
-                    </Text>
+                    {(sellerName || buyerName) ? (
+                      <Text style={styles.recentDealParties} numberOfLines={1}>
+                        {sellerName || '—'} → {buyerName || '—'}
+                      </Text>
+                    ) : null}
 
                     <View style={styles.recentDealFooterRow}>
                       <View style={styles.recentDealMetaRow}>
                         {/* Date Favicon / Icon */}
-                        <View style={styles.recentDealMetaBadge}>
-                          <Calendar size={11} color="#64748B" strokeWidth={2.2} />
-                          <Text style={styles.recentDealMetaText}>{formattedDate}</Text>
-                        </View>
+                        {formattedDate ? (
+                          <View style={styles.recentDealMetaBadge}>
+                            <Calendar size={11} color="#64748B" strokeWidth={2.2} />
+                            <Text style={styles.recentDealMetaText}>{formattedDate}</Text>
+                          </View>
+                        ) : null}
 
                         {/* Unit Favicon / Icon */}
-                        <View style={styles.recentDealMetaBadge}>
-                          <Layers size={11} color="#64748B" strokeWidth={2.2} />
-                          <Text style={styles.recentDealMetaText}>{formattedQty}</Text>
-                        </View>
+                        {formattedQty ? (
+                          <View style={styles.recentDealMetaBadge}>
+                            <Layers size={11} color="#64748B" strokeWidth={2.2} />
+                            <Text style={styles.recentDealMetaText}>{formattedQty}</Text>
+                          </View>
+                        ) : null}
                       </View>
 
                       {/* Total Price */}
@@ -1766,18 +1889,16 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() =>
-            onNavigate('CompanyPayments', {
+            onNavigate('ProjectsList', {
               company,
               companyId: company?._id || company?.id,
-              companyName: company?.name,
-              deals: fetchedDeals,
-              fromScreen: 'CompanyDetails',
+              user: currentUser || routeData?.user,
             })
           }
           activeOpacity={0.7}
         >
-          <Wallet size={22} color="#64748B" />
-          <Text style={styles.tabLabel}>Payments</Text>
+          <FolderKanban size={22} color="#64748B" />
+          <Text style={styles.tabLabel}>Project/Job</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1911,7 +2032,9 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
               />
               {editErrors.name ? <Text style={styles.modalErrorText}>{editErrors.name}</Text> : null}
 
-              <Text style={styles.modalFieldLabel}>Registration / GSTIN*</Text>
+              <Text style={styles.modalFieldLabel}>
+                Registration / GSTIN <Text style={{ fontSize: 11, fontWeight: '500', color: '#64748B' }}>(Optional)</Text>
+              </Text>
               <TextInput
                 style={[styles.modalInput, editErrors.registrationNumber && styles.modalInputError]}
                 value={editData.registrationNumber}
@@ -1919,7 +2042,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                   setEditData({ ...editData, registrationNumber: text });
                   if (editErrors.registrationNumber) setEditErrors({ ...editErrors, registrationNumber: '' });
                 }}
-                placeholder="REG123456 / GSTIN"
+                placeholder="REG123456 / GSTIN (Optional)"
                 placeholderTextColor="#94A3B8"
                 autoCapitalize="characters"
               />
@@ -2037,36 +2160,36 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
                 placeholderTextColor="#94A3B8"
                 multiline
               />
-            </ScrollView>
 
-            <View style={styles.modalButtonsRow}>
+              <View style={[styles.modalButtonsRow, { marginTop: 18 }]}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setIsEditModalVisible(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalSaveBtn}
+                  onPress={handleUpdate}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalSaveBtnText}>Save Changes</Text>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setIsEditModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalSaveBtn}
-                onPress={handleUpdate}
+                style={[styles.modalDeleteBtn, { marginBottom: 16 }]}
+                onPress={() => {
+                  setIsEditModalVisible(false);
+                  handleDelete();
+                }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.modalSaveBtnText}>Save Changes</Text>
+                <Trash2 size={15} color="#DC2626" strokeWidth={2.2} />
+                <Text style={styles.modalDeleteBtnText}>Delete Company</Text>
               </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.modalDeleteBtn}
-              onPress={() => {
-                setIsEditModalVisible(false);
-                handleDelete();
-              }}
-              activeOpacity={0.8}
-            >
-              <Trash2 size={15} color="#DC2626" strokeWidth={2.2} />
-              <Text style={styles.modalDeleteBtnText}>Delete Company</Text>
-            </TouchableOpacity>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -2221,6 +2344,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.2,
+    flexShrink: 1,
   },
   activeCompanyBadge: {
     backgroundColor: '#E8F8F0',
@@ -2236,11 +2360,13 @@ const styles = StyleSheet.create({
 
   /* ── 3. Promotional Banners (Industry-wise) ── */
   bannerOuterContainer: {
+    width: '100%',
     marginBottom: 20,
+    alignItems: 'center',
   },
   bannerLoadingCard: {
-    width: BANNER_CARD_WIDTH,
-    height: BANNER_CARD_HEIGHT,
+    width: '100%',
+    height: 152,
     borderRadius: 16,
     backgroundColor: '#EFF6FF',
     borderWidth: 1,
@@ -2250,8 +2376,6 @@ const styles = StyleSheet.create({
   },
   bannerWrapper: {
     position: 'relative',
-    width: BANNER_CARD_WIDTH,
-    height: BANNER_CARD_HEIGHT,
     borderRadius: 16,
     overflow: 'hidden',
     shadowColor: '#0F172A',
@@ -2259,18 +2383,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 4,
+    backgroundColor: '#0F172A',
   },
   bannerScrollView: {
-    width: BANNER_CARD_WIDTH,
-    height: BANNER_CARD_HEIGHT,
+    borderRadius: 16,
   },
   bannerCard: {
-    width: BANNER_CARD_WIDTH,
-    height: BANNER_CARD_HEIGHT,
     borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#1E293B',
+    backgroundColor: '#0F172A',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   bannerImage: {
     width: '100%',
@@ -2322,7 +2446,7 @@ const styles = StyleSheet.create({
     right: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     paddingHorizontal: 7,
     paddingVertical: 3.5,
     borderRadius: 10,
@@ -2342,8 +2466,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   bannerCardFallback: {
-    width: BANNER_CARD_WIDTH,
-    height: BANNER_CARD_HEIGHT,
     borderRadius: 16,
     backgroundColor: '#1541D8',
     overflow: 'hidden',
@@ -2421,45 +2543,118 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2563EB',
   },
-  quickActionsGrid: {
+  /* Hero Create Deal Button */
+  heroCreateDealCard: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-    marginTop: 2,
-  },
-  quickActionItem: {
-    width: '25%',
     alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 2,
-    backgroundColor: 'transparent',
-  },
-  quickActionIconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+    justifyContent: 'space-between',
+    backgroundColor: '#1541D8',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 10,
     ...Platform.select({
       ios: {
-        shadowColor: '#0F172A',
+        shadowColor: '#1541D8',
         shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.15,
-        shadowRadius: 5,
+        shadowOpacity: 0.22,
+        shadowRadius: 6,
       },
       android: {
-        // No elevation on Android to prevent white/grey square shadow artifacts behind rounded squircle
+        elevation: 3,
       },
     }),
   },
-  quickActionTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#1E293B',
-    textAlign: 'center',
-    marginTop: 7,
+  heroCreateDealLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  heroCreateDealIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  heroCreateDealTextCol: {
+    flex: 1,
+  },
+  heroCreateDealTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
     letterSpacing: -0.2,
+  },
+  heroCreateDealSub: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    color: '#BFDBFE',
+    marginTop: 1,
+  },
+  heroCreateDealArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+
+  /* 2x2 Compact Action Grid */
+  compactActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  compactActionTile: {
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 1.5 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  compactActionIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 9,
+  },
+  compactActionTextCol: {
+    flex: 1,
+  },
+  compactActionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  compactActionDesc: {
+    fontSize: 10.5,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 1.5,
   },
 
   /* ── 5. Business Overview ── */
@@ -2484,9 +2679,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   statLabel: {
-    fontSize: 9.5,
-    fontWeight: '600',
-    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0e1454ff',
   },
   statValue: {
     fontSize: 16,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -10,25 +10,21 @@ import {
   Share,
   Alert,
   Image,
-  Dimensions,
-  Platform,
+  ActivityIndicator,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ArrowLeft,
   Share2,
   Download,
   CheckCircle2,
   ShieldCheck,
-  Building2,
-  Printer,
-  FileText,
 } from 'lucide-react-native';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { getDealDetails, getCompanyDetails } from '../../../services/api';
 
 // Number to Indian Currency Words Formatter
 function numberToIndianWords(num) {
-  if (!num || isNaN(num)) return '';
+  if (!num || isNaN(num)) return 'Zero Rupees Only';
   const n = Math.floor(Math.abs(Number(num)));
   if (n === 0) return 'Zero Rupees Only';
 
@@ -69,21 +65,121 @@ function numberToIndianWords(num) {
   return result.trim() + ' Rupees Only';
 }
 
+function getCompanyAddress(comp) {
+  if (!comp) return '—';
+  if (typeof comp === 'string' && comp.trim()) {
+    return comp.trim();
+  }
+  const street = comp.street || comp.address?.street || (typeof comp.address === 'string' ? comp.address : comp.registeredAddress) || '';
+  const city = comp.city || (typeof comp.address === 'object' ? comp.address?.city : '') || '';
+  const district = comp.district || (typeof comp.address === 'object' ? comp.address?.district : '') || '';
+  const state = comp.state || (typeof comp.address === 'object' ? comp.address?.state : '') || '';
+  const pincode = comp.pincode || comp.postalCode || (typeof comp.address === 'object' ? comp.address?.postalCode || comp.address?.pincode : '') || '';
+
+  const parts = [street, city, district, state, pincode].filter(Boolean);
+  if (parts.length > 0) return parts.join(', ');
+  if (city) return `${city}, ${state || 'India'}`;
+  return '—';
+}
+
 const DealInvoice = ({ onNavigate, routeData }) => {
-  const deal = routeData?.deal || {};
-  const passedSellerDetails = routeData?.sellerCompanyDetails || {};
-  const passedBuyerDetails = routeData?.buyerCompanyDetails || {};
+  const initialDeal = routeData?.deal || null;
+  const [deal, setDeal] = useState(initialDeal);
+  const [sellerDetails, setSellerDetails] = useState(routeData?.sellerCompanyDetails || null);
+  const [buyerDetails, setBuyerDetails] = useState(routeData?.buyerCompanyDetails || null);
+  const [isLoading, setIsLoading] = useState(!initialDeal || !initialDeal.products);
+
+  // Fetch full deal and companies dynamically
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadDealAndCompanies = async () => {
+      const targetDealId = routeData?.dealId || initialDeal?._id || initialDeal?.id;
+      if (!targetDealId && !initialDeal) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
+
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) {
+          if (isMounted) setIsLoading(false);
+          return;
+        }
+
+        let activeDeal = initialDeal;
+        if (targetDealId && (!initialDeal || !initialDeal.products || !initialDeal.sellerCompanyId)) {
+          const dealRes = await getDealDetails(targetDealId, token);
+          if (dealRes && (dealRes.success || dealRes.data)) {
+            activeDeal = dealRes.data?.deal || dealRes.data || initialDeal;
+            if (isMounted) setDeal(activeDeal);
+          }
+        }
+
+        // Extract seller company ID
+        const extractId = (val) => {
+          if (!val) return null;
+          if (typeof val === 'string' && val.trim().length === 24) return val.trim();
+          if (typeof val === 'object') {
+            const id = val._id || val.id || val.companyId;
+            if (typeof id === 'string' && id.trim().length === 24) return id.trim();
+          }
+          return null;
+        };
+
+        const sId =
+          extractId(activeDeal?.sellerCompanyId) ||
+          extractId(activeDeal?.sellerCompany) ||
+          extractId(activeDeal?.party1?.company) ||
+          extractId(activeDeal?.party1);
+
+        if (sId && (!sellerDetails || !sellerDetails.address || !sellerDetails.gstin)) {
+          const sRes = await getCompanyDetails(sId, token);
+          if (sRes && sRes.success && sRes.data && isMounted) {
+            setSellerDetails(sRes.data);
+          }
+        }
+
+        const bId =
+          extractId(activeDeal?.buyerCompanyId) ||
+          extractId(activeDeal?.buyerCompany) ||
+          extractId(activeDeal?.party2?.company) ||
+          extractId(activeDeal?.party2);
+
+        if (bId && (!buyerDetails || !buyerDetails.address || !buyerDetails.gstin)) {
+          const bRes = await getCompanyDetails(bId, token);
+          if (bRes && bRes.success && bRes.data && isMounted) {
+            setBuyerDetails(bRes.data);
+          }
+        }
+      } catch (err) {
+        console.warn('Error loading invoice details:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    loadDealAndCompanies();
+
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeData]);
 
   // Extract Deal Numbers & Dates
   const dealNumber =
-    deal.dealNumber ||
-    deal.contractNumber ||
-    deal.dealId ||
-    (deal._id ? String(deal._id).slice(-8).toUpperCase() : 'DEAL-001');
+    deal?.dealNumber ||
+    deal?.contractNumber ||
+    deal?.saudaNumber ||
+    deal?.dealNo ||
+    deal?.dealId ||
+    (deal?._id ? `PRV-${String(deal._id).slice(-8).toUpperCase()}` : 'DEAL-001');
 
   const invoiceNumber = `INV-${dealNumber}`;
-  const dealDate = deal.createdAt
-    ? new Date(deal.createdAt).toLocaleDateString('en-IN', {
+  const rawDealDate = deal?.dealDate || deal?.createdAt;
+  const dealDate = rawDealDate
+    ? new Date(rawDealDate).toLocaleDateString('en-IN', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -94,134 +190,231 @@ const DealInvoice = ({ onNavigate, routeData }) => {
         year: 'numeric',
       });
 
-  const dealTime = deal.createdAt
-    ? new Date(deal.createdAt).toLocaleTimeString('en-IN', {
+  const dealTime = rawDealDate
+    ? new Date(rawDealDate).toLocaleTimeString('en-IN', {
         hour: '2-digit',
         minute: '2-digit',
+        hour12: true,
       })
     : '';
 
-  // Extract Parties
+  // Extract Parties (Seller / Billed By)
   const rawSeller =
-    (typeof deal.sellerCompanyId === 'object' && deal.sellerCompanyId) ||
-    (typeof deal.sellerCompany === 'object' && deal.sellerCompany) ||
-    passedSellerDetails;
-
-  const rawBuyer =
-    (typeof deal.buyerCompanyId === 'object' && deal.buyerCompanyId) ||
-    (typeof deal.buyerCompany === 'object' && deal.buyerCompany) ||
-    passedBuyerDetails;
+    sellerDetails ||
+    (typeof deal?.sellerCompanyId === 'object' && deal?.sellerCompanyId) ||
+    (typeof deal?.sellerCompany === 'object' && deal?.sellerCompany) ||
+    (typeof deal?.party1 === 'object' && deal?.party1) ||
+    {};
 
   const sellerName =
-    deal.sellerCompanyName ||
+    sellerDetails?.name ||
+    sellerDetails?.companyName ||
+    deal?.sellerCompanyName ||
     rawSeller.name ||
     rawSeller.companyName ||
-    deal.sellerName ||
-    'Supplier / Seller Firm';
+    deal?.sellerName ||
+    'Seller Firm';
 
-  const sellerAddress =
-    rawSeller.address ||
-    rawSeller.registeredAddress ||
-    [rawSeller.city, rawSeller.state].filter(Boolean).join(', ') ||
-    'Registered Mandi Yard, India';
+  const sellerAddress = getCompanyAddress(sellerDetails || rawSeller);
 
   const sellerGstin =
+    sellerDetails?.gstin ||
+    sellerDetails?.gstNumber ||
+    sellerDetails?.registrationNumber ||
     rawSeller.gstin ||
     rawSeller.gstNumber ||
     rawSeller.registrationNumber ||
-    rawSeller.taxId ||
+    deal?.sellerGstin ||
     '—';
 
   const sellerPhone =
+    sellerDetails?.mobileNumber ||
+    sellerDetails?.phone ||
+    sellerDetails?.ownerPhone ||
     rawSeller.mobileNumber ||
     rawSeller.phone ||
-    rawSeller.ownerPhone ||
+    deal?.sellerPhone ||
     '—';
 
-  const sellerEmail = rawSeller.email || '—';
+  const sellerEmail = sellerDetails?.email || rawSeller.email || deal?.sellerEmail || '—';
+
+  // Extract Parties (Buyer / Billed To)
+  const rawBuyer =
+    buyerDetails ||
+    (typeof deal?.buyerCompanyId === 'object' && deal?.buyerCompanyId) ||
+    (typeof deal?.buyerCompany === 'object' && deal?.buyerCompany) ||
+    (typeof deal?.party2 === 'object' && deal?.party2) ||
+    {};
 
   const buyerName =
-    deal.buyerCompanyName ||
+    buyerDetails?.name ||
+    buyerDetails?.companyName ||
+    deal?.buyerCompanyName ||
     rawBuyer.name ||
     rawBuyer.companyName ||
-    deal.buyerName ||
-    'Buyer / Consignee Firm';
+    deal?.buyerName ||
+    'Buyer Firm';
 
-  const buyerAddress =
-    rawBuyer.address ||
-    rawBuyer.registeredAddress ||
-    [rawBuyer.city, rawBuyer.state].filter(Boolean).join(', ') ||
-    'Commercial Trade Hub, India';
+  const buyerAddress = getCompanyAddress(buyerDetails || rawBuyer);
 
   const buyerGstin =
+    buyerDetails?.gstin ||
+    buyerDetails?.gstNumber ||
+    buyerDetails?.registrationNumber ||
     rawBuyer.gstin ||
     rawBuyer.gstNumber ||
     rawBuyer.registrationNumber ||
-    rawBuyer.taxId ||
+    deal?.buyerGstin ||
     '—';
 
   const buyerPhone =
+    buyerDetails?.mobileNumber ||
+    buyerDetails?.phone ||
+    buyerDetails?.ownerPhone ||
     rawBuyer.mobileNumber ||
     rawBuyer.phone ||
-    rawBuyer.ownerPhone ||
+    deal?.buyerPhone ||
     '—';
 
-  const buyerEmail = rawBuyer.email || '—';
+  const buyerEmail = buyerDetails?.email || rawBuyer.email || deal?.buyerEmail || '—';
 
+  // Intermediary Broker
+  const rawBroker = deal?.brokerCompanyId || deal?.brokerCompany || deal?.broker;
   const brokerName =
-    (typeof deal.brokerCompanyId === 'object' && deal.brokerCompanyId?.name) ||
-    deal.brokerName ||
-    deal.brokerCompanyName ||
-    (deal.isAssisted ? 'Licensed APMC Broker' : 'Direct B2B Contract');
+    (typeof rawBroker === 'object' ? rawBroker?.name || rawBroker?.companyName : null) ||
+    deal?.brokerName ||
+    deal?.brokerCompanyName ||
+    'Direct B2B Trade (No Broker)';
 
-  // Product and Pricing breakdown
-  const rawProduct =
-    (typeof deal.productId === 'object' && deal.productId) ||
-    (typeof deal.product === 'object' && deal.product) ||
-    {};
+  // Products and Financial Breakdown
+  const productsList = useMemo(() => {
+    if (Array.isArray(deal?.products) && deal.products.length > 0) {
+      return deal.products.map((p, idx) => {
+        const pObj = typeof p.productId === 'object' && p.productId !== null ? p.productId : {};
+        const name =
+          p.name ||
+          p.productName ||
+          pObj?.name ||
+          pObj?.productName ||
+          deal?.productName ||
+          deal?.title ||
+          deal?.dealName ||
+          `Commodity Item ${idx + 1}`;
 
-  const productName =
-    deal.productName ||
-    rawProduct.name ||
-    rawProduct.productName ||
-    deal.commodity ||
-    'Agricultural Commodity';
+        const quantity = Number(p.quantity || p.qty || 1);
+        const rate = Number(p.price || p.rate || p.unitPrice || 0);
+        const subtotal = Number(p.subtotal || p.totalBeforeTax || (quantity * rate));
+        const discount = Number(p.discount || 0);
+        const taxableAmount = Math.max(0, subtotal - discount);
+        const gstRate = Number(p.gst || p.gstPct || p.taxRate || deal?.gst || deal?.gstPercent || 0);
+        const gstAmount = Number(
+          p.gstAmount || (gstRate > 0 ? (taxableAmount * gstRate) / 100 : 0)
+        );
+        const total = Number(p.totalAmount || (taxableAmount + gstAmount));
+        const unit = p.unit || p.unitName || p.unitShortName || deal?.unit || 'Units';
+        const hsnCode = p.hsnCode || p.hsn || pObj?.hsnCode || deal?.hsnCode || '';
+        const specs = p.description || p.specifications || p.variety || p.grade || pObj?.description || '';
 
-  const quantity = Number(deal.quantity || deal.dealQuantity || 1);
-  const unit =
-    deal.unit ||
-    deal.unitName ||
-    rawProduct.unit ||
-    (typeof deal.unitId === 'object' && deal.unitId?.name) ||
-    'Tons';
+        return {
+          name,
+          quantity,
+          rate,
+          subtotal,
+          discount,
+          taxableAmount,
+          gstRate,
+          gstAmount,
+          total,
+          unit,
+          hsnCode,
+          specs,
+        };
+      });
+    }
 
-  const rate = Number(deal.price || deal.rate || deal.unitPrice || 0);
-  const subtotal = Number(deal.subtotal || deal.totalBeforeTax || quantity * rate);
-  const discount = Number(deal.discount || 0);
-  const taxableAmount = Math.max(0, subtotal - discount);
+    // Single product deal fallback
+    const pObj = typeof deal?.productId === 'object' && deal.productId !== null ? deal.productId : {};
+    const name =
+      deal?.productName ||
+      deal?.title ||
+      deal?.dealName ||
+      deal?.commodity ||
+      pObj?.name ||
+      'Commodity Item';
 
-  const gstRate = Number(deal.gst || deal.gstPercent || deal.taxRate || 0);
-  const gstAmount = Number(
-    deal.gstAmount || (gstRate > 0 ? (taxableAmount * gstRate) / 100 : 0)
-  );
+    const quantity = Number(deal?.quantity || deal?.dealQuantity || deal?.qty || 1);
+    const rate = Number(deal?.price || deal?.rate || deal?.unitPrice || 0);
+    const subtotal = Number(deal?.subtotal || deal?.totalBeforeTax || (quantity * rate));
+    const discount = Number(deal?.discount || 0);
+    const taxableAmount = Math.max(0, subtotal - discount);
+    const gstRate = Number(deal?.gst || deal?.gstPercent || deal?.taxRate || 0);
+    const gstAmount = Number(
+      deal?.gstAmount || (gstRate > 0 ? (taxableAmount * gstRate) / 100 : 0)
+    );
+    const total = Number(deal?.totalAmount || deal?.grandTotal || (taxableAmount + gstAmount));
+    const unit = deal?.unit || deal?.unitName || (typeof deal?.unitId === 'object' ? deal.unitId?.name : '') || 'Units';
+    const hsnCode = deal?.hsnCode || deal?.hsn || pObj?.hsnCode || '';
+    const specs = deal?.specifications || deal?.grade || deal?.variety || deal?.description || '';
 
-  const grandTotal = Number(deal.totalAmount || deal.grandTotal || taxableAmount + gstAmount);
+    return [{
+      name,
+      quantity,
+      rate,
+      subtotal,
+      discount,
+      taxableAmount,
+      gstRate,
+      gstAmount,
+      total,
+      unit,
+      hsnCode,
+      specs,
+    }];
+  }, [deal]);
+
+  const totalSubtotal = productsList.reduce((acc, p) => acc + (p.subtotal || 0), 0);
+  const totalDiscount = productsList.reduce((acc, p) => acc + (p.discount || 0), 0);
+  const totalTaxable = productsList.reduce((acc, p) => acc + (p.taxableAmount || 0), 0);
+  const totalGst = productsList.reduce((acc, p) => acc + (p.gstAmount || 0), 0);
+  const grandTotal = Number(deal?.totalAmount || deal?.grandTotal) || (totalTaxable + totalGst);
   const amountInWords = numberToIndianWords(grandTotal);
 
-  // Bank details
-  const bankInfo =
-    rawSeller.bankDetails ||
-    (typeof deal.bankDetails === 'object' ? deal.bankDetails : null) ||
-    {};
+  // Bank details (Only real data from seller profile, never hardcoded fallbacks)
+  const rawBank =
+    sellerDetails?.bankDetails ||
+    (typeof deal?.sellerCompanyId === 'object' ? deal?.sellerCompanyId?.bankDetails : null) ||
+    (typeof deal?.sellerCompany === 'object' ? deal?.sellerCompany?.bankDetails : null) ||
+    deal?.bankDetails ||
+    null;
 
-  const bankName = bankInfo.bankName || 'HDFC Bank Ltd.';
-  const accountNo = bankInfo.accountNumber || bankInfo.accountNo || 'XXXXXXXX9214';
-  const ifscCode = bankInfo.ifscCode || bankInfo.ifsc || 'HDFC0001824';
-  const branchName = bankInfo.branchName || bankInfo.branch || 'APMC Commercial Branch';
+  const bankName = rawBank?.bankName || '';
+  const accountNo = rawBank?.accountNumber || rawBank?.accountNo || '';
+  const ifscCode = rawBank?.ifscCode || rawBank?.ifsc || '';
+  const branchName = rawBank?.branchName || rawBank?.branch || '';
+  const hasBankDetails = Boolean(accountNo && (bankName || ifscCode));
+
+  // Trade logistics
+  const paymentTerms = deal?.paymentTerms || deal?.creditPeriod || 'Standard Contract Terms';
+  const deliveryTerms = deal?.deliveryTerms || 'FOB';
+  const deliveryLocation = deal?.deliveryLocation || rawBuyer?.city || 'As per contract';
+  const placeOfSupply =
+    buyerDetails?.state ||
+    sellerDetails?.state ||
+    rawBuyer?.state ||
+    rawSeller?.state ||
+    deal?.placeOfSupply ||
+    'Intra-State';
 
   const handleShare = async () => {
     try {
-      const summaryText = `📄 *PRAVISTI B2B TAX INVOICE / SAUDA CONTRACT*
+      const itemsSummary = productsList
+        .map(
+          (p, i) =>
+            `${i + 1}. ${p.name} - ${p.quantity} ${p.unit} @ ₹${p.rate.toLocaleString('en-IN')}/${p.unit} = ₹${p.subtotal.toLocaleString('en-IN')}`
+        )
+        .join('\n');
+
+      const summaryText = `📄 *PRAVISTI B2B TAX INVOICE*
 ---------------------------------------
 Invoice No: ${invoiceNumber}
 Date: ${dealDate}
@@ -230,14 +423,13 @@ Status: VERIFIED & CONFIRMED
 *Seller*: ${sellerName} (GSTIN: ${sellerGstin})
 *Buyer*: ${buyerName} (GSTIN: ${buyerGstin})
 *Broker*: ${brokerName}
+*Payment Terms*: ${paymentTerms}
 
-*Item*: ${productName}
-*Quantity*: ${quantity} ${unit}
-*Rate*: ₹${rate.toLocaleString('en-IN')} per ${unit}
+*Items*:
+${itemsSummary}
 ---------------------------------------
-Subtotal: ₹${subtotal.toLocaleString('en-IN')}
-Discount: ₹${discount.toLocaleString('en-IN')}
-GST (${gstRate}%): ₹${gstAmount.toLocaleString('en-IN')}
+Subtotal: ₹${totalSubtotal.toLocaleString('en-IN')}
+${totalDiscount > 0 ? `Discount: -₹${totalDiscount.toLocaleString('en-IN')}\n` : ''}GST: ₹${totalGst.toLocaleString('en-IN')}
 *GRAND TOTAL*: ₹${grandTotal.toLocaleString('en-IN')}
 (${amountInWords})
 
@@ -254,14 +446,26 @@ Verified on Pravisti B2B Commodity Platform.`;
 
   const handleDownload = () => {
     Alert.alert(
-      'Download Invoice',
-      `Invoice #${invoiceNumber} for ₹${grandTotal.toLocaleString('en-IN')} has been generated in standard A4 format.`,
+      'Tax Invoice',
+      `Invoice #${invoiceNumber} for ₹${grandTotal.toLocaleString('en-IN')} is ready.`,
       [
-        { text: 'Share Receipt', onPress: handleShare },
+        { text: 'Share Invoice', onPress: handleShare },
         { text: 'Done', style: 'cancel' },
       ]
     );
   };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2327D8" />
+          <Text style={styles.loadingText}>Loading Tax Invoice...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -395,12 +599,12 @@ Verified on Pravisti B2B Commodity Platform.`;
               <Text style={styles.tradeInfoVal} numberOfLines={1}>{brokerName}</Text>
             </View>
             <View style={styles.tradeInfoItem}>
-              <Text style={styles.tradeInfoLabel}>SETTLEMENT</Text>
-              <Text style={styles.tradeInfoVal}>Immediate / Bank</Text>
+              <Text style={styles.tradeInfoLabel}>PAYMENT TERMS</Text>
+              <Text style={styles.tradeInfoVal} numberOfLines={1}>{paymentTerms}</Text>
             </View>
             <View style={styles.tradeInfoItem}>
               <Text style={styles.tradeInfoLabel}>PLACE OF SUPPLY</Text>
-              <Text style={styles.tradeInfoVal}>{rawBuyer.state || rawSeller.state || 'Intra-State'}</Text>
+              <Text style={styles.tradeInfoVal} numberOfLines={1}>{placeOfSupply}</Text>
             </View>
           </View>
 
@@ -415,29 +619,41 @@ Verified on Pravisti B2B Commodity Platform.`;
               <Text style={[styles.tableTh, styles.colAmt]}>AMOUNT (₹)</Text>
             </View>
 
-            {/* Row 1: Primary Deal Item */}
-            <View style={styles.tableRow}>
-              <Text style={[styles.tableTd, styles.colSn, { fontWeight: '700' }]}>01</Text>
-              <View style={[styles.colDesc, { paddingHorizontal: 6, paddingVertical: 4 }]}>
-                <Text style={styles.itemTitle}>{productName}</Text>
-                <Text style={styles.itemSubSpecs}>
-                  Trade Quality Standard • APMC Grade A • Moisture Tolerance as agreed
+            {/* Dynamic Product Rows */}
+            {productsList.map((item, index) => (
+              <View
+                key={`p_row_${index}`}
+                style={[
+                  styles.tableRow,
+                  index % 2 === 1 && { backgroundColor: '#F8FAFC' },
+                ]}
+              >
+                <Text style={[styles.tableTd, styles.colSn, { fontWeight: '700' }]}>
+                  {String(index + 1).padStart(2, '0')}
                 </Text>
-                <Text style={styles.itemHsn}>HSN/SAC: 1001 / Agricultural Produce</Text>
+                <View style={[styles.colDesc, { paddingHorizontal: 6, paddingVertical: 4 }]}>
+                  <Text style={styles.itemTitle}>{item.name}</Text>
+                  {Boolean(item.specs) && (
+                    <Text style={styles.itemSubSpecs}>{item.specs}</Text>
+                  )}
+                  {Boolean(item.hsnCode) && (
+                    <Text style={styles.itemHsn}>HSN: {item.hsnCode}</Text>
+                  )}
+                </View>
+                <Text style={[styles.tableTd, styles.colQty]}>
+                  {item.quantity.toLocaleString('en-IN')}{'\n'}
+                  <Text style={styles.unitSub}>{item.unit}</Text>
+                </Text>
+                <Text style={[styles.tableTd, styles.colRate]}>
+                  ₹{item.rate.toLocaleString('en-IN')}
+                </Text>
+                <Text style={[styles.tableTd, styles.colAmt, { fontWeight: '800' }]}>
+                  ₹{item.subtotal.toLocaleString('en-IN')}
+                </Text>
               </View>
-              <Text style={[styles.tableTd, styles.colQty]}>
-                {quantity.toLocaleString('en-IN')}{'\n'}
-                <Text style={styles.unitSub}>{unit}</Text>
-              </Text>
-              <Text style={[styles.tableTd, styles.colRate]}>
-                ₹{rate.toLocaleString('en-IN')}
-              </Text>
-              <Text style={[styles.tableTd, styles.colAmt, { fontWeight: '800' }]}>
-                ₹{subtotal.toLocaleString('en-IN')}
-              </Text>
-            </View>
+            ))}
 
-            {/* Table Filler Row for authentic invoice height */}
+            {/* Table Filler Row */}
             <View style={styles.tableEmptyRow}>
               <Text style={[styles.tableTd, styles.colSn]}> </Text>
               <Text style={[styles.tableTd, styles.colDesc]}> </Text>
@@ -449,57 +665,80 @@ Verified on Pravisti B2B Commodity Platform.`;
 
           {/* 5. TOTALS & FINANCIAL SUMMARY SECTION */}
           <View style={styles.financialSection}>
-            {/* Left: Amount in words & Bank Info */}
+            {/* Left: Amount in words & Bank / Settlement Info */}
             <View style={styles.financialLeftCol}>
               <View style={styles.wordsBox}>
                 <Text style={styles.wordsBoxTitle}>TOTAL AMOUNT IN WORDS:</Text>
                 <Text style={styles.wordsBoxValue}>{amountInWords}</Text>
               </View>
 
-              <View style={styles.bankCardBox}>
-                <Text style={styles.bankCardTitle}>BANK SETTLEMENT DETAILS</Text>
-                <Text style={styles.bankCardRow}>
-                  <Text style={styles.bankLabel}>Bank: </Text>{bankName}
-                </Text>
-                <Text style={styles.bankCardRow}>
-                  <Text style={styles.bankLabel}>A/C No: </Text>{accountNo}
-                </Text>
-                <Text style={styles.bankCardRow}>
-                  <Text style={styles.bankLabel}>IFSC: </Text>{ifscCode}
-                </Text>
-                <Text style={styles.bankCardRow}>
-                  <Text style={styles.bankLabel}>Branch: </Text>{branchName}
-                </Text>
-              </View>
+              {hasBankDetails ? (
+                <View style={styles.bankCardBox}>
+                  <Text style={styles.bankCardTitle}>BANK SETTLEMENT DETAILS</Text>
+                  {Boolean(bankName) && (
+                    <Text style={styles.bankCardRow}>
+                      <Text style={styles.bankLabel}>Bank: </Text>{bankName}
+                    </Text>
+                  )}
+                  {Boolean(accountNo) && (
+                    <Text style={styles.bankCardRow}>
+                      <Text style={styles.bankLabel}>A/C No: </Text>{accountNo}
+                    </Text>
+                  )}
+                  {Boolean(ifscCode) && (
+                    <Text style={styles.bankCardRow}>
+                      <Text style={styles.bankLabel}>IFSC: </Text>{ifscCode}
+                    </Text>
+                  )}
+                  {Boolean(branchName) && (
+                    <Text style={styles.bankCardRow}>
+                      <Text style={styles.bankLabel}>Branch: </Text>{branchName}
+                    </Text>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.bankCardBox}>
+                  <Text style={styles.bankCardTitle}>SETTLEMENT & PAYMENT</Text>
+                  <Text style={styles.bankCardRow}>
+                    <Text style={styles.bankLabel}>Terms: </Text>{paymentTerms}
+                  </Text>
+                  <Text style={styles.bankCardRow}>
+                    <Text style={styles.bankLabel}>Delivery: </Text>{deliveryTerms} ({deliveryLocation})
+                  </Text>
+                  <Text style={styles.bankCardRow}>
+                    <Text style={styles.bankLabel}>Mode: </Text>Direct Electronic Transfer (RTGS/NEFT)
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Right: Calculations Grid */}
             <View style={styles.financialRightCol}>
               <View style={styles.calcRow}>
                 <Text style={styles.calcLabel}>Taxable Subtotal</Text>
-                <Text style={styles.calcVal}>₹{subtotal.toLocaleString('en-IN')}</Text>
+                <Text style={styles.calcVal}>₹{totalSubtotal.toLocaleString('en-IN')}</Text>
               </View>
 
-              {discount > 0 ? (
+              {totalDiscount > 0 ? (
                 <View style={styles.calcRow}>
                   <Text style={[styles.calcLabel, { color: '#DC2626' }]}>Trade Discount</Text>
                   <Text style={[styles.calcVal, { color: '#DC2626' }]}>
-                    -₹{discount.toLocaleString('en-IN')}
+                    -₹{totalDiscount.toLocaleString('en-IN')}
                   </Text>
                 </View>
               ) : null}
 
               <View style={styles.calcRow}>
                 <Text style={styles.calcLabel}>Net Value</Text>
-                <Text style={styles.calcVal}>₹{taxableAmount.toLocaleString('en-IN')}</Text>
+                <Text style={styles.calcVal}>₹{totalTaxable.toLocaleString('en-IN')}</Text>
               </View>
 
               <View style={styles.calcRow}>
                 <Text style={styles.calcLabel}>
-                  GST Tax {gstRate > 0 ? `(${gstRate}%)` : '(Exempted)'}
+                  GST Tax {totalGst > 0 ? `(Included/Applicable)` : '(Exempted)'}
                 </Text>
                 <Text style={styles.calcVal}>
-                  {gstAmount > 0 ? `+₹${gstAmount.toLocaleString('en-IN')}` : '₹0'}
+                  {totalGst > 0 ? `+₹${totalGst.toLocaleString('en-IN')}` : '₹0'}
                 </Text>
               </View>
 
@@ -518,13 +757,13 @@ Verified on Pravisti B2B Commodity Platform.`;
           <View style={styles.termsBox}>
             <Text style={styles.termsTitle}>TERMS & CONDITIONS OF SAUDA:</Text>
             <Text style={styles.termsItem}>
-              1. All trade terms conform to APMC Agricultural Produce Market Rules & bilateral contracts.
+              1. All trade terms conform to bilateral B2B commodity contracts & APMC trade regulations.
             </Text>
             <Text style={styles.termsItem}>
-              2. Weight and quality tolerance are subject to Mandi weighbridge inspection upon dispatch.
+              2. Weight and quality tolerance are subject to authorized weighbridge inspection upon dispatch/arrival.
             </Text>
             <Text style={styles.termsItem}>
-              3. Disputes, if any, shall be subject to the jurisdiction of the competent trade market court.
+              3. Payment is subject to agreed contract credit period: {paymentTerms}.
             </Text>
           </View>
 
@@ -1074,5 +1313,17 @@ const styles = StyleSheet.create({
     fontSize: 7.5,
     color: '#94A3B8',
     textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#94A3B8',
+    fontWeight: '600',
   },
 });

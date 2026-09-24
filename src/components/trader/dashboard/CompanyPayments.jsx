@@ -25,12 +25,8 @@ import {
   ArrowLeft,
   Wallet,
   CreditCard,
-  Truck,
-  Box,
   Plus,
   Search,
-  Filter,
-  CheckCircle2,
   Clock,
   AlertCircle,
   FileText,
@@ -39,24 +35,17 @@ import {
   ArrowDownLeft,
   X,
   Building2,
-  Calendar,
   Check,
-  RefreshCw,
   Download,
-  Share2,
   Paperclip,
   ExternalLink,
   Eye,
-  Camera,
 } from 'lucide-react-native';
 import {
   getPayments,
   recordPayment,
   getPaymentDashboard,
   updatePaymentStatus,
-  getDeliveries,
-  createDelivery,
-  updateDeliveryStatus,
   getDeals,
   getUserProfile,
   getCompanies,
@@ -77,13 +66,13 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
   const [selectedCompanyName, setSelectedCompanyName] = useState(initialCompanyName);
   const [isCompanyPickerOpen, setIsCompanyPickerOpen] = useState(false);
 
-  // Tabs: 'payments' | 'delivery'
-  const [activeTab, setActiveTab] = useState(routeData?.initialTab === 'delivery' ? 'delivery' : 'payments');
+  // Payment Type Filter: 'all' | 'received' | 'sent'
+  const [paymentFilter, setPaymentFilter] = useState('all');
+  const activeTab = 'payments';
 
   // Core Data
   const [deals, setDeals] = useState([]);
   const [payments, setPayments] = useState([]);
-  const [deliveries, setDeliveries] = useState([]);
   const [dashboardSummary, setDashboardSummary] = useState(null);
 
   // Filter & Search
@@ -99,11 +88,8 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
 
   // Modals & Inline Dropdowns
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [isDealDropdownExpanded, setIsDealDropdownExpanded] = useState(false);
   const [isPaymentDealDropdownExpanded, setIsPaymentDealDropdownExpanded] = useState(false);
-  const [isDeliveryDealDropdownExpanded, setIsDeliveryDealDropdownExpanded] = useState(false);
-  const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(routeData?.user || null);
 
   // Load Current User Identity
@@ -132,6 +118,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
       setSelectedCompanyId(cid);
       setSelectedCompanyName(cname);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeData?.companyId, routeData?.company]);
 
   // Payment Form
@@ -144,27 +131,11 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     notes: '',
   });
 
-  // Delivery Form
-  const [deliveryForm, setDeliveryForm] = useState({
-    dealId: '',
-    productId: '',
-    productName: '',
-    quantity: '',
-    deliveryType: 'sent', // 'sent' | 'received'
-    vehicleNumber: '',
-    biltyNumber: '',
-    notes: '',
-  });
-
   // Proof & Attachment States
   const [fullPreviewImage, setFullPreviewImage] = useState(null);
   const [paymentAttachmentUrl, setPaymentAttachmentUrl] = useState('');
   const [paymentAttachmentAsset, setPaymentAttachmentAsset] = useState(null);
   const [isUploadingPaymentAttachment, setIsUploadingPaymentAttachment] = useState(false);
-
-  const [deliveryAttachmentUrl, setDeliveryAttachmentUrl] = useState('');
-  const [deliveryAttachmentAsset, setDeliveryAttachmentAsset] = useState(null);
-  const [isUploadingDeliveryAttachment, setIsUploadingDeliveryAttachment] = useState(false);
 
   /* ── Filter Helper: Is Deal for Company? (Strict) ── */
   const isDealForThisCompany = (deal, targetCompId, targetCompName) => {
@@ -302,68 +273,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     return false;
   };
 
-  /* ── Filter Helper: Is Delivery for Company? (Strict) ── */
-  const isDeliveryForCompany = (item, targetCompId, targetCompName, dealIdSet) => {
-    if (!item) return false;
-    const normTarget = normalizeId(targetCompId).toLowerCase();
-    const normName = String(targetCompName || '').trim().toLowerCase();
 
-    // 1. Linked to one of this company's validated deals
-    const dDealId = normalizeId(item.dealId?._id || item.dealId?.id || item.dealId).toLowerCase();
-    if (dDealId && dealIdSet && dealIdSet.has(dDealId)) {
-      return true;
-    }
-
-    // 2. Direct company IDs
-    if (normTarget) {
-      const dCid = normalizeId(item.companyId?._id || item.companyId).toLowerCase();
-      if (dCid && dCid === normTarget) return true;
-
-      const sellerCid = normalizeId(item.sellerCompanyId?._id || item.sellerCompanyId).toLowerCase();
-      if (sellerCid && sellerCid === normTarget) return true;
-
-      const buyerCid = normalizeId(item.buyerCompanyId?._id || item.buyerCompanyId).toLowerCase();
-      if (buyerCid && buyerCid === normTarget) return true;
-
-      const brokerCid = normalizeId(item.brokerCompanyId?._id || item.brokerCompanyId).toLowerCase();
-      if (brokerCid && brokerCid === normTarget) return true;
-
-      if (item.dealId && typeof item.dealId === 'object') {
-        const dSellerCid = normalizeId(item.dealId.sellerCompanyId?._id || item.dealId.sellerCompanyId).toLowerCase();
-        const dBuyerCid = normalizeId(item.dealId.buyerCompanyId?._id || item.dealId.buyerCompanyId).toLowerCase();
-        const dBrokerCid = normalizeId(item.dealId.brokerCompanyId?._id || item.dealId.brokerCompanyId).toLowerCase();
-        const dCompCid = normalizeId(item.dealId.companyId?._id || item.dealId.companyId).toLowerCase();
-        const dP1Cid = normalizeId(item.dealId.party1?.companyId || item.dealId.party1?.company).toLowerCase();
-        const dP2Cid = normalizeId(item.dealId.party2?.companyId || item.dealId.party2?.company).toLowerCase();
-        if (
-          dSellerCid === normTarget ||
-          dBuyerCid === normTarget ||
-          dBrokerCid === normTarget ||
-          dCompCid === normTarget ||
-          dP1Cid === normTarget ||
-          dP2Cid === normTarget
-        ) {
-          return true;
-        }
-      }
-    }
-
-    // 3. Name check
-    if (normName && normName !== 'company') {
-      const cName = String(item.companyName || item.company?.name || '').trim().toLowerCase();
-      if (cName && cName === normName) return true;
-
-      if (item.dealId && typeof item.dealId === 'object') {
-        const dSellerName = String(item.dealId.sellerCompany?.name || item.dealId.sellerCompanyId?.name || '').trim().toLowerCase();
-        const dBuyerName = String(item.dealId.buyerCompany?.name || item.dealId.buyerCompanyId?.name || '').trim().toLowerCase();
-        if ((dSellerName && dSellerName === normName) || (dBuyerName && dBuyerName === normName)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  };
 
   /* ── Check if Entry was Created By Current User/Company ── */
   const isEntryCreatedByMe = (item) => {
@@ -412,20 +322,6 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         return true;
       }
       if ((paymentType === 'received' || paymentType === 'credit') && receiverCompanyId && myCompanyId === receiverCompanyId) {
-        return true;
-      }
-    }
-
-    // 4. Direction match for Delivery:
-    const sellerCompanyId = normalizeId(item.sellerCompanyId?._id || item.sellerCompanyId).toLowerCase();
-    const buyerCompanyId = normalizeId(item.buyerCompanyId?._id || item.buyerCompanyId).toLowerCase();
-    const deliveryType = String(item.deliveryType || item.type || '').toLowerCase();
-
-    if (myCompanyId) {
-      if (deliveryType === 'sent' && sellerCompanyId && myCompanyId === sellerCompanyId) {
-        return true;
-      }
-      if (deliveryType === 'received' && buyerCompanyId && myCompanyId === buyerCompanyId) {
         return true;
       }
     }
@@ -578,66 +474,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
       );
       setPayments(companyFilteredPayments);
 
-      // 3. Fetch Deliveries strictly for this company
-      let allRawDeliveries = [];
-      try {
-        const deliveryParams = { limit: 100 };
-        if (currentTargetCid) deliveryParams.companyId = currentTargetCid;
-        const deliveryRes = await getDeliveries(deliveryParams, token);
-        if (deliveryRes?.success && deliveryRes.data) {
-          const list = Array.isArray(deliveryRes.data)
-            ? deliveryRes.data
-            : deliveryRes.data.deliveries || deliveryRes.data.data || [];
-          allRawDeliveries = [...list];
-        } else if (Array.isArray(deliveryRes)) {
-          allRawDeliveries = [...deliveryRes];
-        }
-      } catch (err) {
-        console.warn('Error fetching deliveries:', err);
-      }
 
-      // Deal specific deliveries
-      if (companyDeals.length > 0) {
-        try {
-          const dealDelivResults = await Promise.allSettled(
-            companyDeals.slice(0, 20).map((d) => getDeliveries({ dealId: d._id || d.id, limit: 50 }, token))
-          );
-          dealDelivResults.forEach((r, idx) => {
-            if (r.status === 'fulfilled' && r.value?.success && r.value.data) {
-              const list = Array.isArray(r.value.data)
-                ? r.value.data
-                : r.value.data.deliveries || r.value.data.data || [];
-              list.forEach((del) => {
-                allRawDeliveries.push({ ...del, dealId: del.dealId || companyDeals[idx] });
-              });
-            }
-          });
-        } catch (e) { }
-      }
-
-      // Extract embedded deliveries from deals
-      companyDeals.forEach((d) => {
-        if (Array.isArray(d.deliveries)) {
-          d.deliveries.forEach((del) => allRawDeliveries.push({ ...del, dealId: del.dealId || d }));
-        }
-      });
-
-      // Deduplicate deliveries
-      const seenDelivIds = new Set();
-      const uniqueDeliveries = [];
-      allRawDeliveries.forEach((del) => {
-        const id = normalizeId(del._id || del.id || `${del.quantity}-${del.createdAt}`);
-        if (!seenDelivIds.has(id)) {
-          seenDelivIds.add(id);
-          uniqueDeliveries.push(del);
-        }
-      });
-
-      // STRICT COMPANY FILTER FOR DELIVERIES
-      const companyFilteredDeliveries = uniqueDeliveries.filter((item) =>
-        isDeliveryForCompany(item, currentTargetCid, currentTargetName, dealIdSet)
-      );
-      setDeliveries(companyFilteredDeliveries);
 
       // 4. Fetch Dashboard Summary
       try {
@@ -654,15 +491,22 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompanyId, selectedCompanyName, initialCompanyId, initialCompanyName, routeData?.deals]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  /* ── Filtered Payments & Deliveries ── */
+  /* ── Filtered Payments ── */
   const filteredPayments = useMemo(() => {
     return payments.filter((item) => {
+      // Payment Type Filter
+      if (paymentFilter !== 'all') {
+        const isSent = item.paymentType === 'sent' || item.paymentType === 'given' || item.type === 'debit';
+        if (paymentFilter === 'sent' && !isSent) return false;
+        if (paymentFilter === 'received' && isSent) return false;
+      }
       // Deal filter
       if (selectedDealId !== 'all') {
         const itemDealId = normalizeId(item.dealId?._id || item.dealId?.id || item.dealId);
@@ -680,72 +524,9 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
       }
       return true;
     });
-  }, [payments, selectedDealId, searchQuery]);
+  }, [payments, paymentFilter, selectedDealId, searchQuery]);
 
-  const filteredDeliveries = useMemo(() => {
-    return deliveries.filter((item) => {
-      // Deal filter
-      if (selectedDealId !== 'all') {
-        const itemDealId = normalizeId(item.dealId?._id || item.dealId?.id || item.dealId);
-        if (itemDealId !== normalizeId(selectedDealId)) return false;
-      }
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const notes = (item.notes || '').toLowerCase();
-        const prod = String(item.productId?.name || item.productName || '').toLowerCase();
-        const qty = String(item.quantity || '');
-        const status = (item.status || '').toLowerCase();
-        const dealCode = String(item.dealId?.dealNumber || item.dealId?._id || '').toLowerCase();
-        return notes.includes(q) || prod.includes(q) || qty.includes(q) || status.includes(q) || dealCode.includes(q);
-      }
-      return true;
-    });
-  }, [deliveries, selectedDealId, searchQuery]);
 
-  /* ── Statistics calculated strictly from Filtered Data ── */
-  const stats = useMemo(() => {
-    let totalReceived = 0;
-    let totalPaid = 0;
-    let pendingCount = 0;
-
-    filteredPayments.forEach((p) => {
-      const amt = Number(p.amount || 0);
-      const isSent = p.paymentType === 'sent' || p.paymentType === 'given' || p.type === 'debit';
-      if (isSent) {
-        totalPaid += amt;
-      } else {
-        totalReceived += amt;
-      }
-      if (String(p.status).toLowerCase() === 'pending') {
-        pendingCount++;
-      }
-    });
-
-    let totalDispatchedQty = 0;
-    let totalDeliveredQty = 0;
-    let pendingDeliveryCount = 0;
-
-    filteredDeliveries.forEach((d) => {
-      const qty = Number(d.quantity || 0);
-      const status = String(d.status || 'pending').toLowerCase();
-      if (status === 'delivered') {
-        totalDeliveredQty += qty;
-      } else {
-        totalDispatchedQty += qty;
-        pendingDeliveryCount++;
-      }
-    });
-
-    return {
-      totalReceived,
-      totalPaid,
-      pendingCount,
-      totalDispatchedQty,
-      totalDeliveredQty,
-      pendingDeliveryCount,
-    };
-  }, [filteredPayments, filteredDeliveries]);
 
   /* ── Modal Open Handlers ── */
   const openRecordPaymentModal = () => {
@@ -761,31 +542,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     setShowPaymentModal(true);
   };
 
-  const openLogDeliveryModal = () => {
-    const defaultDeal = selectedDealId !== 'all' ? deals.find((d) => (d._id || d.id) === selectedDealId) || deals[0] : deals[0];
-    const dealId = defaultDeal?._id || defaultDeal?.id || '';
-    let productId = '';
-    let productName = '';
-    if (defaultDeal?.products && defaultDeal.products.length > 0) {
-      productId = defaultDeal.products[0]?.productId?._id || defaultDeal.products[0]?.productId || '';
-      productName = defaultDeal.products[0]?.productId?.name || defaultDeal.products[0]?.name || '';
-    } else if (defaultDeal?.product) {
-      productId = defaultDeal.product?.productId?._id || defaultDeal.product?.productId || '';
-      productName = defaultDeal.product?.productId?.name || defaultDeal.product?.name || '';
-    }
 
-    setDeliveryForm({
-      dealId,
-      productId,
-      productName,
-      quantity: '',
-      deliveryType: 'sent',
-      vehicleNumber: '',
-      biltyNumber: '',
-      notes: '',
-    });
-    setShowDeliveryModal(true);
-  };
 
   /* ── Pick & Upload Attachment Helpers ── */
   const pickPaymentReceipt = async () => {
@@ -811,35 +568,6 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         setPaymentAttachmentAsset(null);
       } finally {
         setIsUploadingPaymentAttachment(false);
-      }
-    } catch (e) {
-      console.warn('Image picker error:', e);
-    }
-  };
-
-  const pickDeliveryDocument = async () => {
-    try {
-      const res = await launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 1600,
-        maxHeight: 1600,
-      });
-
-      if (res.didCancel || !res.assets || !res.assets[0]) return;
-      const asset = res.assets[0];
-      setDeliveryAttachmentAsset(asset);
-      setIsUploadingDeliveryAttachment(true);
-      try {
-        const uploadedUrl = await uploadImage(asset);
-        if (uploadedUrl) {
-          setDeliveryAttachmentUrl(uploadedUrl);
-        }
-      } catch (uploadErr) {
-        Alert.alert('Upload Notice', 'Failed to upload delivery document. Please try again.');
-        setDeliveryAttachmentAsset(null);
-      } finally {
-        setIsUploadingDeliveryAttachment(false);
       }
     } catch (e) {
       console.warn('Image picker error:', e);
@@ -893,41 +621,6 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         const csvContent = csvRows.join('\n');
         await Share.share({
           title: `${companyLabel}_Payment_Ledger_${dateStr}.csv`,
-          message: csvContent,
-        });
-      } else {
-        if (!filteredDeliveries || filteredDeliveries.length === 0) {
-          Alert.alert('Export Deliveries', 'No delivery records found to export.');
-          return;
-        }
-
-        const csvRows = [
-          `"PRAVISTI - DELIVERY & DISPATCH REPORT"`,
-          `"Company: ${companyLabel}","Export Date: ${dateStr}"`,
-          `""`,
-          `"Date","Deal #","Delivery Type","Product","Quantity","Vehicle #","Bilty #","Status","Notes","Proof Link"`,
-        ];
-
-        filteredDeliveries.forEach((d) => {
-          const dDate = (d.createdAt || d.date || '').slice(0, 10);
-          const dealNo = d.dealId?.dealNumber || (d.dealId?._id ? `DL-${d.dealId._id.slice(-6).toUpperCase()}` : 'N/A');
-          const dType = (d.deliveryType || 'sent').toUpperCase();
-          const product = (d.productId?.name || d.productName || 'Agri Commodity').replace(/"/g, '""');
-          const qty = `${d.quantity || 0} ${d.unit || 'MT'}`;
-          const vehicle = (d.vehicleNumber || '').replace(/"/g, '""');
-          const bilty = (d.biltyNumber || '').replace(/"/g, '""');
-          const status = (d.status || 'pending').toUpperCase();
-          const notes = (d.notes || '').replace(/"/g, '""');
-          const proof = d.attachmentUrl || d.receiptUrl ? resolveImageUrl(d.attachmentUrl || d.receiptUrl) : '';
-
-          csvRows.push(
-            `"${dDate}","${dealNo}","${dType}","${product}","${qty}","${vehicle}","${bilty}","${status}","${notes}","${proof}"`
-          );
-        });
-
-        const csvContent = csvRows.join('\n');
-        await Share.share({
-          title: `${companyLabel}_Delivery_Report_${dateStr}.csv`,
           message: csvContent,
         });
       }
@@ -1000,76 +693,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     }
   };
 
-  /* ── Handle Submit Delivery Entry ── */
-  const handleLogDelivery = async () => {
-    const qty = Number(deliveryForm.quantity);
-    if (isNaN(qty) || qty <= 0) {
-      Alert.alert('Validation Error', 'Please enter a valid delivery quantity.');
-      return;
-    }
-    if (!deliveryForm.dealId) {
-      Alert.alert('Validation Error', 'Please select a deal for this delivery.');
-      return;
-    }
 
-    setIsSubmitting(true);
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      const notesArray = [
-        deliveryForm.vehicleNumber ? `Vehicle: ${deliveryForm.vehicleNumber.trim()}` : '',
-        deliveryForm.biltyNumber ? `LR/Bilty: ${deliveryForm.biltyNumber.trim()}` : '',
-        deliveryForm.notes ? deliveryForm.notes.trim() : '',
-      ].filter(Boolean);
-
-      // Find selected deal to ensure valid productId if not set
-      let prodId = deliveryForm.productId;
-      if (!prodId) {
-        const foundDeal = deals.find((d) => normalizeId(d._id || d.id) === normalizeId(deliveryForm.dealId));
-        if (foundDeal) {
-          if (foundDeal.products && foundDeal.products.length > 0) {
-            prodId = foundDeal.products[0]?.productId?._id || foundDeal.products[0]?.productId || '';
-          } else if (foundDeal.product) {
-            prodId = foundDeal.product?.productId?._id || foundDeal.product?.productId || '';
-          }
-        }
-      }
-
-      // STRICT BACKEND SCHEMA: dealId, productId, quantity, deliveryType, notes, attachmentUrl
-      const payload = {
-        dealId: deliveryForm.dealId,
-        productId: prodId || undefined,
-        quantity: qty,
-        deliveryType: deliveryForm.deliveryType === 'received' ? 'received' : 'sent',
-        notes: notesArray.join(' | ') || undefined,
-        attachmentUrl: deliveryAttachmentUrl || undefined,
-      };
-
-      const res = await createDelivery(payload, token);
-      if (res?.success) {
-        Alert.alert('Success 🚚', 'Delivery entry logged successfully!');
-        setShowDeliveryModal(false);
-        setDeliveryAttachmentUrl('');
-        setDeliveryAttachmentAsset(null);
-        setDeliveryForm({
-          dealId: '',
-          productId: '',
-          productName: '',
-          quantity: '',
-          deliveryType: 'sent',
-          vehicleNumber: '',
-          biltyNumber: '',
-          notes: '',
-        });
-        fetchData(false);
-      } else {
-        Alert.alert('Error', res?.message || 'Could not record delivery. Please try again.');
-      }
-    } catch (err) {
-      Alert.alert('Delivery Error', err.message || 'Network error occurred while logging delivery.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   /* ── Quick Update Status ── */
   const handleUpdatePaymentStatus = async (paymentId, status) => {
@@ -1090,23 +714,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     }
   };
 
-  const handleUpdateDeliveryStatus = async (deliveryId, status) => {
-    setActionInProgressId(deliveryId);
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      const res = await updateDeliveryStatus(deliveryId, status, token);
-      if (res?.success) {
-        Alert.alert('Status Updated', `Delivery marked as ${status}.`);
-        fetchData(false);
-      } else {
-        Alert.alert('Error', res?.message || 'Failed to update delivery status.');
-      }
-    } catch (e) {
-      Alert.alert('Error', e.message || 'Failed to update delivery status.');
-    } finally {
-      setActionInProgressId(null);
-    }
-  };
+
 
   // Helper to format currency
   const formatCurrency = (val) => {
@@ -1157,10 +765,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
     return { label: s.toUpperCase(), bg: '#EFF6FF', color: '#1541D8', border: '#BFDBFE' };
   };
 
-  // Selected Deal in Form
-  const currentFormDeal = useMemo(() => {
-    return deals.find((d) => (d._id || d.id) === (activeTab === 'payments' ? paymentForm.dealId : deliveryForm.dealId));
-  }, [deals, activeTab, paymentForm.dealId, deliveryForm.dealId]);
+
 
   const currentPaymentDeal = useMemo(() => {
     return deals.find((d) => normalizeId(d._id || d.id) === normalizeId(paymentForm.dealId));
@@ -1192,7 +797,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
             <ArrowLeft size={20} color="#1541D8" strokeWidth={2.4} />
           </TouchableOpacity>
           <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Payments & Delivery</Text>
+            <Text style={styles.headerTitle}>Payments</Text>
           </View>
         </View>
 
@@ -1214,16 +819,14 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
             <Search size={18} color="#1541D8" strokeWidth={2.2} />
           </TouchableOpacity>
 
-          {/* Top Add Entry Button */}
+          {/* Top Add Payment Button */}
           <TouchableOpacity
             style={styles.headerActionBtn}
-            onPress={activeTab === 'payments' ? openRecordPaymentModal : openLogDeliveryModal}
+            onPress={openRecordPaymentModal}
             activeOpacity={0.85}
           >
             <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={styles.headerActionBtnText}>
-              {activeTab === 'payments' ? 'Payment' : 'Delivery'}
-            </Text>
+            <Text style={styles.headerActionBtnText}>Payment</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1234,7 +837,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
           <Search size={16} color="#64748B" strokeWidth={2} />
           <TextInput
             style={styles.searchInput}
-            placeholder={activeTab === 'payments' ? 'Search by method, amount, UTR, deal...' : 'Search by product, quantity, vehicle...'}
+            placeholder="Search by method, amount, UTR, deal..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -1248,51 +851,59 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         </View>
       )}
 
-      {/* ─── 3. SEGMENTED TABS (Payments & Delivery) ─── */}
+      {/* ─── 3. COMPACT SEGMENTED TABS (All / Received / Sent Payments) ─── */}
       <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'payments' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('payments')}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.tabIconBadge, activeTab === 'payments' && styles.tabIconBadgeActive]}>
+        <View style={styles.tabsTrack}>
+          <TouchableOpacity
+            style={[styles.tabButton, paymentFilter === 'all' && styles.tabButtonActive]}
+            onPress={() => setPaymentFilter('all')}
+            activeOpacity={0.8}
+          >
             <CreditCard
-              size={16}
-              color={activeTab === 'payments' ? '#FFFFFF' : '#64748B'}
+              size={13}
+              color={paymentFilter === 'all' ? '#1541D8' : '#64748B'}
               strokeWidth={2.2}
             />
-          </View>
-          <Text style={[styles.tabButtonText, activeTab === 'payments' && styles.tabButtonTextActive]}>
-            Payments
-          </Text>
-          <View style={[styles.countPill, activeTab === 'payments' && styles.countPillActive]}>
-            <Text style={[styles.countPillText, activeTab === 'payments' && styles.countPillTextActive]}>
-              {payments.length}
+            <Text style={[styles.tabButtonText, paymentFilter === 'all' && styles.tabButtonTextActive]}>
+              All
             </Text>
-          </View>
-        </TouchableOpacity>
+            <View style={[styles.countPill, paymentFilter === 'all' && styles.countPillActive]}>
+              <Text style={[styles.countPillText, paymentFilter === 'all' && styles.countPillTextActive]}>
+                {payments.length}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'delivery' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('delivery')}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.tabIconBadge, activeTab === 'delivery' && styles.tabIconBadgeActive]}>
-            <Truck
-              size={16}
-              color={activeTab === 'delivery' ? '#FFFFFF' : '#64748B'}
-              strokeWidth={2.2}
+          <TouchableOpacity
+            style={[styles.tabButton, paymentFilter === 'received' && styles.tabButtonActive]}
+            onPress={() => setPaymentFilter('received')}
+            activeOpacity={0.8}
+          >
+            <ArrowDownLeft
+              size={13}
+              color={paymentFilter === 'received' ? '#059669' : '#64748B'}
+              strokeWidth={2.4}
             />
-          </View>
-          <Text style={[styles.tabButtonText, activeTab === 'delivery' && styles.tabButtonTextActive]}>
-            Delivery
-          </Text>
-          <View style={[styles.countPill, activeTab === 'delivery' && styles.countPillActive]}>
-            <Text style={[styles.countPillText, activeTab === 'delivery' && styles.countPillTextActive]}>
-              {deliveries.length}
+            <Text style={[styles.tabButtonText, paymentFilter === 'received' && styles.tabButtonTextReceived]}>
+              Received
             </Text>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabButton, paymentFilter === 'sent' && styles.tabButtonActive]}
+            onPress={() => setPaymentFilter('sent')}
+            activeOpacity={0.8}
+          >
+            <ArrowUpRight
+              size={13}
+              color={paymentFilter === 'sent' ? '#DC2626' : '#64748B'}
+              strokeWidth={2.4}
+            />
+            <Text style={[styles.tabButtonText, paymentFilter === 'sent' && styles.tabButtonTextSent]}>
+              Paid / Sent
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ─── 4. INLINE ON-SCREEN DEAL DROPDOWN ─── */}
@@ -1415,7 +1026,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                     deal.products?.[0]?.name ||
                     deal.productName ||
                     deal.product?.name ||
-                    'Commodity';
+                    '';
                   const amount = deal.totalAmount || deal.amount;
 
                   return (
@@ -1517,25 +1128,19 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         {/* ── SECTION HEADER WITH QUICK ENTRY BUTTON ── */}
         <View style={styles.sectionHeaderRow}>
           <View>
-            <Text style={styles.sectionHeaderTitle}>
-              {activeTab === 'payments' ? 'Payment Transactions' : 'Delivery Dispatches'}
-            </Text>
+            <Text style={styles.sectionHeaderTitle}>Payment Transactions</Text>
             <Text style={styles.sectionHeaderSub}>
-              {activeTab === 'payments'
-                ? `Showing ${filteredPayments.length} transactions`
-                : `Showing ${filteredDeliveries.length} shipments`}
+              Showing {filteredPayments.length} transactions
             </Text>
           </View>
 
           <TouchableOpacity
             style={styles.addEntryBtn}
-            onPress={activeTab === 'payments' ? openRecordPaymentModal : openLogDeliveryModal}
+            onPress={openRecordPaymentModal}
             activeOpacity={0.8}
           >
             <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={styles.addEntryBtnText}>
-              {activeTab === 'payments' ? 'Add Payment' : 'Add Entry'}
-            </Text>
+            <Text style={styles.addEntryBtnText}>Add Payment</Text>
           </TouchableOpacity>
         </View>
 
@@ -1548,7 +1153,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         ) : null}
 
         {/* ── PAYMENTS TAB CONTENT ── */}
-        {!isLoading && activeTab === 'payments' && (
+        {!isLoading && (
           filteredPayments.length === 0 ? (
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIconCircle}>
@@ -1776,218 +1381,6 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
             })
           )
         )}
-
-        {/* ── DELIVERY TAB CONTENT ── */}
-        {!isLoading && activeTab === 'delivery' && (
-          filteredDeliveries.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconCircle}>
-                <Truck size={36} color="#1541D8" strokeWidth={1.8} />
-              </View>
-              <Text style={styles.emptyTitle}>No Delivery Logs Found</Text>
-              <Text style={styles.emptySubtitle}>
-                {selectedDealId !== 'all'
-                  ? 'No dispatch records logged for this selected deal yet.'
-                  : 'Start recording vehicle dispatches, LR numbers, and delivery milestones.'}
-              </Text>
-              <TouchableOpacity
-                style={styles.emptyActionBtn}
-                onPress={openLogDeliveryModal}
-                activeOpacity={0.85}
-              >
-                <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
-                <Text style={styles.emptyActionBtnText}>Log First Delivery</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            filteredDeliveries.map((item, index) => {
-              const isSent = item.deliveryType === 'sent' || item.type === 'dispatch';
-              const status = String(item.status || 'in-transit').toLowerCase();
-              const isDelivered = status === 'delivered';
-              const isPending = status === 'pending' || status === 'in-transit';
-
-              const prodName = item.productId?.name || item.productName || item.product?.name || 'Commodity Material';
-
-              return (
-                <View
-                  key={item._id || item.id || `del-${index}`}
-                  style={[
-                    styles.transactionCard,
-                    isPending && styles.transactionCardPending,
-                    isDelivered && styles.transactionCardApproved,
-                  ]}
-                >
-                  {/* Card Header */}
-                  <View style={styles.cardTopRow}>
-                    <View style={styles.cardHeaderLeft}>
-                      <View
-                        style={[
-                          styles.transactionTypePill,
-                          isSent ? styles.typePillBlue : styles.typePillReceived,
-                        ]}
-                      >
-                        <Truck size={12} color={isSent ? '#1541D8' : '#059669'} strokeWidth={2.5} />
-                        <Text
-                          style={[
-                            styles.transactionTypePillText,
-                            isSent ? styles.typeTextBlue : styles.typeTextReceived,
-                          ]}
-                        >
-                          {isSent ? 'DISPATCHED' : 'RECEIVED'}
-                        </Text>
-                      </View>
-
-                      <Text style={styles.dealReferenceText} numberOfLines={1}>
-                        {item.dealId?.dealNumber
-                          ? `Deal #${item.dealId.dealNumber}`
-                          : item.dealId?._id
-                            ? `Deal #${item.dealId._id.slice(-6).toUpperCase()}`
-                            : 'Deal Shipment'}
-                      </Text>
-                    </View>
-
-                    <Text style={styles.deliveryQtyText}>
-                      {item.quantity} MT
-                    </Text>
-                  </View>
-
-                  {/* Product Name Banner */}
-                  <View style={styles.productBanner}>
-                    <Box size={14} color="#1541D8" strokeWidth={2} />
-                    <Text style={styles.productBannerText} numberOfLines={1}>
-                      {prodName}
-                    </Text>
-                  </View>
-
-                  {/* Card Details */}
-                  <View style={styles.cardDetailsRow}>
-                    <View style={styles.detailItem}>
-                      <Text style={styles.detailLabel}>Dispatched On</Text>
-                      <Text style={styles.detailValue}>{formatDate(item.createdAt || item.date)}</Text>
-                    </View>
-
-                    <View style={styles.detailItem}>
-                      <Text style={styles.detailLabel}>Type</Text>
-                      <Text style={styles.detailValue}>{isSent ? 'Outward' : 'Inward'}</Text>
-                    </View>
-
-                    <View style={styles.detailItemRight}>
-                      <Text style={styles.detailLabel}>Status</Text>
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          isDelivered ? styles.statusBadgeApproved : styles.statusBadgePending,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.statusBadgeText,
-                            isDelivered ? styles.statusTextApproved : styles.statusTextPending,
-                          ]}
-                        >
-                          {status.toUpperCase()}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Notes / Vehicle / Bilty Info */}
-                  {item.notes ? (
-                    <View style={styles.cardFooterNotes}>
-                      <Truck size={12} color="#64748B" strokeWidth={2} />
-                      <Text style={styles.notesText} numberOfLines={2}>
-                        {item.notes}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {/* Proof / Bilty Attachment Row with Visible Image Thumbnail */}
-                  {(item.attachmentUrl || item.receiptUrl || item.biltyUrl || item.attachment || item.deliveryProof || item.proofUrl) && (() => {
-                    const rawAttach = item.attachmentUrl || item.receiptUrl || item.biltyUrl || item.attachment || item.deliveryProof || item.proofUrl;
-                    const attachUrl = resolveImageUrl(rawAttach);
-                    const isImg = attachUrl && (attachUrl.match(/\.(jpg|jpeg|png|webp|gif)($|\?)/i) || !attachUrl.toLowerCase().endsWith('.pdf'));
-
-                    return (
-                      <View style={styles.cardAttachmentRow}>
-                        <TouchableOpacity
-                          style={[styles.cardAttachmentBtn, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}
-                          onPress={() => {
-                            if (isImg) {
-                              setFullPreviewImage(attachUrl);
-                            } else {
-                              Linking.openURL(attachUrl).catch(() => Alert.alert('Delivery Proof', 'Unable to open document'));
-                            }
-                          }}
-                          activeOpacity={0.8}
-                        >
-                          {isImg ? (
-                            <Image
-                              source={{ uri: attachUrl }}
-                              style={styles.cardAttachmentThumb}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={[styles.cardAttachmentDocBadge, { backgroundColor: '#059669' }]}>
-                              <Text style={styles.cardAttachmentDocText}>DOC</Text>
-                            </View>
-                          )}
-                          <View style={{ flex: 1, marginLeft: 8 }}>
-                            <Text style={[styles.cardAttachmentBtnText, { color: '#065F46' }]} numberOfLines={1}>
-                              Delivery Proof / Bilty
-                            </Text>
-                            <Text style={[styles.cardAttachmentSubText, { color: '#047857' }]}>
-                              {isImg ? 'Tap to view full image' : 'Tap to open document'}
-                            </Text>
-                          </View>
-                          <Eye size={15} color="#059669" style={{ marginRight: 4 }} />
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.cardAttachmentDownloadBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
-                          onPress={() => downloadFileToDevice(attachUrl, null, 'Delivery_Bilty')}
-                          activeOpacity={0.7}
-                        >
-                          <Download size={15} color="#059669" />
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })()}
-
-                  {/* Mark Delivered Action (Only shown to counterparty, NOT entry creator!) */}
-                  {!isDelivered && !isEntryCreatedByMe(item) && (
-                    <View style={styles.actionButtonRow}>
-                      <TouchableOpacity
-                        style={[styles.quickStatusBtn, styles.approveBtn]}
-                        onPress={() => handleUpdateDeliveryStatus(item._id || item.id, 'delivered')}
-                        disabled={actionInProgressId === (item._id || item.id)}
-                        activeOpacity={0.7}
-                      >
-                        {actionInProgressId === (item._id || item.id) ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <>
-                            <CheckCircle2 size={14} color="#FFFFFF" strokeWidth={2.4} />
-                            <Text style={styles.approveBtnText}>Mark as Delivered</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
-                  {/* Creator dispatched awaiting confirmation */}
-                  {!isDelivered && isEntryCreatedByMe(item) && (
-                    <View style={styles.pendingAwaitingBox}>
-                      <Clock size={13} color="#D97706" strokeWidth={2.2} />
-                      <Text style={styles.pendingAwaitingText}>
-                        Dispatched by you • Awaiting receiver confirmation
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
-            })
-          )
-        )}
       </ScrollView>
 
       {/* ─── MODAL 1: RECORD PAYMENT ENTRY ─── */}
@@ -2067,7 +1460,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                           const isSelected = normalizeId(paymentForm.dealId) === dId;
                           const dealNumber = d.dealNumber ? `#${d.dealNumber}` : `#${dId.slice(-4).toUpperCase()}`;
                           const party = d.sellerCompanyId?.name || d.buyerCompanyId?.name || d.sellerCompanyName || d.buyerCompanyName || 'Deal';
-                          const prod = d.products?.[0]?.name || d.productName || d.product?.name || 'Commodity';
+                          const prod = d.products?.[0]?.name || d.productName || d.product?.name || '';
                           const amt = d.totalAmount || d.amount;
                           const statusInfo = getDealStatusBadge(d.status);
 
@@ -2142,7 +1535,7 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
                       </Text>
                       <View style={styles.selectedDealMetaRow}>
                         <Text style={styles.selectedDealProductText}>
-                          {currentPaymentDeal.products?.[0]?.name || currentPaymentDeal.productName || currentPaymentDeal.product?.name || 'Commodity Material'}
+                          {currentPaymentDeal.products?.[0]?.name || currentPaymentDeal.productName || currentPaymentDeal.product?.name || ''}
                         </Text>
                         {(currentPaymentDeal.totalAmount || currentPaymentDeal.amount) ? (
                           <Text style={styles.selectedDealAmountText}>
@@ -2302,309 +1695,6 @@ const CompanyPayments = ({ onNavigate, routeData }) => {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ─── MODAL 2: LOG DELIVERY ENTRY ─── */}
-      <Modal
-        visible={showDeliveryModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowDeliveryModal(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalContainer}>
-            {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <View style={styles.modalIconWrapBlue}>
-                  <Truck size={20} color="#1541D8" strokeWidth={2.2} />
-                </View>
-                <View>
-                  <Text style={styles.modalTitle}>Log Delivery Dispatch</Text>
-                  <Text style={styles.modalSubtitle}>Record vehicle shipment & quantities</Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                onPress={() => setShowDeliveryModal(false)}
-                style={styles.modalCloseBtn}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <X size={20} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Select Deal */}
-              <Text style={styles.formLabel}>Select Deal *</Text>
-              {deals.length === 0 ? (
-                <View style={styles.noDealWarning}>
-                  <AlertCircle size={14} color="#D97706" />
-                  <Text style={styles.noDealWarningText}>
-                    No deals found for this company yet.
-                  </Text>
-                </View>
-              ) : (
-                <View style={{ marginBottom: 16 }}>
-                  <TouchableOpacity
-                    style={[styles.formDropdownButton, isDeliveryDealDropdownExpanded && styles.formDropdownButtonExpanded]}
-                    onPress={() => setIsDeliveryDealDropdownExpanded(!isDeliveryDealDropdownExpanded)}
-                    activeOpacity={0.75}
-                  >
-                    <View style={styles.formDropdownLeft}>
-                      <FileText size={16} color="#1541D8" strokeWidth={2.2} />
-                      <Text style={styles.formDropdownValue} numberOfLines={1}>
-                        {deliveryForm.dealId
-                          ? getDealLabel(deals.find((d) => normalizeId(d._id || d.id) === normalizeId(deliveryForm.dealId)))
-                          : 'Select a deal...'}
-                      </Text>
-                    </View>
-                    <ChevronDown
-                      size={18}
-                      color="#64748B"
-                      style={{
-                        transform: [{ rotate: isDeliveryDealDropdownExpanded ? '180deg' : '0deg' }],
-                      }}
-                    />
-                  </TouchableOpacity>
-
-                  {isDeliveryDealDropdownExpanded && (
-                    <View style={styles.formInlineDropdownList}>
-                      <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
-                        {deals.map((d) => {
-                          const dId = normalizeId(d._id || d.id);
-                          const isSelected = normalizeId(deliveryForm.dealId) === dId;
-                          const dealNumber = d.dealNumber ? `#${d.dealNumber}` : `#${dId.slice(-4).toUpperCase()}`;
-                          const party = d.sellerCompanyId?.name || d.buyerCompanyId?.name || d.sellerCompanyName || d.buyerCompanyName || 'Deal';
-                          const prod = d.products?.[0]?.name || d.productName || d.product?.name || 'Commodity';
-                          const statusInfo = getDealStatusBadge(d.status);
-
-                          return (
-                            <TouchableOpacity
-                              key={dId}
-                              style={[styles.formInlineOption, isSelected && styles.formInlineOptionSelected]}
-                              onPress={() => {
-                                let prodId = '';
-                                let prodName = '';
-                                if (d.products && d.products.length > 0) {
-                                  prodId = d.products[0]?.productId?._id || d.products[0]?.productId || '';
-                                  prodName = d.products[0]?.productId?.name || d.products[0]?.name || '';
-                                } else if (d.product) {
-                                  prodId = d.product?.productId?._id || d.product?.productId || '';
-                                  prodName = d.product?.productId?.name || d.product?.name || '';
-                                }
-                                setDeliveryForm({
-                                  ...deliveryForm,
-                                  dealId: dId,
-                                  productId: prodId,
-                                  productName: prodName,
-                                });
-                                setIsDeliveryDealDropdownExpanded(false);
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <View style={{ flex: 1, marginRight: 8 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-                                  <View style={styles.inlineOptionBadge}>
-                                    <Text style={styles.inlineOptionBadgeText}>{dealNumber}</Text>
-                                  </View>
-                                  <View style={[styles.dealStatusMiniPill, { backgroundColor: statusInfo.bg, borderColor: statusInfo.border }]}>
-                                    <Text style={[styles.dealStatusMiniText, { color: statusInfo.color }]}>
-                                      {statusInfo.label}
-                                    </Text>
-                                  </View>
-                                </View>
-                                <Text style={[styles.formInlineOptionText, isSelected && styles.formInlineOptionTextSelected]} numberOfLines={1}>
-                                  {prod} • {party}
-                                </Text>
-                              </View>
-                              {isSelected && <Check size={16} color="#1541D8" strokeWidth={2.4} />}
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* Delivery Type: Sent (Dispatched) vs Received */}
-              <Text style={styles.formLabel}>Shipment Direction *</Text>
-              <View style={styles.toggleRow}>
-                <TouchableOpacity
-                  style={[styles.toggleBtn, deliveryForm.deliveryType === 'sent' && styles.toggleBtnActiveBlue]}
-                  onPress={() => setDeliveryForm({ ...deliveryForm, deliveryType: 'sent' })}
-                  activeOpacity={0.8}
-                >
-                  <Truck
-                    size={16}
-                    color={deliveryForm.deliveryType === 'sent' ? '#FFFFFF' : '#1541D8'}
-                    strokeWidth={2.4}
-                  />
-                  <Text
-                    style={[
-                      styles.toggleBtnText,
-                      deliveryForm.deliveryType === 'sent' && styles.toggleBtnTextActive,
-                    ]}
-                  >
-                    Outward (Dispatched)
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.toggleBtn, deliveryForm.deliveryType === 'received' && styles.toggleBtnActiveReceived]}
-                  onPress={() => setDeliveryForm({ ...deliveryForm, deliveryType: 'received' })}
-                  activeOpacity={0.8}
-                >
-                  <Box
-                    size={16}
-                    color={deliveryForm.deliveryType === 'received' ? '#FFFFFF' : '#059669'}
-                    strokeWidth={2.4}
-                  />
-                  <Text
-                    style={[
-                      styles.toggleBtnText,
-                      deliveryForm.deliveryType === 'received' && styles.toggleBtnTextActive,
-                    ]}
-                  >
-                    Inward (Received)
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Product Selection if Deal has multiple */}
-              {currentFormDeal?.products && currentFormDeal.products.length > 1 && (
-                <>
-                  <Text style={styles.formLabel}>Select Product</Text>
-                  <View style={styles.chipsRow}>
-                    {currentFormDeal.products.map((p, pIdx) => {
-                      const pId = p.productId?._id || p.productId || `p-${pIdx}`;
-                      const pName = p.productId?.name || p.name || `Product ${pIdx + 1}`;
-                      const isSelected = deliveryForm.productId === pId;
-                      return (
-                        <TouchableOpacity
-                          key={pId}
-                          style={[styles.methodChip, isSelected && styles.methodChipSelected]}
-                          onPress={() => setDeliveryForm({ ...deliveryForm, productId: pId, productName: pName })}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.methodChipText, isSelected && styles.methodChipTextSelected]}>
-                            {pName}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </>
-              )}
-
-              {/* Quantity (MT) */}
-              <Text style={styles.formLabel}>Quantity (MT) *</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. 25.5"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
-                value={deliveryForm.quantity}
-                onChangeText={(val) => setDeliveryForm({ ...deliveryForm, quantity: val })}
-              />
-
-              {/* Vehicle / Truck Number */}
-              <Text style={styles.formLabel}>Vehicle / Truck Number</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. MH 12 AB 1234 or RJ 14 GC 9876"
-                placeholderTextColor="#94A3B8"
-                autoCapitalize="characters"
-                value={deliveryForm.vehicleNumber}
-                onChangeText={(val) => setDeliveryForm({ ...deliveryForm, vehicleNumber: val })}
-              />
-
-              {/* Bilty / LR Number */}
-              <Text style={styles.formLabel}>LR / Bilty Number / Driver Phone</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. LR-89127 or Driver: 9876543210"
-                placeholderTextColor="#94A3B8"
-                value={deliveryForm.biltyNumber}
-                onChangeText={(val) => setDeliveryForm({ ...deliveryForm, biltyNumber: val })}
-              />
-
-              {/* Notes */}
-              <Text style={styles.formLabel}>Dispatch Notes</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea]}
-                placeholder="Add destination warehouse, weight slip info, or inspection notes..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                numberOfLines={3}
-                value={deliveryForm.notes}
-                onChangeText={(val) => setDeliveryForm({ ...deliveryForm, notes: val })}
-              />
-
-              {/* Delivery Proof / Bilty Attachment */}
-              <Text style={styles.formLabel}>Attach Bilty / Delivery Slip (Optional)</Text>
-              {deliveryAttachmentUrl ? (
-                <View style={styles.proofAttachmentCard}>
-                  <Image
-                    source={{ uri: resolveImageUrl(deliveryAttachmentUrl) }}
-                    style={styles.proofAttachmentThumbnail}
-                    resizeMode="cover"
-                  />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.proofAttachmentName} numberOfLines={1}>
-                      {deliveryAttachmentAsset?.fileName || 'Delivery_Document.jpg'}
-                    </Text>
-                    <Text style={styles.proofAttachmentStatus}>Uploaded Successfully ✓</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.proofRemoveBtn}
-                    onPress={() => {
-                      setDeliveryAttachmentUrl('');
-                      setDeliveryAttachmentAsset(null);
-                    }}
-                  >
-                    <X size={16} color="#DC2626" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.proofUploadBtn}
-                  onPress={pickDeliveryDocument}
-                  disabled={isUploadingDeliveryAttachment}
-                  activeOpacity={0.8}
-                >
-                  {isUploadingDeliveryAttachment ? (
-                    <ActivityIndicator size="small" color="#1541D8" />
-                  ) : (
-                    <>
-                      <Paperclip size={16} color="#1541D8" />
-                      <Text style={styles.proofUploadBtnText}>Attach Bilty / LR Document</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              )}
-
-              {/* Submit Button */}
-              <TouchableOpacity
-                style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-                onPress={handleLogDelivery}
-                disabled={isSubmitting}
-                activeOpacity={0.85}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Check size={18} color="#FFFFFF" strokeWidth={2.5} />
-                    <Text style={styles.submitButtonText}>Confirm & Log Delivery</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
       {/* ─── MODAL 3: SELECT COMPANY FILTER ─── */}
       <Modal
         visible={isCompanyPickerOpen}
@@ -2925,44 +2015,42 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
-  /* ── 3. Segmented Top Tabs ── */
+  /* ── 3. Compact Segmented Top Tabs ── */
   tabsContainer: {
-    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    gap: 10,
+    borderBottomColor: '#F1F5F9',
+  },
+  tabsTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+    padding: 3,
+    gap: 4,
   },
   tabButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    borderRadius: 7,
+    gap: 5,
   },
   tabButtonActive: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1.5,
-    borderColor: '#1541D8',
-  },
-  tabIconBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#E2E8F0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabIconBadgeActive: {
-    backgroundColor: '#1541D8',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   tabButtonText: {
-    fontSize: 14,
+    fontSize: 12.5,
     fontWeight: '600',
     color: '#64748B',
   },
@@ -2970,22 +2058,30 @@ const styles = StyleSheet.create({
     color: '#1541D8',
     fontWeight: '700',
   },
+  tabButtonTextReceived: {
+    color: '#059669',
+    fontWeight: '700',
+  },
+  tabButtonTextSent: {
+    color: '#DC2626',
+    fontWeight: '700',
+  },
   countPill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: '#CBD5E1',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
   },
   countPillActive: {
-    backgroundColor: '#1541D8',
+    backgroundColor: '#EFF6FF',
   },
   countPillText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    color: '#475569',
+    color: '#64748B',
   },
   countPillTextActive: {
-    color: '#FFFFFF',
+    color: '#1541D8',
   },
 
   /* ── 4. Deal Filter Dropdown ── */

@@ -19,8 +19,36 @@ const SummaryApi = {
   },
 
   staffLogin: {
-    url: `${backendDomain}/api/auth/staff-login`,
+    url: `${backendDomain}/api/staff/login`,
     method: "post",
+  },
+  staffOnboard: {
+    url: `${backendDomain}/api/staff/onboard`,
+    method: "post",
+  },
+  getStaffList: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.append('search', params.search);
+    if (params.status) query.append('status', params.status);
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/staff${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  getStaffProfile: {
+    url: `${backendDomain}/api/staff/profile`,
+    method: "get",
+  },
+  changeStaffPassword: {
+    url: `${backendDomain}/api/staff/change-password`,
+    method: "put",
+  },
+  getStaffDashboardStats: {
+    url: `${backendDomain}/api/staff/dashboard-stats`,
+    method: "get",
   },
 
   logOut: {
@@ -137,6 +165,59 @@ const SummaryApi = {
     url: `${backendDomain}/api/projects/my-tasks${status ? `?status=${status}` : ''}`,
     method: "get",
   }),
+
+  /* ================= MATERIALS & DEMANDS ================= */
+  allocateProjectMaterial: (projectId) => ({
+    url: `${backendDomain}/api/projects/${projectId}/materials`,
+    method: "post",
+  }),
+  deleteProjectMaterial: (projectId, materialId) => ({
+    url: `${backendDomain}/api/projects/${projectId}/materials/${materialId}`,
+    method: "delete",
+  }),
+  raiseProjectDemand: (projectId) => ({
+    url: `${backendDomain}/api/projects/${projectId}/demands`,
+    method: "post",
+  }),
+  getProjectDemands: (projectId) => ({
+    url: `${backendDomain}/api/projects/${projectId}/demands`,
+    method: "get",
+  }),
+  getAllDemands: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.append('status', params.status);
+    if (params.urgency) query.append('urgency', params.urgency);
+    if (params.projectId) query.append('projectId', params.projectId);
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/projects/demands/all${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  fulfillProjectDemand: (projectId, demandId) => ({
+    url: `${backendDomain}/api/projects/${projectId}/demands/${demandId}/fulfill`,
+    method: "patch",
+  }),
+
+  /* ================= PROJECT ANALYTICS & REPORTS ================= */
+  getProjectProgressAnalytics: (projectId) => ({
+    url: `${backendDomain}/api/projects/${projectId}/progress-analytics`,
+    method: "get",
+  }),
+  getProjectDelayReport: (projectId) => ({
+    url: `${backendDomain}/api/projects/${projectId}/delay-report`,
+    method: "get",
+  }),
+  getGlobalAccountabilityAnalytics: {
+    url: `${backendDomain}/api/projects/analytics/accountability`,
+    method: "get",
+  },
+  getHistoricalProjectInsights: {
+    url: `${backendDomain}/api/projects/insights/historical`,
+    method: "get",
+  },
 
   /* ================= DEALS ================= */
   createDeal: {
@@ -375,6 +456,11 @@ const SummaryApi = {
     url: `${backendDomain}/api/units/${id}`,
     method: "get",
   }),
+
+  createUnit: {
+    url: `${backendDomain}/api/units`,
+    method: "post",
+  },
 
   /* ================= CONTACTS ================= */
   filterContacts: {

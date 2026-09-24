@@ -15,6 +15,8 @@ import ContactPicker from './sauda/ContactPicker';
 import TransactionHistory from './sauda/TransactionHistory';
 import OnboardedUsers from './profile/OnboardedUsers';
 import CompanyPayments from './dashboard/CompanyPayments';
+import CompanyDeliveries from './dashboard/CompanyDeliveries';
+import CompanyLedger from './dashboard/CompanyLedger';
 import DealInvoice from './sauda/DealInvoice';
 import ProjectsList from './projects/ProjectsList';
 import CreateProject from './projects/CreateProject';
@@ -41,6 +43,8 @@ export {
   TransactionHistory,
   OnboardedUsers,
   CompanyPayments,
+  CompanyDeliveries,
+  CompanyLedger,
   DealInvoice,
   ProjectsList,
   CreateProject,

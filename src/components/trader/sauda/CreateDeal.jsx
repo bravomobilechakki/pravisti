@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -16,8 +16,11 @@ import {
   Modal,
   Linking,
   Keyboard,
+  PermissionsAndroid,
+  FlatList,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Contacts from 'react-native-contacts';
 import {
   ArrowLeft,
   ArrowRight,
@@ -40,8 +43,10 @@ import {
   Globe,
   MapPin,
   Paperclip,
+  Camera,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Wheat,
   Droplet,
   Flame,
@@ -57,8 +62,10 @@ import {
   Send,
   Percent,
   Calculator,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 
 import {
   createDeal,
@@ -72,8 +79,10 @@ import {
   getCompanies,
   getCompanyDetails,
   getCompaniesByNumber,
+  filterContacts,
   assistedCreatePartyAccount,
   getUnits,
+  saveCustomUnit,
   getIndustries,
   searchCounterpartyUser,
   fetchPincodeDetails,
@@ -82,12 +91,12 @@ import {
 } from '../../../services/api';
 
 const STANDARD_UNITS = [
-  { label: 'Bag', value: 'Bag', short: 'Bag', id: '6a0c118913e627687603da19' },
-  { label: 'Quintal (100 Kg)', value: 'Quintal', short: 'Qtl', id: '6a0c118913e627687603da13' },
-  { label: 'Metric Ton (MT)', value: 'Metric Ton', short: 'MT', id: '6a0c118913e627687603da12' },
-  { label: 'Tin (15 Litres)', value: 'Tin', short: 'Tin', id: '6a0c118913e627687603da20' },
-  { label: 'Kilogram (Kg)', value: 'Kilogram', short: 'Kg', id: '6a0eac4cd59663585920f09c' },
-  { label: 'Liter (L)', value: 'Liter', short: 'L', id: '6a0c118913e627687603da15' },
+  { label: 'Bag', value: 'Bag', name: 'Bag', short: 'Bag', shortName: 'Bag', id: '6a0c118913e627687603da19', type: 'packaging' },
+  { label: 'Quintal (100 Kg)', value: 'Quintal', name: 'Quintal', short: 'Qtl', shortName: 'Qtl', id: '6a0c118913e627687603da13', type: 'weight' },
+  { label: 'Metric Ton (MT)', value: 'Metric Ton', name: 'Metric Ton', short: 'MT', shortName: 'MT', id: '6a0c118913e627687603da12', type: 'weight' },
+  { label: 'Tin (15 Litres)', value: 'Tin', name: 'Tin', short: 'Tin', shortName: 'Tin', id: '6a0c118913e627687603da20', type: 'packaging' },
+  { label: 'Kilogram (Kg)', value: 'Kilogram', name: 'Kilogram', short: 'Kg', shortName: 'Kg', id: '6a0eac4cd59663585920f09c', type: 'weight' },
+  { label: 'Liter (L)', value: 'Liter', name: 'Liter', short: 'L', shortName: 'L', id: '6a0c118913e627687603da15', type: 'volume' },
 ];
 
 const DEAL_TYPES = ['Purchase', 'Sale'];
@@ -169,7 +178,138 @@ const getResolvedLocation = (obj, fallback = '') => {
   return fallback;
 };
 
+export const isBrokerEntity = (entity) => {
+  if (!entity) return false;
+  if (entity.isBroker === true) return true;
+  const raw = [
+    entity.type,
+    entity.companyType,
+    entity.firmType,
+    entity.role,
+    entity.userRole,
+    entity.industry,
+    entity.industryName,
+    typeof entity.industryId === 'object' ? entity.industryId?.name : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return raw.includes('broker') || raw.includes('dalal') || raw.includes('commission');
+};
+
+export const isTraderEntity = (entity) => {
+  if (!entity) return false;
+  if (isBrokerEntity(entity)) return false;
+  const raw = [
+    entity.type,
+    entity.companyType,
+    entity.firmType,
+    entity.role,
+    entity.userRole,
+    entity.industry,
+    entity.industryName,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return (
+    raw.includes('trader') ||
+    raw.includes('buyer') ||
+    raw.includes('seller') ||
+    raw.includes('mill') ||
+    raw.includes('commodity') ||
+    raw.includes('merchant')
+  );
+};
+
 const CreateDeal = ({ onNavigate, routeData }) => {
+  const scrollViewRef = useRef(null);
+  const [keyboardSpace, setKeyboardSpace] = useState(0);
+  const cardLayoutsRef = useRef({});
+  const focusedCardKeyRef = useRef(null);
+
+  const handleCardLayout = useCallback((key, event) => {
+    const { y } = event.nativeEvent.layout;
+    cardLayoutsRef.current[key] = y;
+  }, []);
+
+  const scrollToInput = useCallback((event, cardKey = null, extraOffset = 0) => {
+    if (cardKey) {
+      focusedCardKeyRef.current = { cardKey, extraOffset };
+    }
+
+    // 1. If we have the measured card y position:
+    if (cardKey && cardLayoutsRef.current[cardKey] !== undefined) {
+      const targetY = Math.max(0, cardLayoutsRef.current[cardKey] + extraOffset - 25);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+      }, 50);
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+      }, 220);
+      return;
+    }
+
+    // 2. Fallback to native node measurement relative to ScrollView
+    const targetNode = event?.target || event?.currentTarget;
+    if (targetNode && scrollViewRef.current) {
+      try {
+        if (typeof targetNode.measureLayout === 'function') {
+          targetNode.measureLayout(
+            scrollViewRef.current,
+            (left, top) => {
+              const targetY = Math.max(0, top + extraOffset - 60);
+              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+            },
+            () => {
+              try {
+                const responder = scrollViewRef.current?.getScrollResponder?.();
+                responder?.scrollResponderScrollNativeHandleToKeyboard?.(targetNode, 140, true);
+              } catch (_) { }
+            }
+          );
+          return;
+        }
+      } catch (_) { }
+
+      try {
+        const responder = scrollViewRef.current?.getScrollResponder?.();
+        responder?.scrollResponderScrollNativeHandleToKeyboard?.(targetNode, 140, true);
+      } catch (_) { }
+    }
+  }, []);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        const kHeight = e?.endCoordinates?.height || 280;
+        setKeyboardSpace(kHeight);
+        if (focusedCardKeyRef.current && scrollViewRef.current) {
+          const { cardKey, extraOffset } = focusedCardKeyRef.current;
+          if (cardLayoutsRef.current[cardKey] !== undefined) {
+            const targetY = Math.max(0, cardLayoutsRef.current[cardKey] + (extraOffset || 0) - 25);
+            setTimeout(() => {
+              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+            }, 60);
+          }
+        }
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardSpace(0);
+        focusedCardKeyRef.current = null;
+      }
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -213,34 +353,48 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   );
 
   // Counterparty 2 (Buyer when seller, Seller when buyer)
+  const isParty2Picked = routeData?.selectedContact && (routeData?.pickingFor === 'party2' || !routeData?.pickingFor);
+  const pickedParty2Name = isParty2Picked
+    ? (routeData.selectedContact.company || routeData.selectedContact.companyName || routeData.selectedContact.name || '')
+    : '';
+
   const prefillBuyer = routeData?.prefill?.buyerCompany || routeData?.prefill?.buyerCompanyId || routeData?.prefill?.party2 || {};
-  const prefillBuyerName = prefillBuyer.companyName || prefillBuyer.name || routeData?.prefillParty2?.name || routeData?.existingParty2Name || '';
+  const prefillBuyerName = pickedParty2Name || prefillBuyer.companyName || prefillBuyer.name || routeData?.prefillParty2?.name || (routeData?.pickingFor !== 'party2' ? routeData?.existingParty2Name : '') || '';
 
   const [party2, setParty2] = useState(prefillBuyerName);
   const [party2Data, setParty2Data] = useState(
-    routeData?.prefillParty2
+    isParty2Picked
       ? {
-        ...routeData.prefillParty2,
-        isRegistered: true,
-        industry: getResolvedIndustry(routeData.prefillParty2, ''),
-        location: getResolvedLocation(routeData.prefillParty2, ''),
+        ...routeData.selectedContact,
+        company: pickedParty2Name,
+        name: routeData.selectedContact.name || pickedParty2Name,
+        companyId: routeData.selectedContact.companyId || routeData.selectedContact._id || routeData.selectedContact.id,
+        industry: getResolvedIndustry(routeData.selectedContact, ''),
+        location: getResolvedLocation(routeData.selectedContact, ''),
       }
-      : routeData?.existingParty2
+      : (routeData?.prefillParty2
         ? {
-          ...routeData.existingParty2,
-          industry: getResolvedIndustry(routeData.existingParty2, ''),
-          location: getResolvedLocation(routeData.existingParty2, ''),
+          ...routeData.prefillParty2,
+          isRegistered: true,
+          industry: getResolvedIndustry(routeData.prefillParty2, ''),
+          location: getResolvedLocation(routeData.prefillParty2, ''),
         }
-        : prefillBuyerName
+        : routeData?.existingParty2
           ? {
-            ...prefillBuyer,
-            isRegistered: true,
-            company: prefillBuyerName,
-            name: prefillBuyerName,
-            industry: getResolvedIndustry(prefillBuyer, ''),
-            location: getResolvedLocation(prefillBuyer, ''),
+            ...routeData.existingParty2,
+            industry: getResolvedIndustry(routeData.existingParty2, ''),
+            location: getResolvedLocation(routeData.existingParty2, ''),
           }
-          : null
+          : prefillBuyerName
+            ? {
+              ...prefillBuyer,
+              isRegistered: true,
+              company: prefillBuyerName,
+              name: prefillBuyerName,
+              industry: getResolvedIndustry(prefillBuyer, ''),
+              location: getResolvedLocation(prefillBuyer, ''),
+            }
+            : null)
   );
 
   // Broker-specific Seller states (if applicable)
@@ -262,8 +416,22 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [lookupResults, setLookupResults] = useState({});
 
   // Other Parties (Broker, Logistics, Insurance)
-  const existingBroker = routeData?.existingBrokerCompany || routeData?.prefill?.brokerCompany || null;
-  const existingBrokerName = routeData?.existingBrokerCompanyName || routeData?.prefill?.brokerCompanyName || (existingBroker?.isRegistered ? (existingBroker?.company || existingBroker?.name) : existingBroker?.name) || '';
+  const isBrokerPicked = routeData?.selectedContact && routeData?.pickingFor === 'brokerCompany';
+  const pickedBrokerName = isBrokerPicked
+    ? (routeData.selectedContact.company || routeData.selectedContact.companyName || routeData.selectedContact.name || '')
+    : '';
+
+  const existingBroker = isBrokerPicked
+    ? {
+      ...routeData.selectedContact,
+      company: pickedBrokerName,
+      name: routeData.selectedContact.name || pickedBrokerName,
+      companyId: routeData.selectedContact.companyId || routeData.selectedContact._id || routeData.selectedContact.id,
+      industry: getResolvedIndustry(routeData.selectedContact, ''),
+      location: getResolvedLocation(routeData.selectedContact, ''),
+    }
+    : (routeData?.existingBrokerCompany || routeData?.prefill?.brokerCompany || null);
+  const existingBrokerName = pickedBrokerName || routeData?.existingBrokerCompanyName || routeData?.prefill?.brokerCompanyName || (existingBroker?.isRegistered ? (existingBroker?.company || existingBroker?.name) : existingBroker?.name) || '';
   const [brokerCompany, setBrokerCompany] = useState(existingBrokerName);
   const [brokerCompanyData, setBrokerCompanyData] = useState(existingBroker);
   const [brokerCompanyId, setBrokerCompanyId] = useState(routeData?.prefill?.brokerCompanyId || existingBroker?.companyId || existingBroker?._id || '');
@@ -423,11 +591,18 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [quantity, setQuantity] = useState(
     routeData?.prefill?.quantity ? String(routeData.prefill.quantity) : ''
   );
-  const [discount, setDiscount] = useState(routeData?.prefill?.discount ? String(routeData.prefill.discount) : '0');
+  const [discount, setDiscount] = useState(routeData?.prefill?.discount ? String(routeData.prefill.discount) : '');
   const [gstPercent, setGstPercent] = useState(routeData?.prefill?.gst ? String(routeData.prefill.gst) : '0');
   const [selectedProductId, setSelectedProductId] = useState(routeData?.prefill?.productId || '');
 
   const [showUnitModal, setShowUnitModal] = useState(false);
+  const [unitEditingProductIndex, setUnitEditingProductIndex] = useState(null);
+  const [showAddCustomUnitDeal, setShowAddCustomUnitDeal] = useState(false);
+  const [showAddCustomUnitProd, setShowAddCustomUnitProd] = useState(false);
+  const [dealCustomUnitName, setDealCustomUnitName] = useState('');
+  const [dealCustomUnitShort, setDealCustomUnitShort] = useState('');
+  const [dealCustomUnitType, setDealCustomUnitType] = useState('weight');
+  const [isSavingCustomUnitDeal, setIsSavingCustomUnitDeal] = useState(false);
 
   // ----------------------------------------------------
   // STEP 3: DEAL DETAILS STATES
@@ -441,7 +616,12 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [validityDate, setValidityDate] = useState(
     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
-  const [paymentTerms, setPaymentTerms] = useState(routeData?.prefill?.paymentTerms || '30 Days Credit');
+  const [paymentTerms, setPaymentTerms] = useState(routeData?.prefill?.paymentTerms || '');
+  const [paymentDays, setPaymentDays] = useState(() => {
+    const pt = routeData?.prefill?.paymentTerms || '';
+    const match = pt.match(/(\d+)\s*Days?/i);
+    return match ? match[1] : '';
+  });
   const [deliveryTerms, setDeliveryTerms] = useState(routeData?.prefill?.deliveryTerms || 'FOB - Free on Board');
   const [deliveryLocation, setDeliveryLocation] = useState(routeData?.prefill?.deliveryLocation || '');
   const [dealDescription, setDealDescription] = useState(routeData?.prefill?.description || '');
@@ -453,7 +633,6 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [showPaymentTermsModal, setShowPaymentTermsModal] = useState(false);
   const [showDeliveryTermsModal, setShowDeliveryTermsModal] = useState(false);
 
   // Attachments State
@@ -462,6 +641,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
 
   // Master Data States
   const [unitsList, setUnitsList] = useState(STANDARD_UNITS);
+
   const [companyProducts, setCompanyProducts] = useState([]);
   const [categoriesList, setCategoriesList] = useState([]);
   const [userCompaniesList, setUserCompaniesList] = useState([]);
@@ -474,6 +654,14 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [multiCompanyTargetField, setMultiCompanyTargetField] = useState('party2');
   const [multiCompanyUserNumber, setMultiCompanyUserNumber] = useState('');
   const [multiCompanyUserName, setMultiCompanyUserName] = useState('');
+
+  // Device Contacts Modal State
+  const [contactsModalVisible, setContactsModalVisible] = useState(false);
+  const [deviceContacts, setDeviceContacts] = useState([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactSearchQuery, setContactSearchQuery] = useState('');
+  const [targetRoleForContacts, setTargetRoleForContacts] = useState('party2');
+  const [contactsActiveTab, setContactsActiveTab] = useState('all'); // 'all' | 'registered' | 'unregistered'
 
   // Assisted Onboarding Modal
   const [showOnboardModal, setShowOnboardModal] = useState(false);
@@ -500,21 +688,6 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const [onboardErrors, setOnboardErrors] = useState({});
   const [isOnboardingSubmitting, setIsOnboardingSubmitting] = useState(false);
   const [isPincodeLoading, setIsPincodeLoading] = useState(false);
-
-  // Keyboard Visibility Listener to prevent Continue button overlaying inputs
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  useEffect(() => {
-    const showSub1 = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
-    const showSub2 = Keyboard.addListener('keyboardWillShow', () => setIsKeyboardVisible(true));
-    const hideSub1 = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
-    const hideSub2 = Keyboard.addListener('keyboardWillHide', () => setIsKeyboardVisible(false));
-    return () => {
-      showSub1.remove();
-      showSub2.remove();
-      hideSub1.remove();
-      hideSub2.remove();
-    };
-  }, []);
 
   // Auto calculate deal value and name
   useEffect(() => {
@@ -622,7 +795,18 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           if (uRes && (uRes.success || Array.isArray(uRes.data))) {
             const list = Array.isArray(uRes.data) ? uRes.data : uRes.data?.data || [];
             if (list.length > 0) {
-              setUnitsList(list.map(item => ({ label: item.name, value: item.name, short: item.symbol || item.name, id: item._id })));
+              setUnitsList(list.map(item => ({
+                label: item.name,
+                value: item.name,
+                name: item.name,
+                short: item.shortName || item.symbol || item.name,
+                shortName: item.shortName || item.symbol || item.name,
+                id: item._id,
+                _id: item._id,
+                image: item.image || null,
+                type: item.type || 'weight',
+                isCustom: !!item.isCustom,
+              })));
             }
           }
         } catch (e) { }
@@ -639,7 +823,62 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       }
     };
     loadMasterData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originCompanyId]);
+
+  const handleSaveCustomUnitDeal = async (targetMode = 'deal') => {
+    if (!dealCustomUnitName.trim()) {
+      Alert.alert('Unit Name Required', 'Please enter a name for the custom unit (e.g. Quintal, Drum, Packet).');
+      return;
+    }
+    setIsSavingCustomUnitDeal(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const unitPayload = {
+        name: dealCustomUnitName.trim(),
+        shortName: (dealCustomUnitShort.trim() || dealCustomUnitName.trim()).substring(0, 10),
+        type: dealCustomUnitType,
+        isCustom: true,
+      };
+      const created = await saveCustomUnit(unitPayload, token);
+      const newFormatted = {
+        label: created.name,
+        value: created.name,
+        name: created.name,
+        short: created.shortName || created.name,
+        shortName: created.shortName || created.name,
+        id: created._id,
+        _id: created._id,
+        image: created.image || null,
+        type: created.type || 'weight',
+        isCustom: true,
+      };
+
+      setUnitsList(prev => [newFormatted, ...prev.filter(u => (u.id || u._id) !== newFormatted.id)]);
+
+      if (targetMode === 'customProduct') {
+        setCustomProdUnit(newFormatted.name);
+        setCustomProdUnitId(newFormatted.id);
+        setShowAddCustomUnitProd(false);
+        setShowCustomUnitModal(false);
+      } else {
+        if (unitEditingProductIndex !== null && unitEditingProductIndex >= 0) {
+          updateProductField(unitEditingProductIndex, 'unit', newFormatted.name);
+          setUnitEditingProductIndex(null);
+        }
+        setUnit(newFormatted.name);
+        setShowAddCustomUnitDeal(false);
+        setShowUnitModal(false);
+      }
+      setDealCustomUnitName('');
+      setDealCustomUnitShort('');
+    } catch (err) {
+      console.warn('Error saving custom unit in CreateDeal:', err);
+      Alert.alert('Error', 'Unable to create custom unit. Please try again.');
+    } finally {
+      setIsSavingCustomUnitDeal(false);
+    }
+  };
 
 
 
@@ -736,14 +975,26 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         industry: ind,
         location: loc,
       };
-      if (routeData.pickingFor === 'party2') {
-        setParty2(contact.isRegistered ? (contact.company || contact.name) : contact.name);
-        setParty2Data(enrichedContact);
+      if (routeData.pickingFor === 'party2' || !routeData.pickingFor) {
+        const coName = contact.company || contact.companyName || contact.name;
+        setParty2(coName);
+        setParty2Data({
+          ...enrichedContact,
+          company: coName,
+          name: contact.name || coName,
+          companyId: contact.companyId || contact._id || contact.id,
+        });
         setDirectInputParty2('');
         setFieldErrors(prev => ({ ...prev, party2: undefined }));
       } else if (routeData.pickingFor === 'brokerCompany') {
-        setBrokerCompany(contact.isRegistered ? (contact.company || contact.name) : contact.name);
-        setBrokerCompanyData(enrichedContact);
+        const bName = contact.company || contact.companyName || contact.name;
+        setBrokerCompany(bName);
+        setBrokerCompanyData({
+          ...enrichedContact,
+          company: bName,
+          name: contact.name || bName,
+          companyId: contact.companyId || contact._id || contact.id,
+        });
         setShowBroker(true);
         const cid = contact.companyId || contact._id || contact.id;
         if (cid) setBrokerCompanyId(String(cid));
@@ -789,18 +1040,57 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       const formattedNumber = `+91${cleanDigits}`;
-      const response = await getCompaniesByNumber(formattedNumber, token);
-      if (response && response.success && response.data && response.data.length > 0) {
-        if (response.data.length > 1) {
+
+      // Call both Pravisti filterContacts and getCompaniesByNumber in parallel
+      const [filterRes, compRes] = await Promise.allSettled([
+        filterContacts([{ phone: formattedNumber }], token),
+        getCompaniesByNumber(formattedNumber, token),
+      ]);
+
+      const filterItem =
+        filterRes.status === 'fulfilled' && filterRes.value?.success && Array.isArray(filterRes.value?.data)
+          ? filterRes.value.data[0]
+          : null;
+
+      let companiesList = [];
+      if (compRes.status === 'fulfilled' && compRes.value?.success && Array.isArray(compRes.value?.data)) {
+        companiesList = compRes.value.data;
+      } else if (filterItem && Array.isArray(filterItem.companies) && filterItem.companies.length > 0) {
+        companiesList = filterItem.companies;
+      }
+
+      if (companiesList.length > 0) {
+        if (!isParty2) {
+          // Broker Validation: Trader account CANNOT be selected as a Broker!
+          const brokerCompanies = companiesList.filter(c => isBrokerEntity(c));
+          if (brokerCompanies.length === 0) {
+            setBrokerCompany('');
+            setBrokerCompanyData(null);
+            setBrokerCompanyId('');
+            setDirectInputBroker('');
+            setError('Trader accounts cannot be selected as a Broker');
+            Alert.alert(
+              'Trader Account Not Allowed as Broker',
+              `The number (+91 ${cleanDigits}) is registered as a Trader account (${companiesList[0]?.companyName || companiesList[0]?.name || 'Trader'}). A Trader cannot be selected as a Broker in a deal. Please enter a valid Broker account.`,
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+          companiesList = brokerCompanies;
+        }
+
+        if (companiesList.length > 1) {
           // Multiple companies found for this user/number
-          setMultiCompanyList(response.data);
+          setMultiCompanyList(companiesList);
           setMultiCompanyTargetField(field);
           setMultiCompanyUserNumber(formattedNumber);
-          setMultiCompanyUserName(response.data[0]?.contactPersonName || response.data[0]?.name || 'Counterparty');
+          setMultiCompanyUserName(
+            companiesList[0]?.contactPersonName || companiesList[0]?.name || filterItem?.registeredName || (isParty2 ? 'Counterparty' : 'Broker')
+          );
           setShowMultiCompanyModal(true);
         } else {
           // Single registered company
-          const coObj = response.data[0];
+          const coObj = companiesList[0];
           const companyId = coObj.companyId || coObj._id || coObj.id;
           const companyName = coObj.companyName || coObj.name || 'Registered Company';
           const industry = getResolvedIndustry(coObj, isParty2 ? 'Commodity Trading' : 'Brokerage & Advisory');
@@ -808,14 +1098,14 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           const contactObj = {
             id: companyId || `reg_${Date.now()}`,
             companyId,
-            name: coObj.contactPersonName || coObj.name || companyName,
+            name: filterItem?.registeredName || coObj.contactPersonName || coObj.name || companyName,
             company: companyName,
             mobile: formattedNumber,
             isRegistered: true,
             status: coObj.status || coObj.approvalStatus || 'approved',
             industry,
             location,
-            companies: response.data,
+            companies: companiesList,
           };
           if (isParty2) {
             setParty2(companyName);
@@ -828,12 +1118,31 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             setBrokerCompanyId(String(companyId || ''));
             setDirectInputBroker('');
             setShowBroker(true);
+            setFieldErrors(prev => ({ ...prev, broker: undefined }));
           }
         }
       } else {
-        // Auto open onboard modal for new contact
+        // Auto open onboard modal for contact
+        if (!isParty2) {
+          // If registered as Trader on Pravisti, block adding them as broker
+          if (filterItem?.isRegistered && (isTraderEntity(filterItem) || !isBrokerEntity(filterItem))) {
+            setBrokerCompany('');
+            setBrokerCompanyData(null);
+            setBrokerCompanyId('');
+            setDirectInputBroker('');
+            setError('This user is already registered as a Trader on Pravisti. A Trader cannot be selected as a Broker.');
+            Alert.alert(
+              'Trader Account Not Allowed as Broker',
+              `The user (${filterItem.registeredName || filterItem.name || cleanDigits}) is registered as a Trader on Pravisti. A Trader account cannot act or be selected as a Broker.`,
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+        }
         const phone10 = cleanDigits.slice(-10);
-        openOnboardModal(isParty2 ? (role === 'buyer' ? 'seller' : 'buyer') : 'broker', phone10);
+        const targetRole = isParty2 ? (role === 'buyer' ? 'seller' : 'buyer') : 'broker';
+        const regName = filterItem?.isRegistered ? (filterItem.registeredName || filterItem.name) : '';
+        openOnboardModal(targetRole, phone10, regName);
       }
     } catch (e) {
       console.warn('Number lookup note:', e);
@@ -842,7 +1151,318 @@ const CreateDeal = ({ onNavigate, routeData }) => {
     }
   };
 
+  const openDeviceContactsModal = async (targetField) => {
+    setTargetRoleForContacts(targetField);
+    setContactsModalVisible(true);
+    setContactsLoading(true);
+    setContactSearchQuery('');
+    setContactsActiveTab('all');
+    try {
+      let granted = true;
+      if (Platform.OS === 'android') {
+        const permission = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
+          {
+            title: 'Contacts Access',
+            message: 'Pravisti needs access to your contacts to select party numbers and check registered entities.',
+            buttonPositive: 'Allow Access',
+          }
+        );
+        granted = permission === PermissionsAndroid.RESULTS.GRANTED;
+      } else {
+        const permission = await Contacts.requestPermission();
+        granted = permission === 'authorized';
+      }
+
+      if (granted) {
+        const rawContacts = await Contacts.getAll();
+        const formatted = [];
+        const contactsToSend = [];
+
+        (rawContacts || []).forEach(c => {
+          const fullName = [c.givenName, c.familyName].filter(Boolean).join(' ') || c.displayName || 'Unnamed Contact';
+          (c.phoneNumbers || []).forEach(p => {
+            const cleanDigits = (p.number || '').replace(/[^0-9]/g, '');
+            const mobile10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : '';
+            if (mobile10 && /^[6-9]\d{9}$/.test(mobile10)) {
+              const formattedPhone = `+91${mobile10}`;
+              formatted.push({
+                id: `${c.recordID || Math.random()}_${mobile10}`,
+                name: fullName,
+                mobile: mobile10,
+                fullPhone: formattedPhone,
+                isRegistered: false,
+                hasCompany: false,
+                companies: [],
+              });
+              contactsToSend.push({
+                name: fullName,
+                phone: formattedPhone,
+              });
+            }
+          });
+        });
+
+        const seenPhones = new Set();
+        const uniqueContacts = formatted.filter(c => {
+          if (seenPhones.has(c.mobile)) return false;
+          seenPhones.add(c.mobile);
+          return true;
+        });
+
+        try {
+          const token = await AsyncStorage.getItem('userToken');
+          if (token && contactsToSend.length > 0) {
+            const uniquePayload = [];
+            const seenPayload = new Set();
+            contactsToSend.forEach(item => {
+              if (!seenPayload.has(item.phone)) {
+                seenPayload.add(item.phone);
+                uniquePayload.push(item);
+              }
+            });
+
+            const response = await filterContacts(uniquePayload, token);
+            if (response && response.success && Array.isArray(response.data)) {
+              const registeredMap = new Map();
+              response.data.forEach(item => {
+                const rawPh = (item.phone || '').replace(/[^0-9]/g, '');
+                const m10 = rawPh.slice(-10);
+                if (m10) {
+                  registeredMap.set(m10, item);
+                }
+              });
+
+              uniqueContacts.forEach(c => {
+                const regInfo = registeredMap.get(c.mobile);
+                if (regInfo) {
+                  c.isRegistered = Boolean(regInfo.isRegistered);
+                  c.hasCompany = Boolean(regInfo.hasCompany ?? (regInfo.companies && regInfo.companies.length > 0));
+                  c.whatsappInviteLink = regInfo.whatsappInviteLink || '';
+                  c.userId = regInfo.userId;
+                  const rawCompanies = Array.isArray(regInfo.companies) ? regInfo.companies : [];
+                  c.role = regInfo.role || regInfo.userRole;
+                  c.isBroker = Boolean(regInfo.isBroker || regInfo.role === 'broker');
+                  c.companies = rawCompanies.map((co, cIdx) => ({
+                    _id: co._id || co.id || co.companyId || `comp_${cIdx}`,
+                    companyId: co.companyId || co._id || co.id || `comp_${cIdx}`,
+                    companyName: co.companyName || co.name || 'Registered Company',
+                    name: co.companyName || co.name || 'Registered Company',
+                    companyType: co.companyType || co.type || co.firmType || (co.role === 'broker' || regInfo.role === 'broker' ? 'Brokerage' : 'Trader'),
+                    type: co.type || co.companyType || co.firmType || (co.role === 'broker' || regInfo.role === 'broker' ? 'broker' : 'trader'),
+                    role: co.role || regInfo.role || 'trader',
+                    isBroker: Boolean(co.isBroker || co.role === 'broker' || regInfo.role === 'broker' || String(co.type || co.companyType || co.firmType || '').toLowerCase().includes('broker')),
+                    address: co.address || co.city || 'Mandi Address',
+                    city: co.city || (typeof co.address === 'object' ? co.address?.city : '') || '',
+                    state: co.state || (typeof co.address === 'object' ? co.address?.state : '') || '',
+                    gstin: co.gstin || co.gst || co.registrationNumber || '',
+                    gst: co.gstin || co.gst || '',
+                    owner: co.owner,
+                  }));
+                  c.registeredName = regInfo.registeredName || regInfo.name || c.name;
+                  if (regInfo.name) c.name = regInfo.name;
+                  if (c.companies.length > 0) {
+                    c.primaryCompanyName = c.companies[0].companyName;
+                    c.primaryCompanyId = c.companies[0].companyId;
+                  }
+                }
+              });
+            }
+          }
+        } catch (apiErr) {
+          console.warn('Pravisti filterContacts API error in CreateDeal:', apiErr);
+        }
+
+        uniqueContacts.sort((a, b) => {
+          const scoreA = a.isRegistered && a.hasCompany ? 2 : a.isRegistered ? 1 : 0;
+          const scoreB = b.isRegistered && b.hasCompany ? 2 : b.isRegistered ? 1 : 0;
+          if (scoreA !== scoreB) return scoreB - scoreA;
+          return a.name.localeCompare(b.name);
+        });
+
+        setDeviceContacts(uniqueContacts);
+      } else {
+        Alert.alert('Permission Denied', 'Contacts permission is needed to select party numbers.');
+      }
+    } catch (err) {
+      console.warn('Error reading device contacts:', err);
+      Alert.alert('Error', 'Could not load device contacts.');
+    } finally {
+      setContactsLoading(false);
+    }
+  };
+
+  const handleSelectContactItem = async (item) => {
+    setContactsModalVisible(false);
+    const targetField = targetRoleForContacts;
+    const isParty2 = targetField === 'party2';
+    const cleanMobile = item.mobile;
+    const formattedNumber = `+91${cleanMobile}`;
+
+    if (isParty2) {
+      setDirectInputParty2(cleanMobile);
+      setParty2SearchError('');
+    } else {
+      setDirectInputBroker(cleanMobile);
+      setBrokerSearchError('');
+    }
+
+    // BROKER VALIDATION: Trader accounts cannot be selected as Broker!
+    if (!isParty2) {
+      const brokerCompanies = (item.companies || []).filter(c => isBrokerEntity(c));
+      const hasOnlyTrader = (item.companies || []).length > 0 && brokerCompanies.length === 0;
+      const isRegisteredTrader = item.isRegistered && (isTraderEntity(item) || hasOnlyTrader);
+
+      if (hasOnlyTrader || (isRegisteredTrader && brokerCompanies.length === 0)) {
+        setDirectInputBroker('');
+        setBrokerCompany('');
+        setBrokerCompanyData(null);
+        setBrokerCompanyId('');
+        setBrokerSearchError('Trader accounts cannot be selected as a Broker');
+        Alert.alert(
+          'Trader Account Not Allowed as Broker',
+          `"${item.name || item.mobile}" is registered as a Trader account. A Trader account cannot be selected as a Broker in a deal. Please select a registered Broker.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
+
+    // 1. If contact has multiple companies
+    if (item.companies && item.companies.length > 1) {
+      let targetCompanies = item.companies;
+      if (!isParty2) {
+        targetCompanies = item.companies.filter(c => isBrokerEntity(c));
+        if (targetCompanies.length === 0) {
+          setDirectInputBroker('');
+          setBrokerCompany('');
+          setBrokerCompanyData(null);
+          setBrokerCompanyId('');
+          setBrokerSearchError('Trader accounts cannot be selected as a Broker');
+          Alert.alert(
+            'Trader Account Not Allowed as Broker',
+            `"${item.name || item.mobile}" only has Trader companies. A Trader cannot be selected as a Broker.`,
+            [{ text: 'OK' }]
+          );
+          return;
+        } else if (targetCompanies.length === 1) {
+          const coObj = targetCompanies[0];
+          const companyId = coObj.companyId || coObj._id || coObj.id;
+          const companyName = coObj.companyName || coObj.name || 'Registered Brokerage';
+          const industry = getResolvedIndustry(coObj, 'Brokerage & Advisory');
+          const location = getResolvedLocation(coObj, '');
+          const contactObj = {
+            id: companyId || `reg_${Date.now()}`,
+            companyId,
+            name: item.registeredName || item.name || coObj.contactPersonName || companyName,
+            company: companyName,
+            mobile: formattedNumber,
+            isRegistered: true,
+            status: coObj.status || coObj.approvalStatus || 'approved',
+            industry,
+            location,
+            companies: targetCompanies,
+          };
+          setBrokerCompany(companyName);
+          setBrokerCompanyData(contactObj);
+          setBrokerCompanyId(String(companyId || ''));
+          setDirectInputBroker('');
+          setShowBroker(true);
+          setFieldErrors(prev => ({ ...prev, broker: undefined }));
+          return;
+        }
+      }
+      setMultiCompanyList(targetCompanies);
+      setMultiCompanyTargetField(targetField);
+      setMultiCompanyUserNumber(formattedNumber);
+      setMultiCompanyUserName(item.registeredName || item.name || targetCompanies[0]?.name || (isParty2 ? 'Counterparty' : 'Broker'));
+      setShowMultiCompanyModal(true);
+      return;
+    }
+
+    // 2. If contact has exactly 1 company
+    if (item.companies && item.companies.length === 1) {
+      const coObj = item.companies[0];
+      if (!isParty2 && (isTraderEntity(coObj) || !isBrokerEntity(coObj))) {
+        setDirectInputBroker('');
+        setBrokerCompany('');
+        setBrokerCompanyData(null);
+        setBrokerCompanyId('');
+        setBrokerSearchError('Trader accounts cannot be selected as a Broker');
+        Alert.alert(
+          'Trader Account Not Allowed as Broker',
+          `"${coObj.companyName || coObj.name}" is a Trader account. A Trader cannot be selected as a Broker.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      const companyId = coObj.companyId || coObj._id || coObj.id;
+      const companyName = coObj.companyName || coObj.name || 'Registered Company';
+      const industry = getResolvedIndustry(coObj, isParty2 ? 'Commodity Trading' : 'Brokerage & Advisory');
+      const location = getResolvedLocation(coObj, '');
+      const contactObj = {
+        id: companyId || `reg_${Date.now()}`,
+        companyId,
+        name: item.registeredName || item.name || coObj.contactPersonName || companyName,
+        company: companyName,
+        mobile: formattedNumber,
+        isRegistered: true,
+        status: coObj.status || coObj.approvalStatus || 'approved',
+        industry,
+        location,
+        companies: item.companies,
+      };
+      if (isParty2) {
+        setParty2(companyName);
+        setParty2Data(contactObj);
+        setDirectInputParty2('');
+        setFieldErrors(prev => ({ ...prev, party2: undefined }));
+      } else {
+        setBrokerCompany(companyName);
+        setBrokerCompanyData(contactObj);
+        setBrokerCompanyId(String(companyId || ''));
+        setDirectInputBroker('');
+        setShowBroker(true);
+        setFieldErrors(prev => ({ ...prev, broker: undefined }));
+      }
+      return;
+    }
+
+    // 3. If contact is registered on Pravisti but has no company setup yet
+    if (item.isRegistered && !item.hasCompany) {
+      if (!isParty2 && (isTraderEntity(item) || !isBrokerEntity(item))) {
+        setDirectInputBroker('');
+        setBrokerCompany('');
+        setBrokerCompanyData(null);
+        setBrokerCompanyId('');
+        setBrokerSearchError('Trader accounts cannot be selected as a Broker');
+        Alert.alert(
+          'Trader Account Not Allowed as Broker',
+          `"${item.name || item.mobile}" is registered as a Trader on Pravisti. A Trader account cannot be selected as a Broker.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      const targetRole = isParty2 ? (role === 'buyer' ? 'seller' : 'buyer') : 'broker';
+      openOnboardModal(targetRole, cleanMobile, item.registeredName || item.name);
+      return;
+    }
+
+    // 4. Fallback search
+    handleSearchPartyNumber(targetField, cleanMobile);
+  };
+
   const handleSelectMultiCompany = (coObj) => {
+    if (multiCompanyTargetField === 'brokerCompany') {
+      if (isTraderEntity(coObj) || !isBrokerEntity(coObj)) {
+        Alert.alert(
+          'Trader Account Not Allowed as Broker',
+          `"${coObj.companyName || coObj.name}" is a Trader company. Trader accounts cannot be selected as a Broker. Please select a registered Broker firm.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
     const companyId = coObj.companyId || coObj._id || coObj.id;
     const companyName = coObj.companyName || coObj.name || 'Registered Company';
     const industry = getResolvedIndustry(coObj, multiCompanyTargetField === 'brokerCompany' ? 'Brokerage & Advisory' : 'Commodity Trading');
@@ -871,6 +1491,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       setBrokerCompanyId(String(companyId || ''));
       setDirectInputBroker('');
       setShowBroker(true);
+      setFieldErrors(prev => ({ ...prev, broker: undefined }));
     }
     setShowMultiCompanyModal(false);
   };
@@ -934,11 +1555,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   };
 
   // Assisted Onboarding Helpers
-  const openOnboardModal = (targetRole, defaultPhone = '') => {
+  const openOnboardModal = (targetRole, defaultPhone = '', defaultName = '') => {
     const cleanDefault = (defaultPhone || '').replace(/\D/g, '').slice(-10);
     setOnboardRole(targetRole);
     setOnboardForm({
-      name: '',
+      name: defaultName || '',
       mobileNumber: cleanDefault,
       companyName: '',
       industryId: industriesList[0]?._id || '',
@@ -1118,6 +1739,71 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   };
 
   // Document Upload Helper
+  const handleLaunchCamera = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          {
+            title: 'Camera Permission',
+            message: 'Pravisti requires camera access to take document photos for the deal.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          Alert.alert('Permission Denied', 'Camera permission is required to capture documents.');
+          return;
+        }
+      } catch (err) {
+        console.warn('Camera permission check error:', err);
+      }
+    }
+
+    launchCamera(
+      {
+        mediaType: 'photo',
+        quality: 0.85,
+        saveToPhotos: true,
+      },
+      async (response) => {
+        if (response.didCancel) return;
+        if (response.errorCode) {
+          Alert.alert('Camera Error', response.errorMessage || 'Failed to capture photo');
+          return;
+        }
+        if (response.assets && response.assets.length > 0) {
+          setIsUploadingAttachments(true);
+          try {
+            const asset = response.assets[0];
+            let uploadedUrl = asset.uri;
+            try {
+              uploadedUrl = await uploadService.uploadImage(asset);
+            } catch (upErr) {
+              console.warn('Camera file upload warning, keeping local uri:', upErr);
+            }
+
+            const newAttachment = {
+              id: `file_${Date.now()}`,
+              name: asset.fileName || `Camera_Doc_${Date.now()}.jpg`,
+              size: asset.fileSize ? `${Math.round(asset.fileSize / 1024)} KB` : '250 KB',
+              type: 'image',
+              uri: asset.uri,
+              url: uploadedUrl,
+            };
+            setAttachments(prev => [...prev, newAttachment]);
+          } catch (e) {
+            console.error('Camera processing error:', e);
+            Alert.alert('Upload Error', 'Failed to process camera document.');
+          } finally {
+            setIsUploadingAttachments(false);
+          }
+        }
+      }
+    );
+  };
+
   const handleBrowseFiles = () => {
     launchImageLibrary({ mediaType: 'mixed', selectionLimit: 5 }, async (response) => {
       if (response.didCancel) return;
@@ -1212,10 +1898,6 @@ const CreateDeal = ({ onNavigate, routeData }) => {
   const handleAddCustomProduct = async () => {
     if (!customProdName.trim()) {
       setCustomProdError('Please enter product name');
-      return;
-    }
-    if (categoriesList.length > 0 && !customProdCategory.trim()) {
-      setCustomProdError('Please select a category');
       return;
     }
     if (!customProdUnit.trim()) {
@@ -1403,6 +2085,8 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             console.warn('Category fetch/create notice:', cErr);
           }
 
+
+
           if (!categoryId) {
             try {
               const newCat = await createCategory({
@@ -1481,9 +2165,18 @@ const CreateDeal = ({ onNavigate, routeData }) => {
         if (!party2 || !party2.trim()) errors.party2 = 'Please select a Buyer company';
       }
 
+      if (brokerCompany && brokerCompanyData) {
+        if (isTraderEntity(brokerCompanyData) && !isBrokerEntity(brokerCompanyData)) {
+          errors.broker = 'Trader account cannot be selected as a Broker';
+        }
+      }
+      if (party2 && brokerCompany && party2.trim().toLowerCase() === brokerCompany.trim().toLowerCase()) {
+        errors.broker = 'Counterparty and Broker cannot be the same entity';
+      }
+
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors);
-        setBtnErrorMessage('Please select counterparty');
+        setBtnErrorMessage(errors.broker || errors.party2 || 'Please select valid parties');
         setTimeout(() => setBtnErrorMessage(''), 2500);
         return;
       }
@@ -1549,6 +2242,9 @@ const CreateDeal = ({ onNavigate, routeData }) => {
       }];
 
       const isUnregisteredInvite = party2Data?.isRegistered === false || (party2Data && !party2Data.companyId && !party2Data._id);
+      const effectivePaymentTerms = paymentDays && parseInt(paymentDays, 10) > 0
+        ? `${paymentDays} Days Credit`
+        : (paymentTerms || '15 days');
 
       if (isUnregisteredInvite) {
         const inviteProducts = sourceList.map((prod) => {
@@ -1566,7 +2262,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
             unitShortName: (prod.unit || unit || 'Bag')?.split(' ')?.[0] || 'Bag',
             hsnCode: prod.hsn || hsnCode || '',
             gstCode: pTotals.gstPct > 0 ? `GST_${pTotals.gstPct}` : 'GST_18',
-            paymentTerms: paymentTerms || '15 days',
+            paymentTerms: effectivePaymentTerms,
           };
         });
 
@@ -1622,7 +2318,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
               price: pTotals.rate || 0,
               discount: pTotals.disc || 0,
               gst: pTotals.gstPct || 0,
-              paymentTerms: paymentTerms || '15 days',
+              paymentTerms: effectivePaymentTerms,
             };
           })
         );
@@ -1868,98 +2564,104 @@ const CreateDeal = ({ onNavigate, routeData }) => {
           </View>
         </View>
 
-        {/* ════════════════ 4-STEP WIZARD PROGRESS BAR ════════════════ */}
-        <View style={styles.stepperContainer}>
-          {/* Step 1: Parties */}
-          <TouchableOpacity
-            style={styles.stepItem}
-            onPress={() => currentStep > 1 && setCurrentStep(1)}
-            activeOpacity={0.8}
-          >
-            <View style={[
-              styles.stepCircle,
-              currentStep > 1 && styles.stepCircleCompleted,
-              currentStep === 1 && styles.stepCircleActive,
-            ]}>
-              {currentStep > 1 ? (
-                <Check size={14} color="#FFFFFF" strokeWidth={3} />
-              ) : (
-                <Text style={[styles.stepNumberText, currentStep === 1 && styles.stepNumberTextActive]}>1</Text>
-              )}
-            </View>
-            <Text style={[styles.stepLabelText, currentStep === 1 && styles.stepLabelTextActive]}>Parties</Text>
-          </TouchableOpacity>
-
-          <View style={[styles.stepperLine, currentStep > 1 && styles.stepperLineActive]} />
-
-          {/* Step 2: Product */}
-          <TouchableOpacity
-            style={styles.stepItem}
-            onPress={() => currentStep > 2 && setCurrentStep(2)}
-            activeOpacity={0.8}
-          >
-            <View style={[
-              styles.stepCircle,
-              currentStep > 2 && styles.stepCircleCompleted,
-              currentStep === 2 && styles.stepCircleActive,
-            ]}>
-              {currentStep > 2 ? (
-                <Check size={14} color="#FFFFFF" strokeWidth={3} />
-              ) : (
-                <Text style={[styles.stepNumberText, currentStep === 2 && styles.stepNumberTextActive]}>2</Text>
-              )}
-            </View>
-            <Text style={[styles.stepLabelText, currentStep === 2 && styles.stepLabelTextActive]}>Product</Text>
-          </TouchableOpacity>
-
-          <View style={[styles.stepperLine, currentStep > 2 && styles.stepperLineActive]} />
-
-          {/* Step 3: Details */}
-          <TouchableOpacity
-            style={styles.stepItem}
-            onPress={() => currentStep > 3 && setCurrentStep(3)}
-            activeOpacity={0.8}
-          >
-            <View style={[
-              styles.stepCircle,
-              currentStep > 3 && styles.stepCircleCompleted,
-              currentStep === 3 && styles.stepCircleActive,
-            ]}>
-              {currentStep > 3 ? (
-                <Check size={14} color="#FFFFFF" strokeWidth={3} />
-              ) : (
-                <Text style={[styles.stepNumberText, currentStep === 3 && styles.stepNumberTextActive]}>3</Text>
-              )}
-            </View>
-            <Text style={[styles.stepLabelText, currentStep === 3 && styles.stepLabelTextActive]}>Details</Text>
-          </TouchableOpacity>
-
-          <View style={[styles.stepperLine, currentStep > 3 && styles.stepperLineActive]} />
-
-          {/* Step 4: Review */}
-          <TouchableOpacity
-            style={styles.stepItem}
-            activeOpacity={0.8}
-          >
-            <View style={[
-              styles.stepCircle,
-              currentStep === 4 && styles.stepCircleActive,
-            ]}>
-              <Text style={[styles.stepNumberText, currentStep === 4 && styles.stepNumberTextActive]}>4</Text>
-            </View>
-            <Text style={[styles.stepLabelText, currentStep === 4 && styles.stepLabelTextActive]}>Review</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ════════════════ MAIN SCROLLABLE CONTENT ════════════════ */}
+        {/* ════════════════ MAIN SCROLLABLE CONTENT (COMPLETE PAGE SCROLLABLE) ════════════════ */}
         <ScrollView
+          ref={scrollViewRef}
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            keyboardSpace > 0 && { paddingBottom: Math.max(200, keyboardSpace + 90) },
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          nestedScrollEnabled={true}
+          bounces={true}
+          alwaysBounceVertical={true}
+          overScrollMode="always"
+          keyboardDismissMode="interactive"
         >
+          {/* ════════════════ 4-STEP WIZARD PROGRESS BAR ════════════════ */}
+          <View style={styles.stepperContainer}>
+            {/* Step 1: Parties */}
+            <TouchableOpacity
+              style={styles.stepItem}
+              onPress={() => currentStep > 1 && setCurrentStep(1)}
+              activeOpacity={0.8}
+            >
+              <View style={[
+                styles.stepCircle,
+                currentStep > 1 && styles.stepCircleCompleted,
+                currentStep === 1 && styles.stepCircleActive,
+              ]}>
+                {currentStep > 1 ? (
+                  <Check size={11} color="#FFFFFF" strokeWidth={2.6} />
+                ) : (
+                  <Text style={[styles.stepNumberText, currentStep === 1 && styles.stepNumberTextActive]}>1</Text>
+                )}
+              </View>
+              <Text style={[styles.stepLabelText, currentStep === 1 && styles.stepLabelTextActive]}>Parties</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.stepperLine, currentStep > 1 && styles.stepperLineActive]} />
+
+            {/* Step 2: Product */}
+            <TouchableOpacity
+              style={styles.stepItem}
+              onPress={() => currentStep > 2 && setCurrentStep(2)}
+              activeOpacity={0.8}
+            >
+              <View style={[
+                styles.stepCircle,
+                currentStep > 2 && styles.stepCircleCompleted,
+                currentStep === 2 && styles.stepCircleActive,
+              ]}>
+                {currentStep > 2 ? (
+                  <Check size={11} color="#FFFFFF" strokeWidth={2.6} />
+                ) : (
+                  <Text style={[styles.stepNumberText, currentStep === 2 && styles.stepNumberTextActive]}>2</Text>
+                )}
+              </View>
+              <Text style={[styles.stepLabelText, currentStep === 2 && styles.stepLabelTextActive]}>Product</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.stepperLine, currentStep > 2 && styles.stepperLineActive]} />
+
+            {/* Step 3: Details */}
+            <TouchableOpacity
+              style={styles.stepItem}
+              onPress={() => currentStep > 3 && setCurrentStep(3)}
+              activeOpacity={0.8}
+            >
+              <View style={[
+                styles.stepCircle,
+                currentStep > 3 && styles.stepCircleCompleted,
+                currentStep === 3 && styles.stepCircleActive,
+              ]}>
+                {currentStep > 3 ? (
+                  <Check size={11} color="#FFFFFF" strokeWidth={2.6} />
+                ) : (
+                  <Text style={[styles.stepNumberText, currentStep === 3 && styles.stepNumberTextActive]}>3</Text>
+                )}
+              </View>
+              <Text style={[styles.stepLabelText, currentStep === 3 && styles.stepLabelTextActive]}>Details</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.stepperLine, currentStep > 3 && styles.stepperLineActive]} />
+
+            {/* Step 4: Review */}
+            <TouchableOpacity
+              style={styles.stepItem}
+              activeOpacity={0.8}
+            >
+              <View style={[
+                styles.stepCircle,
+                currentStep === 4 && styles.stepCircleActive,
+              ]}>
+                <Text style={[styles.stepNumberText, currentStep === 4 && styles.stepNumberTextActive]}>4</Text>
+              </View>
+              <Text style={[styles.stepLabelText, currentStep === 4 && styles.stepLabelTextActive]}>Review</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* ═══════════════════════════════════════════════════════════════════
               STEP 1: ADD PARTIES (1st Step)
@@ -2065,7 +2767,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
               </View>
 
               {/* Counterparty Selection (Buyer or Seller) */}
-              <View style={styles.partyCardWrapper}>
+              <View style={styles.partyCardWrapper} onLayout={(e) => handleCardLayout('party2', e)}>
                 <Text style={styles.partySectionHeader}>
                   {role === 'buyer' ? 'Seller *' : 'Buyer *'}
                 </Text>
@@ -2147,6 +2849,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         placeholderTextColor="#94A3B8"
                         value={directInputParty2}
                         onChangeText={handleParty2InputChange}
+                        onFocus={(e) => scrollToInput(e, 'party2')}
                         keyboardType="phone-pad"
                         maxLength={10}
                       />
@@ -2162,7 +2865,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         </TouchableOpacity>
                       ) : null}
                       <TouchableOpacity
-                        onPress={() => navigateToContactPicker('party2')}
+                        onPress={() => openDeviceContactsModal('party2')}
                         activeOpacity={0.7}
                         style={styles.contactPickerIconBtn}
                       >
@@ -2182,7 +2885,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
               </View>
 
               {/* Broker Selection (Optional - Same as Buyer/Seller input box) */}
-              <View style={styles.partyCardWrapper}>
+              <View style={styles.partyCardWrapper} onLayout={(e) => handleCardLayout('broker', e)}>
                 <View style={styles.sectionSubHeaderRow}>
                   <Text style={styles.partySectionHeader}>Broker (Optional)</Text>
                   {brokerCompany ? (
@@ -2250,6 +2953,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         setBrokerCompanyId('');
                         setDirectInputBroker('');
                         setBrokerSearchError('');
+                        setFieldErrors(prev => ({ ...prev, broker: undefined }));
                       }}
                       activeOpacity={0.7}
                     >
@@ -2266,6 +2970,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         placeholderTextColor="#94A3B8"
                         value={directInputBroker}
                         onChangeText={handleBrokerInputChange}
+                        onFocus={(e) => scrollToInput(e, 'broker')}
                         keyboardType="phone-pad"
                         maxLength={10}
                       />
@@ -2281,7 +2986,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                         </TouchableOpacity>
                       ) : null}
                       <TouchableOpacity
-                        onPress={() => navigateToContactPicker('brokerCompany')}
+                        onPress={() => openDeviceContactsModal('brokerCompany')}
                         activeOpacity={0.7}
                         style={[styles.contactPickerIconBtn, { backgroundColor: '#F5F3FF' }]}
                       >
@@ -2295,6 +3000,11 @@ const CreateDeal = ({ onNavigate, routeData }) => {
                     ) : null}
                   </>
                 )}
+                {fieldErrors.broker ? (
+                  <Text style={{ fontSize: 11.5, color: '#DC2626', marginTop: 5, fontWeight: '700' }}>
+                    ⚠ {fieldErrors.broker}
+                  </Text>
+                ) : null}
               </View>
             </View>
           )}
@@ -2307,9 +3017,7 @@ const CreateDeal = ({ onNavigate, routeData }) => {
               {role === 'buyer' && !party2Data && (
                 <View style={{ backgroundColor: '#EFF6FF', borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#BFDBFE' }}>
                   <Info size={16} color="#2563EB" />
-                  <Text style={{ fontSize: 12, color: '#1E40AF', flex: 1, fontWeight: '600' }}>
-                    Please select or onboard a Seller in Step 1 to load their product catalog.
-                  </Text>
+
                 </View>
               )}
 
@@ -2731,7 +3439,7 @@ Zoomed into item. */}
                   <Text style={styles.addCustomProductTriggerText}>+ Add Custom Product</Text>
                 </TouchableOpacity>
               ) : (
-                <View style={styles.formContainer}>
+                <View style={styles.formContainer} onLayout={(e) => handleCardLayout('customProduct', e)}>
                   <View style={styles.formSectionHeaderRow}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <View style={styles.customProductIconBadge}>
@@ -2775,6 +3483,7 @@ Zoomed into item. */}
                             setCustomProdName(t);
                             if (customProdError) setCustomProdError('');
                           }}
+                          onFocus={(e) => scrollToInput(e, 'customProduct')}
                         />
                       </View>
                     </View>
@@ -2807,7 +3516,19 @@ Zoomed into item. */}
                         onPress={() => setShowCustomUnitModal(true)}
                         activeOpacity={0.7}
                       >
-                        <ShoppingBag size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                        {(() => {
+                          const selected = unitsList.find(u => u.name === customProdUnit || u.label === customProdUnit || u.short === customProdUnit || u.shortName === customProdUnit);
+                          if (selected?.image) {
+                            return (
+                              <Image
+                                source={{ uri: resolveImageUrl(selected.image) }}
+                                style={{ width: 18, height: 18, borderRadius: 4, marginRight: 6 }}
+                                resizeMode="contain"
+                              />
+                            );
+                          }
+                          return <ShoppingBag size={16} color="#64748B" style={styles.inputLeadingIcon} />;
+                        })()}
                         <Text style={styles.selectBoxValue} numberOfLines={1}>
                           {customProdUnit || 'Select unit'}
                         </Text>
@@ -2816,22 +3537,25 @@ Zoomed into item. */}
                     </View>
                   </View>
 
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, justifyContent: 'flex-end' }}>
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, justifyContent: 'flex-end', borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 10 }}>
                     <TouchableOpacity
                       onPress={() => {
                         setIsAddingCustomProduct(false);
                         setCustomProdError('');
                       }}
-                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: '#F1F5F9' }}
+                      activeOpacity={0.75}
+                      style={{ paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: '#F1F5F9', alignItems: 'center' }}
                     >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B' }}>Cancel</Text>
+                      <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#64748B' }}>Cancel</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={handleAddCustomProduct}
-                      style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: '#2563EB' }}
+                      activeOpacity={0.85}
+                      style={{ paddingHorizontal: 18, paddingVertical: 9, borderRadius: 10, backgroundColor: '#2563EB', flexDirection: 'row', alignItems: 'center', gap: 6 }}
                     >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>Confirm</Text>
+                      <Check size={14} color="#FFFFFF" strokeWidth={2.5} />
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' }}>Add Product</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -2849,17 +3573,17 @@ Zoomed into item. */}
                  ───────────────────────────────────────────────────────────── */}
               <View style={styles.pricingSectionContainer}>
                 <View style={styles.pricingSectionHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <ShoppingBag size={18} color="#2563EB" />
-                    <Text style={styles.pricingSectionTitle}>Products Pricing & Quantity</Text>
-                  </View>
+                  {/* <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <ShoppingBag size={18} color="#2563EB" />
+                  <Text style={styles.pricingSectionTitle}>Products Pricing & Quantity</Text>
+                </View> */}
                   <View style={styles.countBadgePill}>
                     <Text style={styles.countBadgeText}>{selectedProducts.length || 1}</Text>
                   </View>
                 </View>
-                <Text style={styles.pricingSectionSubtitle}>
-                  Set quantity, rate, discount and GST for each selected product.
-                </Text>
+                {/* <Text style={styles.pricingSectionSubtitle}>
+                Set quantity, rate, discount and GST for each selected product.
+              </Text> */}
 
                 {/* Products List with Individual Pricing Fields */}
                 <View style={styles.pricingProductsList}>
@@ -2867,7 +3591,7 @@ Zoomed into item. */}
                     name: productName || 'Selected Product',
                     quantity: quantity || '1',
                     rate: approxRate || '0',
-                    discount: discount || '0',
+                    discount: discount || '',
                     gst: gstPercent || '18',
                     unit: unit || '',
                     hsn: hsnCode || '',
@@ -2877,7 +3601,7 @@ Zoomed into item. */}
                     const itemTotals = calculateProductTotals(prod);
 
                     return (
-                      <View key={prod.id || idx} style={styles.pricingProductCard}>
+                      <View key={prod.id || idx} style={styles.pricingProductCard} onLayout={(e) => handleCardLayout(`prod_${idx}`, e)}>
                         {/* Product Card Header */}
                         <View style={styles.pricingProductHeader}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
@@ -2887,9 +3611,30 @@ Zoomed into item. */}
                             <View style={{ flex: 1 }}>
                               <Text style={styles.pricingProductName} numberOfLines={1}>{prod.name}</Text>
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                                <View style={styles.unitBadgePill}>
+                                <TouchableOpacity
+                                  style={[styles.unitBadgePill, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                                  onPress={() => {
+                                    setUnitEditingProductIndex(idx);
+                                    setShowUnitModal(true);
+                                  }}
+                                  activeOpacity={0.7}
+                                >
+                                  {(() => {
+                                    const matchedUnit = unitsList.find(u => u.name === prod.unit || u.label === prod.unit || u.short === prod.unit || u.shortName === prod.unit);
+                                    if (matchedUnit?.image) {
+                                      return (
+                                        <Image
+                                          source={{ uri: resolveImageUrl(matchedUnit.image) }}
+                                          style={{ width: 12, height: 12, borderRadius: 2 }}
+                                          resizeMode="contain"
+                                        />
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                   <Text style={styles.unitBadgeText}>{prod.unit || 'Bag'}</Text>
-                                </View>
+                                  <ChevronDown size={10} color="#2563EB" />
+                                </TouchableOpacity>
                                 {prod.hsn ? (
                                   <View style={styles.hsnBadgePill}>
                                     <Text style={styles.hsnBadgeText}>HSN: {prod.hsn}</Text>
@@ -2930,6 +3675,7 @@ Zoomed into item. */}
                                     setQuantity(val);
                                   }
                                 }}
+                                onFocus={(e) => scrollToInput(e, `prod_${idx}`, 0)}
                                 keyboardType="numeric"
                               />
                             </View>
@@ -2954,6 +3700,7 @@ Zoomed into item. */}
                                     setApproxRate(val);
                                   }
                                 }}
+                                onFocus={(e) => scrollToInput(e, `prod_${idx}`, 0)}
                                 keyboardType="numeric"
                               />
                             </View>
@@ -2971,14 +3718,16 @@ Zoomed into item. */}
                                 style={styles.pricingInputField}
                                 placeholder="0"
                                 placeholderTextColor="#94A3B8"
-                                value={String(prod.discount || '0')}
+                                value={prod.discount && prod.discount !== '0' ? String(prod.discount) : ''}
                                 onChangeText={(val) => {
+                                  const cleanVal = val.replace(/[^0-9.]/g, '');
                                   if (selectedProducts.length > 0) {
-                                    updateProductField(idx, 'discount', val);
+                                    updateProductField(idx, 'discount', cleanVal);
                                   } else {
-                                    setDiscount(val);
+                                    setDiscount(cleanVal);
                                   }
                                 }}
+                                onFocus={(e) => scrollToInput(e, `prod_${idx}`, 50)}
                                 keyboardType="numeric"
                               />
                             </View>
@@ -3001,6 +3750,7 @@ Zoomed into item. */}
                                     setGstPercent(val);
                                   }
                                 }}
+                                onFocus={(e) => scrollToInput(e, `prod_${idx}`, 50)}
                                 keyboardType="numeric"
                               />
                             </View>
@@ -3035,35 +3785,68 @@ Zoomed into item. */}
               </View>
 
               {/* Row: Deal Valid Till & Payment Terms */}
-              <View style={[styles.inputRow, { marginTop: 14 }]}>
-                {/* Deal Valid Till */}
-                <View style={[styles.inputCol, { flex: 1 }]}>
-                  <Text style={styles.inputLabel}>Deal Valid Till</Text>
-                  <TouchableOpacity
-                    style={[styles.textInputBox, styles.selectBox]}
-                    onPress={() => openCalendar('validity')}
-                    activeOpacity={0.7}
-                  >
-                    <Calendar size={16} color="#64748B" style={styles.inputLeadingIcon} />
-                    <Text style={styles.selectBoxValue} numberOfLines={1}>
-                      {formatDateDisplay(validityDate)}
-                    </Text>
-                    <ChevronDown size={16} color="#64748B" />
-                  </TouchableOpacity>
+              {/* Deal Valid Till */}
+              <View style={{ marginTop: 14 }}>
+                <Text style={styles.inputLabel}>Deal Valid Till</Text>
+                <TouchableOpacity
+                  style={[styles.textInputBox, styles.selectBox]}
+                  onPress={() => openCalendar('validity')}
+                  activeOpacity={0.7}
+                >
+                  <Calendar size={16} color="#64748B" style={styles.inputLeadingIcon} />
+                  <Text style={styles.selectBoxValue} numberOfLines={1}>
+                    {formatDateDisplay(validityDate)}
+                  </Text>
+                  <ChevronDown size={16} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Dedicated Payment Terms Section */}
+              <View style={{ marginTop: 16 }} onLayout={(e) => handleCardLayout('paymentTerms', e)}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <CreditCard size={15} color="#1E3A8A" />
+                    <Text style={styles.inputLabel}>Payment Terms</Text>
+                  </View>
+                  <View style={styles.optionalPill}>
+                    <Text style={styles.optionalPillText}>Optional</Text>
+                  </View>
                 </View>
 
-                {/* Payment Terms */}
-                <View style={[styles.inputCol, { flex: 1 }]}>
-                  <Text style={styles.inputLabel}>Payment Terms</Text>
-                  <TouchableOpacity
-                    style={[styles.textInputBox, styles.selectBox]}
-                    onPress={() => setShowPaymentTermsModal(true)}
-                    activeOpacity={0.7}
-                  >
-                    <CreditCard size={16} color="#64748B" style={styles.inputLeadingIcon} />
-                    <Text style={styles.selectBoxValue} numberOfLines={1}>{paymentTerms}</Text>
-                    <ChevronDown size={16} color="#64748B" />
-                  </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                  {/* Days Input */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.inputLabel, { fontSize: 12, marginBottom: 4 }]}>Days</Text>
+                    <View style={styles.textInputBox}>
+                      <TextInput
+                        style={styles.textInputField}
+                        placeholder="e.g. 15"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="number-pad"
+                        value={paymentDays !== undefined ? String(paymentDays) : ''}
+                        onChangeText={(val) => {
+                          const cleaned = val.replace(/[^0-9]/g, '');
+                          setPaymentDays(cleaned);
+                        }}
+                        onFocus={(e) => scrollToInput(e, 'paymentTerms', 0)}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Description Input */}
+                  <View style={{ flex: 2 }}>
+                    <Text style={[styles.inputLabel, { fontSize: 12, marginBottom: 4 }]}>Description</Text>
+                    <View style={styles.textInputBox}>
+                      <TextInput
+                        style={styles.textInputField}
+                        placeholder="e.g. CAD"
+                        placeholderTextColor="#94A3B8"
+                        value={paymentTerms}
+                        onChangeText={setPaymentTerms}
+                        onFocus={(e) => scrollToInput(e, 'paymentTerms', 0)}
+                      />
+                    </View>
+                  </View>
                 </View>
               </View>
 
@@ -3112,24 +3895,39 @@ Zoomed into item. */}
                     <View style={styles.paperclipCircle}>
                       <Paperclip size={18} color="#2563EB" />
                     </View>
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text style={styles.uploadTitle}>Upload Documents</Text>
                       <Text style={styles.uploadSubtitle}>PDF, JPG, PNG (Max. 10MB)</Text>
                     </View>
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.browseFilesBtn}
-                    onPress={handleBrowseFiles}
-                    activeOpacity={0.8}
-                    disabled={isUploadingAttachments}
-                  >
-                    {isUploadingAttachments ? (
-                      <ActivityIndicator size="small" color="#2563EB" />
-                    ) : (
-                      <Text style={styles.browseFilesBtnText}>Browse Files</Text>
-                    )}
-                  </TouchableOpacity>
+                  <View style={styles.uploadActionsRow}>
+                    <TouchableOpacity
+                      style={styles.cameraActionBtn}
+                      onPress={handleLaunchCamera}
+                      activeOpacity={0.8}
+                      disabled={isUploadingAttachments}
+                    >
+                      <Camera size={13} color="#2563EB" />
+                      <Text style={styles.cameraActionBtnText}>Camera</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.browseFilesBtn}
+                      onPress={handleBrowseFiles}
+                      activeOpacity={0.8}
+                      disabled={isUploadingAttachments}
+                    >
+                      {isUploadingAttachments ? (
+                        <ActivityIndicator size="small" color="#2563EB" />
+                      ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Paperclip size={13} color="#475569" />
+                          <Text style={styles.browseFilesBtnText}>Browse</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 {/* Uploaded Files Chips */}
@@ -3159,12 +3957,12 @@ Zoomed into item. */}
              ═══════════════════════════════════════════════════════════════════ */}
           {currentStep === 4 && (
             <View style={styles.stepSection}>
-              <View style={styles.sectionHeadingBox}>
+              {/* <View style={styles.sectionHeadingBox}>
                 <Text style={styles.mainSectionTitle}>Review Deal</Text>
                 <Text style={styles.mainSectionSubtitle}>
                   Please review all details before creating the deal.
                 </Text>
-              </View>
+              </View> */}
 
               {/* Card 1: Parties Involved */}
               <View style={styles.reviewCard}>
@@ -3392,7 +4190,9 @@ Zoomed into item. */}
                   <View style={styles.reviewTermItem}>
                     <CreditCard size={13} color="#64748B" />
                     <Text style={styles.reviewTermLabel}>Payment:</Text>
-                    <Text style={styles.reviewTermValue} numberOfLines={1}>{paymentTerms}</Text>
+                    <Text style={styles.reviewTermValue} numberOfLines={1}>
+                      {paymentDays && parseInt(paymentDays, 10) > 0 ? `${paymentDays} Days Credit` : (paymentTerms || 'Standard')}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -3448,10 +4248,7 @@ Zoomed into item. */}
             </View>
           )}
 
-        </ScrollView>
-
-        {/* ════════════════ BOTTOM ACTION BAR ════════════════ */}
-        {!isKeyboardVisible && (
+          {/* ════════════════ BOTTOM ACTION BAR (INSIDE SCROLL) ════════════════ */}
           <View style={styles.bottomActionBar}>
             {currentStep > 1 && (
               <TouchableOpacity
@@ -3492,7 +4289,8 @@ Zoomed into item. */}
               )}
             </TouchableOpacity>
           </View>
-        )}
+
+        </ScrollView>
 
         {/* ════════════════ DATE PICKER MODAL ════════════════ */}
         {isDatePickerVisible && (
@@ -3571,30 +4369,191 @@ Zoomed into item. */}
 
         {/* ════════════════ UNIT SELECTOR MODAL ════════════════ */}
         {showUnitModal && (
-          <Modal transparent visible={showUnitModal} animationType="slide" onRequestClose={() => setShowUnitModal(false)}>
+          <Modal transparent visible={showUnitModal} animationType="slide" onRequestClose={() => { setShowUnitModal(false); setShowAddCustomUnitDeal(false); }}>
             <View style={styles.modalOverlay}>
-              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowUnitModal(false)} />
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => { setShowUnitModal(false); setShowAddCustomUnitDeal(false); }} />
               <View style={styles.modalSheetContainer}>
                 <View style={styles.modalDragHandle} />
-                <Text style={styles.modalTitleText}>Select Unit</Text>
-                <ScrollView style={{ maxHeight: 280 }}>
-                  {unitsList.map((uItem, idx) => (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <Text style={styles.modalTitleText}>Select Unit</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowAddCustomUnitDeal(!showAddCustomUnitDeal)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#EFF6FF' }}
+                    activeOpacity={0.7}
+                  >
+                    <Plus size={13} color="#2563EB" />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#2563EB' }}>
+                      {showAddCustomUnitDeal ? 'Back to List' : '+ Add Custom Unit'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {showAddCustomUnitDeal ? (
+                  <View style={{ gap: 12, paddingVertical: 4 }}>
+                    <View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 4 }}>
+                        Unit Name <Text style={{ color: '#EF4444' }}>*</Text>
+                      </Text>
+                      <TextInput
+                        style={[styles.textInputBox, { height: 42, fontSize: 13 }]}
+                        placeholder="e.g. Quintal, Drum, Packet, Carton"
+                        placeholderTextColor="#94A3B8"
+                        value={dealCustomUnitName}
+                        onChangeText={setDealCustomUnitName}
+                      />
+                    </View>
+
+                    <View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 4 }}>
+                        Short Symbol (Optional)
+                      </Text>
+                      <TextInput
+                        style={[styles.textInputBox, { height: 42, fontSize: 13 }]}
+                        placeholder="e.g. Qtl, Drm, Pk, Ctn"
+                        placeholderTextColor="#94A3B8"
+                        value={dealCustomUnitShort}
+                        onChangeText={setDealCustomUnitShort}
+                        maxLength={8}
+                      />
+                    </View>
+
+                    <View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 6 }}>
+                        Unit Type
+                      </Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {['weight', 'packaging', 'length', 'count'].map((tVal) => {
+                          const isTActive = dealCustomUnitType === tVal;
+                          return (
+                            <TouchableOpacity
+                              key={tVal}
+                              style={{
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: isTActive ? '#2563EB' : '#E2E8F0',
+                                backgroundColor: isTActive ? '#EFF6FF' : '#F8FAFC',
+                              }}
+                              onPress={() => setDealCustomUnitType(tVal)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: isTActive ? '#2563EB' : '#64748B', textTransform: 'capitalize' }}>
+                                {tVal}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+
                     <TouchableOpacity
-                      key={idx}
-                      style={[styles.optionItemRow, unit === uItem.label && styles.optionItemRowSelected]}
-                      onPress={() => {
-                        setUnit(uItem.label);
-                        setShowUnitModal(false);
+                      style={{
+                        backgroundColor: '#2563EB',
+                        borderRadius: 10,
+                        paddingVertical: 12,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginTop: 4,
+                        opacity: isSavingCustomUnitDeal ? 0.7 : 1,
                       }}
+                      onPress={() => handleSaveCustomUnitDeal('deal')}
+                      disabled={isSavingCustomUnitDeal}
+                      activeOpacity={0.8}
+                    >
+                      {isSavingCustomUnitDeal ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>
+                          Save & Select Unit
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+                      {unitsList.map((uItem, idx) => {
+                        const isSelected = unit === uItem.label || unit === uItem.name;
+                        return (
+                          <TouchableOpacity
+                            key={uItem.id || uItem._id || idx}
+                            style={[styles.optionItemRow, isSelected && styles.optionItemRowSelected]}
+                            onPress={() => {
+                              if (unitEditingProductIndex !== null && unitEditingProductIndex >= 0) {
+                                updateProductField(unitEditingProductIndex, 'unit', uItem.label || uItem.name);
+                                setUnitEditingProductIndex(null);
+                              }
+                              setUnit(uItem.label || uItem.name);
+                              setShowUnitModal(false);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                              {uItem.image ? (
+                                <Image
+                                  source={{ uri: resolveImageUrl(uItem.image) }}
+                                  style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: '#F8FAFC' }}
+                                  resizeMode="contain"
+                                />
+                              ) : (
+                                <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#2563EB' }}>
+                                    {(uItem.short || uItem.shortName || uItem.label || 'U').substring(0, 2).toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Text style={[styles.optionItemText, isSelected && styles.optionItemTextSelected]}>
+                                    {uItem.label || uItem.name}
+                                  </Text>
+                                  {uItem.short && uItem.short !== (uItem.label || uItem.name) && (
+                                    <View style={{ paddingHorizontal: 6, paddingVertical: 1.5, backgroundColor: '#F1F5F9', borderRadius: 4 }}>
+                                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#475569' }}>
+                                        {uItem.short}
+                                      </Text>
+                                    </View>
+                                  )}
+                                  {uItem.isCustom && (
+                                    <View style={{ paddingHorizontal: 5, paddingVertical: 1, backgroundColor: '#ECFDF5', borderRadius: 4, borderWidth: 0.5, borderColor: '#A7F3D0' }}>
+                                      <Text style={{ fontSize: 9, fontWeight: '700', color: '#059669' }}>Custom</Text>
+                                    </View>
+                                  )}
+                                </View>
+                                {uItem.type ? (
+                                  <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 1, textTransform: 'capitalize' }}>
+                                    Type: {uItem.type}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            </View>
+                            {isSelected && <Check size={16} color="#2563EB" />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        paddingVertical: 12,
+                        marginTop: 8,
+                        borderTopWidth: 1,
+                        borderTopColor: '#F1F5F9',
+                      }}
+                      onPress={() => setShowAddCustomUnitDeal(true)}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.optionItemText, unit === uItem.label && styles.optionItemTextSelected]}>
-                        {uItem.label}
+                      <Plus size={14} color="#2563EB" />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#2563EB' }}>
+                        + Add Custom Unit
                       </Text>
-                      {unit === uItem.label && <Check size={16} color="#2563EB" />}
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                  </>
+                )}
               </View>
             </View>
           </Modal>
@@ -3602,31 +4561,188 @@ Zoomed into item. */}
 
         {/* ════════════════ CUSTOM PRODUCT UNIT SELECTOR MODAL ════════════════ */}
         {showCustomUnitModal && (
-          <Modal transparent visible={showCustomUnitModal} animationType="slide" onRequestClose={() => setShowCustomUnitModal(false)}>
+          <Modal transparent visible={showCustomUnitModal} animationType="slide" onRequestClose={() => { setShowCustomUnitModal(false); setShowAddCustomUnitProd(false); }}>
             <View style={styles.modalOverlay}>
-              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowCustomUnitModal(false)} />
+              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => { setShowCustomUnitModal(false); setShowAddCustomUnitProd(false); }} />
               <View style={styles.modalSheetContainer}>
                 <View style={styles.modalDragHandle} />
-                <Text style={styles.modalTitleText}>Select Product Unit</Text>
-                <ScrollView style={{ maxHeight: 280 }}>
-                  {unitsList.map((uItem, idx) => (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <Text style={styles.modalTitleText}>Select Product Unit</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowAddCustomUnitProd(!showAddCustomUnitProd)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: '#EFF6FF' }}
+                    activeOpacity={0.7}
+                  >
+                    <Plus size={13} color="#2563EB" />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#2563EB' }}>
+                      {showAddCustomUnitProd ? 'Back to List' : '+ Add Custom Unit'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {showAddCustomUnitProd ? (
+                  <View style={{ gap: 12, paddingVertical: 4 }}>
+                    <View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 4 }}>
+                        Unit Name <Text style={{ color: '#EF4444' }}>*</Text>
+                      </Text>
+                      <TextInput
+                        style={[styles.textInputBox, { height: 42, fontSize: 13 }]}
+                        placeholder="e.g. Quintal, Drum, Packet, Carton"
+                        placeholderTextColor="#94A3B8"
+                        value={dealCustomUnitName}
+                        onChangeText={setDealCustomUnitName}
+                      />
+                    </View>
+
+                    <View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 4 }}>
+                        Short Symbol (Optional)
+                      </Text>
+                      <TextInput
+                        style={[styles.textInputBox, { height: 42, fontSize: 13 }]}
+                        placeholder="e.g. Qtl, Drm, Pk, Ctn"
+                        placeholderTextColor="#94A3B8"
+                        value={dealCustomUnitShort}
+                        onChangeText={setDealCustomUnitShort}
+                        maxLength={8}
+                      />
+                    </View>
+
+                    <View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 6 }}>
+                        Unit Type
+                      </Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {['weight', 'packaging', 'length', 'count'].map((tVal) => {
+                          const isTActive = dealCustomUnitType === tVal;
+                          return (
+                            <TouchableOpacity
+                              key={tVal}
+                              style={{
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: isTActive ? '#2563EB' : '#E2E8F0',
+                                backgroundColor: isTActive ? '#EFF6FF' : '#F8FAFC',
+                              }}
+                              onPress={() => setDealCustomUnitType(tVal)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: isTActive ? '#2563EB' : '#64748B', textTransform: 'capitalize' }}>
+                                {tVal}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+
                     <TouchableOpacity
-                      key={idx}
-                      style={[styles.optionItemRow, customProdUnit === uItem.label && styles.optionItemRowSelected]}
-                      onPress={() => {
-                        setCustomProdUnit(uItem.label);
-                        setCustomProdUnitId(uItem.id || '');
-                        setShowCustomUnitModal(false);
+                      style={{
+                        backgroundColor: '#2563EB',
+                        borderRadius: 10,
+                        paddingVertical: 12,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginTop: 4,
+                        opacity: isSavingCustomUnitDeal ? 0.7 : 1,
                       }}
+                      onPress={() => handleSaveCustomUnitDeal('customProduct')}
+                      disabled={isSavingCustomUnitDeal}
+                      activeOpacity={0.8}
+                    >
+                      {isSavingCustomUnitDeal ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>
+                          Save & Select Unit
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
+                      {unitsList.map((uItem, idx) => {
+                        const isSelected = customProdUnit === uItem.label || customProdUnit === uItem.name;
+                        return (
+                          <TouchableOpacity
+                            key={uItem.id || uItem._id || idx}
+                            style={[styles.optionItemRow, isSelected && styles.optionItemRowSelected]}
+                            onPress={() => {
+                              setCustomProdUnit(uItem.label || uItem.name);
+                              setCustomProdUnitId(uItem.id || uItem._id || '');
+                              setShowCustomUnitModal(false);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                              {uItem.image ? (
+                                <Image
+                                  source={{ uri: resolveImageUrl(uItem.image) }}
+                                  style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: '#F8FAFC' }}
+                                  resizeMode="contain"
+                                />
+                              ) : (
+                                <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#2563EB' }}>
+                                    {(uItem.short || uItem.shortName || uItem.label || 'U').substring(0, 2).toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Text style={[styles.optionItemText, isSelected && styles.optionItemTextSelected]}>
+                                    {uItem.label || uItem.name}
+                                  </Text>
+                                  {uItem.short && uItem.short !== (uItem.label || uItem.name) && (
+                                    <View style={{ paddingHorizontal: 6, paddingVertical: 1.5, backgroundColor: '#F1F5F9', borderRadius: 4 }}>
+                                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#475569' }}>
+                                        {uItem.short}
+                                      </Text>
+                                    </View>
+                                  )}
+                                  {uItem.isCustom && (
+                                    <View style={{ paddingHorizontal: 5, paddingVertical: 1, backgroundColor: '#ECFDF5', borderRadius: 4, borderWidth: 0.5, borderColor: '#A7F3D0' }}>
+                                      <Text style={{ fontSize: 9, fontWeight: '700', color: '#059669' }}>Custom</Text>
+                                    </View>
+                                  )}
+                                </View>
+                                {uItem.type ? (
+                                  <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 1, textTransform: 'capitalize' }}>
+                                    Type: {uItem.type}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            </View>
+                            {isSelected && <Check size={16} color="#2563EB" />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        paddingVertical: 12,
+                        marginTop: 8,
+                        borderTopWidth: 1,
+                        borderTopColor: '#F1F5F9',
+                      }}
+                      onPress={() => setShowAddCustomUnitProd(true)}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.optionItemText, customProdUnit === uItem.label && styles.optionItemTextSelected]}>
-                        {uItem.label}
+                      <Plus size={14} color="#2563EB" />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#2563EB' }}>
+                        + Add Custom Unit
                       </Text>
-                      {customProdUnit === uItem.label && <Check size={16} color="#2563EB" />}
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                  </>
+                )}
               </View>
             </View>
           </Modal>
@@ -3726,32 +4842,7 @@ Zoomed into item. */}
           </Modal>
         )}
 
-        {/* ════════════════ PAYMENT TERMS MODAL ════════════════ */}
-        {showPaymentTermsModal && (
-          <Modal transparent visible={showPaymentTermsModal} animationType="slide" onRequestClose={() => setShowPaymentTermsModal(false)}>
-            <View style={styles.modalOverlay}>
-              <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setShowPaymentTermsModal(false)} />
-              <View style={styles.modalSheetContainer}>
-                <View style={styles.modalDragHandle} />
-                <Text style={styles.modalTitleText}>Select Payment Terms</Text>
-                {PAYMENT_TERMS_LIST.map((p, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[styles.optionItemRow, paymentTerms === p && styles.optionItemRowSelected]}
-                    onPress={() => {
-                      setPaymentTerms(p);
-                      setShowPaymentTermsModal(false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.optionItemText, paymentTerms === p && styles.optionItemTextSelected]}>{p}</Text>
-                    {paymentTerms === p && <Check size={16} color="#2563EB" />}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </Modal>
-        )}
+
 
         {/* ════════════════ DELIVERY TERMS MODAL ════════════════ */}
         {showDeliveryTermsModal && (
@@ -3870,16 +4961,32 @@ Zoomed into item. */}
                       ? (brokerCompanyData?.companyId || brokerCompanyData?._id)
                       : (party2Data?.companyId || party2Data?._id);
                     const isSelected = String(currentSelectedId) === String(coId);
+                    const isTraderForBroker = multiCompanyTargetField === 'brokerCompany' && (isTraderEntity(co) || !isBrokerEntity(co));
 
                     return (
                       <TouchableOpacity
                         key={`m_co_${idx}`}
                         style={[
                           styles.optionItemRow,
-                          { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: isSelected ? '#2563EB' : '#E2E8F0', backgroundColor: isSelected ? '#EFF6FF' : '#FFFFFF' },
+                          {
+                            paddingVertical: 12,
+                            paddingHorizontal: 12,
+                            borderRadius: 10,
+                            marginBottom: 8,
+                            borderWidth: 1,
+                            borderColor: isSelected ? '#2563EB' : '#E2E8F0',
+                            backgroundColor: isSelected ? '#EFF6FF' : '#FFFFFF',
+                            opacity: isTraderForBroker ? 0.55 : 1,
+                          },
                         ]}
-                        onPress={() => handleSelectMultiCompany(co)}
-                        activeOpacity={0.7}
+                        onPress={() => {
+                          if (isTraderForBroker) {
+                            Alert.alert('Trader Account', `"${coName}" is a Trader company and cannot be selected as a Broker.`);
+                            return;
+                          }
+                          handleSelectMultiCompany(co);
+                        }}
+                        activeOpacity={isTraderForBroker ? 0.9 : 0.7}
                       >
                         <View style={{ flex: 1, gap: 2 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -3887,6 +4994,11 @@ Zoomed into item. */}
                             <Text style={{ fontSize: 13.5, fontWeight: '800', color: isSelected ? '#2563EB' : '#0F172A' }}>
                               {coName}
                             </Text>
+                            {isTraderForBroker && (
+                              <View style={{ backgroundColor: '#FEE2E2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                <Text style={{ fontSize: 9.5, fontWeight: '700', color: '#DC2626' }}>Trader (Not Broker)</Text>
+                              </View>
+                            )}
                           </View>
                           {getResolvedIndustry(co) ? (
                             <Text style={{ fontSize: 11.5, color: '#64748B', marginLeft: 22 }}>
@@ -3904,6 +5016,256 @@ Zoomed into item. */}
                     );
                   })}
                 </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* ════════════════ DEVICE CONTACTS MODAL ════════════════ */}
+        {contactsModalVisible && (
+          <Modal
+            visible={contactsModalVisible}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setContactsModalVisible(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <TouchableOpacity
+                style={StyleSheet.absoluteFillObject}
+                activeOpacity={1}
+                onPress={() => setContactsModalVisible(false)}
+              />
+              <View style={[styles.modalSheetContainer, { maxHeight: '88%', paddingHorizontal: 16 }]}>
+                <View style={styles.modalDragHandle} />
+
+                {/* Header */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <BookUser size={18} color="#2563EB" />
+                    <Text style={styles.modalTitleText}>
+                      Select {targetRoleForContacts === 'brokerCompany' ? 'Broker' : (role === 'buyer' ? 'Seller' : 'Buyer')} Contact
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setContactsModalVisible(false);
+                        navigateToContactPicker(targetRoleForContacts);
+                      }}
+                      activeOpacity={0.7}
+                      style={{ paddingHorizontal: 6, paddingVertical: 2, backgroundColor: '#EFF6FF', borderRadius: 6, borderWidth: 1, borderColor: '#BFDBFE' }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#2563EB' }}>Full Screen</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setContactsModalVisible(false)} style={{ padding: 4 }}>
+                      <X size={18} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Filter Tabs */}
+                <View style={styles.contactFilterTabsRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.contactFilterTabBtn,
+                      contactsActiveTab === 'all' && styles.contactFilterTabBtnActive,
+                    ]}
+                    onPress={() => setContactsActiveTab('all')}
+                  >
+                    <Text
+                      style={[
+                        styles.contactFilterTabText,
+                        contactsActiveTab === 'all' && styles.contactFilterTabTextActive,
+                      ]}
+                    >
+                      All ({deviceContacts.length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.contactFilterTabBtn,
+                      contactsActiveTab === 'registered' && styles.contactFilterTabBtnActiveGreen,
+                    ]}
+                    onPress={() => setContactsActiveTab('registered')}
+                  >
+                    <ShieldCheck size={13} color={contactsActiveTab === 'registered' ? '#15803D' : '#64748B'} style={{ marginRight: 4 }} />
+                    <Text
+                      style={[
+                        styles.contactFilterTabText,
+                        contactsActiveTab === 'registered' && styles.contactFilterTabTextActiveGreen,
+                      ]}
+                    >
+                      On Pravisti ({deviceContacts.filter(c => c.isRegistered).length})
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.contactFilterTabBtn,
+                      contactsActiveTab === 'unregistered' && styles.contactFilterTabBtnActive,
+                    ]}
+                    onPress={() => setContactsActiveTab('unregistered')}
+                  >
+                    <Text
+                      style={[
+                        styles.contactFilterTabText,
+                        contactsActiveTab === 'unregistered' && styles.contactFilterTabTextActive,
+                      ]}
+                    >
+                      Others
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Search Bar */}
+                <View style={styles.contactSearchBarContainer}>
+                  <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
+                  <TextInput
+                    style={styles.contactSearchInput}
+                    placeholder="Search by name, mobile or company..."
+                    placeholderTextColor="#94A3B8"
+                    value={contactSearchQuery}
+                    onChangeText={setContactSearchQuery}
+                    autoFocus={false}
+                  />
+                  {contactSearchQuery ? (
+                    <TouchableOpacity onPress={() => setContactSearchQuery('')}>
+                      <X size={15} color="#94A3B8" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                {/* List or Loading */}
+                {contactsLoading ? (
+                  <View style={{ paddingVertical: 36, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#2563EB" />
+                    <Text style={{ marginTop: 8, fontSize: 13, color: '#64748B' }}>
+                      Checking Pravisti registered contacts...
+                    </Text>
+                  </View>
+                ) : (
+                  <FlatList
+                    data={deviceContacts.filter(c => {
+                      const q = contactSearchQuery.toLowerCase();
+                      const matchSearch =
+                        c.name.toLowerCase().includes(q) ||
+                        c.mobile.includes(q) ||
+                        (c.primaryCompanyName && c.primaryCompanyName.toLowerCase().includes(q));
+
+                      if (!matchSearch) return false;
+                      if (contactsActiveTab === 'registered') return c.isRegistered;
+                      if (contactsActiveTab === 'unregistered') return !c.isRegistered;
+                      return true;
+                    })}
+                    keyExtractor={item => item.id}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={{ paddingVertical: 4 }}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={[
+                          styles.contactItemCard,
+                          item.isRegistered && styles.contactItemCardRegistered,
+                        ]}
+                        onPress={() => handleSelectContactItem(item)}
+                        activeOpacity={0.7}
+                      >
+                        <View
+                          style={[
+                            styles.contactAvatarCircle,
+                            item.isRegistered && styles.contactAvatarCircleRegistered,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.contactAvatarText,
+                              item.isRegistered && styles.contactAvatarTextRegistered,
+                            ]}
+                          >
+                            {item.name.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                            <Text style={styles.contactItemName}>{item.name}</Text>
+                            {item.isRegistered && item.hasCompany ? (
+                              <View style={styles.pravistiBadgeSmall}>
+                                <ShieldCheck size={11} color="#15803D" style={{ marginRight: 3 }} />
+                                <Text style={styles.pravistiBadgeSmallText}>On Pravisti ✓</Text>
+                              </View>
+                            ) : item.isRegistered && !item.hasCompany ? (
+                              <View style={[styles.pravistiBadgeSmall, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+                                <Clock size={11} color="#D97706" style={{ marginRight: 3 }} />
+                                <Text style={[styles.pravistiBadgeSmallText, { color: '#D97706' }]}>User Registered</Text>
+                              </View>
+                            ) : (
+                              <View style={[styles.pravistiBadgeSmall, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' }]}>
+                                <Text style={[styles.pravistiBadgeSmallText, { color: '#64748B' }]}>Unregistered</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {item.registeredName && item.registeredName.toLowerCase() !== item.name.toLowerCase() ? (
+                            <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1 }}>
+                              Registered as: {item.registeredName}
+                            </Text>
+                          ) : null}
+
+                          {/* Display Companies for this contact */}
+                          {item.companies && item.companies.length > 0 ? (
+                            <View style={{ marginTop: 3 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 100 }}>
+                                  <Building2 size={12} color="#059669" style={{ marginRight: 4 }} />
+                                  <Text style={styles.contactItemCompany} numberOfLines={1}>
+                                    {item.companies[0].companyName || item.companies[0].name}
+                                    {item.companies[0].companyType ? ` (${item.companies[0].companyType.toLowerCase()})` : ''}
+                                  </Text>
+                                </View>
+                                {item.companies.length > 1 && (
+                                  <View style={styles.multiCompBadgePill}>
+                                    <Text style={styles.multiCompBadgeText}>
+                                      +{item.companies.length - 1} more
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                            </View>
+                          ) : item.isRegistered && !item.hasCompany ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                              <Clock size={11} color="#D97706" style={{ marginRight: 4 }} />
+                              <Text style={{ fontSize: 11.5, color: '#D97706', fontWeight: '500' }}>
+                                Company setup pending
+                              </Text>
+                            </View>
+                          ) : null}
+
+                          <Text style={styles.contactItemPhone}>+91 {item.mobile}</Text>
+                        </View>
+
+                        {item.companies && item.companies.length > 1 ? (
+                          <View style={styles.multiCompSelectActionTag}>
+                            <Text style={styles.multiCompSelectActionText}>
+                              {item.companies.length} Companies
+                            </Text>
+                            <ChevronRight size={13} color="#2563EB" />
+                          </View>
+                        ) : (
+                          <ChevronRight size={16} color={item.isRegistered ? '#059669' : '#94A3B8'} />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                      <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 13, color: '#64748B' }}>
+                          {contactsActiveTab === 'registered'
+                            ? 'No registered contacts found on Pravisti'
+                            : 'No matching contacts found'}
+                        </Text>
+                      </View>
+                    }
+                  />
+                )}
               </View>
             </View>
           </Modal>
@@ -3943,9 +5305,10 @@ Zoomed into item. */}
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
-                  automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
                   style={{ width: '100%', marginTop: 8 }}
-                  contentContainerStyle={{ paddingBottom: 24 }}
+                  contentContainerStyle={{
+                    paddingBottom: 40,
+                  }}
                 >
                   <View style={{ gap: 12, paddingTop: 4 }}>
 
@@ -4158,9 +5521,18 @@ Zoomed into item. */}
                               );
                               const displayLabel = selectedUnitObj?.name || selectedUnitObj?.label || selectedUnitObj?.short || onboardForm.unitId || 'Select Unit';
                               return (
-                                <Text style={[styles.selectBoxValue, !selectedUnitObj && !onboardForm.unitId && { color: '#94A3B8' }]}>
-                                  {displayLabel}
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                                  {selectedUnitObj?.image ? (
+                                    <Image
+                                      source={{ uri: resolveImageUrl(selectedUnitObj.image) }}
+                                      style={{ width: 18, height: 18, borderRadius: 4 }}
+                                      resizeMode="contain"
+                                    />
+                                  ) : null}
+                                  <Text style={[styles.selectBoxValue, !selectedUnitObj && !onboardForm.unitId && { color: '#94A3B8' }]} numberOfLines={1}>
+                                    {displayLabel}
+                                  </Text>
+                                </View>
                               );
                             })()}
                             <ChevronDown size={18} color="#64748B" style={[showOnboardUnitDropdown && { transform: [{ rotate: '180deg' }] }]} />
@@ -4170,7 +5542,7 @@ Zoomed into item. */}
                             <View style={styles.onboardDropdownMenu}>
                               <ScrollView
                                 nestedScrollEnabled={true}
-                                style={{ maxHeight: 160 }}
+                                style={{ maxHeight: 180 }}
                                 showsVerticalScrollIndicator={true}
                               >
                                 {unitsList.map((uItem, uIdx) => {
@@ -4190,9 +5562,29 @@ Zoomed into item. */}
                                       }}
                                       activeOpacity={0.7}
                                     >
-                                      <Text style={[styles.onboardDropdownItemText, isSel && styles.onboardDropdownItemTextActive]}>
-                                        {uLabel} {uItem.symbol && uItem.symbol !== uLabel ? `(${uItem.symbol})` : ''}
-                                      </Text>
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                                        {uItem.image ? (
+                                          <Image
+                                            source={{ uri: resolveImageUrl(uItem.image) }}
+                                            style={{ width: 20, height: 20, borderRadius: 4, backgroundColor: '#F8FAFC' }}
+                                            resizeMode="contain"
+                                          />
+                                        ) : (
+                                          <View style={{ width: 20, height: 20, borderRadius: 4, backgroundColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748B' }}>
+                                              {(uItem.short || uItem.shortName || uLabel || 'U').substring(0, 2).toUpperCase()}
+                                            </Text>
+                                          </View>
+                                        )}
+                                        <Text style={[styles.onboardDropdownItemText, isSel && styles.onboardDropdownItemTextActive]} numberOfLines={1}>
+                                          {uLabel} {uItem.short && uItem.short !== uLabel ? `(${uItem.short})` : ''}
+                                        </Text>
+                                        {uItem.isCustom && (
+                                          <View style={{ paddingHorizontal: 4, paddingVertical: 1, backgroundColor: '#ECFDF5', borderRadius: 3 }}>
+                                            <Text style={{ fontSize: 8, fontWeight: '700', color: '#059669' }}>Custom</Text>
+                                          </View>
+                                        )}
+                                      </View>
                                       {isSel && <Check size={15} color="#2563EB" />}
                                     </TouchableOpacity>
                                   );
@@ -4361,20 +5753,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   stepItem: {
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
   },
   stepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: '#CBD5E1',
@@ -4390,7 +5789,7 @@ const styles = StyleSheet.create({
     borderColor: '#2563EB',
   },
   stepNumberText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -4398,7 +5797,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   stepLabelText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     color: '#64748B',
   },
@@ -4408,10 +5807,10 @@ const styles = StyleSheet.create({
   },
   stepperLine: {
     flex: 1,
-    height: 2,
+    height: 1.5,
     backgroundColor: '#E2E8F0',
-    marginBottom: 16,
-    marginHorizontal: 6,
+    marginBottom: 13,
+    marginHorizontal: 4,
   },
   stepperLineActive: {
     backgroundColor: '#2563EB',
@@ -4423,7 +5822,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 120,
+    paddingBottom: 40,
   },
   stepSection: {
     gap: 16,
@@ -5150,6 +6549,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    marginRight: 8,
   },
   paperclipCircle: {
     width: 36,
@@ -5169,18 +6570,42 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 1,
   },
+  uploadActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cameraActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  cameraActionBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
   browseFilesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    paddingHorizontal: 12,
+    paddingHorizontal: 9,
     paddingVertical: 7,
     borderRadius: 8,
   },
   browseFilesBtnText: {
     fontSize: 11.5,
     fontWeight: '700',
-    color: '#2563EB',
+    color: '#334155',
   },
   uploadedChipsRow: {
     flexDirection: 'row',
@@ -5466,12 +6891,11 @@ const styles = StyleSheet.create({
 
   /* Bottom Bar */
   bottomActionBar: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 16,
+    paddingBottom: 28,
     gap: 10,
   },
   backActionButton: {
@@ -6201,6 +7625,257 @@ const styles = StyleSheet.create({
   reviewGrandTotalValue: {
     fontSize: 14,
     fontWeight: '900',
+    color: '#2563EB',
+  },
+  paymentTermsLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  optionalPill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  optionalPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  paymentDaysInputContainer: {
+    marginBottom: 6,
+  },
+  fixedDaysInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  fixedDaysTextInput: {
+    flex: 1,
+    height: 44,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  fixedDaysSuffixTag: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: '#E2E8F0',
+  },
+  fixedDaysSuffixText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  quickDaysChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  quickDayChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  quickDayChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#2563EB',
+  },
+  quickDayChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  quickDayChipTextActive: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  paymentTermsPreviewBox: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  paymentTermsPreviewLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  paymentTermsPreviewValue: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '700',
+  },
+  contactFilterTabsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 10,
+  },
+  contactFilterTabBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  contactFilterTabBtnActive: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#2563EB',
+  },
+  contactFilterTabBtnActiveGreen: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#15803D',
+  },
+  contactFilterTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  contactFilterTabTextActive: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  contactFilterTabTextActiveGreen: {
+    color: '#15803D',
+    fontWeight: '700',
+  },
+  contactSearchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8,
+  },
+  contactSearchInput: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  contactItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  contactItemCardRegistered: {
+    backgroundColor: '#F0FDF4',
+    marginBottom: 4,
+    borderBottomWidth: 0,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  contactAvatarCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  contactAvatarCircleRegistered: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1.5,
+    borderColor: '#22C55E',
+  },
+  contactAvatarText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#2563EB',
+  },
+  contactAvatarTextRegistered: {
+    color: '#15803D',
+  },
+  contactItemName: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  pravistiBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#86EFAC',
+  },
+  pravistiBadgeSmallText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  contactItemCompany: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+    marginBottom: 2,
+  },
+  contactItemPhone: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  multiCompBadgePill: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  multiCompBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  multiCompSelectActionTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  multiCompSelectActionText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#2563EB',
   },
 });

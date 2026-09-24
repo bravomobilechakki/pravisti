@@ -61,6 +61,45 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
   const [isLoading, setIsLoading] = useState(!hasPassedData);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
+  const removeDealLocally = async (targetId) => {
+    try {
+      const idsToRemove = [
+        targetId,
+        dealId,
+        deal?._id,
+        deal?.id,
+        deal?.dealNumber,
+        passedDeal?._id,
+        passedDeal?.id,
+        passedDeal?.dealNumber,
+        routeData?.dealId,
+      ]
+        .map(x => (x ? String(x).trim() : ''))
+        .filter(Boolean);
+
+      for (const id of idsToRemove) {
+        await AsyncStorage.removeItem(`deal_cache_${id}`).catch(() => {});
+      }
+
+      const delStr = await AsyncStorage.getItem('deleted_deal_ids');
+      const delList = delStr ? JSON.parse(delStr) : [];
+      const updatedDelList = Array.from(new Set([...delList, ...idsToRemove]));
+      await AsyncStorage.setItem('deleted_deal_ids', JSON.stringify(updatedDelList)).catch(() => {});
+
+      const storedStr = await AsyncStorage.getItem('broker_deals_storage');
+      if (storedStr) {
+        const storedDeals = JSON.parse(storedStr);
+        const filtered = storedDeals.filter(d => {
+          const dId = String(d._id || d.id || d.dealNumber || '');
+          return !updatedDelList.includes(dId);
+        });
+        await AsyncStorage.setItem('broker_deals_storage', JSON.stringify(filtered)).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('Error removing deal locally:', err);
+    }
+  };
+
   const fetchDetails = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -69,11 +108,26 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
         try {
           const res = await getDealDetails(dealId, token);
           if (res && res.success && res.data) {
-            setDeal(res.data);
-            AsyncStorage.setItem(`deal_cache_${dealId}`, JSON.stringify(res.data)).catch(() => { });
+            const d = res.data;
+            if (d.isDeleted === true || String(d.status || '').toLowerCase() === 'deleted') {
+              await removeDealLocally(dealId);
+              setDeal(null);
+            } else {
+              setDeal(d);
+              AsyncStorage.setItem(`deal_cache_${dealId}`, JSON.stringify(d)).catch(() => { });
+            }
+          } else if (res?.statusCode === 404 || (res?.message && (res.message.toLowerCase().includes('not found') || res.message.toLowerCase().includes('deleted')))) {
+            await removeDealLocally(dealId);
+            setDeal(null);
           }
         } catch (apiErr) {
-          console.warn('API fetch fail, using fallback:', apiErr);
+          const errMsg = String(apiErr?.message || apiErr || '').toLowerCase();
+          if (errMsg.includes('not found') || errMsg.includes('404') || errMsg.includes('deleted') || errMsg.includes('does not exist')) {
+            await removeDealLocally(dealId);
+            setDeal(null);
+          } else {
+            console.warn('API fetch notice:', apiErr);
+          }
         }
       }
     } catch (err) {
@@ -87,11 +141,38 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     let isMounted = true;
 
     const loadDealFast = async () => {
+      try {
+        const delStr = await AsyncStorage.getItem('deleted_deal_ids');
+        if (delStr) {
+          const delList = JSON.parse(delStr);
+          const allTargetIds = [
+            dealId,
+            passedDeal?._id,
+            passedDeal?.id,
+            passedDeal?.dealNumber,
+            routeData?.dealId,
+          ]
+            .map(x => (x ? String(x).trim() : ''))
+            .filter(Boolean);
+
+          if (allTargetIds.some(tid => delList.includes(tid)) || passedDeal?.isDeleted === true || String(passedDeal?.status || '').toLowerCase() === 'deleted') {
+            setDeal(null);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (e) { }
+
       if (!hasPassedData && dealId) {
         try {
           const cachedStr = await AsyncStorage.getItem(`deal_cache_${dealId}`);
           if (cachedStr && isMounted) {
             const cachedObj = JSON.parse(cachedStr);
+            if (cachedObj && (cachedObj.isDeleted === true || String(cachedObj.status || '').toLowerCase() === 'deleted')) {
+              setDeal(null);
+              setIsLoading(false);
+              return;
+            }
             setDeal(cachedObj);
             setIsLoading(false);
           }
@@ -148,7 +229,90 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     try {
       setIsActionLoading(true);
       const token = await AsyncStorage.getItem('userToken');
-      const res = await completeBrokerDraftDeal(dealId, { notes: 'Completing draft deal' }, token);
+
+      // Use rawDeal (the original API object) if available — the deal state may be
+      // a mapped UI object that doesn't carry products[], so always prefer rawDeal.
+      const rawD = deal?.rawDeal || deal || {};
+      const effectiveDealId = dealId || rawD._id || rawD.id;
+
+      if (!effectiveDealId) {
+        Alert.alert('Error', 'Deal ID not found. Cannot complete draft.');
+        setIsActionLoading(false);
+        return;
+      }
+
+      // 1. Gather products from rawDeal.products first, then fallbacks
+      let rawProducts = [];
+      if (Array.isArray(rawD.products) && rawD.products.length > 0) {
+        rawProducts = rawD.products;
+      } else if (Array.isArray(rawD.dealDraft?.products) && rawD.dealDraft.products.length > 0) {
+        rawProducts = rawD.dealDraft.products;
+      } else if (Array.isArray(rawD.draftProducts) && rawD.draftProducts.length > 0) {
+        rawProducts = rawD.draftProducts;
+      } else if (Array.isArray(rawD.items) && rawD.items.length > 0) {
+        rawProducts = rawD.items;
+      } else if (Array.isArray(deal?.products) && deal.products.length > 0) {
+        rawProducts = deal.products;
+      }
+
+      // If still empty, check AsyncStorage cached deal
+      if (rawProducts.length === 0 && effectiveDealId) {
+        try {
+          const cachedStr = await AsyncStorage.getItem(`deal_cache_${effectiveDealId}`);
+          if (cachedStr) {
+            const cachedObj = JSON.parse(cachedStr);
+            if (Array.isArray(cachedObj?.products) && cachedObj.products.length > 0) {
+              rawProducts = cachedObj.products;
+            }
+          }
+        } catch (e) { }
+      }
+
+      let formattedProducts = rawProducts.map(p => {
+        const pid = typeof p.productId === 'object' && p.productId !== null
+          ? (p.productId._id || p.productId.id)
+          : (p.productId || p._id || p.id);
+        return {
+          productId: pid,
+          quantity: parseFloat(p.quantity) || 1,
+          price: parseFloat(p.price !== undefined ? p.price : (p.rate || 0)),
+          gst: parseFloat(p.gst !== undefined ? p.gst : (p.gstAmount || 0)),
+          discount: parseFloat(p.discount || 0),
+          paymentTerms: p.paymentTerms || rawD.paymentTerms || deal?.paymentTerms || 'Standard Terms',
+        };
+      }).filter(p => p.productId && p.quantity > 0);
+
+      // 2. Fallback if deal only had top-level crop/quantity/price fields
+      if (formattedProducts.length === 0) {
+        const fallbackPid = typeof rawD.productId === 'object' && rawD.productId !== null
+          ? (rawD.productId._id || rawD.productId.id)
+          : (rawD.productId || null);
+
+        const qVal = parseFloat(rawD.quantity) || 1;
+        const pVal = parseFloat(rawD.price !== undefined ? rawD.price : (rawD.rate || 0));
+
+        if (fallbackPid) {
+          formattedProducts.push({
+            productId: fallbackPid,
+            quantity: qVal,
+            price: pVal,
+            gst: parseFloat(rawD.gst || 0),
+            discount: parseFloat(rawD.discount || 0),
+            paymentTerms: rawD.paymentTerms || 'Standard Terms',
+          });
+        }
+      }
+
+      const completePayload = {
+        notes: rawD.notes || deal?.notes || 'Completing draft deal',
+        products: formattedProducts,
+      };
+
+      if (rawD.expiryDate || deal?.expiryDate) {
+        completePayload.expiryDate = rawD.expiryDate || deal.expiryDate;
+      }
+
+      const res = await completeBrokerDraftDeal(effectiveDealId, completePayload, token);
       if (res && res.success) {
         Alert.alert('Success', 'Draft deal completed successfully!', [
           { text: 'OK', onPress: () => fetchDetails() },
@@ -173,14 +337,36 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
           setIsActionLoading(true);
           try {
             const token = await AsyncStorage.getItem('userToken');
-            const res = await deleteDeal(dealId, token);
-            if (res && res.success) {
-              Alert.alert('Success', 'Deal deleted', [{ text: 'OK', onPress: () => onNavigate('BrokerPendingQueue') }]);
-            } else {
-              Alert.alert('Error', res?.message || 'Failed to delete deal');
+            // Always purge locally so it never appears in the list again
+            await removeDealLocally(dealId);
+
+            try {
+              await deleteDeal(dealId, token);
+            } catch (delErr) {
+              console.warn('Delete deal server notice:', delErr);
             }
+
+            Alert.alert('Success', 'Deal deleted successfully', [
+              {
+                text: 'OK',
+                onPress: () => {
+                  if (onNavigate) {
+                    onNavigate('pop');
+                  }
+                },
+              },
+            ]);
           } catch (e) {
-            Alert.alert('Error', e.message || 'Failed to delete deal');
+            Alert.alert('Notice', 'Deal removed from list', [
+              {
+                text: 'OK',
+                onPress: () => {
+                  if (onNavigate) {
+                    onNavigate('pop');
+                  }
+                },
+              },
+            ]);
           } finally {
             setIsActionLoading(false);
           }
@@ -213,29 +399,31 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     }
   };
 
+  const safeDeal = deal || {};
+  const hasDataToRender = Boolean(deal && (deal._id || deal.id || deal.crop || deal.products || deal.productName || deal.seller || deal.buyer || deal.dealNumber));
+
   const handleShareSauda = async () => {
     try {
-      const saudaNo = deal.dealNumber || deal.id || `SAUDA-${dealId?.slice(-6) || ''}`;
-      const p0 = deal.products?.[0];
+      if (!hasDataToRender) return;
+      const saudaNo = safeDeal.dealNumber || safeDeal.id || `SAUDA-${dealId?.slice(-6) || ''}`;
+      const p0 = safeDeal.products?.[0];
       const pid0 = p0?.productId;
-      const crop = deal.crop || deal.productName || deal.cropName
+      const crop = safeDeal.crop || safeDeal.productName || safeDeal.cropName
         || (pid0 && typeof pid0 === 'object' ? (pid0.name || pid0.productName || pid0.title || pid0.cropName) : null)
         || p0?.productName || p0?.name || p0?.crop || p0?.cropName || p0?.title
         || '—';
-      const qty = deal.quantity ? String(deal.quantity) : (deal.products?.[0]?.quantity ? `${deal.products[0].quantity}` : '—');
-      const rateStr = deal.rate || (deal.products?.[0]?.price ? `₹${parseFloat(deal.products[0].price).toLocaleString('en-IN')}` : '—');
-      const buyer = deal.buyerCompany?.name || deal.buyerCompany?.companyName || deal.buyer || '—';
-      const seller = deal.sellerCompany?.name || deal.sellerCompany?.companyName || deal.seller || '—';
+      const qty = safeDeal.quantity ? String(safeDeal.quantity) : (safeDeal.products?.[0]?.quantity ? `${safeDeal.products[0].quantity}` : '—');
+      const rateStr = safeDeal.rate || (safeDeal.products?.[0]?.price ? `₹${parseFloat(safeDeal.products[0].price).toLocaleString('en-IN')}` : '—');
+      const buyer = safeDeal.buyerCompany?.name || safeDeal.buyerCompany?.companyName || safeDeal.buyer || '—';
+      const seller = safeDeal.sellerCompany?.name || safeDeal.sellerCompany?.companyName || safeDeal.seller || '—';
 
       await Share.share({
-        message: `OFFICIAL SAUDA CONTRACT\nContract No: ${saudaNo}\nCommodity: ${crop}\nQuantity: ${qty}\nRate: ${rateStr}\nSeller: ${seller}\nBuyer: ${buyer}\nStatus: ${deal.status || 'Pending'}\n\nIssued via Pravisti B2B Platform.`,
+        message: `OFFICIAL SAUDA CONTRACT\nContract No: ${saudaNo}\nCommodity: ${crop}\nQuantity: ${qty}\nRate: ${rateStr}\nSeller: ${seller}\nBuyer: ${buyer}\nStatus: ${safeDeal.status || 'Pending'}\n\nIssued via Pravisti B2B Platform.`,
       });
     } catch (e) {
       console.warn('Share error:', e);
     }
   };
-
-  const hasDataToRender = Boolean(deal && (deal._id || deal.id || deal.crop || deal.products || deal.productName || deal.seller || deal.buyer || deal.dealNumber));
 
   const parseNum = (strOrNum) => {
     if (typeof strOrNum === 'number') return strOrNum;
@@ -244,13 +432,13 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
     return parseFloat(cleaned) || 0;
   };
 
-  const saudaNo = deal.dealNumber || deal.id || (deal._id ? `DEAL-${deal._id.slice(-4).toUpperCase()}` : 'DEAL-0001');
+  const saudaNo = safeDeal.dealNumber || safeDeal.id || (safeDeal._id ? `DEAL-${safeDeal._id.slice(-4).toUpperCase()}` : 'DEAL-0001');
 
   // Extract crop name ONLY from actual data
-  const productsList = Array.isArray(deal.products) && deal.products.length > 0 ? deal.products : [];
+  const productsList = Array.isArray(safeDeal.products) && safeDeal.products.length > 0 ? safeDeal.products : [];
   const _p0 = productsList[0];
   const _pid0 = _p0?.productId;
-  const cropName = deal.crop || deal.productName || deal.cropName
+  const cropName = safeDeal.crop || safeDeal.productName || safeDeal.cropName
     || _p0?.name
     || (_pid0 && typeof _pid0 === 'object' ? (_pid0.name || _pid0.productName || _pid0.title || _pid0.cropName) : null)
     || _p0?.title
@@ -259,19 +447,19 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
   const productImg = (typeof _p0?.image === 'string' && _p0.image.trim())
     || (typeof _p0?.productImage === 'string' && _p0.productImage.trim())
     || (_pid0 && typeof _pid0 === 'object' && typeof _pid0.image === 'string' && _pid0.image.trim())
-    || (typeof deal.image === 'string' && deal.image.trim())
+    || (typeof safeDeal.image === 'string' && safeDeal.image.trim())
     || null;
 
   const unitStr = _p0?.unitName || _p0?.unitShortName || (_p0?.unitId && typeof _p0.unitId === 'object' ? (_p0.unitId.name || _p0.unitId.shortName) : null) || _p0?.unit || '';
-  const quantity = deal.quantity ? String(deal.quantity).replace(/\s*units?/gi, '').trim() : (_p0?.quantity ? `${_p0.quantity} ${unitStr}`.trim() : '—');
-  const rate = deal.rate || (_p0?.price ? `₹${parseFloat(_p0.price).toLocaleString('en-IN')}/unit` : '—');
+  const quantity = safeDeal.quantity ? String(safeDeal.quantity).replace(/\s*units?/gi, '').trim() : (_p0?.quantity ? `${_p0.quantity} ${unitStr}`.trim() : '—');
+  const rate = safeDeal.rate || (_p0?.price ? `₹${parseFloat(_p0.price).toLocaleString('en-IN')}/unit` : '—');
 
   // Total amounts from API
-  const rawTotal = deal.grandTotal || deal.totalAmount || deal.totalValue || deal.totalPrice || _p0?.totalAmount || _p0?.subtotal || _p0?.totalPrice;
+  const rawTotal = safeDeal.grandTotal || safeDeal.totalAmount || safeDeal.totalValue || safeDeal.totalPrice || _p0?.totalAmount || _p0?.subtotal || _p0?.totalPrice;
   let numericTotal = parseNum(rawTotal);
   if (!numericTotal) {
-    const qNum = parseNum(deal.quantity || _p0?.quantity);
-    const rNum = parseNum(deal.rate || _p0?.price);
+    const qNum = parseNum(safeDeal.quantity || _p0?.quantity);
+    const rNum = parseNum(safeDeal.rate || _p0?.price);
     if (qNum > 0 && rNum > 0) {
       numericTotal = qNum * rNum;
     }
@@ -279,15 +467,15 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
 
   const totalVal = numericTotal > 0
     ? `₹${numericTotal.toLocaleString('en-IN')}`
-    : (deal.totalAmount || deal.totalValue ? `₹${deal.totalAmount || deal.totalValue}` : '—');
+    : (safeDeal.totalAmount || safeDeal.totalValue ? `₹${safeDeal.totalAmount || safeDeal.totalValue}` : '—');
 
-  const rawSubtotal = deal.totalSubtotal || deal.subtotal || _p0?.subtotal || numericTotal;
+  const rawSubtotal = safeDeal.totalSubtotal || safeDeal.subtotal || _p0?.subtotal || numericTotal;
   const subtotalDisplay = parseNum(rawSubtotal) > 0 ? `₹${parseNum(rawSubtotal).toLocaleString('en-IN')}` : totalVal;
 
-  const discountVal = parseNum(deal.totalDiscount || deal.discount || _p0?.discount || 0);
-  const gstVal = parseNum(deal.totalGSTAmount || deal.gstAmount || _p0?.gstAmount || 0);
+  const discountVal = parseNum(safeDeal.totalDiscount || safeDeal.discount || _p0?.discount || 0);
+  const gstVal = parseNum(safeDeal.totalGSTAmount || safeDeal.gstAmount || _p0?.gstAmount || 0);
 
-  const status = deal.status ? (deal.status.charAt(0).toUpperCase() + deal.status.slice(1)) : 'Pending';
+  const status = safeDeal.status ? (safeDeal.status.charAt(0).toUpperCase() + safeDeal.status.slice(1)) : 'Pending';
 
   const extractName = (co, fallbackStr = '') => {
     if (!co) return fallbackStr;
@@ -306,43 +494,43 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
   };
 
   // Seller, Buyer & Broker Company Details
-  const sellerCo = deal.sellerCompanyId || deal.sellerCompany || deal.sellerId || (typeof deal.seller === 'object' ? deal.seller : {});
-  const sellerName = extractName(sellerCo) || extractName(deal.seller) || deal.sellerCompanyName || deal.sellerName || 'Seller Business';
+  const sellerCo = safeDeal.sellerCompanyId || safeDeal.sellerCompany || safeDeal.sellerId || (typeof safeDeal.seller === 'object' ? safeDeal.seller : {});
+  const sellerName = extractName(sellerCo) || extractName(safeDeal.seller) || safeDeal.sellerCompanyName || safeDeal.sellerName || 'Seller Business';
 
-  const buyerCo = deal.buyerCompanyId || deal.buyerCompany || deal.buyerId || (typeof deal.buyer === 'object' ? deal.buyer : {});
-  const buyerName = extractName(buyerCo) || extractName(deal.buyer) || deal.buyerCompanyName || deal.buyerName || 'Buyer Business';
+  const buyerCo = safeDeal.buyerCompanyId || safeDeal.buyerCompany || safeDeal.buyerId || (typeof safeDeal.buyer === 'object' ? safeDeal.buyer : {});
+  const buyerName = extractName(buyerCo) || extractName(safeDeal.buyer) || safeDeal.buyerCompanyName || safeDeal.buyerName || 'Buyer Business';
 
-  const brokerCo = deal.brokerCompanyId || deal.brokerCompany || deal.brokerId || (typeof deal.broker === 'object' ? deal.broker : {});
-  const brokerName = extractName(brokerCo) || extractName(deal.broker) || deal.brokerCompanyName || deal.brokerName || 'mnc Agro Limiteds';
+  const brokerCo = safeDeal.brokerCompanyId || safeDeal.brokerCompany || safeDeal.brokerId || (typeof safeDeal.broker === 'object' ? safeDeal.broker : {});
+  const brokerName = extractName(brokerCo) || extractName(safeDeal.broker) || safeDeal.brokerCompanyName || safeDeal.brokerName || 'mnc Agro Limiteds';
 
-  const creatorName = deal.createdBy?.name || deal.creatorName || sellerName;
-  const createdByRole = deal.createdByRole ? (deal.createdByRole.charAt(0).toUpperCase() + deal.createdByRole.slice(1)) : 'Broker';
+  const creatorName = safeDeal.createdBy?.name || safeDeal.creatorName || sellerName;
+  const createdByRole = safeDeal.createdByRole ? (safeDeal.createdByRole.charAt(0).toUpperCase() + safeDeal.createdByRole.slice(1)) : 'Broker';
 
   // Approval Flow Extraction
-  const appStatusObj = deal.approvalStatus || {};
-  const acceptedByArr = Array.isArray(deal.acceptedBy) ? deal.acceptedBy : [];
+  const appStatusObj = safeDeal.approvalStatus || {};
+  const acceptedByArr = Array.isArray(safeDeal.acceptedBy) ? safeDeal.acceptedBy : [];
 
-  const isCreatedByBroker = deal.createdByRole?.toLowerCase() === 'broker' || deal.creatorRole?.toLowerCase() === 'broker' || deal.role?.toLowerCase() === 'broker' || deal.isBrokerDeal === true || deal.isAssisted === true;
+  const isCreatedByBroker = safeDeal.createdByRole?.toLowerCase() === 'broker' || safeDeal.creatorRole?.toLowerCase() === 'broker' || safeDeal.role?.toLowerCase() === 'broker' || safeDeal.isBrokerDeal === true || safeDeal.isAssisted === true;
 
-  const sellerAppStatus = (appStatusObj.seller || acceptedByArr.find(a => String(a.companyId) === String(sellerCo._id || sellerCo.id))?.status || deal.sellerStatus || 'pending').toLowerCase();
-  const buyerAppStatus = (appStatusObj.buyer || acceptedByArr.find(a => String(a.companyId) === String(buyerCo._id || buyerCo.id))?.status || deal.buyerStatus || 'pending').toLowerCase();
-  const brokerAppStatus = (appStatusObj.broker || acceptedByArr.find(a => String(a.companyId) === String(brokerCo._id || brokerCo.id))?.status || deal.brokerStatus || (isCreatedByBroker ? 'approved' : 'pending')).toLowerCase();
+  const sellerAppStatus = (appStatusObj.seller || acceptedByArr.find(a => String(a.companyId) === String(sellerCo._id || sellerCo.id))?.status || safeDeal.sellerStatus || 'pending').toLowerCase();
+  const buyerAppStatus = (appStatusObj.buyer || acceptedByArr.find(a => String(a.companyId) === String(buyerCo._id || buyerCo.id))?.status || safeDeal.buyerStatus || 'pending').toLowerCase();
+  const brokerAppStatus = (appStatusObj.broker || acceptedByArr.find(a => String(a.companyId) === String(brokerCo._id || brokerCo.id))?.status || safeDeal.brokerStatus || (isCreatedByBroker ? 'approved' : 'pending')).toLowerCase();
 
   const isBrokerApproved = brokerAppStatus === 'approved' || brokerAppStatus === 'accepted' || isCreatedByBroker;
   const isFullyApproved = status.toLowerCase() === 'approved' || status.toLowerCase() === 'active' || status.toLowerCase() === 'completed' ||
     (sellerAppStatus === 'approved' && buyerAppStatus === 'approved' && brokerAppStatus === 'approved');
 
-  const dateStr = deal.createdAt ? new Date(deal.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today';
-  const timeStr = deal.createdAt ? new Date(deal.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '10:45 AM';
+  const dateStr = safeDeal.createdAt ? new Date(safeDeal.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today';
+  const timeStr = safeDeal.createdAt ? new Date(safeDeal.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '10:45 AM';
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* 1. TOP APP HEADER */}
       <View style={styles.appBar}>
         <TouchableOpacity style={styles.headerIconBtn} onPress={() => onNavigate('pop')} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="#FFFFFF" />
+          <ArrowLeft size={20} color="#0F172A" />
         </TouchableOpacity>
 
         <Text style={styles.appBarTitle}>Sauda Details</Text>
@@ -350,16 +538,16 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <TouchableOpacity
             style={styles.headerIconBtn}
-            onPress={() => onNavigate('DealChat', { dealId: deal._id || deal.id || dealId, deal })}
+            onPress={() => onNavigate('DealChat', { dealId: safeDeal._id || safeDeal.id || dealId, deal: safeDeal })}
             activeOpacity={0.7}
           >
-            <MessageSquare size={18} color="#FFFFFF" />
+            <MessageSquare size={18} color="#0F172A" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerIconBtn} onPress={handleShareSauda} activeOpacity={0.7}>
-            <Share2 size={18} color="#FFFFFF" />
+            <Share2 size={18} color="#0F172A" />
           </TouchableOpacity>
           <View style={styles.userAvatarCircle}>
-            <User size={14} color="#2563EB" />
+            <User size={14} color="#475569" />
           </View>
         </View>
       </View>
@@ -370,6 +558,25 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
           <View style={{ paddingVertical: 80, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator size="large" color="#2563EB" />
             <Text style={{ marginTop: 12, fontSize: 14, color: '#2563EB', fontWeight: '700' }}>Loading Sauda Contract...</Text>
+          </View>
+        ) : !hasDataToRender ? (
+          <View style={{ paddingVertical: 60, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <AlertCircle size={32} color="#DC2626" />
+            </View>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 6, textAlign: 'center' }}>
+              Deal Not Found or Deleted
+            </Text>
+            <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 20, lineHeight: 18 }}>
+              This sauda contract has been removed or is no longer accessible.
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: '#2563EB', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 }}
+              onPress={() => onNavigate && onNavigate('pop')}
+              activeOpacity={0.85}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Go Back to Deals</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
@@ -412,8 +619,8 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={styles.brokerPartySub}>ORIGINATING BROKERAGE FIRM</Text>
                   <Text style={styles.brokerPartyName}>{brokerName}</Text>
-                  {brokerCo?.phone || deal.createdBy?.mobileNumber ? (
-                    <Text style={styles.partyPhoneText}>📞 +91 {brokerCo?.phone || deal.createdBy?.mobileNumber}</Text>
+                  {brokerCo?.phone || safeDeal.createdBy?.mobileNumber ? (
+                    <Text style={styles.partyPhoneText}>📞 +91 {brokerCo?.phone || safeDeal.createdBy?.mobileNumber}</Text>
                   ) : null}
                 </View>
                 <View style={styles.brokerVerifiedTag}>
@@ -547,14 +754,14 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
                 productsList.map((prod, idx) => {
                   const pObj = typeof prod.productId === 'object' ? prod.productId : {};
                   const pName = prod.name || pObj.name || cropName;
-                  const pQty = prod.quantity || deal.quantity || '—';
+                  const pQty = prod.quantity || safeDeal.quantity || '—';
                   const pUnit = prod.unitName || prod.unitShortName || (pObj.unitId && typeof pObj.unitId === 'object' ? (pObj.unitId.name || pObj.unitId.shortName) : null) || 'unit';
                   const pPrice = prod.price ? `₹${parseFloat(prod.price).toLocaleString('en-IN')}` : rate;
                   const pSubtotal = prod.subtotal ? `₹${parseFloat(prod.subtotal).toLocaleString('en-IN')}` : null;
                   const pDiscount = prod.discount ? `₹${parseFloat(prod.discount).toLocaleString('en-IN')}` : null;
                   const pGst = prod.gstAmount ? `₹${parseFloat(prod.gstAmount).toLocaleString('en-IN')} (${prod.gst}%)` : null;
                   const pTotal = prod.totalAmount ? `₹${parseFloat(prod.totalAmount).toLocaleString('en-IN')}` : null;
-                  const pTerms = prod.paymentTerms || deal.paymentTerms || null;
+                  const pTerms = prod.paymentTerms || safeDeal.paymentTerms || null;
 
                   return (
                     <View key={prod._id || idx} style={styles.productBlockItemCard}>
@@ -668,7 +875,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
             {/* 6.5 SAUDA TRADE CHAT BANNER CARD */}
             <TouchableOpacity
               style={styles.chatBannerCard}
-              onPress={() => onNavigate('DealChat', { dealId: deal._id || deal.id || dealId, deal })}
+              onPress={() => onNavigate('DealChat', { dealId: safeDeal._id || safeDeal.id || dealId, deal: safeDeal })}
               activeOpacity={0.85}
             >
               <View style={styles.chatIconBox}>
@@ -753,7 +960,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
 
             {/* 9. BOTTOM ACTION BUTTONS BAR */}
             <View style={styles.bottomActionBar}>
-              {String(deal.status || '').toLowerCase() === 'draft' ? (
+              {String(safeDeal.status || '').toLowerCase() === 'draft' ? (
                 <>
                   <TouchableOpacity
                     style={styles.rejectSaudaBtn}
@@ -781,7 +988,7 @@ const BrokerDealDetails = ({ onNavigate, routeData }) => {
                     )}
                   </TouchableOpacity>
                 </>
-              ) : String(deal.status || '').toLowerCase() === 'expired' ? (
+              ) : String(safeDeal.status || '').toLowerCase() === 'expired' ? (
                 <>
                   <TouchableOpacity
                     style={styles.rejectSaudaBtn}
@@ -867,40 +1074,42 @@ const styles = StyleSheet.create({
   /* 1. APP BAR */
   appBar: {
     height: 56,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    elevation: 3,
+    elevation: 2,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
   headerIconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   appBarTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#0F172A',
     letterSpacing: -0.2,
   },
   userAvatarCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
 
   scrollContent: {

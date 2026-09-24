@@ -28,6 +28,7 @@ import {
   User,
   Users,
   UserPlus,
+  Phone,
   MoreVertical,
   Check,
   X,
@@ -49,6 +50,8 @@ import {
   getCompanyDetails,
   getCompanies,
   addEmployeeToCompany,
+  onboardStaff,
+  getStaffList,
 } from '../../../services/api';
 
 const MONTH_NAMES = [
@@ -113,6 +116,72 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
   const [quickStaffMobile, setQuickStaffMobile] = useState('');
   const [quickStaffRole, setQuickStaffRole] = useState('Production Staff');
   const [quickOnboardLoading, setQuickOnboardLoading] = useState(false);
+
+  // Live lookup: check if quickStaffMobile matches an onboarded staff member
+  const cleanMobileDigits = useMemo(() => {
+    return (quickStaffMobile || '').replace(/\D/g, '');
+  }, [quickStaffMobile]);
+
+  const matchedStaffFromMobile = useMemo(() => {
+    if (cleanMobileDigits.length === 10) {
+      const last10 = cleanMobileDigits.slice(-10);
+      const found = onboardedStaffList.find((st) => {
+        const mob = String(st.mobileNumber || st.phone || '').replace(/\D/g, '').slice(-10);
+        return mob === last10;
+      });
+      if (found) return found;
+    }
+    if (selectedStaff && (selectedStaff.mobileNumber || selectedStaff.phone)) {
+      const selMob = String(selectedStaff.mobileNumber || selectedStaff.phone).replace(/\D/g, '').slice(-10);
+      if (cleanMobileDigits.length === 0 || selMob === cleanMobileDigits.slice(-10)) {
+        return selectedStaff;
+      }
+    }
+    return null;
+  }, [cleanMobileDigits, onboardedStaffList, selectedStaff]);
+
+  const handleStaffMobileChange = useCallback((txt) => {
+    const digits = (txt || '').replace(/\D/g, '').slice(0, 10);
+    setQuickStaffMobile(digits);
+
+    if (digits.length === 10) {
+      const match = onboardedStaffList.find((st) => {
+        const m = String(st.mobileNumber || st.phone || '').replace(/\D/g, '').slice(-10);
+        return m === digits;
+      });
+      if (match) {
+        setSelectedStaff(match);
+        setNewTaskAssignedTo(match.name);
+        setQuickStaffName(match.name);
+      } else {
+        setSelectedStaff(null);
+        setNewTaskAssignedTo('');
+      }
+    } else {
+      if (selectedStaff) {
+        const selectedMob = String(selectedStaff.mobileNumber || selectedStaff.phone || '').replace(/\D/g, '').slice(-10);
+        if (selectedMob !== digits) {
+          setSelectedStaff(null);
+          setNewTaskAssignedTo('');
+        }
+      }
+    }
+  }, [onboardedStaffList, selectedStaff]);
+
+  const handleSelectStaffChip = useCallback((st) => {
+    if (selectedStaff?._id && selectedStaff._id === st._id) {
+      setSelectedStaff(null);
+      setNewTaskAssignedTo('');
+      setQuickStaffMobile('');
+      setQuickStaffName('');
+    } else {
+      setSelectedStaff(st);
+      setNewTaskAssignedTo(st.name);
+      const m = String(st.mobileNumber || st.phone || '').replace(/\D/g, '').slice(-10);
+      setQuickStaffMobile(m);
+      setQuickStaffName(st.name);
+    }
+  }, [selectedStaff]);
 
   const [calendarPickerVisible, setCalendarPickerVisible] = useState(false);
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => new Date());
@@ -212,6 +281,21 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
           });
         }
       };
+
+      // 0. Fetch official Staff Directory from Guide v2.0 API: GET /api/staff
+      try {
+        const token =
+          (await AsyncStorage.getItem('userToken')) ||
+          (await AsyncStorage.getItem('token')) ||
+          (await AsyncStorage.getItem('authToken'));
+        if (token) {
+          const staffRes = await getStaffList({ limit: 100 }, token, compIdStr || null);
+          const staffArr = staffRes?.data?.staff || staffRes?.data || [];
+          if (Array.isArray(staffArr)) {
+            staffArr.forEach(addStaffMember);
+          }
+        }
+      } catch (e) { }
 
       // 1. Check AsyncStorage for company's real onboarded users
       if (compIdStr) {
@@ -472,7 +556,7 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
     fetchStaffList(project?.companyId || project?.creatorCompanyId || project?.company);
   };
 
-  // Quick In-Modal Staff Onboarding Handler
+  // Quick In-Modal Staff Onboarding Handler (Guide v2.0 Phase 1.1 - POST /api/staff/onboard)
   const handleQuickOnboardStaff = async () => {
     const cleanName = quickStaffName.trim();
     const cleanMobile = quickStaffMobile.replace(/\D/g, '').slice(-10);
@@ -488,31 +572,76 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
 
     setQuickOnboardLoading(true);
     try {
-      const compId =
+      const token =
+        (await AsyncStorage.getItem('userToken')) ||
+        (await AsyncStorage.getItem('token')) ||
+        (await AsyncStorage.getItem('authToken'));
+
+      let compId =
         project?.companyId?._id ||
         project?.companyId?.id ||
-        project?.companyId ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
         project?.creatorCompanyId ||
         (await AsyncStorage.getItem('selectedCompanyId')) ||
+        (await AsyncStorage.getItem('activeCompanyId')) ||
         '';
 
+      if (typeof compId === 'object' && compId !== null) {
+        compId = compId._id || compId.id || '';
+      }
       const compIdStr = String(compId || '');
-      const newStaffId = `staff_${Date.now()}`;
+      let realStaffId = null;
+
+      // Call official Guide v2.0 Phase 1.1 API: POST /api/staff/onboard
+      let serverData = null;
+      try {
+        const staffPayload = {
+          name: cleanName,
+          phone: cleanMobile,
+          department: project?.title || 'Production',
+          designation: quickStaffRole || 'Site Supervisor',
+          roles: ['staff'],
+        };
+        const onboardRes = await onboardStaff(staffPayload, token, compIdStr || null);
+        serverData = onboardRes?.data?.staff || onboardRes?.data || onboardRes;
+        realStaffId = serverData?._id || serverData?.id;
+
+        if (!realStaffId) {
+          throw new Error(onboardRes?.message || 'Server did not return staff ID.');
+        }
+      } catch (apiErr) {
+        console.error('Official onboardStaff error:', apiErr);
+        Alert.alert(
+          'Onboarding Failed',
+          apiErr.message || 'Unable to onboard staff member. Please check details and try again.'
+        );
+        setQuickOnboardLoading(false);
+        return;
+      }
+
+      const finalStaffId = realStaffId;
       const newMember = {
-        _id: newStaffId,
-        name: cleanName,
-        mobileNumber: cleanMobile,
-        roles: [quickStaffRole || 'Staff'],
+        _id: finalStaffId,
+        id: finalStaffId,
+        name: serverData?.name || cleanName,
+        mobileNumber: serverData?.mobileNumber || serverData?.phone || cleanMobile,
+        phone: serverData?.phone || cleanMobile,
+        department: serverData?.department || project?.title || 'Production',
+        designation: serverData?.designation || quickStaffRole || 'Site Supervisor',
+        roles: serverData?.roles || ['staff'],
+        companyId: serverData?.companyId || compIdStr,
       };
 
       // 1. Instantly update in-memory staff list & auto-select
-      setOnboardedStaffList((prev) => [newMember, ...prev.filter((s) => s.mobileNumber !== cleanMobile)]);
+      setOnboardedStaffList((prev) => [
+        newMember,
+        ...prev.filter((s) => s.mobileNumber !== cleanMobile && s._id !== finalStaffId),
+      ]);
       setSelectedStaff(newMember);
       setNewTaskAssignedTo(cleanName);
       setStaffTab('ONBOARD');
-      setShowQuickOnboard(false);
-      setQuickStaffName('');
-      setQuickStaffMobile('');
+      setQuickStaffName(cleanName);
+      setQuickStaffMobile(cleanMobile);
 
       // 2. Persist to AsyncStorage caches
       try {
@@ -520,22 +649,20 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
           const cacheKey = `company_onboarded_users_${compIdStr}`;
           const currentCached = await AsyncStorage.getItem(cacheKey);
           const parsed = currentCached ? JSON.parse(currentCached) : [];
-          const updated = [newMember, ...parsed.filter((p) => p.mobileNumber !== cleanMobile)];
+          const updated = [
+            newMember,
+            ...parsed.filter((p) => p.mobileNumber !== cleanMobile && p._id !== finalStaffId),
+          ];
           await AsyncStorage.setItem(cacheKey, JSON.stringify(updated));
         }
-      } catch (e) { }
+      } catch (e) {}
 
-      // 3. Attempt API employee linkage in background if possible
-      try {
-        const token = await AsyncStorage.getItem('userToken');
-        if (compIdStr && token) {
-          await addEmployeeToCompany(compIdStr, newStaffId, token);
-        }
-      } catch (e) { }
-
-      Alert.alert('Staff Onboarded', `${cleanName} is now ready and assigned to this task.`);
+      Alert.alert(
+        'Staff Onboarded Successfully',
+        `${cleanName} is now onboarded in company staff directory!\n\nWorker Login Credentials:\n• Mobile: ${cleanMobile}\n• Default Password: ${cleanMobile}`
+      );
     } catch (err) {
-      Alert.alert('Notice', 'Staff member added.');
+      Alert.alert('Notice', err.message || 'Could not complete onboarding.');
     } finally {
       setQuickOnboardLoading(false);
     }
@@ -589,7 +716,7 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
         } else if (selectedStaff?.name || assignedText) {
           const staffLabel = selectedStaff?.name || assignedText;
           const staffMob = selectedStaff?.mobileNumber ? ` (${selectedStaff.mobileNumber})` : '';
-          payload.assignedToName = `${staffLabel}${staffMob}`;
+          // Note: never send payload.assignedToName as backend schema disallows it
           const assignNote = `[Assigned to: ${staffLabel}${staffMob}]`;
           payload.description = payload.description ? `${payload.description}\n${assignNote}` : assignNote;
         }
@@ -1489,7 +1616,7 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
                       staffTab === 'ONBOARD' && styles.staffTabBtnTextActive,
                     ]}
                   >
-                    Onboard
+                    Assign Staff
                   </Text>
                 </TouchableOpacity>
 
@@ -1502,6 +1629,8 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
                     setStaffTab('UNASSIGNED');
                     setSelectedStaff(null);
                     setNewTaskAssignedTo('');
+                    setQuickStaffMobile('');
+                    setQuickStaffName('');
                   }}
                   activeOpacity={0.7}
                 >
@@ -1518,10 +1647,11 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
 
               {staffTab === 'ONBOARD' && (
                 <View style={styles.staffSelectionBox}>
+                  {/* Quick Select from existing directory chips */}
                   {onboardedStaffList && onboardedStaffList.length > 0 ? (
-                    <View>
+                    <View style={{ marginBottom: 10 }}>
                       <Text style={styles.staffSelectHint}>
-                        Select onboarded team member:
+                        Select from existing team or enter mobile below:
                       </Text>
                       <ScrollView
                         horizontal
@@ -1529,7 +1659,11 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
                         contentContainerStyle={styles.staffChipsScroll}
                       >
                         {onboardedStaffList.map((st) => {
-                          const isPicked = selectedStaff?._id === st._id;
+                          const isPicked =
+                            (selectedStaff?._id && selectedStaff._id === st._id) ||
+                            (matchedStaffFromMobile &&
+                              (matchedStaffFromMobile._id === st._id ||
+                                matchedStaffFromMobile.name === st.name));
                           return (
                             <TouchableOpacity
                               key={st._id || st.name}
@@ -1537,10 +1671,7 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
                                 styles.staffChip,
                                 isPicked && styles.staffChipActive,
                               ]}
-                              onPress={() => {
-                                setSelectedStaff(isPicked ? null : st);
-                                setNewTaskAssignedTo(isPicked ? '' : (st._id || ''));
-                              }}
+                              onPress={() => handleSelectStaffChip(st)}
                               activeOpacity={0.7}
                             >
                               <View
@@ -1568,7 +1699,8 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
                                   {st.name}
                                 </Text>
                                 <Text style={styles.staffChipRole}>
-                                  {st.roles?.[0] || 'Staff'} {st.mobileNumber ? `• ${st.mobileNumber}` : ''}
+                                  {st.designation || st.roles?.[0] || 'Staff'}{' '}
+                                  {st.mobileNumber ? `• ${st.mobileNumber}` : ''}
                                 </Text>
                               </View>
                               {isPicked && <Check size={14} color="#2327D8" />}
@@ -1577,55 +1709,123 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
                         })}
                       </ScrollView>
                     </View>
-                  ) : (
-                    <View style={styles.emptyStaffNotice}>
-                      <Text style={styles.emptyStaffNoticeText}>
-                        No staff onboarded yet for this company.
-                      </Text>
-                    </View>
-                  )}
+                  ) : null}
 
-                  {/* Quick Onboard Inline Form or Action Row */}
-                  {showQuickOnboard ? (
-                    <View style={styles.quickOnboardCard}>
-                      <View style={styles.quickOnboardHeader}>
-                        <UserPlus size={15} color="#2327D8" />
-                        <Text style={styles.quickOnboardTitle}>Quick Onboard Staff</Text>
-                      </View>
+                  {/* Direct Mobile Number Input (No "Onboard Staff" button click needed) */}
+                  <View style={styles.directOnboardContainer}>
+                    <Text style={styles.fieldLabelDirect}>
+                      Staff Mobile Number *
+                    </Text>
+                    <View style={styles.phoneInputRowDirect}>
+                      <Text style={styles.phonePrefixText}>+91</Text>
                       <TextInput
-                        style={[styles.modalInput, styles.quickOnboardInput]}
-                        placeholder="Staff Full Name *"
-                        placeholderTextColor="#94A3B8"
-                        value={quickStaffName}
-                        onChangeText={setQuickStaffName}
-                      />
-                      <TextInput
-                        style={[styles.modalInput, styles.quickOnboardInput]}
-                        placeholder="10-digit Mobile Number *"
+                        style={styles.phoneInputDirect}
+                        placeholder="10-digit mobile number"
                         placeholderTextColor="#94A3B8"
                         keyboardType="phone-pad"
                         maxLength={10}
                         value={quickStaffMobile}
-                        onChangeText={(txt) => setQuickStaffMobile(txt.replace(/\D/g, ''))}
+                        onChangeText={handleStaffMobileChange}
                       />
-                      <TextInput
-                        style={[styles.modalInput, styles.quickOnboardInput]}
-                        placeholder="Role / Designation (e.g. Production Staff)"
-                        placeholderTextColor="#94A3B8"
-                        value={quickStaffRole}
-                        onChangeText={setQuickStaffRole}
-                      />
-                      <View style={styles.quickOnboardBtnRow}>
-                        <TouchableOpacity
-                          style={styles.quickOnboardCancelBtn}
-                          onPress={() => setShowQuickOnboard(false)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.quickOnboardCancelText}>Cancel</Text>
-                        </TouchableOpacity>
+                      {cleanMobileDigits.length === 10 &&
+                        (matchedStaffFromMobile ? (
+                          <CheckCircle2
+                            size={18}
+                            color="#16A34A"
+                            style={{ marginRight: 8 }}
+                          />
+                        ) : (
+                          <AlertCircle
+                            size={18}
+                            color="#D97706"
+                            style={{ marginRight: 8 }}
+                          />
+                        ))}
+                    </View>
+
+                    {/* CASE A: Number is ALREADY ONBOARDED -> Auto-select, show details, no need to fill again */}
+                    {matchedStaffFromMobile ? (
+                      <View style={styles.staffAlreadyOnboardedCard}>
+                        <View style={styles.staffAlreadyOnboardedTop}>
+                          <View style={styles.staffSuccessIconWrap}>
+                            <CheckCircle2 size={16} color="#15803D" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.staffAlreadyOnboardedTitle}>
+                              Staff Already Onboarded & Selected
+                            </Text>
+                            <Text style={styles.staffAlreadyOnboardedName}>
+                              {matchedStaffFromMobile.name}
+                            </Text>
+                            <Text style={styles.staffAlreadyOnboardedMeta}>
+                              {matchedStaffFromMobile.designation ||
+                                matchedStaffFromMobile.roles?.[0] ||
+                                'Staff'}{' '}
+                              • +91{' '}
+                              {matchedStaffFromMobile.mobileNumber ||
+                                matchedStaffFromMobile.phone}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.staffClearBtn}
+                            onPress={() => {
+                              setSelectedStaff(null);
+                              setNewTaskAssignedTo('');
+                              setQuickStaffMobile('');
+                              setQuickStaffName('');
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.staffClearBtnText}>Change</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <Text style={styles.staffNoNeedHint}>
+                          ✓ Already registered in company directory. No need to fill
+                          name or details again.
+                        </Text>
+                      </View>
+                    ) : cleanMobileDigits.length === 10 ? (
+                      /* CASE B: Number is NOT ONBOARDED -> Directly show Name and Role inputs */
+                      <View style={styles.staffNotOnboardedCard}>
+                        <View style={styles.staffNotOnboardedHeader}>
+                          <UserPlus size={15} color="#2327D8" />
+                          <Text style={styles.staffNotOnboardedTitle}>
+                            New Staff • Quick Onboard
+                          </Text>
+                        </View>
+                        <Text style={styles.staffNotOnboardedSub}>
+                          This number is not yet in directory. Enter name to onboard & assign:
+                        </Text>
+
+                        <TextInput
+                          style={[
+                            styles.modalInput,
+                            styles.quickOnboardInputDirect,
+                          ]}
+                          placeholder="Staff Full Name *"
+                          placeholderTextColor="#94A3B8"
+                          value={quickStaffName}
+                          onChangeText={setQuickStaffName}
+                          autoFocus={true}
+                        />
+
+                        <TextInput
+                          style={[
+                            styles.modalInput,
+                            styles.quickOnboardInputDirect,
+                            { marginTop: 6 },
+                          ]}
+                          placeholder="Role / Designation (e.g. Site Supervisor)"
+                          placeholderTextColor="#94A3B8"
+                          value={quickStaffRole}
+                          onChangeText={setQuickStaffRole}
+                        />
 
                         <TouchableOpacity
-                          style={[styles.quickOnboardSaveBtn, quickOnboardLoading && styles.disabledBtn]}
+                          style={[
+                            styles.quickOnboardSaveBtnDirect,
+                            quickOnboardLoading && styles.disabledBtn,
+                          ]}
                           onPress={handleQuickOnboardStaff}
                           disabled={quickOnboardLoading}
                           activeOpacity={0.8}
@@ -1633,54 +1833,28 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
                           {quickOnboardLoading ? (
                             <ActivityIndicator size="small" color="#FFFFFF" />
                           ) : (
-                            <Text style={styles.quickOnboardSaveText}>Save & Assign</Text>
+                            <View style={styles.btnContentRow}>
+                              <UserPlus
+                                size={14}
+                                color="#FFFFFF"
+                                style={{ marginRight: 6 }}
+                              />
+                              <Text style={styles.quickOnboardSaveTextDirect}>
+                                Onboard & Assign Staff
+                              </Text>
+                            </View>
                           )}
                         </TouchableOpacity>
                       </View>
-                    </View>
-                  ) : (
-                    <View style={styles.staffActionContainer}>
-                      <View style={styles.staffManualRow}>
-                        <TextInput
-                          style={[styles.modalInput, styles.staffManualInput]}
-                          placeholder={selectedStaff ? selectedStaff.name : 'Search or type staff name'}
-                          placeholderTextColor="#94A3B8"
-                          value={selectedStaff ? selectedStaff.name : newTaskAssignedTo}
-                          onChangeText={(txt) => {
-                            setSelectedStaff(null);
-                            setNewTaskAssignedTo(txt);
-                          }}
-                        />
-                        <TouchableOpacity
-                          style={styles.quickOnboardOpenBtn}
-                          onPress={() => setShowQuickOnboard(true)}
-                          activeOpacity={0.8}
-                        >
-                          <UserPlus size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.quickOnboardOpenBtnText}>+ Onboard</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {onNavigate && (
-                        <TouchableOpacity
-                          style={styles.fullOnboardLink}
-                          onPress={() => {
-                            setTaskModalVisible(false);
-                            const compId =
-                              project?.companyId?._id ||
-                              project?.companyId?.id ||
-                              project?.companyId;
-                            onNavigate('OnboardedUsers', { companyId: compId });
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.fullOnboardLinkText}>
-                            Manage / View Full Onboarded Team →
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  )}
+                    ) : (
+                      /* CASE C: Less than 10 digits helper */
+                      <Text style={styles.staffNumberHelpText}>
+                        {cleanMobileDigits.length === 0
+                          ? 'Enter 10-digit mobile number to verify directory or onboard new staff.'
+                          : `Enter remaining ${10 - cleanMobileDigits.length} digits...`}
+                      </Text>
+                    )}
+                  </View>
                 </View>
               )}
 
@@ -3107,6 +3281,160 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  directOnboardContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 4,
+  },
+  fieldLabelDirect: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+  phoneInputRowDirect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    marginBottom: 4,
+  },
+  phonePrefixText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+    marginRight: 6,
+  },
+  phoneInputDirect: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0F172A',
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+  },
+  staffNumberHelpText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  staffAlreadyOnboardedCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    padding: 10,
+    marginTop: 8,
+  },
+  staffAlreadyOnboardedTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  staffSuccessIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  staffAlreadyOnboardedTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#166534',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  staffAlreadyOnboardedName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  staffAlreadyOnboardedMeta: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#475569',
+    marginTop: 1,
+  },
+  staffNoNeedHint: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#15803D',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#DCFCE7',
+  },
+  staffClearBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#DCFCE7',
+  },
+  staffClearBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  staffNotOnboardedCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
+    marginTop: 8,
+  },
+  staffNotOnboardedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  staffNotOnboardedTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2327D8',
+  },
+  staffNotOnboardedSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  quickOnboardInputDirect: {
+    backgroundColor: '#FFFFFF',
+    fontSize: 13,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  quickOnboardSaveBtnDirect: {
+    backgroundColor: '#2327D8',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  quickOnboardSaveTextDirect: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  btnContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dueDateHeaderRow: {
     flexDirection: 'row',

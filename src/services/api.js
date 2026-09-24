@@ -47,6 +47,9 @@ const fetchWithTimeout = async (url, options, timeoutMs = null, maxRetries = 1) 
         continue;
       }
 
+
+
+
       if (isTimeout) {
         throw new Error('Server took too long to respond. Server may be waking up — please tap again.');
       }
@@ -55,24 +58,41 @@ const fetchWithTimeout = async (url, options, timeoutMs = null, maxRetries = 1) 
   }
 };
 
+
+
+
+
+/**
+ * Robust token retrieval helper
+ */
+const getToken = async (token = null) => {
+  let raw = token;
+  if (!raw) {
+    try {
+      raw = (await AsyncStorage.getItem('userToken')) ||
+        (await AsyncStorage.getItem('token')) ||
+        (await AsyncStorage.getItem('authToken')) ||
+        (await AsyncStorage.getItem('jwtToken'));
+    } catch (e) {
+      console.warn('Failed to retrieve active token:', e);
+    }
+  }
+  if (!raw) return null;
+  const str = String(raw).trim();
+  return str.startsWith('Bearer ') ? str.slice(7).trim() : str;
+};
+
 /**
  * Standard POST request helper
  */
-const postRequest = async (apiConfig, body, token = null) => {
+const postRequest = async (apiConfig, body, token = null, customHeaders = null) => {
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
+    ...(customHeaders || {}),
   };
 
-  let activeToken = token;
-  if (!activeToken) {
-    try {
-      activeToken = await AsyncStorage.getItem('userToken');
-    } catch (e) {
-      console.warn('Failed to retrieve userToken:', e);
-    }
-  }
-
+  const activeToken = await getToken(token);
   if (activeToken) {
     headers.Authorization = `Bearer ${activeToken}`;
   }
@@ -88,21 +108,14 @@ const postRequest = async (apiConfig, body, token = null) => {
 /**
  * Standard GET request helper
  */
-const getRequest = async (apiConfig, token = null, timeoutMs = null) => {
+const getRequest = async (apiConfig, token = null, timeoutMs = null, customHeaders = null) => {
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
+    ...(customHeaders || {}),
   };
 
-  let activeToken = token;
-  if (!activeToken) {
-    try {
-      activeToken = await AsyncStorage.getItem('userToken');
-    } catch (e) {
-      console.warn('Failed to retrieve userToken:', e);
-    }
-  }
-
+  const activeToken = await getToken(token);
   if (activeToken) {
     headers.Authorization = `Bearer ${activeToken}`;
   }
@@ -117,22 +130,14 @@ const getRequest = async (apiConfig, token = null, timeoutMs = null) => {
 /**
  * Standard PATCH request helper
  */
-const patchRequest = async (apiConfig, body, token = null) => {
+const patchRequest = async (apiConfig, body, token = null, customHeaders = null) => {
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
+    ...(customHeaders || {}),
   };
 
-
-  let activeToken = token;
-  if (!activeToken) {
-    try {
-      activeToken = await AsyncStorage.getItem('userToken');
-    } catch (e) {
-      console.warn('Failed to retrieve userToken:', e);
-    }
-  }
-
+  const activeToken = await getToken(token);
   if (activeToken) {
     headers.Authorization = `Bearer ${activeToken}`;
   }
@@ -148,21 +153,14 @@ const patchRequest = async (apiConfig, body, token = null) => {
 /**
  * Standard PUT request helper
  */
-const putRequest = async (apiConfig, body, token = null) => {
+const putRequest = async (apiConfig, body, token = null, customHeaders = null) => {
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
+    ...(customHeaders || {}),
   };
 
-  let activeToken = token;
-  if (!activeToken) {
-    try {
-      activeToken = await AsyncStorage.getItem('userToken');
-    } catch (e) {
-      console.warn('Failed to retrieve userToken:', e);
-    }
-  }
-
+  const activeToken = await getToken(token);
   if (activeToken) {
     headers.Authorization = `Bearer ${activeToken}`;
   }
@@ -178,32 +176,26 @@ const putRequest = async (apiConfig, body, token = null) => {
 /**
  * Standard DELETE request helper
  */
-const deleteRequest = async (apiConfig, bodyOrToken = null, token = null) => {
+const deleteRequest = async (apiConfig, bodyOrToken = null, token = null, customHeaders = null) => {
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
+    ...(customHeaders || {}),
   };
 
   let body = null;
-  let activeToken = null;
+  let rawToken = null;
 
   if (typeof bodyOrToken === 'string') {
-    activeToken = bodyOrToken;
+    rawToken = bodyOrToken;
   } else if (bodyOrToken && typeof bodyOrToken === 'object') {
     body = bodyOrToken;
-    activeToken = token;
+    rawToken = token;
   } else if (token) {
-    activeToken = token;
+    rawToken = token;
   }
 
-  if (!activeToken) {
-    try {
-      activeToken = await AsyncStorage.getItem('userToken');
-    } catch (e) {
-      console.warn('Failed to retrieve userToken:', e);
-    }
-  }
-
+  const activeToken = await getToken(rawToken);
   if (activeToken) {
     headers.Authorization = `Bearer ${activeToken}`;
   }
@@ -278,7 +270,7 @@ export const verifyOtp = async (mobileNumber, otp) => {
 
 export const staffLoginUser = async (mobileNumber, password) => {
   const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').slice(-10);
-  const cleanPass = String(password || '').trim();
+  const cleanPass = String(password || '').trim() || cleanMobile;
 
   try {
     return await postRequest(SummaryApi.staffLogin, {
@@ -297,6 +289,132 @@ export const staffLoginUser = async (mobileNumber, password) => {
       console.error('Error in staffLoginUser:', error.message || fallbackError.message);
       throw error;
     }
+  }
+};
+
+export const getStaffProfile = async (token = null) => {
+  try {
+    return await getRequest(SummaryApi.getStaffProfile, token);
+  } catch (error) {
+    console.warn('Notice fetching staff profile:', error.message || error);
+    return { success: false, message: error.message };
+  }
+};
+
+export const changeStaffPassword = async (currentPassword, newPassword, token = null) => {
+  try {
+    return await putRequest(SummaryApi.changeStaffPassword, { currentPassword, newPassword }, token);
+  } catch (error) {
+    console.error('Error changing staff password:', error.message || error);
+    throw error;
+  }
+};
+
+export const getStaffDashboardStats = async (token = null) => {
+  try {
+    return await getRequest(SummaryApi.getStaffDashboardStats, token);
+  } catch (error) {
+    console.warn('Notice fetching staff dashboard stats:', error.message || error);
+    return { success: false, message: error.message };
+  }
+};
+
+export const onboardStaff = async (staffData, token = null, companyId = null) => {
+  try {
+    const rawPhone = (staffData.phone || staffData.mobileNumber || '').toString().trim();
+    // Standard 10-digit Indian phone number
+    const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
+
+    // Resolve companyId for header and body
+    let activeCompanyId = companyId || staffData.companyId;
+    if (!activeCompanyId) {
+      try {
+        activeCompanyId = (await AsyncStorage.getItem('selectedCompanyId')) ||
+          (await AsyncStorage.getItem('activeCompanyId'));
+      } catch (e) { }
+    }
+    if (!activeCompanyId) {
+      try {
+        const cachedCompsStr = await AsyncStorage.getItem('trader_companies_cache');
+        if (cachedCompsStr) {
+          const comps = JSON.parse(cachedCompsStr);
+          if (Array.isArray(comps) && comps.length > 0) {
+            activeCompanyId = comps[0]._id || comps[0].id;
+          }
+        }
+      } catch (e) { }
+    }
+    if (!activeCompanyId) {
+      try {
+        const profStr = await AsyncStorage.getItem('user_completed_profile');
+        if (profStr) {
+          const prof = JSON.parse(profStr);
+          if (Array.isArray(prof?.companies) && prof.companies.length > 0) {
+            activeCompanyId = prof.companies[0]._id || prof.companies[0].id;
+          } else if (prof?.companyId) {
+            activeCompanyId = prof.companyId._id || prof.companyId;
+          } else if (prof?.company?._id) {
+            activeCompanyId = prof.company._id;
+          }
+        }
+      } catch (e) { }
+    }
+    if (typeof activeCompanyId === 'object' && activeCompanyId !== null) {
+      activeCompanyId = activeCompanyId._id || activeCompanyId.id || null;
+    }
+
+    // Backend strictly enforces Joi schema on POST /api/staff/onboard:
+    // Allowed body keys: name, phone, email, department, designation, roles
+    // Unknown keys (mobileNumber, status, companyId) will cause HTTP 400 rejection!
+    // Company context is passed via 'x-company-id' header.
+    const cleanPayload = {
+      name: (staffData.name || '').trim(),
+      phone: cleanPhone,
+      department: (staffData.department && staffData.department.trim()) ? staffData.department.trim() : 'Production',
+      designation: (staffData.designation && staffData.designation.trim()) ? staffData.designation.trim() : 'Staff',
+      roles: Array.isArray(staffData.roles) && staffData.roles.length > 0 ? staffData.roles : ['staff'],
+    };
+
+    if (staffData.email && staffData.email.trim() && staffData.email.includes('@')) {
+      cleanPayload.email = staffData.email.trim();
+    }
+
+    const customHeaders = {};
+    if (activeCompanyId) {
+      const compIdClean = String(activeCompanyId).trim();
+      if (/^[0-9a-fA-F]{24}$/.test(compIdClean)) {
+        customHeaders['x-company-id'] = compIdClean;
+      }
+    }
+
+    console.log('[API] POST /api/staff/onboard payload:', JSON.stringify(cleanPayload), 'headers:', customHeaders);
+    return await postRequest(SummaryApi.staffOnboard, cleanPayload, token, customHeaders);
+  } catch (error) {
+    console.error('Error onboarding staff:', error.message || error);
+    throw error;
+  }
+};
+
+export const getStaffList = async (params = {}, token = null, companyId = null) => {
+  try {
+    let activeCompanyId = companyId;
+    if (!activeCompanyId) {
+      try {
+        activeCompanyId = (await AsyncStorage.getItem('selectedCompanyId')) ||
+          (await AsyncStorage.getItem('activeCompanyId'));
+      } catch (e) { }
+    }
+    if (typeof activeCompanyId === 'object' && activeCompanyId !== null) {
+      activeCompanyId = activeCompanyId._id || activeCompanyId.id || null;
+    }
+    const customHeaders = {};
+    if (typeof activeCompanyId === 'string' && /^[0-9a-fA-F]{24}$/.test(activeCompanyId)) {
+      customHeaders['x-company-id'] = activeCompanyId;
+    }
+    return await getRequest(SummaryApi.getStaffList(params), token, null, customHeaders);
+  } catch (error) {
+    console.error('Error fetching staff list:', error.message || error);
+    throw error;
   }
 };
 
@@ -436,16 +554,29 @@ export const reorderProjectMilestones = async (id, stageId, milestoneOrders, tok
 
 export const addProjectTask = async (id, stageId, milestoneId, taskData, token = null) => {
   try {
-    return await postRequest(SummaryApi.addProjectTask(id, stageId, milestoneId), taskData, token);
+    const cleanPayload = { ...taskData };
+    if ('assignedToName' in cleanPayload) {
+      delete cleanPayload.assignedToName;
+    }
+    return await postRequest(SummaryApi.addProjectTask(id, stageId, milestoneId), cleanPayload, token);
   } catch (error) {
     console.error('Error adding project task:', error.message || error);
     throw error;
   }
 };
 
-export const updateProjectTaskStatus = async (id, taskId, status, token = null) => {
+export const updateProjectTaskStatus = async (id, taskId, statusOrPayload, token = null, delayReason = null) => {
   try {
-    return await patchRequest(SummaryApi.updateProjectTaskStatus(id, taskId), { status }, token);
+    let payload = {};
+    if (typeof statusOrPayload === 'object' && statusOrPayload !== null) {
+      payload = statusOrPayload;
+    } else {
+      payload = { status: statusOrPayload };
+      if (delayReason) {
+        payload.delayReason = delayReason;
+      }
+    }
+    return await patchRequest(SummaryApi.updateProjectTaskStatus(id, taskId), payload, token);
   } catch (error) {
     console.error('Error updating task status:', error.message || error);
     throw error;
@@ -457,6 +588,78 @@ export const getMyAssignedTasks = async (status = null, token = null) => {
     return await getRequest(SummaryApi.getMyAssignedTasks(status), token);
   } catch (error) {
     console.error('Error fetching assigned tasks:', error.message || error);
+    throw error;
+  }
+};
+
+export const allocateProjectMaterial = async (projectId, materialData, token = null) => {
+  try {
+    return await postRequest(SummaryApi.allocateProjectMaterial(projectId), materialData, token);
+  } catch (error) {
+    console.error('Error allocating material:', error.message || error);
+    throw error;
+  }
+};
+
+export const deleteProjectMaterial = async (projectId, materialId, token = null) => {
+  try {
+    return await deleteRequest(SummaryApi.deleteProjectMaterial(projectId, materialId), token);
+  } catch (error) {
+    console.error('Error deleting allocated material:', error.message || error);
+    throw error;
+  }
+};
+
+export const raiseMaterialDemand = async (projectId, demandData, token = null) => {
+  try {
+    return await postRequest(SummaryApi.raiseProjectDemand(projectId), demandData, token);
+  } catch (error) {
+    console.error('Error raising material demand:', error.message || error);
+    throw error;
+  }
+};
+
+export const getProjectDemands = async (projectId, token = null) => {
+  try {
+    return await getRequest(SummaryApi.getProjectDemands(projectId), token);
+  } catch (error) {
+    console.error('Error fetching project demands:', error.message || error);
+    throw error;
+  }
+};
+
+export const getAllMaterialDemands = async (params = {}, token = null) => {
+  try {
+    return await getRequest(SummaryApi.getAllDemands(params), token);
+  } catch (error) {
+    console.error('Error fetching all material demands:', error.message || error);
+    throw error;
+  }
+};
+
+export const fulfillMaterialDemand = async (projectId, demandId, fulfillData, token = null) => {
+  try {
+    return await patchRequest(SummaryApi.fulfillProjectDemand(projectId, demandId), fulfillData, token);
+  } catch (error) {
+    console.error('Error fulfilling material demand:', error.message || error);
+    throw error;
+  }
+};
+
+export const getProjectProgressAnalytics = async (projectId, token = null) => {
+  try {
+    return await getRequest(SummaryApi.getProjectProgressAnalytics(projectId), token);
+  } catch (error) {
+    console.error('Error fetching project progress analytics:', error.message || error);
+    throw error;
+  }
+};
+
+export const getProjectDelayReport = async (projectId, token = null) => {
+  try {
+    return await getRequest(SummaryApi.getProjectDelayReport(projectId), token);
+  } catch (error) {
+    console.error('Error fetching project delay report:', error.message || error);
     throw error;
   }
 };
@@ -476,8 +679,8 @@ export const getCompanies = async (page = 1, limit = 10) => {
   try {
     return await getRequest(SummaryApi.getCompanies(page, limit));
   } catch (error) {
-    console.error('Error fetching companies:', error.message || error);
-    throw error;
+    console.warn('Notice fetching companies (likely non-admin context):', error.message || error);
+    return { success: false, data: { companies: [] }, message: error.message };
   }
 };
 
@@ -578,10 +781,17 @@ export const createBrokerDraftDeal = async (draftData, token) => {
 
 export const getBrokerProductAccessRequests = async (sellerCompanyId, token) => {
   try {
-    return await getRequest(SummaryApi.getBrokerProductAccessRequests(sellerCompanyId), token);
+    const cleanId = typeof sellerCompanyId === 'object' && sellerCompanyId !== null
+      ? (sellerCompanyId._id || sellerCompanyId.id || '')
+      : String(sellerCompanyId || '').trim();
+    if (!cleanId || cleanId === 'undefined' || cleanId === 'null') {
+      return { success: false, data: [] };
+    }
+    const res = await getRequest(SummaryApi.getBrokerProductAccessRequests(cleanId), token);
+    return res || { success: false, data: [] };
   } catch (error) {
-    console.error('Error fetching broker product access requests:', error.message || error);
-    throw error;
+    console.warn('Notice fetching broker product access requests:', error.message || error);
+    return { success: false, data: [] };
   }
 };
 
@@ -661,7 +871,29 @@ export const getDealDetails = async (id, token) => {
   try {
     return await getRequest(SummaryApi.getDealDetails(id), token);
   } catch (error) {
-    console.error('Error fetching deal details:', error.message || error);
+    const errMsg = String(error?.message || error || '').toLowerCase();
+    if (errMsg.includes('404') || errMsg.includes('not found') || errMsg.includes('deleted') || errMsg.includes('does not exist')) {
+      console.warn(`[getDealDetails] Deal ${id} is not found or deleted on server.`);
+      if (id) {
+        const idStr = String(id).trim();
+        AsyncStorage.removeItem(`deal_cache_${idStr}`).catch(() => {});
+        AsyncStorage.getItem('deleted_deal_ids').then(delStr => {
+          const delList = delStr ? JSON.parse(delStr) : [];
+          if (!delList.includes(idStr)) {
+            AsyncStorage.setItem('deleted_deal_ids', JSON.stringify([...delList, idStr])).catch(() => {});
+          }
+        }).catch(() => {});
+        AsyncStorage.getItem('broker_deals_storage').then(storedStr => {
+          if (storedStr) {
+            const stored = JSON.parse(storedStr);
+            const filtered = stored.filter(d => String(d._id || d.id || d.dealNumber || '') !== idStr);
+            AsyncStorage.setItem('broker_deals_storage', JSON.stringify(filtered)).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    } else {
+      console.warn('Notice fetching deal details:', error?.message || error);
+    }
     throw error;
   }
 };
@@ -758,6 +990,24 @@ export const getRecreatedDeals = async (token, page = 1, limit = 10, companyId =
 
 export const deleteDeal = async (id, token) => {
   try {
+    if (id) {
+      const idStr = String(id).trim();
+      AsyncStorage.removeItem(`deal_cache_${idStr}`).catch(() => {});
+      AsyncStorage.getItem('deleted_deal_ids').then(delStr => {
+        const delList = delStr ? JSON.parse(delStr) : [];
+        if (!delList.includes(idStr)) {
+          AsyncStorage.setItem('deleted_deal_ids', JSON.stringify([...delList, idStr])).catch(() => {});
+        }
+      }).catch(() => {});
+      AsyncStorage.getItem('broker_deals_storage').then(storedStr => {
+        if (storedStr) {
+          const stored = JSON.parse(storedStr);
+          const filtered = stored.filter(d => String(d._id || d.id || d.dealNumber || '') !== idStr);
+          AsyncStorage.setItem('broker_deals_storage', JSON.stringify(filtered)).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
     const config = SummaryApi.deleteDeal(id);
     const headers = {
       'Accept': 'application/json',
@@ -776,7 +1026,7 @@ export const deleteDeal = async (id, token) => {
     });
     return await handleResponse(response);
   } catch (error) {
-    console.error('Error deleting deal:', error.message || error);
+    console.warn('Notice deleting deal:', error.message || error);
     throw error;
   }
 };
@@ -962,10 +1212,113 @@ export const deleteProduct = async (id, companyId, token) => {
 
 export const getUnits = async (status, token) => {
   try {
-    return await getRequest(SummaryApi.getUnits(status), token);
+    const res = await getRequest(SummaryApi.getUnits(status), token);
+    const backendData = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+
+    // Merge locally saved custom units
+    try {
+      const rawCustom = await AsyncStorage.getItem('user_custom_units');
+      if (rawCustom) {
+        const parsed = JSON.parse(rawCustom);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const existingIds = new Set(backendData.map((u) => String(u._id || u.id)));
+          const existingNames = new Set(backendData.map((u) => String(u.name || '').toLowerCase()));
+          parsed.forEach((c) => {
+            if (!existingIds.has(String(c._id)) && !existingNames.has(String(c.name || '').toLowerCase())) {
+              backendData.push(c);
+            }
+          });
+        }
+      }
+    } catch (e) { }
+
+    if (res && res.data) {
+      res.data = backendData;
+      return res;
+    }
+    return { success: true, data: backendData };
   } catch (error) {
     console.error('Error fetching units:', error.message || error);
+    try {
+      const rawCustom = await AsyncStorage.getItem('user_custom_units');
+      if (rawCustom) {
+        const parsed = JSON.parse(rawCustom);
+        return { success: true, data: Array.isArray(parsed) ? parsed : [] };
+      }
+    } catch (e) { }
     throw error;
+  }
+};
+
+export const createUnit = async (unitData, token) => {
+  try {
+    return await postRequest(SummaryApi.createUnit, unitData, token);
+  } catch (error) {
+    console.warn('Backend createUnit error:', error.message || error);
+    return null;
+  }
+};
+
+export const getCustomUnits = async () => {
+  try {
+    const raw = await AsyncStorage.getItem('user_custom_units');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveCustomUnit = async (unitData, token = null) => {
+  try {
+    let serverData = null;
+    if (token) {
+      try {
+        const res = await createUnit(
+          {
+            name: unitData.name?.trim(),
+            shortName: unitData.shortName?.trim(),
+            type: unitData.type || 'custom',
+            isCustom: true,
+          },
+          token
+        );
+        if (res && (res.success || res.data)) {
+          serverData = res.data;
+        }
+      } catch (e) { }
+    }
+
+    const cleanId =
+      serverData?._id ||
+      `6a${Date.now().toString(16).padStart(12, '0')}${Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(10, '0')}`.slice(0, 24);
+
+    const newUnit = {
+      _id: cleanId,
+      id: cleanId,
+      name: unitData.name?.trim(),
+      shortName: unitData.shortName?.trim() || unitData.name?.trim(),
+      type: unitData.type || 'custom',
+      isCustom: true,
+      status: 'active',
+      image: unitData.image || null,
+      createdAt: new Date().toISOString(),
+      ...serverData,
+    };
+
+    const existing = await getCustomUnits();
+    const updated = [
+      newUnit,
+      ...existing.filter(
+        (u) => u._id !== newUnit._id && u.name.toLowerCase() !== newUnit.name.toLowerCase()
+      ),
+    ];
+    await AsyncStorage.setItem('user_custom_units', JSON.stringify(updated));
+    return newUnit;
+  } catch (err) {
+    console.warn('saveCustomUnit error:', err);
+    throw err;
   }
 };
 
@@ -1561,7 +1914,7 @@ export const clearAllNotifications = async (token = null, companyId = null) => {
  */
 export const getActiveBanners = async (industryId = null, token = null) => {
   try {
-    return await getRequest(SummaryApi.getActiveBanners(industryId), token, 5000);
+    return await getRequest(SummaryApi.getActiveBanners(industryId), token);
   } catch (error) {
     console.warn('Error fetching active banners:', error?.message || error);
     return { success: false, data: [] };

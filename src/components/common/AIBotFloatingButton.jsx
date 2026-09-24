@@ -8,9 +8,9 @@ import {
   PanResponder,
   Dimensions,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BTN_SIZE = 54;
 
 const AIBotFloatingButton = ({
@@ -18,8 +18,9 @@ const AIBotFloatingButton = ({
   bottom = 85,
   right = 16,
 }) => {
-  const initialX = SCREEN_WIDTH - BTN_SIZE - right;
-  const initialY = SCREEN_HEIGHT - BTN_SIZE - bottom;
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const initialX = screenWidth - BTN_SIZE - right;
+  const initialY = screenHeight - BTN_SIZE - bottom;
 
   const pan = useRef(new Animated.ValueXY({ x: initialX, y: initialY })).current;
   const scale = useRef(new Animated.Value(1)).current;
@@ -110,15 +111,15 @@ const AIBotFloatingButton = ({
 
         // Draggable boundary clamping & edge snapping
         const minX = 14;
-        const maxX = SCREEN_WIDTH - BTN_SIZE - 14;
+        const maxX = screenWidth - BTN_SIZE - 14;
         const minY = Platform.OS === 'ios' ? 70 : 45;
-        const maxY = SCREEN_HEIGHT - BTN_SIZE - (Platform.OS === 'ios' ? 95 : 75);
+        const maxY = screenHeight - BTN_SIZE - (Platform.OS === 'ios' ? 95 : 75);
 
         const currentY = currentPos.current.y;
         const clampedY = Math.min(Math.max(currentY, minY), maxY);
 
         // Snap to nearest edge (left or right) for premium chat-head feel
-        const snapX = currentPos.current.x < SCREEN_WIDTH / 2 ? minX : maxX;
+        const snapX = currentPos.current.x < screenWidth / 2 ? minX : maxX;
 
         Animated.spring(pan, {
           toValue: { x: snapX, y: clampedY },

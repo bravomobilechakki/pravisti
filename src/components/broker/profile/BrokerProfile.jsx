@@ -14,6 +14,7 @@ import {
   Alert,
   StatusBar,
   Image,
+  Linking,
 } from 'react-native';
 import {
   ChevronLeft,
@@ -28,12 +29,10 @@ import {
   MapPin,
   CreditCard,
   ShieldCheck,
-  Mic,
-  FileText,
   Lock,
   Bot,
-  Sparkles,
 } from 'lucide-react-native';
+import Svg, { Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BrokerSuccessReceipt from '../../common/BrokerSuccessReceipt';
 import { getUserProfile, getCompanies, logoutUser, resolveImageUrl } from '../../../services/api';
@@ -73,7 +72,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
           setEditGstin(parsed.gstin || parsed.apmcLicense || '');
           setEditAddress(parsed.address || parsed.mandiLocation || '');
           setEditBank(parsed.bankName || '');
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // 2. Cached Companies Count
@@ -84,7 +83,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
           if (Array.isArray(cachedComps)) {
             setCompaniesCount(cachedComps.length);
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // 3. API Profile Fetch
@@ -111,7 +110,7 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
           setCompaniesCount(freshComps.length);
           await AsyncStorage.setItem('broker_companies_cache', JSON.stringify(freshComps));
         }
-      } catch (e) {}
+      } catch (e) { }
     } catch (err) {
       console.warn('Failed to load broker profile:', err);
     }
@@ -198,6 +197,38 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
 
   const userAvatarUri = profileData?.avatar || profileData?.profileImage || profileData?.photo || routeData?.user?.avatar || routeData?.user?.profileImage || routeData?.user?.photo;
 
+  // Profile Completion Calculation
+  const profileFields = [
+    { key: 'name', label: 'Full Name', filled: !!(displayName && displayName !== 'Broker Partner') },
+    { key: 'phone', label: 'Mobile Number', filled: !!(displayMobile && displayMobile !== 'Not Available') },
+    { key: 'company', label: 'Company Name', filled: !!(displayCompany && displayCompany !== 'Brokerage Firm') },
+    { key: 'email', label: 'Email Address', filled: !!(displayEmail && displayEmail.trim()) },
+    { key: 'gstin', label: 'APMC / GSTIN', filled: !!(displayGstin && displayGstin.trim()) },
+    { key: 'address', label: 'Address / Location', filled: !!(displayAddress && displayAddress.trim()) },
+    { key: 'bank', label: 'Bank Name', filled: !!(displayBank && displayBank.trim()) },
+    { key: 'photo', label: 'Profile Photo', filled: !!(userAvatarUri && String(userAvatarUri).trim()) },
+  ];
+
+  const completedFieldsCount = profileFields.filter(f => f.filled).length;
+  const completionPercentage = Math.round((completedFieldsCount / profileFields.length) * 100);
+  const remainingPercentage = 100 - completionPercentage;
+  const pendingFields = profileFields.filter(f => !f.filled).map(f => f.label);
+
+  // Live completion while editing in modal
+  const editModalFields = [
+    { key: 'name', label: 'Full Name', filled: !!(editName && editName.trim()) },
+    { key: 'phone', label: 'Mobile Number', filled: !!(displayMobile && displayMobile !== 'Not Available') },
+    { key: 'company', label: 'Company Name', filled: !!(editCompany && editCompany.trim()) },
+    { key: 'email', label: 'Email Address', filled: !!(editEmail && editEmail.trim()) },
+    { key: 'gstin', label: 'APMC / GSTIN', filled: !!(editGstin && editGstin.trim()) },
+    { key: 'address', label: 'Address / Location', filled: !!(editAddress && editAddress.trim()) },
+    { key: 'bank', label: 'Bank Name', filled: !!(editBank && editBank.trim()) },
+    { key: 'photo', label: 'Profile Photo', filled: !!(userAvatarUri && String(userAvatarUri).trim()) },
+  ];
+  const modalCompletedCount = editModalFields.filter(f => f.filled).length;
+  const modalPercentage = Math.round((modalCompletedCount / editModalFields.length) * 100);
+  const modalRemainingPercentage = 100 - modalPercentage;
+
   const openEditModalWithState = () => {
     setEditName(displayName !== 'Broker Partner' ? displayName : '');
     setEditEmail(displayEmail);
@@ -223,12 +254,42 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
           <Text style={styles.settingTitleText}>Setting</Text>
         </TouchableOpacity>
 
-        <Text style={styles.brandTitleText}>PRAVISTI</Text>
+
       </View>
 
-      {/* ─── OVERLAPPING AVATAR ROW (Z-INDEX 99 ABOVE HEADER & WHITE CARD) ─── */}
+      {/* ─── OVERLAPPING AVATAR ROW WITH GREEN CIRCLE BORDER ─── */}
       <View style={styles.avatarWrapperRow}>
-        <View style={styles.avatarContainer}>
+        <TouchableOpacity
+          style={styles.avatarContainer}
+          activeOpacity={0.85}
+          onPress={openEditModalWithState}
+        >
+          {/* Circular Green Progress Border */}
+          <Svg width={116} height={116} style={styles.avatarSvgRing}>
+            {/* Background Track */}
+            <Circle
+              cx={58}
+              cy={58}
+              r={53}
+              stroke="#E2E8F0"
+              strokeWidth={4.5}
+              fill="transparent"
+            />
+            {/* Active Green Progress Circle */}
+            <Circle
+              cx={58}
+              cy={58}
+              r={53}
+              stroke="#10B981"
+              strokeWidth={4.5}
+              strokeDasharray="333.01"
+              strokeDashoffset={333.01 - (333.01 * completionPercentage) / 100}
+              strokeLinecap="round"
+              fill="transparent"
+              transform="rotate(-90 58 58)"
+            />
+          </Svg>
+
           <View style={[styles.avatarCircle, !userAvatarUri && { backgroundColor: THEME }]}>
             {userAvatarUri ? (
               <Image
@@ -242,10 +303,15 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
               </Text>
             )}
           </View>
-          <TouchableOpacity style={styles.cameraBadge} onPress={openEditModalWithState} activeOpacity={0.8}>
-            <Camera size={14} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
+          <View style={styles.cameraBadge}>
+            <Camera size={13} color="#FFFFFF" />
+          </View>
+
+          {/* Green Percentage Floating Badge */}
+          <View style={styles.avatarPercentBadge}>
+            <Text style={styles.avatarPercentText}>{completionPercentage}%</Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
       {/* ─── WHITE CURVED CONTAINER ─── */}
@@ -326,11 +392,15 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
             <TouchableOpacity
               style={styles.listItemRow}
               activeOpacity={0.7}
-              onPress={() => Alert.alert('Customer Care', 'Calling APMC Support: 18008989')}
+              onPress={() => {
+                Linking.openURL('mailto:info@pravisti.com').catch(() => {
+                  Alert.alert('Customer Care', 'Please write to us at info@pravisti.com');
+                });
+              }}
             >
               <Text style={styles.listItemTitle}>Customer Care</Text>
               <View style={styles.rightInfoRow}>
-                <Text style={styles.rightValueText}>18008989</Text>
+                <Text style={styles.rightValueText}>info@pravisti.com</Text>
                 <ChevronRight size={16} color="#CBD5E1" />
               </View>
             </TouchableOpacity>
@@ -438,7 +508,35 @@ const BrokerProfile = ({ onNavigate, routeData }) => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalBody}>
+            {/* Live Modal Progress Header */}
+            <View style={styles.modalProgressHeader}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E1B4B' }}>
+                  Live Profile Progress: {modalPercentage}%
+                </Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: modalRemainingPercentage === 0 ? '#16A34A' : '#4F46E5' }}>
+                  {modalRemainingPercentage === 0 ? '100% Done' : `${modalRemainingPercentage}% remaining`}
+                </Text>
+              </View>
+              <View style={{ height: 6, backgroundColor: '#E2E8F0', borderRadius: 3, overflow: 'hidden' }}>
+                <View
+                  style={{
+                    height: '100%',
+                    width: `${modalPercentage}%`,
+                    backgroundColor: modalPercentage === 100 ? '#16A34A' : THEME,
+                    borderRadius: 3,
+                  }}
+                />
+              </View>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={true}
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={true}
+            >
               <Text style={styles.fieldLabel}>Full Name *</Text>
               <View style={[styles.inputBox, focusedField === 'name' && styles.inputFocused]}>
                 <User size={16} color={THEME} style={{ marginRight: 8 }} />
@@ -575,12 +673,12 @@ const styles = StyleSheet.create({
   },
   topHeader: {
     backgroundColor: THEME,
-    height: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 90 : 130) : 120,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 32) : 14,
+    paddingTop: 8,
+    paddingBottom: 40,
   },
   backBtnRow: {
     flexDirection: 'row',
@@ -588,6 +686,7 @@ const styles = StyleSheet.create({
   },
   settingTitleText: {
     fontSize: 18,
+    marginBottom: 8,
     fontWeight: '800',
     color: '#FFFFFF',
     marginLeft: 6,
@@ -597,7 +696,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: 1.5,
-    marginTop: 4,
   },
   whiteCardContainer: {
     flex: 1,
@@ -622,47 +720,79 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   avatarContainer: {
+    width: 116,
+    height: 116,
+    justifyContent: 'center',
+    alignItems: 'center',
     position: 'relative',
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  avatarSvgRing: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    zIndex: 2,
   },
   avatarCircle: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
+    width: 98,
+    height: 98,
+    borderRadius: 49,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 6,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    borderWidth: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    borderWidth: 2.5,
     borderColor: '#FFFFFF',
   },
   userAvatarCustomImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 93,
+    height: 93,
+    borderRadius: 46.5,
   },
   avatarInitialText: {
-    fontSize: 38,
+    fontSize: 36,
     fontWeight: '900',
     color: '#FFFFFF',
   },
   cameraBadge: {
     position: 'absolute',
-    bottom: 2,
+    top: 2,
     right: 2,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: THEME,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
-    elevation: 4,
+    elevation: 5,
+    zIndex: 10,
+  },
+  avatarPercentBadge: {
+    position: 'absolute',
+    bottom: -3,
+    backgroundColor: '#10B981',
+    paddingHorizontal: 8,
+    paddingVertical: 1.5,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    zIndex: 10,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+  },
+  avatarPercentText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '800',
   },
   userNameText: {
     fontSize: 22,
@@ -759,7 +889,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4F6FB',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '85%',
+    maxHeight: '88%',
+    flexDirection: 'column',
     paddingBottom: Platform.OS === 'ios' ? 24 : 16,
   },
   modalHeaderBar: {
@@ -786,8 +917,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalBody: {
+    flexShrink: 1,
     paddingHorizontal: 20,
+  },
+  modalScrollContent: {
     paddingTop: 16,
+    paddingBottom: 28,
   },
   fieldLabel: {
     fontSize: 12,
@@ -847,6 +982,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  modalProgressHeader: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
 });
 

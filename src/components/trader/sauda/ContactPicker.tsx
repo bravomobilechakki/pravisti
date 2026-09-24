@@ -12,6 +12,8 @@ import {
   Platform,
   PermissionsAndroid,
   Linking,
+  Image,
+  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { filterContacts, getCompaniesByNumber } from '../../../services/api';
@@ -22,7 +24,6 @@ import {
   Building2,
   Users,
   Search,
-  Mail,
   ChevronRight,
   ChevronDown,
   UserPlus,
@@ -31,20 +32,38 @@ import {
   SlidersHorizontal,
   MoreVertical,
   Handshake,
+  MessageSquare,
+  ShieldCheck,
+  Clock,
+  AlertCircle,
 } from 'lucide-react-native';
+
+interface CompanyOwner {
+  userId?: string;
+  name?: string;
+  mobileNumber?: string;
+}
 
 interface CompanyInfo {
   companyId: string;
   companyName: string;
   companyType: string;
   logo: string | null;
+  contactPersonName?: string;
+  owner?: CompanyOwner;
 }
 
 interface Contact {
   id: string;
   name: string;
+  registeredName?: string;
+  localName?: string;
   mobile: string;
   isRegistered: boolean;
+  hasCompany?: boolean;
+  userId?: string;
+  profilePicture?: string | null;
+  whatsappInviteLink?: string;
   companies?: CompanyInfo[];
   company?: string;
   companyId?: string;
@@ -63,6 +82,48 @@ interface ContactPickerProps {
 const LOCAL_ADDRESS_BOOK = [
   { name: 'Raushan Kumar', phone: '+916202579799' },
   { name: 'Rahul Singh', phone: '+917061901464' },
+];
+
+const getFallbackContacts = (): Contact[] => [
+  {
+    id: '6a196e1d2c6d6d67d875a8a9',
+    name: 'Rahul Singh',
+    registeredName: 'Raushan',
+    localName: 'Rahul Singh',
+    mobile: '+917061901464',
+    isRegistered: true,
+    hasCompany: true,
+    userId: '6a196e1d2c6d6d67d875a8a9',
+    profilePicture: null,
+    companies: [
+      {
+        companyId: '6a19700c2c6d6d67d875a965',
+        companyName: 'Pravisti Agro Limiteds(updated)',
+        companyType: 'trader',
+        logo: null,
+        owner: {
+          userId: '6a196e1d2c6d6d67d875a8a9',
+          name: 'Raushan',
+          mobileNumber: '7061901464',
+        },
+      },
+    ],
+    company: 'Pravisti Agro Limiteds(updated)',
+    companyId: '6a19700c2c6d6d67d875a965',
+  },
+  {
+    id: '6a196e782c6d6d67d875a8b6',
+    name: 'Raushan Kumar',
+    registeredName: 'Raushan',
+    localName: 'Raushan Kumar',
+    mobile: '+916202579799',
+    isRegistered: true,
+    hasCompany: false,
+    userId: '6a196e782c6d6d67d875a8b6',
+    profilePicture: null,
+    companies: [],
+    whatsappInviteLink: 'https://wa.me/?text=Hi%20there%2C%20please%20register%20your%20company%20on%20Pravisti%20so%20we%20can%20do%20deals%20together!%20Download%20the%20app%3A%20https%3A%2F%2Fpravisti.com%2Fdownload',
+  },
 ];
 
 const getAvatarTheme = (name: string, index: number) => {
@@ -150,89 +211,157 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
     try {
       const token = await AsyncStorage.getItem('userToken');
 
-      let contactsToSend = LOCAL_ADDRESS_BOOK;
+      const localNameMap: Record<string, string> = {};
+      const localPhotoMap: Record<string, string> = {};
+      let contactsToSend: { name: string; phone: string }[] = [];
 
       try {
         const nativeContacts = await Contacts.getAll();
         if (nativeContacts && nativeContacts.length > 0) {
-          const parsed = nativeContacts
-            .filter(c => c.phoneNumbers && c.phoneNumbers.length > 0)
-            .map(c => {
-              const rawPhone = c.phoneNumbers[0].number || '';
-              let cleanPhone = rawPhone.replace(/[\s\-()]/g, '');
-              if (cleanPhone.length === 10) {
-                cleanPhone = '+91' + cleanPhone;
-              } else if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
-                cleanPhone = '+' + cleanPhone;
-              } else if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
-                cleanPhone = '+91' + cleanPhone.substring(1);
-              }
-              const fullName = [c.givenName, c.familyName].filter(Boolean).join(' ') || c.displayName || 'Unknown Contact';
-              return {
-                name: fullName,
-                phone: cleanPhone,
-              };
-            })
-            .filter(c => c.phone.startsWith('+91') && c.phone.length === 13);
+          const seenPhones = new Set<string>();
 
-          if (parsed.length > 0) {
-            contactsToSend = parsed;
-          }
+          nativeContacts.forEach(c => {
+            const fullName = [c.givenName, c.familyName].filter(Boolean).join(' ') || c.displayName || '';
+            (c.phoneNumbers || []).forEach(p => {
+              const raw = (p.number || '').replace(/[\s\-()]/g, '');
+              let clean = '';
+              if (raw.length === 10 && /^[6-9]\d{9}$/.test(raw)) {
+                clean = '+91' + raw;
+              } else if (raw.length === 12 && raw.startsWith('91')) {
+                clean = '+' + raw;
+              } else if (raw.startsWith('+91') && raw.length === 13) {
+                clean = raw;
+              } else if (raw.startsWith('0') && raw.length === 11) {
+                clean = '+91' + raw.substring(1);
+              }
+
+              if (clean && !seenPhones.has(clean)) {
+                seenPhones.add(clean);
+                const finalName = fullName || `Contact (${clean.slice(-4)})`;
+                localNameMap[clean] = finalName;
+                if (c.thumbnailPath) {
+                  localPhotoMap[clean] = c.thumbnailPath;
+                }
+                contactsToSend.push({
+                  name: finalName,
+                  phone: clean,
+                });
+              }
+            });
+          });
         }
       } catch (nativeErr) {
         console.warn('Native contacts fetch failed or permission blocked, using fallback:', nativeErr);
       }
 
+      if (contactsToSend.length === 0) {
+        contactsToSend = LOCAL_ADDRESS_BOOK;
+        LOCAL_ADDRESS_BOOK.forEach(c => {
+          localNameMap[c.phone] = c.name;
+        });
+      }
+
       if (!token) {
-        const fallback: Contact[] = LOCAL_ADDRESS_BOOK.map((c, i) => ({
-          id: String(i),
-          name: c.name,
-          mobile: c.phone,
-          isRegistered: i === 0,
-          companies: i === 0 ? [{ companyId: 'demo_1', companyName: 'Demo Traders Pvt Ltd', companyType: 'trader', logo: null }] : undefined,
-        }));
-        setContacts(fallback);
+        setContacts(getFallbackContacts());
         setIsLoading(false);
         return;
       }
 
       const response = await filterContacts(contactsToSend, token);
-      if (response && response.success && response.data) {
-        const mappedContacts: Contact[] = response.data.map((item: any, idx: number) => ({
-          id: item.contactId || item._id || item.id || `contact_${idx}`,
-          name: item.name || item.contactName || 'Unnamed Contact',
-          mobile: item.mobile || item.phone || item.mobileNumber || '',
-          isRegistered: !!item.isRegistered,
-          companies: item.companies?.map((co: any) => ({
-            companyId: co.companyId || co._id || co.id,
+      if (response && response.success && Array.isArray(response.data)) {
+        const registeredMap = new Map<string, any>();
+        response.data.forEach((item: any) => {
+          const ph = item.phone || item.mobile || item.mobileNumber || '';
+          if (ph) {
+            registeredMap.set(ph, item);
+          }
+        });
+
+        const mappedContacts: Contact[] = contactsToSend.map((sentItem, idx) => {
+          const phone = sentItem.phone;
+          const regItem = registeredMap.get(phone);
+
+          const isRegistered = Boolean(regItem?.isRegistered);
+          const hasCompany = Boolean(regItem?.hasCompany ?? (regItem?.companies && regItem.companies.length > 0));
+          const registeredName = regItem?.registeredName || '';
+          const localName = localNameMap[phone] || sentItem.name;
+          const displayName = localName || registeredName || 'Unnamed Contact';
+
+          const companies: CompanyInfo[] = (regItem?.companies || []).map((co: any, cIdx: number) => ({
+            companyId: co.companyId || co._id || co.id || `comp_${cIdx}`,
             companyName: co.companyName || co.name || 'Company',
-            companyType: co.companyType || co.type || 'Trader',
+            companyType: co.companyType || co.type || 'trader',
             logo: co.logo || null,
-          })) || [],
-          company: item.company || (item.companies && item.companies[0]?.companyName),
-          companyId: item.companyId || (item.companies && item.companies[0]?.companyId),
-        }));
+            owner: co.owner,
+            contactPersonName: co.contactPersonName || (co.owner ? co.owner.name : ''),
+          }));
+
+          const primaryCompany = companies.length > 0 ? companies[0] : undefined;
+
+          return {
+            id: regItem?.userId || `contact_${idx}`,
+            name: displayName,
+            registeredName: registeredName,
+            localName: localName,
+            mobile: phone,
+            isRegistered: isRegistered,
+            hasCompany: hasCompany,
+            userId: regItem?.userId,
+            profilePicture: regItem?.profilePicture || localPhotoMap[phone] || null,
+            whatsappInviteLink: regItem?.whatsappInviteLink || '',
+            companies: companies,
+            company: primaryCompany?.companyName,
+            companyId: primaryCompany?.companyId,
+          };
+        });
+
+        // Add any extra items from response not in contactsToSend
+        response.data.forEach((item: any, idx: number) => {
+          const ph = item.phone || item.mobile || '';
+          if (ph && !mappedContacts.some(c => c.mobile === ph)) {
+            const hasCompany = Boolean(item.hasCompany ?? (item.companies && item.companies.length > 0));
+            const companies: CompanyInfo[] = (item.companies || []).map((co: any, cIdx: number) => ({
+              companyId: co.companyId || co._id || co.id || `comp_resp_${cIdx}`,
+              companyName: co.companyName || co.name || 'Company',
+              companyType: co.companyType || co.type || 'trader',
+              logo: co.logo || null,
+              owner: co.owner,
+              contactPersonName: co.contactPersonName || (co.owner ? co.owner.name : ''),
+            }));
+
+            mappedContacts.push({
+              id: item.userId || `contact_extra_${idx}`,
+              name: item.registeredName || localNameMap[ph] || item.name || `Contact (${ph.slice(-4)})`,
+              registeredName: item.registeredName,
+              localName: localNameMap[ph],
+              mobile: ph,
+              isRegistered: Boolean(item.isRegistered),
+              hasCompany: hasCompany,
+              userId: item.userId,
+              profilePicture: item.profilePicture || null,
+              whatsappInviteLink: item.whatsappInviteLink || '',
+              companies: companies,
+              company: companies[0]?.companyName,
+              companyId: companies[0]?.companyId,
+            });
+          }
+        });
+
+        // Sort: Registered on Pravisti with companies first, then registered users, then unregistered
+        mappedContacts.sort((a, b) => {
+          const scoreA = a.isRegistered && a.hasCompany ? 2 : a.isRegistered ? 1 : 0;
+          const scoreB = b.isRegistered && b.hasCompany ? 2 : b.isRegistered ? 1 : 0;
+          if (scoreA !== scoreB) return scoreB - scoreA;
+          return a.name.localeCompare(b.name);
+        });
+
         setContacts(mappedContacts);
       } else {
-        const fallback: Contact[] = LOCAL_ADDRESS_BOOK.map((c, i) => ({
-          id: String(i),
-          name: c.name,
-          mobile: c.phone,
-          isRegistered: i === 0,
-          companies: i === 0 ? [{ companyId: 'demo_1', companyName: 'Demo Traders Pvt Ltd', companyType: 'trader', logo: null }] : undefined,
-        }));
-        setContacts(fallback);
+        setContacts(getFallbackContacts());
       }
     } catch (error) {
       console.warn('Sync contacts failed:', error);
-      const fallback: Contact[] = LOCAL_ADDRESS_BOOK.map((c, i) => ({
-        id: String(i),
-        name: c.name,
-        mobile: c.phone,
-        isRegistered: i === 0,
-        companies: i === 0 ? [{ companyId: 'demo_1', companyName: 'Demo Traders Pvt Ltd', companyType: 'trader', logo: null }] : undefined,
-      }));
-      setContacts(fallback);
+      setContacts(getFallbackContacts());
     } finally {
       setIsLoading(false);
     }
@@ -292,31 +421,76 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       try {
         const token = await AsyncStorage.getItem('userToken');
         const formattedMobile = '+91' + cleanDigits.slice(-10);
-        const res = await getCompaniesByNumber(formattedMobile, token);
 
-        if (res && res.success && res.data && res.data.length > 0) {
-          const companiesList: CompanyInfo[] = res.data.map((c: any) => ({
-            companyId: c.companyId || c._id || c.id,
-            companyName: c.companyName || c.name,
-            companyType: c.companyType || c.type || 'Trader',
-            logo: c.logo || null,
-          }));
+        let isRegistered = false;
+        let hasCompany = false;
+        let registeredName = '';
+        let whatsappInviteLink = '';
+        let companiesList: CompanyInfo[] = [];
 
-          setLookupContact({
-            id: `lookup_${Date.now()}`,
-            name: res.data[0].userName || res.data[0].contactPerson || `User (${formattedMobile.slice(-4)})`,
-            mobile: formattedMobile,
-            isRegistered: true,
-            companies: companiesList,
-          });
-        } else {
-          setLookupContact({
-            id: `lookup_${Date.now()}`,
-            name: `Contact (${formattedMobile.slice(-4)})`,
-            mobile: formattedMobile,
-            isRegistered: false,
-          });
+        // 1. Check user status & whatsapp invite link via filterContacts
+        try {
+          const filterRes = await filterContacts([{ phone: formattedMobile }], token);
+          if (filterRes && filterRes.success && Array.isArray(filterRes.data) && filterRes.data.length > 0) {
+            const fItem = filterRes.data[0];
+            isRegistered = Boolean(fItem.isRegistered);
+            hasCompany = Boolean(fItem.hasCompany ?? (fItem.companies && fItem.companies.length > 0));
+            registeredName = fItem.registeredName || '';
+            whatsappInviteLink = fItem.whatsappInviteLink || '';
+            if (fItem.companies && Array.isArray(fItem.companies)) {
+              companiesList = fItem.companies.map((c: any, cIdx: number) => ({
+                companyId: c.companyId || c._id || c.id || `comp_${cIdx}`,
+                companyName: c.companyName || c.name,
+                companyType: c.companyType || c.type || 'trader',
+                logo: c.logo || null,
+                owner: c.owner,
+                contactPersonName: c.contactPersonName || (c.owner ? c.owner.name : ''),
+              }));
+            }
+          }
+        } catch (fErr) {
+          console.warn('Live filterContacts lookup notice:', fErr);
         }
+
+        // 2. Discover companies via getCompaniesByNumber API
+        try {
+          const compRes = await getCompaniesByNumber(formattedMobile, token);
+          if (compRes && compRes.success && Array.isArray(compRes.data) && compRes.data.length > 0) {
+            hasCompany = true;
+            isRegistered = true;
+            compRes.data.forEach((c: any, cIdx: number) => {
+              const compId = c.companyId || c._id || c.id || `comp_${cIdx}`;
+              if (!companiesList.some(ex => ex.companyId === compId)) {
+                companiesList.push({
+                  companyId: compId,
+                  companyName: c.companyName || c.name || 'Company',
+                  companyType: c.companyType || c.type || 'trader',
+                  contactPersonName: c.contactPersonName,
+                  logo: c.logo || null,
+                });
+              }
+            });
+            if (!registeredName && compRes.data[0]?.contactPersonName) {
+              registeredName = compRes.data[0].contactPersonName;
+            }
+          }
+        } catch (_cErr) {
+          // 404 is normal if no companies found for number
+          console.warn('Company lookup notice:', _cErr);
+        }
+
+        setLookupContact({
+          id: `lookup_${Date.now()}`,
+          name: registeredName || `Contact (${formattedMobile.slice(-4)})`,
+          registeredName,
+          mobile: formattedMobile,
+          isRegistered,
+          hasCompany,
+          whatsappInviteLink,
+          companies: companiesList,
+          company: companiesList.length > 0 ? companiesList[0].companyName : undefined,
+          companyId: companiesList.length > 0 ? companiesList[0].companyId : undefined,
+        });
       } catch (err) {
         console.warn('Live number lookup failed:', err);
       } finally {
@@ -328,58 +502,76 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
   }, [searchQuery]);
 
   const handleSelectContact = (contact: Contact) => {
-    if (contact.isRegistered && contact.companies && contact.companies.length > 1) {
+    if (contact.companies && contact.companies.length > 1) {
       setSelectedContactForModal(contact);
       setIsCompanyModalVisible(true);
-    } else {
-      const selected = {
-        ...contact,
-        company: contact.companies && contact.companies.length > 0 ? contact.companies[0].companyName : contact.company,
-        companyId: contact.companies && contact.companies.length > 0 ? contact.companies[0].companyId : contact.companyId,
-      };
-      onNavigate('CreateDeal', {
-        selectedContact: selected,
-        pickingFor: routeData?.pickingFor,
-        companyId: routeData?.companyId,
-        companyName: routeData?.companyName,
-        role: routeData?.role,
-        originCompany: routeData?.originCompany,
-        company: routeData?.company,
-        prefill: routeData?.prefill,
-        existingParty2: routeData?.existingParty2,
-        existingParty2Name: routeData?.existingParty2Name,
-        existingSellerCompany: routeData?.existingSellerCompany,
-        existingSellerCompanyName: routeData?.existingSellerCompanyName,
-        existingBrokerCompany: routeData?.existingBrokerCompany,
-        existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
-      });
+      return;
     }
-  };
 
-  const handleSelectCompanyFromModal = (company: CompanyInfo) => {
-    if (!selectedContactForModal) return;
-    const finalContact = {
-      ...selectedContactForModal,
-      company: company.companyName,
-      companyId: company.companyId,
+    const coName = (contact.companies && contact.companies.length > 0 && contact.companies[0].companyName)
+      ? contact.companies[0].companyName
+      : (contact.company || contact.name);
+    const coId = (contact.companies && contact.companies.length > 0 && contact.companies[0].companyId)
+      ? contact.companies[0].companyId
+      : (contact.companyId || null);
+
+    const isParty2Target = routeData?.pickingFor === 'party2' || !routeData?.pickingFor;
+    const isBrokerTarget = routeData?.pickingFor === 'brokerCompany';
+
+    const selected: Contact = {
+      ...contact,
+      company: coName,
+      companyId: coId || undefined,
+      isRegistered: Boolean(contact.isRegistered || (contact.companies && contact.companies.length > 0)),
     };
-    setIsCompanyModalVisible(false);
     onNavigate('CreateDeal', {
-      selectedContact: finalContact,
-      pickingFor: routeData?.pickingFor,
+      selectedContact: selected,
+      pickingFor: routeData?.pickingFor || 'party2',
       companyId: routeData?.companyId,
       companyName: routeData?.companyName,
       role: routeData?.role,
       originCompany: routeData?.originCompany,
       company: routeData?.company,
       prefill: routeData?.prefill,
-      existingParty2: routeData?.existingParty2,
-      existingParty2Name: routeData?.existingParty2Name,
+      existingParty2: isParty2Target ? selected : routeData?.existingParty2,
+      existingParty2Name: isParty2Target ? coName : routeData?.existingParty2Name,
       existingSellerCompany: routeData?.existingSellerCompany,
       existingSellerCompanyName: routeData?.existingSellerCompanyName,
-      existingBrokerCompany: routeData?.existingBrokerCompany,
-      existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
-    });
+      existingBrokerCompany: isBrokerTarget ? selected : routeData?.existingBrokerCompany,
+      existingBrokerCompanyName: isBrokerTarget ? coName : routeData?.existingBrokerCompanyName,
+    }, { replace: true });
+  };
+
+  const handleSelectCompanyFromModal = (company: CompanyInfo) => {
+    if (!selectedContactForModal) return;
+    const coName = company.companyName || (company as any).name || 'Company';
+    const coId = company.companyId || (company as any)._id || (company as any).id;
+    const isParty2Target = routeData?.pickingFor === 'party2' || !routeData?.pickingFor;
+    const isBrokerTarget = routeData?.pickingFor === 'brokerCompany';
+
+    const finalContact: Contact = {
+      ...selectedContactForModal,
+      company: coName,
+      companyId: coId,
+      isRegistered: true,
+    };
+    setIsCompanyModalVisible(false);
+    onNavigate('CreateDeal', {
+      selectedContact: finalContact,
+      pickingFor: routeData?.pickingFor || 'party2',
+      companyId: routeData?.companyId,
+      companyName: routeData?.companyName,
+      role: routeData?.role,
+      originCompany: routeData?.originCompany,
+      company: routeData?.company,
+      prefill: routeData?.prefill,
+      existingParty2: isParty2Target ? finalContact : routeData?.existingParty2,
+      existingParty2Name: isParty2Target ? coName : routeData?.existingParty2Name,
+      existingSellerCompany: routeData?.existingSellerCompany,
+      existingSellerCompanyName: routeData?.existingSellerCompanyName,
+      existingBrokerCompany: isBrokerTarget ? finalContact : routeData?.existingBrokerCompany,
+      existingBrokerCompanyName: isBrokerTarget ? coName : routeData?.existingBrokerCompanyName,
+    }, { replace: true });
   };
 
   const handleAddManualNumber = () => {
@@ -404,27 +596,31 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       name: searchQuery.trim(),
       mobile: formattedMobile,
       isRegistered: false,
+      hasCompany: false,
     };
+    const isParty2Target = routeData?.pickingFor === 'party2' || !routeData?.pickingFor;
+    const isBrokerTarget = routeData?.pickingFor === 'brokerCompany';
+
     onNavigate('CreateDeal', {
       selectedContact: manualContact,
-      pickingFor: routeData?.pickingFor,
+      pickingFor: routeData?.pickingFor || 'party2',
       companyId: routeData?.companyId,
       companyName: routeData?.companyName,
       role: routeData?.role,
       originCompany: routeData?.originCompany,
       company: routeData?.company,
       prefill: routeData?.prefill,
-      existingParty2: routeData?.existingParty2,
-      existingParty2Name: routeData?.existingParty2Name,
+      existingParty2: isParty2Target ? manualContact : routeData?.existingParty2,
+      existingParty2Name: isParty2Target ? searchQuery.trim() : routeData?.existingParty2Name,
       existingSellerCompany: routeData?.existingSellerCompany,
       existingSellerCompanyName: routeData?.existingSellerCompanyName,
-      existingBrokerCompany: routeData?.existingBrokerCompany,
-      existingBrokerCompanyName: routeData?.existingBrokerCompanyName,
-    });
+      existingBrokerCompany: isBrokerTarget ? manualContact : routeData?.existingBrokerCompany,
+      existingBrokerCompanyName: isBrokerTarget ? searchQuery.trim() : routeData?.existingBrokerCompanyName,
+    }, { replace: true });
   };
 
-  const activeMembers = contacts.filter(c => c.isRegistered && c.companies && c.companies.length > 0);
-  const pendingMembers = contacts.filter(c => c.isRegistered && (!c.companies || c.companies.length === 0));
+  const activeMembers = contacts.filter(c => c.isRegistered && (c.hasCompany || (c.companies && c.companies.length > 0)));
+  const pendingMembers = contacts.filter(c => c.isRegistered && !c.hasCompany && (!c.companies || c.companies.length === 0));
   const inviteContacts = contacts.filter(c => !c.isRegistered);
 
   const getTabContacts = () => {
@@ -439,13 +635,15 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
   const tabContacts = getTabContacts();
   const filteredContacts = tabContacts.filter(contact =>
     contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    contact.mobile.includes(searchQuery)
+    (contact.registeredName && contact.registeredName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    contact.mobile.includes(searchQuery) ||
+    (contact.companies && contact.companies.some(co => co.companyName.toLowerCase().includes(searchQuery.toLowerCase())))
   );
 
   const dataToRender = [...filteredContacts];
   if (lookupContact) {
-    const isLookupActive = lookupContact.companies && lookupContact.companies.length > 0;
-    const isLookupPending = lookupContact.isRegistered && (!lookupContact.companies || lookupContact.companies.length === 0);
+    const isLookupActive = lookupContact.isRegistered && (lookupContact.hasCompany || (lookupContact.companies && lookupContact.companies.length > 0));
+    const isLookupPending = lookupContact.isRegistered && !lookupContact.hasCompany && (!lookupContact.companies || lookupContact.companies.length === 0);
     const isLookupInvite = !lookupContact.isRegistered;
 
     const matchesActiveTab =
@@ -459,8 +657,8 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
   }
 
   const renderContactItem = ({ item, index }: { item: Contact; index: number }) => {
-    const isActiveMember = item.isRegistered && item.companies && item.companies.length > 0;
-    const isSetupPending = item.isRegistered && (!item.companies || item.companies.length === 0);
+    const isActiveMember = item.isRegistered && (item.hasCompany || (item.companies && item.companies.length > 0));
+    const isSetupPending = item.isRegistered && !item.hasCompany && (!item.companies || item.companies.length === 0);
     const isInviteContact = !item.isRegistered;
 
     const avTheme = getAvatarTheme(item.name || 'P', index);
@@ -470,10 +668,18 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
       Linking.openURL(`tel:${clean}`).catch(e => console.warn('Cannot open phone dialer', e));
     };
 
-    const handleMailOrChat = (mobileNumber: string, name: string) => {
-      const formatted = mobileNumber.replace(/\D/g, '');
-      const url = `https://wa.me/${formatted}?text=${encodeURIComponent(`Hi ${name}, let's create a deal on Pravisti!`)}`;
-      Linking.openURL(url).catch((e: any) => console.warn('Could not launch WhatsApp', e));
+    const handleWhatsAppInvite = (inviteUrl?: string, mobileNumber?: string, name?: string) => {
+      if (inviteUrl) {
+        Linking.openURL(inviteUrl).catch(() => {
+          const clean = (mobileNumber || '').replace(/\D/g, '');
+          const fallbackUrl = `https://wa.me/${clean}?text=${encodeURIComponent(`Hi ${name || 'there'}, please register your company on Pravisti so we can do deals together! Download the app: https://pravisti.com/download`)}`;
+          Linking.openURL(fallbackUrl).catch(() => Alert.alert('Notice', 'WhatsApp could not be opened.'));
+        });
+      } else {
+        const clean = (mobileNumber || '').replace(/\D/g, '');
+        const fallbackUrl = `https://wa.me/${clean}?text=${encodeURIComponent(`Hi ${name || 'there'}, join Pravisti to do deals together: https://pravisti.com/download`)}`;
+        Linking.openURL(fallbackUrl).catch(() => Alert.alert('Notice', 'WhatsApp could not be opened.'));
+      }
     };
 
     const primaryCompany = item.companies && item.companies.length > 0 ? item.companies[0] : null;
@@ -486,44 +692,86 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           item.id.toString().startsWith('lookup_') && styles.lookupMatchCard,
         ]}
       >
-        {/* Top Row: Avatar + Details + Call/Mail/More */}
+        {/* Top Row: Avatar + Details + Call/WhatsApp/More */}
         <View style={styles.cardTopRow}>
-          {/* Avatar Circle */}
-          <View style={[styles.avatarCircle, { backgroundColor: avTheme.bg }]}>
-            <Text style={[styles.avatarText, { color: avTheme.text }]}>
-              {item.name ? item.name.charAt(0).toUpperCase() : 'U'}
-            </Text>
-          </View>
-
-          {/* Center Details */}
-          <View style={styles.cardDetailsBox}>
-            <View style={styles.cardNameStatusRow}>
-              <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
-              {isActiveMember && (
-                <View style={styles.statusBadgeGreen}>
-                  <View style={styles.statusDotGreen} />
-                  <Text style={styles.statusBadgeGreenText}>On Pravisti</Text>
-                </View>
-              )}
-              {isSetupPending && (
-                <View style={styles.statusBadgeOrange}>
-                  <View style={styles.statusDotOrange} />
-                  <Text style={styles.statusBadgeOrangeText}>Pending</Text>
-                </View>
-              )}
-              {isInviteContact && (
-                <View style={styles.statusBadgeBlue}>
-                  <View style={styles.statusDotBlue} />
-                  <Text style={styles.statusBadgeBlueText}>Invite Sent</Text>
-                </View>
+          <TouchableOpacity
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+            onPress={() => (isActiveMember ? handleSelectContact(item) : handleWhatsAppInvite(item.whatsappInviteLink, item.mobile, item.name))}
+            activeOpacity={0.7}
+          >
+            {/* Avatar Circle */}
+            <View style={[styles.avatarCircle, { backgroundColor: avTheme.bg }]}>
+              {item.profilePicture ? (
+                <Image source={{ uri: item.profilePicture }} style={styles.avatarImage} />
+              ) : (
+                <Text style={[styles.avatarText, { color: avTheme.text }]}>
+                  {item.name ? item.name.charAt(0).toUpperCase() : 'U'}
+                </Text>
               )}
             </View>
 
-            <View style={styles.phoneRow}>
-              <Phone size={12} color="#64748B" />
-              <Text style={styles.phoneText}>{item.mobile}</Text>
+            {/* Center Details */}
+            <View style={styles.cardDetailsBox}>
+              <View style={styles.cardNameStatusRow}>
+                <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
+                {isActiveMember && (
+                  <View style={styles.statusBadgeGreen}>
+                    <ShieldCheck size={11} color="#15803D" style={{ marginRight: 3 }} />
+                    <Text style={styles.statusBadgeGreenText}>On Pravisti ✓</Text>
+                  </View>
+                )}
+                {isSetupPending && (
+                  <View style={styles.statusBadgeOrange}>
+                    <Clock size={11} color="#B45309" style={{ marginRight: 3 }} />
+                    <Text style={styles.statusBadgeOrangeText}>User Registered</Text>
+                  </View>
+                )}
+                {isInviteContact && (
+                  <View style={styles.statusBadgeBlue}>
+                    <UserPlus size={10} color="#1D4ED8" style={{ marginRight: 3 }} />
+                    <Text style={styles.statusBadgeBlueText}>Not on Pravisti</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Show Registered Name if different from address book name */}
+              {item.registeredName && item.registeredName.toLowerCase() !== item.name.toLowerCase() ? (
+                <Text style={styles.registeredNameSub} numberOfLines={1}>
+                  Registered as: {item.registeredName}
+                </Text>
+              ) : null}
+
+              {/* Mobile number row with real status data in front of / beside the number */}
+              <View style={styles.phoneAndDataRow}>
+                <View style={styles.phoneRow}>
+                  <Phone size={11} color="#64748B" />
+                  <Text style={styles.phoneText}>{item.mobile}</Text>
+                </View>
+
+                {isActiveMember && primaryCompany ? (
+                  <View style={styles.numberDataPillGreen}>
+                    <Building2 size={10} color="#059669" style={{ marginRight: 3 }} />
+                    <Text style={styles.numberDataPillGreenText} numberOfLines={1}>
+                      {primaryCompany.companyName}
+                    </Text>
+                  </View>
+                ) : isSetupPending ? (
+                  <View style={styles.numberDataPillOrange}>
+                    <AlertCircle size={10} color="#D97706" style={{ marginRight: 3 }} />
+                    <Text style={styles.numberDataPillOrangeText} numberOfLines={1}>
+                      No Company Setup
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.numberDataPillSlate}>
+                    <Text style={styles.numberDataPillSlateText} numberOfLines={1}>
+                      Unregistered
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
+          </TouchableOpacity>
 
           {/* Right Action Icons */}
           <View style={styles.cardActionsRow}>
@@ -536,11 +784,11 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.iconCircleBtnSlate}
-              onPress={() => handleMailOrChat(item.mobile, item.name)}
+              style={styles.iconCircleBtnWhatsApp}
+              onPress={() => handleWhatsAppInvite(item.whatsappInviteLink, item.mobile, item.name)}
               activeOpacity={0.7}
             >
-              <Mail size={13} color="#475569" />
+              <MessageSquare size={13} color="#059669" />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -553,18 +801,25 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
           </View>
         </View>
 
-        {/* Bottom Row: Company Info & Create Deal Button */}
+        {/* Bottom Row: Company Info & Action Button */}
         <View style={styles.cardBottomRow}>
           {/* Company Column */}
           <View style={styles.cardCompanyColumn}>
             {primaryCompany ? (
               <TouchableOpacity
                 style={styles.companyPillBox}
-                onPress={() => handleSelectContact(item)}
+                onPress={() => {
+                  if (moreCompaniesCount > 0) {
+                    setSelectedContactForModal(item);
+                    setIsCompanyModalVisible(true);
+                  } else {
+                    handleSelectContact(item);
+                  }
+                }}
                 activeOpacity={0.7}
               >
                 <View style={styles.companyPillLeft}>
-                  <Building2 size={13} color="#334155" />
+                  <Building2 size={13} color="#059669" />
                   <Text style={styles.companyNameText} numberOfLines={1}>
                     {primaryCompany.companyName}
                   </Text>
@@ -574,54 +829,67 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                     </Text>
                   )}
                 </View>
-                <ChevronDown size={14} color="#0284C7" />
+                {moreCompaniesCount > 0 ? (
+                  <View style={styles.moreCountTag}>
+                    <Text style={styles.moreCountTagText}>+{moreCompaniesCount}</Text>
+                    <ChevronDown size={13} color="#0284C7" />
+                  </View>
+                ) : null}
               </TouchableOpacity>
             ) : isSetupPending ? (
-              <View style={styles.companyPillPending}>
-                <Building2 size={13} color="#D97706" />
+              <TouchableOpacity
+                style={styles.companyPillPending}
+                onPress={() => handleWhatsAppInvite(item.whatsappInviteLink, item.mobile, item.name)}
+                activeOpacity={0.7}
+              >
+                <Clock size={13} color="#D97706" />
                 <Text style={styles.companyPendingText} numberOfLines={1}>
                   Company registration pending
                 </Text>
-              </View>
+              </TouchableOpacity>
             ) : (
-              <View style={styles.companyPillInvite}>
-                <Building2 size={13} color="#64748B" />
-                <Text style={styles.companyInviteText} numberOfLines={1}>
-                  Not registered yet
-                </Text>
-              </View>
-            )}
-
-            {/* If contact has multiple companies */}
-            {moreCompaniesCount > 0 && (
               <TouchableOpacity
-                style={styles.moreCompaniesPillBox}
-                onPress={() => {
-                  setSelectedContactForModal(item);
-                  setIsCompanyModalVisible(true);
-                }}
+                style={styles.companyPillInvite}
+                onPress={() => handleWhatsAppInvite(item.whatsappInviteLink, item.mobile, item.name)}
                 activeOpacity={0.7}
               >
-                <View style={styles.companyPillLeft}>
-                  <Building2 size={13} color="#0284C7" />
-                  <Text style={styles.moreCompaniesText}>
-                    +{moreCompaniesCount} more {moreCompaniesCount > 1 ? 'companies' : 'company'}
-                  </Text>
-                </View>
-                <ChevronDown size={14} color="#0284C7" />
+                <UserPlus size={13} color="#64748B" />
+                <Text style={styles.companyInviteText} numberOfLines={1}>
+                  Not registered yet on Pravisti
+                </Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Create Deal Button */}
-          <TouchableOpacity
-            style={styles.createDealBtn}
-            onPress={() => handleSelectContact(item)}
-            activeOpacity={0.85}
-          >
-            <Handshake size={15} color="#FFFFFF" />
-            <Text style={styles.createDealBtnText}>Create Deal</Text>
-          </TouchableOpacity>
+          {/* Action Button: Create Deal vs WhatsApp Invite */}
+          {isActiveMember ? (
+            <TouchableOpacity
+              style={styles.createDealBtn}
+              onPress={() => handleSelectContact(item)}
+              activeOpacity={0.85}
+            >
+              <Handshake size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.createDealBtnText}>Create Deal</Text>
+            </TouchableOpacity>
+          ) : isSetupPending ? (
+            <TouchableOpacity
+              style={styles.inviteCompanyBtn}
+              onPress={() => handleWhatsAppInvite(item.whatsappInviteLink, item.mobile, item.name)}
+              activeOpacity={0.85}
+            >
+              <MessageSquare size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.inviteCompanyBtnText}>Remind</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.inviteBtn}
+              onPress={() => handleWhatsAppInvite(item.whatsappInviteLink, item.mobile, item.name)}
+              activeOpacity={0.85}
+            >
+              <MessageSquare size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+              <Text style={styles.inviteBtnText}>Invite</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -786,9 +1054,9 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
               onPress={() => setActiveTab('active')}
               activeOpacity={0.7}
             >
-              <View style={styles.activeDot} />
+              <ShieldCheck size={13} color={activeTab === 'active' ? '#15803D' : '#64748B'} style={{ marginRight: 4 }} />
               <Text style={[styles.tabButtonText, activeTab === 'active' && styles.tabButtonTextActiveGreen]}>
-                Active ({activeMembers.length})
+                On Pravisti ({activeMembers.length})
               </Text>
             </TouchableOpacity>
 
@@ -800,9 +1068,9 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
               onPress={() => setActiveTab('pending')}
               activeOpacity={0.7}
             >
-              <View style={styles.pendingDot} />
+              <Clock size={13} color={activeTab === 'pending' ? '#B45309' : '#64748B'} style={{ marginRight: 4 }} />
               <Text style={[styles.tabButtonText, activeTab === 'pending' && styles.tabButtonTextActiveYellow]}>
-                Pending ({pendingMembers.length})
+                No Company ({pendingMembers.length})
               </Text>
             </TouchableOpacity>
 
@@ -814,7 +1082,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
               onPress={() => setActiveTab('invite')}
               activeOpacity={0.7}
             >
-              <Mail size={13} color={activeTab === 'invite' ? '#1E293B' : '#64748B'} />
+              <UserPlus size={13} color={activeTab === 'invite' ? '#1E293B' : '#64748B'} style={{ marginRight: 4 }} />
               <Text style={[styles.tabButtonText, activeTab === 'invite' && styles.tabButtonTextActiveSlate]}>
                 Invite ({inviteContacts.length})
               </Text>
@@ -876,9 +1144,9 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
               </Text>
 
               <View style={styles.companyList}>
-                {selectedContactForModal.companies?.map((co) => (
+                {selectedContactForModal.companies?.map((co, cIdx) => (
                   <TouchableOpacity
-                    key={co.companyId}
+                    key={co.companyId || `co_${cIdx}`}
                     style={styles.companyModalCard}
                     onPress={() => handleSelectCompanyFromModal(co)}
                     activeOpacity={0.7}
@@ -888,7 +1156,7 @@ const ContactPicker: React.FC<ContactPickerProps> = ({ onNavigate, routeData }) 
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.companyModalNameText}>{co.companyName}</Text>
-                      <Text style={styles.companyModalTypeText}>{co.companyType.toUpperCase()}</Text>
+                      <Text style={styles.companyModalTypeText}>{(co.companyType || 'Trader').toUpperCase()}</Text>
                     </View>
                     <ChevronRight size={18} color="#94A3B8" />
                   </TouchableOpacity>
@@ -1358,6 +1626,131 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
     color: '#0284C7',
+  },
+
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  registeredNameSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 1,
+  },
+  phoneAndDataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 3,
+  },
+  numberDataPillGreen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#A7F3D0',
+    maxWidth: 160,
+  },
+  numberDataPillGreenText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  numberDataPillOrange: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#FDE68A',
+  },
+  numberDataPillOrangeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  numberDataPillSlate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#E2E8F0',
+  },
+  numberDataPillSlateText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  moreCountTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 2,
+  },
+  moreCountTagText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  iconCircleBtnWhatsApp: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteCompanyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D97706',
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8.5,
+    gap: 4,
+    shadowColor: '#D97706',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  inviteCompanyBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  inviteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8.5,
+    gap: 4,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  inviteBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
   },
 
   /* Create Deal Button */

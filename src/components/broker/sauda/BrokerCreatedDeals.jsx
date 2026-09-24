@@ -81,6 +81,37 @@ const extractCompanyName = (d) => {
   return null;
 };
 
+// https://api.pravisti.com/api/deals?limit=50&companyId=6aae6a08751616dc0e262807
+
+
+
+const extractPartyCompanyName = (companyObj, companyIdVal, companyNameVal, partyObj, fallback) => {
+  if (companyObj && typeof companyObj === 'object') {
+    const name = companyObj.companyName || companyObj.name || companyObj.businessName || companyObj.tradeName;
+    if (name) return name;
+  }
+  if (companyIdVal && typeof companyIdVal === 'object') {
+    const name = companyIdVal.companyName || companyIdVal.name || companyIdVal.businessName || companyIdVal.tradeName;
+    if (name) return name;
+  }
+  if (typeof companyNameVal === 'string' && companyNameVal.trim() && companyNameVal.trim() !== '[object Object]') {
+    return companyNameVal.trim();
+  }
+  if (typeof companyObj === 'string' && companyObj.trim() && companyObj.trim() !== '[object Object]') {
+    const isHexId = /^[0-9a-fA-F]{24}$/.test(companyObj.trim());
+    if (!isHexId) return companyObj.trim();
+  }
+  if (partyObj) {
+    if (typeof partyObj === 'object') {
+      const name = partyObj.company?.companyName || partyObj.company?.name || partyObj.companyName || partyObj.name;
+      if (name) return name;
+    } else if (typeof partyObj === 'string' && partyObj.trim() && partyObj.trim() !== '[object Object]') {
+      return partyObj.trim();
+    }
+  }
+  return fallback;
+};
+
 const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -95,8 +126,26 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
   const fetchBrokerCreatedDeals = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
+      const delStr = await AsyncStorage.getItem('deleted_deal_ids');
+      const deletedIds = delStr ? JSON.parse(delStr) : [];
+
+      const isNotDeleted = (d) => {
+        if (!d) return false;
+        if (d.isDeleted === true || d.deleted === true) return false;
+        const st = String(d.status || '').toLowerCase();
+        if (st === 'deleted' || st === 'cancelled_deleted') return false;
+        const id1 = String(d._id || '');
+        const id2 = String(d.id || '');
+        const id3 = String(d.dealNumber || '');
+        if (deletedIds.includes(id1) || (id2 && deletedIds.includes(id2)) || (id3 && deletedIds.includes(id3))) {
+          return false;
+        }
+        return true;
+      };
+
       const storedDealsStr = await AsyncStorage.getItem('broker_deals_storage');
-      const localDeals = storedDealsStr ? JSON.parse(storedDealsStr) : [];
+      const localDealsRaw = storedDealsStr ? JSON.parse(storedDealsStr) : [];
+      const localDeals = localDealsRaw.filter(isNotDeleted);
 
       // 1. INSTANT LOCAL RENDER (0.001s) - Render stored/cached deals immediately
       setDeals(localDeals);
@@ -104,12 +153,12 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
 
       // 2. PARALLEL BACKGROUND API FETCH for fast updates including status=draft deals
       const [brokerResResult, dealsResResult, draftDealsResult] = await Promise.allSettled([
-        getBrokerMyDeals(token),
+        getBrokerMyDeals(companyId || null, token),
         getDeals(token, 1, 50, companyId || null),
         getDeals(token, 1, 50, companyId || null, 'draft'),
       ]);
 
-      let fetchedDeals = [];
+      const fetchedDeals = [];
 
       if (brokerResResult.status === 'fulfilled' && brokerResResult.value?.success) {
         const brokerRes = brokerResResult.value;
@@ -117,52 +166,71 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
           ? brokerRes.data
           : (brokerRes.data?.deals || brokerRes.data?.myDeals || []);
 
-        fetchedDeals = rawList.map(d => {
+        const mappedDeals = rawList.filter(isNotDeleted).map(d => {
           const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : '';
           const p0 = d.products?.[0];
           const pid0 = p0?.productId;
           const cropName0 = d.crop || d.productName || d.cropName
             || (pid0 && typeof pid0 === 'object' ? (pid0.name || pid0.productName || pid0.title || pid0.cropName) : null)
             || p0?.productName || p0?.name || p0?.crop || p0?.cropName || p0?.title
-            || 'Agricultural Commodity';
+            || null;
+          const rawQty = d.products?.[0]?.quantity
+            ? `${d.products[0].quantity}${unitStr}`
+            : (d.quantity ? String(d.quantity).replace(/ units/gi, '') : null);
+          const rawRate = d.products?.[0]?.price
+            ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}`
+            : (d.rate ? String(d.rate) : null);
+          const rawCommission = d.totalAmount
+            ? `₹${(d.totalAmount * 0.01).toFixed(0)}`
+            : (d.commission ? String(d.commission) : null);
           return {
-            id: d.dealNumber || d._id || `SAUDA-${Math.floor(100 + Math.random() * 900)}`,
+            id: d.dealNumber || d._id || d.id || null,
             _id: d._id || d.id,
             crop: cropName0,
-            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}${unitStr}` : (d.quantity ? String(d.quantity).replace(/ units/gi, '') : '100'),
-            rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
-            buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
-            seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
-            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
-            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (d.date || 'Today'),
-            commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : (d.commission || '₹10,000'),
+            quantity: rawQty,
+            rate: rawRate,
+            buyer: extractPartyCompanyName(d.buyerCompany, d.buyerCompanyId, d.buyerCompanyName || d.buyerName || d.buyer, d.buyerParty || d.party2, null),
+            seller: extractPartyCompanyName(d.sellerCompany, d.sellerCompanyId, d.sellerCompanyName || d.sellerName || d.seller, d.sellerParty || d.party1, null),
+            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : null,
+            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (d.date || null),
+            commission: rawCommission,
             brokerCompanyId: extractCompanyId(d),
             brokerCompanyName: extractCompanyName(d),
             rawDeal: d,
           };
         });
+        fetchedDeals.push(...mappedDeals);
       }
 
       const processDealsArray = (rawDeals) => {
-        return rawDeals.map(d => {
+        return rawDeals.filter(isNotDeleted).map(d => {
           const unitStr = d.products?.[0]?.unit ? ` ${d.products[0].unit}` : '';
           const p0 = d.products?.[0];
           const pid0 = p0?.productId;
           const cropName0 = d.crop || d.productName || d.cropName
             || (pid0 && typeof pid0 === 'object' ? (pid0.name || pid0.productName || pid0.title || pid0.cropName) : null)
             || p0?.productName || p0?.name || p0?.crop || p0?.cropName || p0?.title
-            || 'Agricultural Commodity';
+            || null;
+          const rawQty = d.products?.[0]?.quantity
+            ? `${d.products[0].quantity}${unitStr}`
+            : (d.quantity ? String(d.quantity).replace(/ units/gi, '') : null);
+          const rawRate = d.products?.[0]?.price
+            ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}`
+            : (d.rate ? String(d.rate) : null);
+          const rawCommission = d.totalAmount
+            ? `₹${(d.totalAmount * 0.01).toFixed(0)}`
+            : (d.commission ? String(d.commission) : null);
           return {
-            id: d.dealNumber || d._id,
+            id: d.dealNumber || d._id || d.id || null,
             _id: d._id || d.id,
             crop: cropName0,
-            quantity: d.products?.[0]?.quantity ? `${d.products[0].quantity}${unitStr}` : (d.quantity ? String(d.quantity).replace(/ units/gi, '') : '100'),
-            rate: d.products?.[0]?.price ? `₹${parseFloat(d.products[0].price).toLocaleString('en-IN')}` : (d.rate || '₹60,000'),
-            buyer: d.buyerCompany?.name || d.buyerCompany?.companyName || d.buyerName || d.buyer || 'Buyer Business',
-            seller: d.sellerCompany?.name || d.sellerCompany?.companyName || d.sellerName || d.seller || 'Seller Business',
-            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : 'Confirmed',
-            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (d.date || 'Today'),
-            commission: d.totalAmount ? `₹${(d.totalAmount * 0.01).toFixed(0)}` : (d.commission || '₹10,000'),
+            quantity: rawQty,
+            rate: rawRate,
+            buyer: extractPartyCompanyName(d.buyerCompany, d.buyerCompanyId, d.buyerCompanyName || d.buyerName || d.buyer, d.buyerParty || d.party2, null),
+            seller: extractPartyCompanyName(d.sellerCompany, d.sellerCompanyId, d.sellerCompanyName || d.sellerName || d.seller, d.sellerParty || d.party1, null),
+            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1)) : null,
+            date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (d.date || null),
+            commission: rawCommission,
             brokerCompanyId: extractCompanyId(d),
             brokerCompanyName: extractCompanyName(d),
             rawDeal: d,
@@ -180,22 +248,31 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
         fetchedDeals.push(...processDealsArray(rawDrafts));
       }
 
-      // Fast O(N) deduplication using ju                                                              
+      // Fast O(N) deduplication using Map
       const dealMap = new Map();
-      localDeals.forEach(d => {
-        const key = d._id || d.id || d.dealNumber;
-        if (key) dealMap.set(String(key), d);
-      });
       fetchedDeals.forEach(fD => {
-        const key = fD._id || fD.id || fD.dealNumber;
-        if (key) dealMap.set(String(key), fD);
+        if (!isNotDeleted(fD)) return;
+        const key = String(fD._id || fD.id || fD.dealNumber || '');
+        if (key) {
+          dealMap.set(key, fD);
+        }
+      });
+
+      // Keep only purely offline local drafts (that don't have a server _id yet)
+      localDeals.forEach(d => {
+        if (!isNotDeleted(d)) return;
+        const key = String(d._id || d.id || d.dealNumber || '');
+        if (key && !dealMap.has(key)) {
+          const isLocalDraft = !d._id || String(d.id || '').startsWith('SAUDA-');
+          if (isLocalDraft) {
+            dealMap.set(key, d);
+          }
+        }
       });
 
       const combined = Array.from(dealMap.values());
       setDeals(combined);
-      if (combined.length > 0) {
-        AsyncStorage.setItem('broker_deals_storage', JSON.stringify(combined)).catch(() => { });
-      }
+      AsyncStorage.setItem('broker_deals_storage', JSON.stringify(combined)).catch(() => { });
     } catch (err) {
       console.warn('Error loading broker created deals:', err);
     } finally {
@@ -215,26 +292,45 @@ const BrokerCreatedDeals = ({ onNavigate, routeData }) => {
   };
 
   const companyFilteredDeals = useMemo(() => {
+    // When companyId is provided, the API (/api/deals?limit=50&companyId=...) already returns
+    // only that company's deals. We still do a client-side guard to prevent any stale cached
+    // deals from other companies leaking through.
     const compIdStr = companyId ? String(companyId) : null;
     const compNameClean = companyName ? String(companyName).trim().toLowerCase() : null;
 
+    if (!compIdStr && !compNameClean) {
+      // No company filter active — show all deals
+      return deals;
+    }
+
     return deals.filter(deal => {
-      if (compIdStr || compNameClean) {
-        const dCompId = deal.brokerCompanyId || extractCompanyId(deal);
+      // Check all possible company ID fields on the raw deal
+      const raw = deal.rawDeal || {};
+      const candidateIds = [
+        deal.brokerCompanyId,
+        raw.companyId,
+        raw.brokerCompanyId,
+        raw.sellerCompanyId,
+        raw.buyerCompanyId,
+      ].map(v => {
+        if (!v) return null;
+        if (typeof v === 'object') return v._id || v.id || null;
+        return String(v);
+      }).filter(Boolean);
+
+      if (compIdStr && candidateIds.includes(compIdStr)) return true;
+
+      // Fallback to name match only if no IDs at all are present (pure local drafts)
+      if (compNameClean) {
         const dCompName = deal.brokerCompanyName || extractCompanyName(deal);
-
-        const matchesId = Boolean(compIdStr && dCompId && String(dCompId) === compIdStr);
-        const matchesName = Boolean(compNameClean && dCompName && String(dCompName).trim().toLowerCase() === compNameClean);
-
-        if (matchesId || matchesName) {
+        if (dCompName && String(dCompName).trim().toLowerCase() === compNameClean && candidateIds.length === 0) {
           return true;
-        } else if (!dCompId && !dCompName) {
-          return true;
-        } else {
-          return false;
         }
       }
-      return true;
+
+      // Do NOT return true for deals with no company ID — that was leaking
+      // other companies' deals into the count.
+      return false;
     });
   }, [deals, companyId, companyName]);
 

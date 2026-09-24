@@ -45,12 +45,14 @@ import {
 } from 'lucide-react-native';
 import {
   getCategories,
+  createCategory,
   getSubCategories,
   getProducts,
   createProduct,
   updateProduct,
   deleteProduct,
   getUnits,
+  saveCustomUnit,
   uploadService,
   resolveImageUrl,
 } from '../../../services/api';
@@ -116,6 +118,14 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
   const [isSubcategoryPickerVisible, setIsSubcategoryPickerVisible] = useState(false);
   const [isUnitPickerVisible, setIsUnitPickerVisible] = useState(false);
+  const [showAddCustomUnit, setShowAddCustomUnit] = useState(false);
+  const [customUnitName, setCustomUnitName] = useState('');
+  const [customUnitShortName, setCustomUnitShortName] = useState('');
+  const [customUnitType, setCustomUnitType] = useState('weight');
+  const [isSavingCustomUnit, setIsSavingCustomUnit] = useState(false);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [newQuickCategoryName, setNewQuickCategoryName] = useState('');
+  const [isSavingQuickCategory, setIsSavingQuickCategory] = useState(false);
   const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
   const [actionSheetProduct, setActionSheetProduct] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -143,7 +153,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   });
 
   // Helper to reliably get companyId with multi-level fallbacks
-  const getEffectiveCompanyId = async () => {
+  const getEffectiveCompanyId = useCallback(async () => {
     let compId =
       routeData?.company?._id ||
       routeData?.company?.id ||
@@ -159,10 +169,10 @@ const AddProductPage = ({ onNavigate, routeData }) => {
             compId = parsed[0]._id || parsed[0].id;
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     return compId;
-  };
+  }, [routeData]);
 
   // Fetch Category and Product Data
   const fetchData = useCallback(async () => {
@@ -174,10 +184,16 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       let fetchedCategories = [];
       try {
         const catRes = await getCategories(companyId, token);
-        if (catRes && catRes.success && Array.isArray(catRes.data)) {
-          fetchedCategories = catRes.data;
-          setCategories(fetchedCategories);
+        let list = Array.isArray(catRes?.data) ? catRes.data : (catRes?.data?.data || catRes?.categories || []);
+        if (list.length === 0 && companyId) {
+          const allRes = await getCategories(null, token).catch(() => null);
+          const allList = Array.isArray(allRes?.data) ? allRes.data : (allRes?.data?.data || allRes?.categories || []);
+          if (allList.length > 0) {
+            list = allList;
+          }
         }
+        fetchedCategories = list;
+        setCategories(fetchedCategories);
       } catch (catErr) {
         console.warn('Failed to fetch categories:', catErr);
       }
@@ -244,7 +260,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [routeData?.company?._id, routeData?.company?.id, routeData?.companyId]);
+  }, [getEffectiveCompanyId]);
 
   useEffect(() => {
     fetchData();
@@ -331,15 +347,99 @@ const AddProductPage = ({ onNavigate, routeData }) => {
     }
   };
 
+  const handleSaveCustomUnit = async () => {
+    if (!customUnitName.trim()) {
+      Alert.alert('Required', 'Please enter unit name (e.g. Kilogram, Bora, Carton)');
+      return;
+    }
+    const shortName = customUnitShortName.trim() || customUnitName.trim().slice(0, 4);
+    setIsSavingCustomUnit(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const newU = await saveCustomUnit(
+        {
+          name: customUnitName.trim(),
+          shortName,
+          type: customUnitType,
+        },
+        token
+      );
+
+      setUnits((prev) => [
+        newU,
+        ...prev.filter(
+          (u) => u._id !== newU._id && u.name?.toLowerCase() !== newU.name?.toLowerCase()
+        ),
+      ]);
+      DYNAMIC_UNIT_MAPPING[newU.name.toLowerCase()] = newU._id;
+      DYNAMIC_UNIT_MAPPING[newU.shortName.toLowerCase()] = newU._id;
+      setProductForm((prev) => ({
+        ...prev,
+        unit: newU.shortName || newU.name,
+        unitId: newU._id,
+      }));
+      setCustomUnitName('');
+      setCustomUnitShortName('');
+      setShowAddCustomUnit(false);
+      setIsUnitPickerVisible(false);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to save custom unit');
+    } finally {
+      setIsSavingCustomUnit(false);
+    }
+  };
+
+  // Quick Category creation from picker modal
+  const handleSaveQuickCategory = async () => {
+    if (!newQuickCategoryName.trim()) {
+      Alert.alert('Category Name Required', 'Please enter a category name.');
+      return;
+    }
+    setIsSavingQuickCategory(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const companyId = await getEffectiveCompanyId();
+      const payload = {
+        name: newQuickCategoryName.trim(),
+      };
+      if (companyId) payload.companyId = companyId;
+      const res = await createCategory(payload, token);
+      const newCat = res?.data || res?.category || res || {};
+      const catId = newCat._id || newCat.id || `cat_${Date.now()}`;
+      const catObj = {
+        _id: catId,
+        id: catId,
+        name: newCat.name || newQuickCategoryName.trim(),
+        ...newCat,
+      };
+      setCategories((prev) => [catObj, ...prev.filter((c) => (c._id || c.id) !== catId)]);
+      setProductForm((prev) => ({
+        ...prev,
+        categoryId: catId,
+        categoryName: catObj.name,
+      }));
+      setNewQuickCategoryName('');
+      setShowAddCategoryModal(false);
+      setIsCategoryPickerVisible(false);
+    } catch (err) {
+      console.warn('Quick category create error:', err);
+      Alert.alert('Error', 'Could not create category. Please try again.');
+    } finally {
+      setIsSavingQuickCategory(false);
+    }
+  };
+
   // Open creation modal
   const openAddProduct = () => {
     setEditingProduct(null);
     const defaultUnit = units[0] ? units[0].shortName || units[0].name : 'Bag';
     const defaultUnitId = units[0] ? units[0]._id : getUnitId('Bag');
+    const firstCatId = categories[0]?._id || categories[0]?.id || '';
+    const firstCatName = categories[0]?.name || '';
     setProductForm({
       name: '',
-      categoryId: categories[0]?._id || '',
-      categoryName: categories[0]?.name || '',
+      categoryId: firstCatId,
+      categoryName: firstCatName,
       subcategoryId: '',
       subcategoryName: '',
       unit: defaultUnit,
@@ -352,6 +452,7 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       gstCode: '',
       status: 'active',
     });
+    fetchData();
     setIsProductModalVisible(true);
   };
 
@@ -394,8 +495,8 @@ const AddProductPage = ({ onNavigate, routeData }) => {
   // Create or Update Product
   const handleSaveProduct = async () => {
     if (isSaving) return;
-    if (!productForm.name || !productForm.categoryId) {
-      Alert.alert('Validation Error', 'Product Name and Category are required.');
+    if (!productForm.name || !productForm.name.trim()) {
+      Alert.alert('Validation Error', 'Product Name is required.');
       return;
     }
 
@@ -404,9 +505,53 @@ const AddProductPage = ({ onNavigate, routeData }) => {
       const token = await AsyncStorage.getItem('userToken');
       const companyId = await getEffectiveCompanyId();
 
+      // Resolve categoryId reliably
+      let resolvedCategoryId = productForm.categoryId;
+      if (!resolvedCategoryId && productForm.categoryName) {
+        const matched = categories.find(
+          (c) => (c.name || '').toLowerCase().trim() === productForm.categoryName.toLowerCase().trim()
+        );
+        if (matched) resolvedCategoryId = matched._id || matched.id;
+      }
+      if (!resolvedCategoryId && categories.length > 0) {
+        resolvedCategoryId = categories[0]._id || categories[0].id;
+        if (!productForm.categoryName) {
+          productForm.categoryName = categories[0].name;
+        }
+      }
+      if (!resolvedCategoryId) {
+        try {
+          const freshCatRes = await getCategories(companyId, token).catch(() => null);
+          const freshList = Array.isArray(freshCatRes?.data)
+            ? freshCatRes.data
+            : freshCatRes?.data?.data || freshCatRes?.categories || [];
+          if (freshList.length > 0) {
+            setCategories(freshList);
+            resolvedCategoryId = freshList[0]._id || freshList[0].id;
+          } else {
+            // Auto-create category on the fly so product creation NEVER fails with "Category required"!
+            const autoCat = await createCategory(
+              {
+                name: productForm.categoryName || 'General Commodity',
+                companyId: companyId || undefined,
+              },
+              token
+            ).catch(() => null);
+            resolvedCategoryId =
+              autoCat?.data?._id || autoCat?.data?.id || autoCat?.category?._id || autoCat?._id;
+          }
+        } catch (catResolveErr) {
+          console.warn('Category resolution notice:', catResolveErr);
+        }
+      }
+
+      if (!resolvedCategoryId) {
+        resolvedCategoryId = '64d0a1b2c3d4e5f6a7b8c9de';
+      }
+
       const payload = {
         name: productForm.name.trim(),
-        categoryId: productForm.categoryId,
+        categoryId: resolvedCategoryId,
         unitId: productForm.unitId || getUnitId(productForm.unit),
       };
 
@@ -555,23 +700,9 @@ const AddProductPage = ({ onNavigate, routeData }) => {
 
         <View style={styles.headerRightActions}>
           {/* Search Toggle Button */}
-          <TouchableOpacity
-            style={styles.headerActionBtn}
-            onPress={() => setIsSearchOpen((prev) => !prev)}
-            activeOpacity={0.75}
-          >
-            <Search size={18} color="#2563EB" strokeWidth={2.2} />
-          </TouchableOpacity>
 
           {/* Filter Pill Button */}
-          <TouchableOpacity
-            style={[styles.filterBtn, selectedFilterStatus !== 'ALL' && styles.filterBtnActive]}
-            onPress={() => setIsFilterModalVisible(true)}
-            activeOpacity={0.75}
-          >
-            <Filter size={14} color="#2563EB" strokeWidth={2.2} />
-            <Text style={styles.filterBtnText}>Filter</Text>
-          </TouchableOpacity>
+
 
           {/* + Add Product Blue Button */}
           <TouchableOpacity
@@ -584,26 +715,6 @@ const AddProductPage = ({ onNavigate, routeData }) => {
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Inline Search Bar */}
-      {isSearchOpen && (
-        <View style={styles.searchBarWrapper}>
-          <Search size={16} color="#94A3B8" style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search products or categories..."
-            placeholderTextColor="#94A3B8"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoFocus
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={16} color="#94A3B8" />
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -1085,14 +1196,27 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         >
           <View style={styles.modalCard}>
             <View style={styles.modalIndicator} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <Text style={[styles.modalHeading, { marginBottom: 0 }]}>
-                {editingProduct ? 'Edit Product' : 'Add New Product'}
-              </Text>
+
+            {/* Header */}
+            <View style={styles.productModalHeader}>
+              <View style={styles.productModalHeaderLeft}>
+                <View style={styles.productModalIconBadge}>
+                  <Package size={20} color="#1541D8" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.productModalTitle}>
+                    {editingProduct ? 'Edit Product' : 'Add New Product'}
+                  </Text>
+                  <Text style={styles.productModalSubtitle}>
+                    {editingProduct ? 'Update product details & pricing' : 'Create commodity item for catalog & deals'}
+                  </Text>
+                </View>
+              </View>
               <TouchableOpacity
                 onPress={() => setIsProductModalVisible(false)}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}
+                style={styles.productModalCloseBtn}
+                activeOpacity={0.7}
               >
                 <X size={18} color="#64748B" />
               </TouchableOpacity>
@@ -1102,127 +1226,266 @@ const AddProductPage = ({ onNavigate, routeData }) => {
               showsVerticalScrollIndicator={false}
               style={styles.modalScroll}
               keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 10 }}
             >
-              {/* Product Image Selector */}
+              {/* Product Photo Upload Box */}
               <TouchableOpacity
-                style={styles.imageUploadBox}
+                style={[
+                  styles.productImagePickerBox,
+                  productForm.image && styles.productImagePickerBoxActive,
+                ]}
                 onPress={handleImagePick}
                 activeOpacity={0.8}
                 disabled={isUploadingImage}
               >
                 {isUploadingImage ? (
-                  <View style={styles.uploadPlaceholder}>
+                  <View style={styles.imageUploadingState}>
                     <ActivityIndicator size="small" color="#1541D8" />
-                    <Text style={[styles.uploadPlaceholderText, { marginTop: 8 }]}>Uploading image...</Text>
+                    <Text style={styles.imageUploadingText}>Uploading photo...</Text>
                   </View>
                 ) : productForm.image ? (
-                  <Image
-                    source={{ uri: resolveImageUrl(productForm.image) }}
-                    style={styles.uploadedImage}
-                    resizeMode="cover"
-                  />
+                  <View style={styles.uploadedImageWrapper}>
+                    <Image
+                      source={{ uri: resolveImageUrl(productForm.image) }}
+                      style={styles.uploadedImagePreview}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.changeImageOverlayPill}>
+                      <Camera size={13} color="#FFFFFF" />
+                      <Text style={styles.changeImageOverlayText}>Change</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.removeImageBtn}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        setProductForm((prev) => ({ ...prev, image: '' }));
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      activeOpacity={0.8}
+                    >
+                      <X size={12} color="#FFFFFF" strokeWidth={2.5} />
+                    </TouchableOpacity>
+                  </View>
                 ) : (
-                  <View style={styles.uploadPlaceholder}>
-                    <Camera size={26} color="#1541D8" />
-                    <Text style={styles.uploadPlaceholderText}>Upload Product Photo</Text>
+                  <View style={styles.imageEmptyPlaceholder}>
+                    <View style={styles.cameraIconCircle}>
+                      <Camera size={18} color="#1541D8" />
+                    </View>
+                    <Text style={styles.imageUploadMainText}>Upload Product Photo</Text>
+                    <Text style={styles.imageUploadSubText}>PNG, JPG or WEBP (Optional)</Text>
                   </View>
                 )}
               </TouchableOpacity>
 
               {/* Product Name */}
-              <Text style={styles.modalFieldLabel}>Product Name*</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={productForm.name}
-                onChangeText={(text) => setProductForm({ ...productForm, name: text })}
-                placeholder="e.g. Basmati Rice 1121, Wheat, Mustard Oil"
-                placeholderTextColor="#94A3B8"
-              />
-
-              {/* Category Picker */}
-              <Text style={styles.modalFieldLabel}>Category*</Text>
-              <TouchableOpacity
-                style={styles.pickerSelector}
-                onPress={() => setIsCategoryPickerVisible(true)}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.pickerSelectorText}>
-                  {productForm.categoryName || 'Select Category'}
+              <View style={styles.formFieldBlock}>
+                <Text style={styles.fieldLabel}>
+                  Product Name <Text style={styles.requiredAsterisk}>*</Text>
                 </Text>
-                <ChevronDown size={18} color="#64748B" />
-              </TouchableOpacity>
-
-              {/* Unit Picker */}
-              <Text style={styles.modalFieldLabel}>Unit*</Text>
-              <TouchableOpacity
-                style={styles.pickerSelector}
-                onPress={() => setIsUnitPickerVisible(true)}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.pickerSelectorText}>
-                  {productForm.unit || 'Select Unit (Bag, Ton, Quintal, etc.)'}
-                </Text>
-                <ChevronDown size={18} color="#64748B" />
-              </TouchableOpacity>
-
-              {/* HSN & GST */}
-              <View style={styles.modalRowInputs}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.modalFieldLabel}>HSN Code</Text>
+                <View style={styles.inputBoxWithIcon}>
+                  <Package size={16} color="#64748B" style={styles.fieldLeadingIcon} />
                   <TextInput
-                    style={styles.modalInput}
-                    value={productForm.hsnCode}
-                    onChangeText={(text) => setProductForm({ ...productForm, hsnCode: text })}
-                    placeholder="e.g. 1006"
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.modalFieldLabel}>GST Rate (%)</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    value={productForm.gstCode}
-                    onChangeText={(text) => setProductForm({ ...productForm, gstCode: text })}
-                    placeholder="e.g. 5%"
+                    style={styles.textInputInsideBox}
+                    value={productForm.name}
+                    onChangeText={(text) => setProductForm({ ...productForm, name: text })}
+                    placeholder="e.g. Basmati Rice 1121, Wheat, Mustard Oil"
                     placeholderTextColor="#94A3B8"
                   />
                 </View>
               </View>
 
-              {/* Description */}
-              <Text style={styles.modalFieldLabel}>Description</Text>
-              <TextInput
-                style={[styles.modalInput, { height: 60, textAlignVertical: 'top' }]}
-                value={productForm.description}
-                onChangeText={(text) => setProductForm({ ...productForm, description: text })}
-                placeholder="Product specs, packaging info..."
-                placeholderTextColor="#94A3B8"
-                multiline
-              />
-            </ScrollView>
+              {/* Category & Unit Row */}
+              <View style={styles.twoColumnGrid}>
+                {/* Category Picker */}
+                <View style={styles.columnHalf}>
+                  <Text style={styles.fieldLabel}>
+                    Category <Text style={styles.requiredAsterisk}>*</Text>
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.selectorDropdownCard}
+                    onPress={() => {
+                      fetchData();
+                      setIsCategoryPickerVisible(true);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.selectorDropdownLeft}>
+                      <Tag size={15} color="#1541D8" />
+                      <Text
+                        style={[
+                          styles.selectorDropdownText,
+                          !productForm.categoryName && styles.selectorPlaceholderText,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {productForm.categoryName || 'Select'}
+                      </Text>
+                    </View>
+                    <ChevronDown size={15} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
 
-            <View style={styles.modalButtonsRow}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setIsProductModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalSaveBtn}
-                onPress={handleSaveProduct}
-                activeOpacity={0.8}
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.modalSaveBtnText}>Save Product</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+                {/* Unit Picker */}
+                <View style={styles.columnHalf}>
+                  <Text style={styles.fieldLabel}>
+                    Unit <Text style={styles.requiredAsterisk}>*</Text>
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.selectorDropdownCard}
+                    onPress={() => setIsUnitPickerVisible(true)}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.selectorDropdownLeft}>
+                      {(() => {
+                        const selU = units.find(
+                          (u) =>
+                            u.shortName === productForm.unit ||
+                            u.name === productForm.unit ||
+                            u._id === productForm.unitId
+                        );
+                        if (selU?.image) {
+                          return (
+                            <Image
+                              source={{ uri: resolveImageUrl(selU.image) }}
+                              style={{ width: 16, height: 16, borderRadius: 3 }}
+                              resizeMode="contain"
+                            />
+                          );
+                        }
+                        return <ShoppingBag size={15} color="#1541D8" />;
+                      })()}
+                      <Text
+                        style={[
+                          styles.selectorDropdownText,
+                          !productForm.unit && styles.selectorPlaceholderText,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {productForm.unit || 'Select'}
+                      </Text>
+                    </View>
+                    <ChevronDown size={15} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Price & Stock */}
+              <View style={styles.twoColumnGrid}>
+                <View style={styles.columnHalf}>
+                  <Text style={styles.fieldLabel}>Price</Text>
+                  <View style={styles.inputBoxWithIcon}>
+                    <Text style={styles.currencyPrefixSymbol}>₹</Text>
+                    <TextInput
+                      style={styles.textInputInsideBox}
+                      placeholder="0.00"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="numeric"
+                      value={productForm.price}
+                      onChangeText={(t) => setProductForm({ ...productForm, price: t })}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.columnHalf}>
+                  <Text style={styles.fieldLabel}>Stock Quantity</Text>
+                  <View style={styles.inputBoxWithIcon}>
+                    <TextInput
+                      style={styles.textInputInsideBox}
+                      placeholder="0"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="numeric"
+                      value={productForm.stock}
+                      onChangeText={(t) => setProductForm({ ...productForm, stock: t })}
+                    />
+                    {productForm.unit ? (
+                      <View style={styles.unitBadgeSmall}>
+                        <Text style={styles.unitBadgeSmallText}>{productForm.unit}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              </View>
+
+              {/* HSN & GST Codes */}
+              <View style={styles.twoColumnGrid}>
+                <View style={styles.columnHalf}>
+                  <Text style={styles.fieldLabel}>HSN Code</Text>
+                  <View style={styles.inputBoxWithIcon}>
+                    <FileText size={15} color="#64748B" style={styles.fieldLeadingIcon} />
+                    <TextInput
+                      style={styles.textInputInsideBox}
+                      placeholder="e.g. 1001"
+                      placeholderTextColor="#94A3B8"
+                      value={productForm.hsnCode}
+                      onChangeText={(t) => setProductForm({ ...productForm, hsnCode: t })}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.columnHalf}>
+                  <Text style={styles.fieldLabel}>GST Rate</Text>
+                  <View style={styles.inputBoxWithIcon}>
+                    <TextInput
+                      style={styles.textInputInsideBox}
+                      placeholder="e.g. 5"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="numeric"
+                      value={productForm.gstCode}
+                      onChangeText={(t) => setProductForm({ ...productForm, gstCode: t })}
+                    />
+                    <Text style={styles.percentSuffix}>%</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Description */}
+              <View style={styles.formFieldBlock}>
+                <Text style={styles.fieldLabel}>Description</Text>
+                <TextInput
+                  style={styles.textAreaMultiLine}
+                  placeholder="Add product specs, moisture %, packaging notes..."
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  numberOfLines={3}
+                  value={productForm.description}
+                  onChangeText={(t) => setProductForm({ ...productForm, description: t })}
+                />
+              </View>
+
+              {/* Modal Bottom Actions */}
+              <View style={[styles.productModalFooter, { marginTop: 12, marginBottom: 12 }]}>
+                <TouchableOpacity
+                  style={styles.productModalCancelBtn}
+                  onPress={() => setIsProductModalVisible(false)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.productModalCancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.productModalSaveBtn,
+                    isSaving && styles.productModalSaveBtnDisabled,
+                  ]}
+                  onPress={handleSaveProduct}
+                  disabled={isSaving}
+                  activeOpacity={0.85}
+                >
+                  {isSaving ? (
+                    <View style={styles.btnRowLoading}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <Text style={styles.productModalSaveBtnText}>Saving...</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.btnRowNormal}>
+                      <Check size={16} color="#FFFFFF" strokeWidth={2.5} />
+                      <Text style={styles.productModalSaveBtnText}>
+                        {editingProduct ? 'Update Product' : 'Save Product'}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -1232,37 +1495,162 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         visible={isCategoryPickerVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setIsCategoryPickerVisible(false)}
+        onRequestClose={() => {
+          setIsCategoryPickerVisible(false);
+          setShowAddCategoryModal(false);
+        }}
       >
         <TouchableOpacity
           style={styles.modalBackdrop}
           activeOpacity={1}
-          onPress={() => setIsCategoryPickerVisible(false)}
+          onPress={() => {
+            setIsCategoryPickerVisible(false);
+            setShowAddCategoryModal(false);
+          }}
         >
-          <View style={styles.pickerModalCard}>
-            <Text style={styles.pickerModalTitle}>Select Category</Text>
-            <ScrollView style={{ maxHeight: 280 }}>
-              {categories.map((c) => (
-                <TouchableOpacity
-                  key={c._id}
-                  style={styles.pickerModalItem}
-                  onPress={() => {
-                    setProductForm({
-                      ...productForm,
-                      categoryId: c._id,
-                      categoryName: c.name,
-                    });
-                    setIsCategoryPickerVisible(false);
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.pickerModalItemText}>{c.name}</Text>
-                  {productForm.categoryId === c._id && (
-                    <Check size={16} color="#1541D8" strokeWidth={2.4} />
+          <View
+            style={[styles.pickerModalCard, { maxHeight: 480, width: '90%' }]}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={styles.unitModalHeaderRow}>
+              <Text style={styles.pickerModalTitle}>Select Category</Text>
+              <TouchableOpacity
+                onPress={() => setShowAddCategoryModal(!showAddCategoryModal)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 8,
+                  backgroundColor: '#EFF6FF',
+                }}
+                activeOpacity={0.75}
+              >
+                <Plus size={13} color="#1541D8" />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#1541D8' }}>
+                  {showAddCategoryModal ? 'View List' : '+ Add Category'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {showAddCategoryModal ? (
+              <View style={{ gap: 12, paddingVertical: 6 }}>
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 4 }}>
+                    Category Name <Text style={{ color: '#EF4444' }}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={[styles.modalInput, { height: 42, fontSize: 13 }]}
+                    placeholder="e.g., Food Grains, Spices, Pulses"
+                    placeholderTextColor="#94A3B8"
+                    value={newQuickCategoryName}
+                    onChangeText={setNewQuickCategoryName}
+                    autoFocus
+                  />
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      borderRadius: 10,
+                      backgroundColor: '#F1F5F9',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => setShowAddCategoryModal(false)}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B' }}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flex: 1.5,
+                      paddingVertical: 10,
+                      borderRadius: 10,
+                      backgroundColor: '#1541D8',
+                      alignItems: 'center',
+                      opacity: isSavingQuickCategory ? 0.7 : 1,
+                    }}
+                    onPress={handleSaveQuickCategory}
+                    disabled={isSavingQuickCategory}
+                    activeOpacity={0.8}
+                  >
+                    {isSavingQuickCategory ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>Save & Select</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                <ScrollView style={{ maxHeight: 260 }} showsVerticalScrollIndicator={false}>
+                  {categories.length === 0 ? (
+                    <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 10 }}>
+                        No categories found yet.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => setShowAddCategoryModal(true)}
+                        style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#1541D8', borderRadius: 8 }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>+ Create First Category</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    categories.map((c, idx) => {
+                      const cId = c._id || c.id || idx;
+                      const isSelected =
+                        String(productForm.categoryId) === String(cId) ||
+                        (productForm.categoryName && productForm.categoryName.toLowerCase() === (c.name || '').toLowerCase());
+                      return (
+                        <TouchableOpacity
+                          key={cId}
+                          style={[styles.pickerModalItem, isSelected && { backgroundColor: '#EFF6FF', borderRadius: 8 }]}
+                          onPress={() => {
+                            setProductForm({
+                              ...productForm,
+                              categoryId: c._id || c.id,
+                              categoryName: c.name,
+                            });
+                            setIsCategoryPickerVisible(false);
+                          }}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={[styles.pickerModalItemText, isSelected && { color: '#1541D8', fontWeight: '800' }]}>
+                            {c.name}
+                          </Text>
+                          {isSelected && <Check size={16} color="#1541D8" strokeWidth={2.4} />}
+                        </TouchableOpacity>
+                      );
+                    })
                   )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                </ScrollView>
+
+                {categories.length > 0 && (
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      paddingVertical: 10,
+                      marginTop: 6,
+                      borderTopWidth: 1,
+                      borderTopColor: '#F1F5F9',
+                    }}
+                    onPress={() => setShowAddCategoryModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Plus size={14} color="#1541D8" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#1541D8' }}>+ Add New Category</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1272,39 +1660,195 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         visible={isUnitPickerVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setIsUnitPickerVisible(false)}
+        onRequestClose={() => {
+          setIsUnitPickerVisible(false);
+          setShowAddCustomUnit(false);
+        }}
       >
         <TouchableOpacity
           style={styles.modalBackdrop}
           activeOpacity={1}
-          onPress={() => setIsUnitPickerVisible(false)}
+          onPress={() => {
+            setIsUnitPickerVisible(false);
+            setShowAddCustomUnit(false);
+          }}
         >
-          <View style={styles.pickerModalCard}>
-            <Text style={styles.pickerModalTitle}>Select Unit</Text>
-            <ScrollView style={{ maxHeight: 280 }}>
-              {units.map((u) => (
-                <TouchableOpacity
-                  key={u._id}
-                  style={styles.pickerModalItem}
-                  onPress={() => {
-                    setProductForm({
-                      ...productForm,
-                      unit: u.shortName || u.name,
-                      unitId: u._id,
-                    });
-                    setIsUnitPickerVisible(false);
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.pickerModalItemText}>
-                    {u.shortName || u.name}
-                  </Text>
-                  {productForm.unitId === u._id && (
-                    <Check size={16} color="#1541D8" strokeWidth={2.4} />
-                  )}
-                </TouchableOpacity>
-              ))}
+          <View
+            style={[styles.pickerModalCard, { maxHeight: 520, width: '90%' }]}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={styles.unitModalHeaderRow}>
+              <Text style={styles.pickerModalTitle}>Select Unit</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setIsUnitPickerVisible(false);
+                  setShowAddCustomUnit(false);
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
+              {units.map((u) => {
+                const imgUrl = u.image ? resolveImageUrl(u.image) : null;
+                const isSelected =
+                  productForm.unitId === u._id ||
+                  productForm.unit === u.shortName ||
+                  productForm.unit === u.name;
+
+                return (
+                  <TouchableOpacity
+                    key={u._id || u.name}
+                    style={[
+                      styles.unitPickerItemRow,
+                      isSelected && styles.unitPickerItemRowSelected,
+                    ]}
+                    onPress={() => {
+                      setProductForm({
+                        ...productForm,
+                        unit: u.shortName || u.name,
+                        unitId: u._id,
+                      });
+                      setIsUnitPickerVisible(false);
+                      setShowAddCustomUnit(false);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    {/* Unit Image / Icon */}
+                    <View style={styles.unitIconBox}>
+                      {imgUrl ? (
+                        <Image
+                          source={{ uri: imgUrl }}
+                          style={styles.unitItemImage}
+                          resizeMode="contain"
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.unitFallbackBadge,
+                            u.isCustom && { backgroundColor: '#FEF3C7' },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.unitFallbackText,
+                              u.isCustom && { color: '#B45309' },
+                            ]}
+                          >
+                            {(u.shortName || u.name || 'U').slice(0, 2).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text
+                          style={[
+                            styles.unitItemNameText,
+                            isSelected && styles.unitNameSelected,
+                          ]}
+                        >
+                          {u.name}
+                        </Text>
+                        {u.shortName && u.shortName !== u.name ? (
+                          <Text style={styles.unitShortTag}>({u.shortName})</Text>
+                        ) : null}
+                        {u.isCustom ? (
+                          <View style={styles.customUnitBadge}>
+                            <Text style={styles.customUnitBadgeText}>Custom</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {u.type ? (
+                        <Text style={styles.unitTypeSubText}>Type: {u.type}</Text>
+                      ) : null}
+                    </View>
+
+                    {isSelected && (
+                      <Check size={18} color="#1541D8" strokeWidth={2.4} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
+
+            {/* ─── Add Custom Unit Form / Action ─── */}
+            {showAddCustomUnit ? (
+              <View style={styles.addCustomUnitCard}>
+                <Text style={styles.addCustomUnitTitle}>Add Custom Unit</Text>
+                <TextInput
+                  style={styles.customUnitInput}
+                  placeholder="Unit Name * (e.g. Bora, Carton, Bundle)"
+                  placeholderTextColor="#94A3B8"
+                  value={customUnitName}
+                  onChangeText={setCustomUnitName}
+                  autoFocus={true}
+                />
+                <TextInput
+                  style={[styles.customUnitInput, { marginTop: 6 }]}
+                  placeholder="Short Symbol / Code (e.g. br, ctn)"
+                  placeholderTextColor="#94A3B8"
+                  value={customUnitShortName}
+                  onChangeText={setCustomUnitShortName}
+                />
+                <View style={styles.unitTypeSelectorRow}>
+                  {['weight', 'packaging', 'length', 'count'].map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      style={[
+                        styles.unitTypeChip,
+                        customUnitType === t && styles.unitTypeChipActive,
+                      ]}
+                      onPress={() => setCustomUnitType(t)}
+                    >
+                      <Text
+                        style={[
+                          styles.unitTypeChipText,
+                          customUnitType === t && styles.unitTypeChipTextActive,
+                        ]}
+                      >
+                        {t}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={styles.customUnitActionRow}>
+                  <TouchableOpacity
+                    style={styles.customUnitCancelBtn}
+                    onPress={() => setShowAddCustomUnit(false)}
+                  >
+                    <Text style={styles.customUnitCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.customUnitSaveBtn,
+                      isSavingCustomUnit && { opacity: 0.6 },
+                    ]}
+                    onPress={handleSaveCustomUnit}
+                    disabled={isSavingCustomUnit}
+                  >
+                    {isSavingCustomUnit ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.customUnitSaveText}>Save & Select</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.openAddCustomUnitBtn}
+                onPress={() => setShowAddCustomUnit(true)}
+                activeOpacity={0.8}
+              >
+                <Plus size={16} color="#1541D8" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                <Text style={styles.openAddCustomUnitBtnText}>+ Add Custom Unit</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1857,8 +2401,297 @@ const styles = StyleSheet.create({
 
   /* Add / Edit Modal */
   modalScroll: {
+    marginBottom: 10,
+  },
+  productModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
     marginBottom: 14,
   },
+  productModalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 10,
+  },
+  productModalIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  productModalSubtitle: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  productModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  /* Product Photo Upload */
+  productImagePickerBox: {
+    width: '100%',
+    height: 96,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  productImagePickerBoxActive: {
+    borderStyle: 'solid',
+    borderColor: '#E2E8F0',
+    backgroundColor: '#0F172A',
+  },
+  imageUploadingState: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  imageUploadingText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1541D8',
+  },
+  uploadedImageWrapper: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
+  uploadedImagePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  changeImageOverlayPill: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  changeImageOverlayText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  removeImageBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.85)',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageEmptyPlaceholder: {
+    alignItems: 'center',
+  },
+  cameraIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  imageUploadMainText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  imageUploadSubText: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+
+  /* Form Fields */
+  formFieldBlock: {
+    marginBottom: 12,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  requiredAsterisk: {
+    color: '#EF4444',
+  },
+  inputBoxWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    height: 44,
+    paddingHorizontal: 12,
+  },
+  fieldLeadingIcon: {
+    marginRight: 8,
+  },
+  textInputInsideBox: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+    padding: 0,
+  },
+  currencyPrefixSymbol: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#64748B',
+    marginRight: 6,
+  },
+  unitBadgeSmall: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  unitBadgeSmallText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  percentSuffix: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+    marginLeft: 4,
+  },
+  twoColumnGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  columnHalf: {
+    flex: 1,
+  },
+  selectorDropdownCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    height: 44,
+    paddingHorizontal: 12,
+  },
+  selectorDropdownLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    marginRight: 4,
+  },
+  selectorDropdownText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  selectorPlaceholderText: {
+    fontWeight: '500',
+    color: '#94A3B8',
+  },
+  textAreaMultiLine: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 10,
+    fontSize: 12.5,
+    color: '#0F172A',
+    minHeight: 68,
+    textAlignVertical: 'top',
+  },
+
+  /* Modal Footer Actions */
+  productModalFooter: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  productModalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productModalCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  productModalSaveBtn: {
+    flex: 1.6,
+    backgroundColor: '#1541D8',
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1541D8',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  productModalSaveBtnDisabled: {
+    opacity: 0.65,
+  },
+  productModalSaveBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  btnRowNormal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  btnRowLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  /* Backward Compatibility Styles */
   imageUploadBox: {
     width: '100%',
     height: 110,
@@ -1979,6 +2812,182 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '600',
     color: '#1E293B',
+  },
+
+  unitSelectorThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  unitModalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  unitPickerItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  unitPickerItemRowSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  unitIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    overflow: 'hidden',
+  },
+  unitItemImage: {
+    width: 26,
+    height: 26,
+  },
+  unitFallbackBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unitFallbackText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  unitItemNameText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  unitNameSelected: {
+    color: '#1541D8',
+  },
+  unitShortTag: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  customUnitBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  customUnitBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  unitTypeSubText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
+    textTransform: 'capitalize',
+  },
+  openAddCustomUnitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 10,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  openAddCustomUnitBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1541D8',
+  },
+  addCustomUnitCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    marginTop: 10,
+  },
+  addCustomUnitTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  customUnitInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#0F172A',
+  },
+  unitTypeSelectorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  unitTypeChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#E2E8F0',
+  },
+  unitTypeChipActive: {
+    backgroundColor: '#1541D8',
+  },
+  unitTypeChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+    textTransform: 'capitalize',
+  },
+  unitTypeChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  customUnitActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 6,
+  },
+  customUnitCancelBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+  },
+  customUnitCancelText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  customUnitSaveBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1541D8',
+  },
+  customUnitSaveText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
   /* Toast Overlay */

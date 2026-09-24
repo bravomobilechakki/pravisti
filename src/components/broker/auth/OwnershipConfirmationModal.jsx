@@ -75,8 +75,8 @@ const StepTracker = ({ currentStep, totalSteps }) => (
           currentStep === 1
             ? styles.stepDotActive
             : currentStep > 1
-            ? styles.stepDotDone
-            : styles.stepDotFuture,
+              ? styles.stepDotDone
+              : styles.stepDotFuture,
         ]}
       >
         {currentStep > 1 ? (
@@ -99,8 +99,8 @@ const StepTracker = ({ currentStep, totalSteps }) => (
           currentStep === 2
             ? styles.stepDotActive
             : currentStep > 2
-            ? styles.stepDotDone
-            : styles.stepDotFuture,
+              ? styles.stepDotDone
+              : styles.stepDotFuture,
         ]}
       >
         {currentStep > 2 ? (
@@ -164,17 +164,17 @@ const OwnershipConfirmationModal = ({
 
   const rawRole = (userData?.role || 'trader').toLowerCase();
   const isBrokerTargetRole = rawRole.includes('broker');
-  const creatorName = userData?.creatorName || userData?.onboardedByName || userData?.traderName || userData?.brokerName || userData?.broker?.name || (isBrokerTargetRole ? 'Counterparty Trader' : 'Assigned Broker');
+  const creatorName = userData?.creatorName || userData?.onboardedByName || userData?.traderName || userData?.brokerName || userData?.broker?.name || (isBrokerTargetRole ? 'Counterparty Trader' : 'Guest');
   const creatorCompany = userData?.creatorCompanyName || userData?.onboardedByCompany || userData?.brokerCompanyName || userData?.broker?.companyName || 'Pravisti Network';
-  
+
   const isSellerRole = rawRole.includes('seller');
 
   // Deals details if created by broker
   const dealsArr = Array.isArray(userData?.deals)
     ? userData.deals
     : userData?.deal
-    ? [userData.deal]
-    : [];
+      ? [userData.deal]
+      : [];
   const primaryDeal = dealsArr.length > 0 ? dealsArr[0] : userData?.dealData || null;
 
   // Products array
@@ -191,9 +191,9 @@ const OwnershipConfirmationModal = ({
       const addr = c.address || userData.address || {};
       setCompName(
         userData.companyName ||
-          c.name ||
-          (typeof userData.company === 'string' ? userData.company : '') ||
-          ''
+        c.name ||
+        (typeof userData.company === 'string' ? userData.company : '') ||
+        ''
       );
       setCompGst(c.registrationNumber || c.gst || userData.gst || '');
       setCompStreet(addr.street || (typeof addr === 'string' ? addr : ''));
@@ -334,8 +334,8 @@ const OwnershipConfirmationModal = ({
                 {step === 1
                   ? 'Confirm Account'
                   : step === 2
-                  ? 'Company Details'
-                  : 'Confirm Products'}
+                    ? 'Company Details'
+                    : 'Confirm Products'}
               </Text>
             </View>
             <TouchableOpacity
@@ -375,7 +375,7 @@ const OwnershipConfirmationModal = ({
                   <Text style={styles.infoGroupHeader}>
                     {isBrokerTargetRole ? 'Trader / Onboarder Information' : 'Broker Information'}
                   </Text>
-                  <InfoRow label={isBrokerTargetRole ? 'Onboarded By' : 'Broker Name'} value={creatorName} />
+                  <InfoRow label={isBrokerTargetRole ? 'Onboarded By' : 'Guest'} value={creatorName} />
                   {creatorCompany ? <InfoRow label="Company" value={creatorCompany} /> : null}
 
                   <View style={styles.divider} />

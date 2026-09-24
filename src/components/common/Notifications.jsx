@@ -20,18 +20,11 @@ import {
   Handshake,
   CheckCircle2,
   Clock,
-  CircleAlert as AlertCircle,
-  Building2,
-  FileText,
-  ChevronRight,
   CheckCheck,
   DollarSign,
-  Mail,
   Trash2,
   X,
   ShieldCheck,
-  Sparkles,
-  RefreshCw,
   MessageSquare,
   Truck,
 } from 'lucide-react-native';
@@ -40,6 +33,7 @@ import {
   markNotificationAsRead,
   markAllNotificationsAsRead,
   clearAllNotifications,
+  getDealDetails,
 } from '../../services/api';
 import { backendDomain } from '../../common';
 
@@ -62,12 +56,116 @@ const formatRelativeTime = (timestamp) => {
   });
 };
 
-const mapBackendNotification = (n, currentCompanyId) => {
-  const eventType = String(n.metadata?.eventType || '').toLowerCase();
+const extractEntityIds = (n) => {
+  const meta = n?.metadata || {};
+  const link = String(n?.link || '').trim();
+
+  // 1. Deal ID extraction
+  let dealId =
+    meta.dealId ||
+    meta.deal_id ||
+    meta.deal?._id ||
+    meta.deal?.id ||
+    n?.dealId ||
+    n?.deal?._id ||
+    n?.deal?.id;
+
+  if (!dealId && typeof meta.deal === 'string' && meta.deal.length >= 10) {
+    dealId = meta.deal;
+  }
+  if (!dealId && typeof n?.deal === 'string' && n.deal.length >= 10) {
+    dealId = n.deal;
+  }
+  if (!dealId && link) {
+    const match = link.match(/(?:deals|sauda|deal)\/([a-f0-9]{24}|[a-zA-Z0-9_-]+)/i);
+    if (match) dealId = match[1];
+  }
+  if (dealId && typeof dealId === 'object') {
+    dealId = dealId._id || dealId.id || null;
+  }
+  dealId = dealId ? String(dealId).trim() : null;
+  if (dealId === 'undefined' || dealId === 'null' || dealId === '') {
+    dealId = null;
+  }
+
+  // 2. Company ID extraction
+  let companyId =
+    meta.companyId ||
+    meta.company_id ||
+    meta.company?._id ||
+    meta.company?.id ||
+    n?.companyId ||
+    n?.company?._id ||
+    n?.company?.id;
+  if (companyId && typeof companyId === 'object') {
+    companyId = companyId._id || companyId.id || null;
+  }
+  companyId = companyId ? String(companyId).trim() : null;
+
+  // 3. Payment ID extraction
+  let paymentId =
+    meta.paymentId ||
+    meta.payment_id ||
+    meta.payment?._id ||
+    meta.payment?.id ||
+    n?.paymentId;
+  if (paymentId && typeof paymentId === 'object') {
+    paymentId = paymentId._id || paymentId.id || null;
+  }
+  paymentId = paymentId ? String(paymentId).trim() : null;
+
+  // 4. Delivery ID extraction
+  let deliveryId =
+    meta.deliveryId ||
+    meta.delivery_id ||
+    meta.delivery?._id ||
+    meta.delivery?.id ||
+    n?.deliveryId;
+  if (deliveryId && typeof deliveryId === 'object') {
+    deliveryId = deliveryId._id || deliveryId.id || null;
+  }
+  deliveryId = deliveryId ? String(deliveryId).trim() : null;
+
+  // 5. Conversation ID extraction
+  let conversationId =
+    meta.conversationId ||
+    meta.conversation_id ||
+    meta.conversation?._id ||
+    meta.conversation?.id ||
+    n?.conversationId;
+  if (conversationId && typeof conversationId === 'object') {
+    conversationId = conversationId._id || conversationId.id || null;
+  }
+  conversationId = conversationId ? String(conversationId).trim() : null;
+
+  // 6. Project ID extraction
+  let projectId =
+    meta.projectId ||
+    meta.project_id ||
+    meta.project?._id ||
+    meta.project?.id ||
+    n?.projectId;
+  if (projectId && typeof projectId === 'object') {
+    projectId = projectId._id || projectId.id || null;
+  }
+  projectId = projectId ? String(projectId).trim() : null;
+
+  // 7. Deal Number extraction
+  const dealNumber = meta.dealNumber || meta.dealNo || meta.saudaNo || n?.dealNumber || null;
+
+  return { dealId, companyId, paymentId, deliveryId, conversationId, projectId, dealNumber };
+};
+
+const mapBackendNotification = (n, currentCompanyId, routeContext = {}) => {
+  if (!n) return null;
+  const eventType = String(n.metadata?.eventType || n.type || '').toLowerCase();
   const notifType = String(n.type || 'info').toLowerCase();
-  const dealId = n.metadata?.dealId;
-  const dealNumber = n.metadata?.dealNumber;
-  const link = String(n.link || '');
+  const title = String(n.title || '').trim();
+  const message = String(n.message || '').trim();
+  const link = String(n.link || '').toLowerCase();
+
+  const { dealId, companyId, paymentId, deliveryId, conversationId, projectId, dealNumber } = extractEntityIds(n);
+  const effectiveCompanyId = companyId || currentCompanyId;
 
   let category = 'Alerts';
   let targetScreen = null;
@@ -93,83 +191,177 @@ const mapBackendNotification = (n, currentCompanyId) => {
     badgeText = 'Attention';
   }
 
-  // 1. Deals / Sauda
-  if (
+  // Domain checks
+  const isDealDomain =
     eventType.startsWith('deal_') ||
     eventType.startsWith('draft_deal') ||
-    dealId ||
+    eventType.includes('sauda') ||
+    link.includes('deal') ||
     link.includes('sauda') ||
-    link.includes('deals')
-  ) {
+    title.toLowerCase().includes('deal') ||
+    title.toLowerCase().includes('sauda');
+
+  const isChatDomain =
+    eventType === 'chat_message' ||
+    eventType.includes('chat') ||
+    eventType.includes('message') ||
+    link.includes('chat');
+
+  const isPaymentDomain =
+    eventType.startsWith('payment_') ||
+    Boolean(paymentId) ||
+    link.includes('payment') ||
+    title.toLowerCase().includes('payment');
+
+  const isDeliveryDomain =
+    eventType.startsWith('delivery_') ||
+    Boolean(deliveryId) ||
+    link.includes('delivery') ||
+    title.toLowerCase().includes('delivery') ||
+    title.toLowerCase().includes('dispatch');
+
+  const isProjectDomain =
+    eventType.startsWith('project_') ||
+    Boolean(projectId) ||
+    link.includes('project') ||
+    title.toLowerCase().includes('project');
+
+  const isOnboardDomain =
+    eventType.includes('onboard') ||
+    eventType.includes('verified') ||
+    eventType.includes('kyc') ||
+    title.toLowerCase().includes('verified') ||
+    title.toLowerCase().includes('kyc');
+
+  // --- ENTITY INTEGRITY CHECK: DO NOT SHOW NOTIFICATIONS IF REFERENCED ENTITY DOES NOT EXIST ---
+  // If notification claims to be about a deal, but dealId is missing -> phantom deal, hide it!
+  if (isDealDomain && !dealId) {
+    return null;
+  }
+
+  // If notification is a chat message, but has neither dealId nor conversationId -> hide it!
+  if (isChatDomain && !dealId && !conversationId) {
+    return null;
+  }
+
+  // If notification is about a payment, but has no paymentId and no dealId and no companyId -> hide it!
+  if (isPaymentDomain && !dealId && !paymentId && !effectiveCompanyId) {
+    return null;
+  }
+
+  // If notification is about a delivery, but has no deliveryId and no dealId and no companyId -> hide it!
+  if (isDeliveryDomain && !dealId && !deliveryId && !effectiveCompanyId) {
+    return null;
+  }
+
+  // 1. Deals / Sauda (Route to DealDetails)
+  if (isDealDomain || dealId) {
     category = 'Deals';
     itemType = notifType === 'success' ? 'deal_confirmed' : 'deal_pending';
-    targetScreen = dealId ? 'DealDetails' : 'DealsList';
+    targetScreen = 'DealDetails';
     targetData = {
       dealId,
       dealNumber,
-      companyId: n.companyId || currentCompanyId,
+      companyId: effectiveCompanyId,
+      company: routeContext?.company,
+      role: routeContext?.role,
+      user: routeContext?.user,
     };
-    actionLabel = eventType.includes('expired')
+    actionLabel = eventType.includes('expired') || eventType.includes('cancelled')
       ? 'View Deal'
-      : eventType.includes('approved')
+      : eventType.includes('approved') || eventType.includes('confirmed')
         ? 'View Contract'
         : 'Review Deal';
     if (!badgeText || badgeText === 'Alert') {
-      badgeText = eventType.includes('approved') ? 'Confirmed' : 'Sauda';
+      badgeText = eventType.includes('approved') || eventType.includes('confirmed') ? 'Confirmed' : 'Sauda';
     }
   }
-  // 2. Payments
-  else if (eventType.startsWith('payment_') || n.metadata?.paymentId || link.includes('payment')) {
-    category = 'Payments';
-    itemType = 'payment';
-    targetScreen = 'TransactionHistory';
-    targetData = {
-      companyId: n.companyId || currentCompanyId,
-    };
-    actionLabel = 'View Transactions';
-    badgeText = 'Payment';
-    badgeColor = '#7C3AED';
-    badgeBg = '#F3E8FF';
-  }
-  // 3. Chat Messages
-  else if (eventType === 'chat_message' || n.metadata?.conversationId || link.includes('chat')) {
+  // 2. Chat Messages (Route to DealChat)
+  else if (isChatDomain) {
     category = 'Deals';
-    itemType = 'deal_pending';
+    itemType = 'chat';
     targetScreen = dealId ? 'DealChat' : 'ChatList';
     targetData = {
       dealId,
-      conversationId: n.metadata?.conversationId,
-      companyId: n.companyId || currentCompanyId,
+      conversationId,
+      companyId: effectiveCompanyId,
+      company: routeContext?.company,
+      role: routeContext?.role,
+      user: routeContext?.user,
     };
     actionLabel = 'Open Chat';
     badgeText = 'New Message';
     badgeColor = '#EA580C';
     badgeBg = '#FFF7ED';
   }
-  // 4. Deliveries
-  else if (eventType.startsWith('delivery_') || n.metadata?.deliveryId || link.includes('delivery')) {
-    category = 'Deals';
-    itemType = 'deal_confirmed';
-    targetScreen = dealId ? 'DealDetails' : 'DealsList';
+  // 3. Payments (Route to CompanyPayments or TransactionHistory)
+  else if (isPaymentDomain) {
+    category = 'Payments';
+    itemType = 'payment';
+    targetScreen = 'CompanyPayments';
     targetData = {
+      companyId: effectiveCompanyId,
+      paymentId,
       dealId,
-      companyId: n.companyId || currentCompanyId,
+      company: routeContext?.company,
+      role: routeContext?.role,
+      user: routeContext?.user,
     };
-    actionLabel = 'View Delivery';
-    badgeText = 'Delivery';
+    actionLabel = 'View Payments';
+    badgeText = 'Payment';
+    badgeColor = '#7C3AED';
+    badgeBg = '#F3E8FF';
   }
-  // 5. Onboarding / Verification
-  else if (eventType.includes('onboard') || eventType.includes('verified')) {
+  // 4. Deliveries (Route to CompanyDeliveries)
+  else if (isDeliveryDomain) {
+    category = 'Deals';
+    itemType = 'delivery';
+    targetScreen = 'CompanyDeliveries';
+    targetData = {
+      companyId: effectiveCompanyId,
+      deliveryId,
+      dealId,
+      company: routeContext?.company,
+      role: routeContext?.role,
+      user: routeContext?.user,
+    };
+    actionLabel = 'View Deliveries';
+    badgeText = 'Delivery';
+    badgeColor = '#059669';
+    badgeBg = '#ECFDF5';
+  }
+  // 5. Onboarding / Verification (Route to CompanyProfileDetails)
+  else if (isOnboardDomain) {
     category = 'Alerts';
     itemType = 'system';
     targetScreen = 'CompanyProfileDetails';
     targetData = {
-      companyId: n.companyId || currentCompanyId,
+      companyId: effectiveCompanyId,
+      company: routeContext?.company,
+      role: routeContext?.role,
+      user: routeContext?.user,
     };
     actionLabel = 'View Profile';
     badgeText = 'Verified';
     badgeColor = '#059669';
     badgeBg = '#ECFDF5';
+  }
+  // 6. Projects (Route to ProjectDetails or ProjectsList)
+  else if (isProjectDomain) {
+    category = 'Alerts';
+    itemType = 'system';
+    targetScreen = projectId ? 'ProjectDetails' : 'ProjectsList';
+    targetData = {
+      projectId,
+      companyId: effectiveCompanyId,
+      company: routeContext?.company,
+      role: routeContext?.role,
+      user: routeContext?.user,
+    };
+    actionLabel = 'View Project';
+    badgeText = 'Project';
+    badgeColor = '#0284C7';
+    badgeBg = '#E0F2FE';
   }
 
   return {
@@ -177,8 +369,8 @@ const mapBackendNotification = (n, currentCompanyId) => {
     rawId: n._id,
     type: itemType,
     category,
-    title: n.title || 'Notification',
-    message: n.message || '',
+    title: title || 'Notification',
+    message: message || '',
     timestamp: n.createdAt ? new Date(n.createdAt) : new Date(),
     isRead: Boolean(n.isRead),
     targetScreen,
@@ -188,6 +380,7 @@ const mapBackendNotification = (n, currentCompanyId) => {
     badgeColor,
     badgeBg,
     rawItem: n,
+    hasEntity: true,
   };
 };
 
@@ -196,6 +389,7 @@ const Notifications = ({ onNavigate, routeData }) => {
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [validatingId, setValidatingId] = useState(null);
 
   const currentCompanyId = routeData?.companyId || routeData?.company?._id || routeData?.company?.id || null;
 
@@ -210,11 +404,84 @@ const Notifications = ({ onNavigate, routeData }) => {
         const notifRes = await getUserNotifications(token, currentCompanyId);
         if (notifRes && notifRes.success && Array.isArray(notifRes.data)) {
           notifRes.data.forEach((n) => {
-            list.push(mapBackendNotification(n, currentCompanyId));
+            const mapped = mapBackendNotification(n, currentCompanyId, routeData);
+            if (mapped) {
+              list.push(mapped);
+            }
           });
         }
       } catch (be) {
         console.warn('Backend notification fetch error:', be);
+      }
+
+      // Check existence of referenced deals so notifications pointing to deleted/missing deals are NOT shown
+      const dealIdsToCheck = [
+        ...new Set(
+          list
+            .filter((item) => item.targetData?.dealId)
+            .map((item) => item.targetData.dealId)
+        ),
+      ];
+
+      if (dealIdsToCheck.length > 0) {
+        const dealCheckResults = await Promise.allSettled(
+          dealIdsToCheck.map(async (dId) => {
+            try {
+              const dRes = await getDealDetails(dId, token);
+              const dealObj = dRes?.data?.deal || dRes?.data;
+              if (dRes && (dRes.success || dRes.statusCode === 200 || dRes.statusCode === 201) && dealObj && (dealObj._id || dealObj.id)) {
+                return { dealId: dId, exists: true, deal: dealObj };
+              }
+              return { dealId: dId, exists: false };
+            } catch (err) {
+              const status = err?.response?.status || err?.status;
+              const msg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
+              if (status === 404 || msg.includes('not found') || msg.includes('deleted')) {
+                return { dealId: dId, exists: false };
+              }
+              return { dealId: dId, exists: true };
+            }
+          })
+        );
+
+        const invalidDealIds = new Set();
+        const dealDataMap = new Map();
+
+        dealCheckResults.forEach((res) => {
+          if (res.status === 'fulfilled') {
+            if (!res.value.exists) {
+              invalidDealIds.add(res.value.dealId);
+            } else if (res.value.deal) {
+              dealDataMap.set(res.value.dealId, res.value.deal);
+            }
+          }
+        });
+
+        // Filter out notifications whose referenced deal does not exist
+        const validatedList = list
+          .filter((item) => {
+            const dId = item.targetData?.dealId;
+            if (dId && invalidDealIds.has(dId)) {
+              return false;
+            }
+            return true;
+          })
+          .map((item) => {
+            const dId = item.targetData?.dealId;
+            if (dId && dealDataMap.has(dId)) {
+              return {
+                ...item,
+                targetData: {
+                  ...item.targetData,
+                  deal: dealDataMap.get(dId),
+                },
+              };
+            }
+            return item;
+          });
+
+        list.length = 0;
+        list.push(...validatedList);
       }
 
       // Sort by latest timestamp
@@ -226,7 +493,7 @@ const Notifications = ({ onNavigate, routeData }) => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [currentCompanyId]);
+  }, [currentCompanyId, routeData]);
 
   useEffect(() => {
     fetchNotifications();
@@ -253,9 +520,29 @@ const Notifications = ({ onNavigate, routeData }) => {
           transports: ['websocket'],
         });
 
-        socket.on('notification', (newNotif) => {
+        socket.on('notification', async (newNotif) => {
           if (!newNotif) return;
-          const mapped = mapBackendNotification(newNotif, currentCompanyId);
+          const mapped = mapBackendNotification(newNotif, currentCompanyId, routeData);
+          if (!mapped) return;
+
+          // If deal notification, verify existence before displaying
+          if (mapped.targetData?.dealId) {
+            try {
+              const dRes = await getDealDetails(mapped.targetData.dealId, token);
+              const dealObj = dRes?.data?.deal || dRes?.data;
+              if (!dRes || (!dRes.success && !dealObj) || !dealObj?._id) {
+                return;
+              }
+              mapped.targetData.deal = dealObj;
+            } catch (err) {
+              const status = err?.response?.status || err?.status;
+              const msg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
+              if (status === 404 || msg.includes('not found') || msg.includes('deleted')) {
+                return;
+              }
+            }
+          }
+
           setNotifications((prev) => [mapped, ...prev.filter((item) => item.id !== mapped.id)]);
         });
       } catch (e) {
@@ -270,7 +557,7 @@ const Notifications = ({ onNavigate, routeData }) => {
         socket.disconnect();
       }
     };
-  }, [currentCompanyId]);
+  }, [currentCompanyId, routeData]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -321,6 +608,93 @@ const Notifications = ({ onNavigate, routeData }) => {
     );
   };
 
+  const handleNotificationPress = async (item) => {
+    if (!item) return;
+
+    // Mark as read in local state
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+    );
+
+    // Mark as read in backend
+    if (item.rawId) {
+      AsyncStorage.getItem('userToken')
+        .then((token) => {
+          if (token) markNotificationAsRead(item.rawId, token).catch(() => {});
+        })
+        .catch(() => {});
+    }
+
+    if (!item.targetScreen) {
+      return;
+    }
+
+    const targetData = { ...(item.targetData || {}) };
+
+    // Verify entity existence before navigation for deals and chat
+    if (
+      item.targetScreen === 'DealDetails' ||
+      item.targetScreen === 'BrokerDealDetails' ||
+      item.targetScreen === 'DealChat'
+    ) {
+      const dealId = targetData.dealId;
+      if (!dealId) {
+        Alert.alert('Notice', 'No valid deal reference found for this notification.');
+        return;
+      }
+
+      setValidatingId(item.id);
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        const dealRes = await getDealDetails(dealId, token);
+        const dealObj = dealRes?.data?.deal || dealRes?.data;
+        const exists =
+          dealRes &&
+          (dealRes.success || dealRes.statusCode === 200 || dealRes.statusCode === 201) &&
+          dealObj &&
+          (dealObj._id || dealObj.id);
+
+        if (!exists) {
+          // Entity does not exist: remove notification and alert user
+          setNotifications((prev) => prev.filter((n) => n.id !== item.id));
+          Alert.alert(
+            'Deal Not Available',
+            'This deal record does not exist or has been removed.'
+          );
+          return;
+        }
+
+        // Attach populated deal object
+        targetData.deal = dealObj;
+      } catch (err) {
+        const status = err?.response?.status || err?.status;
+        const msg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
+        if (status === 404 || msg.includes('not found') || msg.includes('deleted')) {
+          setNotifications((prev) => prev.filter((n) => n.id !== item.id));
+          Alert.alert(
+            'Deal Not Available',
+            'This deal record does not exist or has been removed.'
+          );
+          return;
+        }
+      } finally {
+        setValidatingId(null);
+      }
+    }
+
+    // Determine correct fallback routing
+    let finalScreen = item.targetScreen;
+    if (finalScreen === 'CompanyProfileDetails' && !targetData.companyId) {
+      finalScreen = 'Profile';
+    } else if (finalScreen === 'CompanyPayments' && !targetData.companyId) {
+      finalScreen = 'TransactionHistory';
+    } else if (finalScreen === 'CompanyDeliveries' && !targetData.companyId) {
+      finalScreen = 'Deliveries';
+    }
+
+    onNavigate(finalScreen, targetData);
+  };
+
   const filteredNotifications = useMemo(() => {
     return notifications.filter(n => {
       if (activeTab === 'All') return true;
@@ -349,10 +723,18 @@ const Notifications = ({ onNavigate, routeData }) => {
       iconBg = '#E0F2FE';
       iconColor = '#0284C7';
       IconComponent = Clock;
+    } else if (item.type === 'chat') {
+      iconBg = '#FFF7ED';
+      iconColor = '#EA580C';
+      IconComponent = MessageSquare;
     } else if (item.type === 'payment') {
       iconBg = '#F3E8FF';
       iconColor = '#7C3AED';
       IconComponent = DollarSign;
+    } else if (item.type === 'delivery') {
+      iconBg = '#ECFDF5';
+      iconColor = '#059669';
+      IconComponent = Truck;
     } else if (item.type === 'system') {
       iconBg = '#EEF2FF';
       iconColor = '#4F46E5';
@@ -360,26 +742,14 @@ const Notifications = ({ onNavigate, routeData }) => {
     }
 
     const timeAgoStr = formatRelativeTime(item.timestamp);
+    const isValidating = validatingId === item.id;
 
     return (
       <TouchableOpacity
         style={[styles.notifCard, !item.isRead && styles.unreadNotifCard]}
         activeOpacity={0.85}
-        onPress={() => {
-          setNotifications((prev) =>
-            prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
-          );
-          if (item.rawId) {
-            AsyncStorage.getItem('userToken')
-              .then((token) => {
-                if (token) markNotificationAsRead(item.rawId, token).catch(() => { });
-              })
-              .catch(() => { });
-          }
-          if (item.targetScreen) {
-            onNavigate(item.targetScreen, item.targetData || {});
-          }
-        }}
+        disabled={isValidating}
+        onPress={() => handleNotificationPress(item)}
       >
         {/* Left Icon */}
         <View style={[styles.iconBubble, { backgroundColor: iconBg }]}>
@@ -410,14 +780,20 @@ const Notifications = ({ onNavigate, routeData }) => {
 
         {/* Right Actions */}
         <View style={styles.rightActions}>
-          <TouchableOpacity
-            style={styles.dismissBtn}
-            onPress={() => deleteNotification(item.id)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <X size={14} color="#94A3B8" />
-          </TouchableOpacity>
-          {!item.isRead && <View style={styles.unreadDot} />}
+          {isValidating ? (
+            <ActivityIndicator size="small" color="#1A56DB" />
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.dismissBtn}
+                onPress={() => deleteNotification(item.id)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={14} color="#94A3B8" />
+              </TouchableOpacity>
+              {!item.isRead && <View style={styles.unreadDot} />}
+            </>
+          )}
         </View>
       </TouchableOpacity>
     );

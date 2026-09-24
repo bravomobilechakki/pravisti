@@ -13,8 +13,7 @@ import {
   ScrollView,
   Platform,
   StatusBar,
-  Animated,
-  Easing,
+  Keyboard,
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { loginUser, verifyOtp } from '../../services/api';
@@ -84,6 +83,30 @@ const Login = ({ onNavigate, routeData }) => {
   const [mobileFocused, setMobileFocused] = useState(false);
   const [timer, setTimer] = useState(60);
   const [errorMessage, setErrorMessage] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const scrollViewRef = useRef(null);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardVisible(true);
+        setKeyboardHeight(e?.endCoordinates?.height || 280);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+      }
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const isVerifyingRef = useRef(false);
 
@@ -155,7 +178,10 @@ const Login = ({ onNavigate, routeData }) => {
 
   useEffect(() => {
     if (otpSent && !isLoading) {
-      setTimeout(() => otpRefs.current[0]?.focus(), 300);
+      setTimeout(() => {
+        otpRefs.current[0]?.focus();
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 300);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otpSent]);
@@ -307,14 +333,22 @@ const Login = ({ onNavigate, routeData }) => {
       <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         style={{ flex: 1 }}
       >
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: keyboardVisible ? (Platform.OS === 'ios' ? 40 : Math.max(keyboardHeight * 0.35, 70)) : 24 },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          bounces={true}
+          alwaysBounceVertical={false}
+          overScrollMode="always"
         >
-          <View style={{ flex: 1 }}>
+          <View style={styles.scrollInner}>
 
             {/* Modern Mesh Top Bar Header */}
             <ModernHeader width={width} height={headerHeight} />
@@ -322,7 +356,7 @@ const Login = ({ onNavigate, routeData }) => {
             {/* Form Card */}
             <View style={styles.formCard}>
               <Text style={styles.titleText}>Welcome back</Text>
-              <Text style={styles.subtitleText}>Enter your credentials to manage your sovereign ledger.</Text>
+              <Text style={styles.subtitleText}>Enter your Registered Mobile Number to Login</Text>
 
               {/* Mobile Input */}
               <Text style={styles.inputLabel}>Mobile Number</Text>
@@ -531,8 +565,14 @@ const styles = StyleSheet.create({
     height: 68,
     marginLeft: 6,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  scrollInner: {
+    flexGrow: 1,
+  },
   formCard: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,

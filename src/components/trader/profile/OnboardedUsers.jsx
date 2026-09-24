@@ -484,6 +484,36 @@ const OnboardedUsers = ({ onNavigate, routeData }) => {
     }
   };
 
+  // Check if mobile number is already onboarded
+  const matchedExistingUser = useMemo(() => {
+    const cleanMob = (onboardForm.mobileNumber || '').replace(/\D/g, '').slice(-10);
+    if (cleanMob.length < 10) return null;
+    return (
+      onboardedUsers.find((u) => {
+        const uMob = String(u.mobileNumber || u.invitedMobile || '').replace(/\D/g, '').slice(-10);
+        return uMob === cleanMob;
+      }) || null
+    );
+  }, [onboardForm.mobileNumber, onboardedUsers]);
+
+  const handleOnboardMobileChange = (val) => {
+    const clean = val.replace(/\D/g, '').slice(0, 10);
+    setOnboardForm((prev) => {
+      const updated = { ...prev, mobileNumber: clean };
+      if (clean.length === 10) {
+        const match = onboardedUsers.find((u) => {
+          const uMob = String(u.mobileNumber || u.invitedMobile || '').replace(/\D/g, '').slice(-10);
+          return uMob === clean;
+        });
+        if (match) {
+          updated.name = match.name || match.targetUserName || prev.name;
+          updated.companyName = match.company?.name || prev.companyName;
+        }
+      }
+      return updated;
+    });
+  };
+
   // Execute Direct Trader Onboarding
   const handleExecuteDirectOnboard = async () => {
     if (!onboardForm.name.trim()) {
@@ -1187,18 +1217,6 @@ const OnboardedUsers = ({ onNavigate, routeData }) => {
                   </View>
                 )}
 
-                {/* Contact Name */}
-                <View>
-                  <Text style={styles.fieldLabel}>Contact Person Name *</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={onboardForm.name}
-                    onChangeText={val => setOnboardForm(prev => ({ ...prev, name: val }))}
-                    placeholder="Full Name (e.g. Ramesh Patel)"
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
-
                 {/* Mobile Number */}
                 <View>
                   <Text style={styles.fieldLabel}>10-Digit Mobile Number *</Text>
@@ -1207,26 +1225,62 @@ const OnboardedUsers = ({ onNavigate, routeData }) => {
                     <TextInput
                       style={styles.phoneInput}
                       value={onboardForm.mobileNumber}
-                      onChangeText={val => setOnboardForm(prev => ({ ...prev, mobileNumber: val.replace(/\D/g, '').slice(0, 10) }))}
+                      onChangeText={handleOnboardMobileChange}
                       placeholder="9876543210"
                       placeholderTextColor="#94A3B8"
                       keyboardType="number-pad"
                       maxLength={10}
                     />
+                    {matchedExistingUser && (
+                      <CheckCircle2 size={18} color="#16A34A" style={{ marginRight: 8 }} />
+                    )}
                   </View>
                 </View>
 
-                {/* Company Name */}
-                <View>
-                  <Text style={styles.fieldLabel}>Firm / Company Name *</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={onboardForm.companyName}
-                    onChangeText={val => setOnboardForm(prev => ({ ...prev, companyName: val }))}
-                    placeholder="e.g. Patel Agro Foods Pvt Ltd"
-                    placeholderTextColor="#94A3B8"
-                  />
-                </View>
+                {/* If already onboarded, show info card */}
+                {matchedExistingUser ? (
+                  <View style={styles.alreadyOnboardedAlertCard}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <CheckCircle2 size={16} color="#15803D" />
+                      <Text style={styles.alreadyOnboardedAlertTitle}>Already Onboarded Party</Text>
+                    </View>
+                    <Text style={styles.alreadyOnboardedAlertName}>
+                      {matchedExistingUser.name || matchedExistingUser.targetUserName || 'Party'}
+                    </Text>
+                    <Text style={styles.alreadyOnboardedAlertMeta}>
+                      {matchedExistingUser.company?.name || 'Company'} • +91 {matchedExistingUser.mobileNumber || matchedExistingUser.invitedMobile}
+                    </Text>
+                    <Text style={styles.alreadyOnboardedAlertHint}>
+                      ✓ This party is already registered in your directory. No need to fill details again.
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    {/* Contact Name */}
+                    <View>
+                      <Text style={styles.fieldLabel}>Contact Person Name *</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={onboardForm.name}
+                        onChangeText={val => setOnboardForm(prev => ({ ...prev, name: val }))}
+                        placeholder="Full Name (e.g. Ramesh Patel)"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+
+                    {/* Company Name */}
+                    <View>
+                      <Text style={styles.fieldLabel}>Firm / Company Name *</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={onboardForm.companyName}
+                        onChangeText={val => setOnboardForm(prev => ({ ...prev, companyName: val }))}
+                        placeholder="e.g. Patel Agro Foods Pvt Ltd"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  </>
+                )}
 
                 {/* GST Number (Optional) */}
                 <View>
@@ -2052,5 +2106,39 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
+  },
+  alreadyOnboardedAlertCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    padding: 10,
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  alreadyOnboardedAlertTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#166534',
+  },
+  alreadyOnboardedAlertName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  alreadyOnboardedAlertMeta: {
+    fontSize: 12,
+    color: '#475569',
+    marginTop: 1,
+  },
+  alreadyOnboardedAlertHint: {
+    fontSize: 11,
+    color: '#15803D',
+    fontWeight: '600',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#DCFCE7',
   },
 });

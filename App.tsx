@@ -26,6 +26,8 @@ import {
   TransactionHistory,
   OnboardedUsers,
   CompanyPayments,
+  CompanyDeliveries,
+  CompanyLedger,
   DealInvoice,
   ProjectsList,
   CreateProject,
@@ -46,13 +48,14 @@ import {
   BrokerPendingQueue,
   OwnershipConfirmationModal,
 } from './src/components/broker';
-import { StaffDashboard, StaffProfile } from './src/components/staff';
+import { StaffDashboard, StaffProfile, StaffTasksSelf } from './src/components/staff';
 import { VoicePreferencesScreen } from './src/modules/voice';
 
 const LoginScreen = Login as any;
 const SignupScreen = Signup as any;
 const StaffLoginScreen = StaffLogin as any;
 const StaffProfileScreen = StaffProfile as any;
+const StaffTasksSelfScreen = StaffTasksSelf as any;
 const ChooseIndustryScreen = ChooseIndustry as any;
 const DashboardScreen = Dashboard as any;
 const AddCompanyScreen = AddCompany as any;
@@ -71,6 +74,8 @@ const AddProductPageScreen = AddProductPage as any;
 const TransactionHistoryScreen = TransactionHistory as any;
 const OnboardedUsersScreen = OnboardedUsers as any;
 const CompanyPaymentsScreen = CompanyPayments as any;
+const CompanyDeliveriesScreen = CompanyDeliveries as any;
+const CompanyLedgerScreen = CompanyLedger as any;
 const DealInvoiceScreen = DealInvoice as any;
 const ProjectsListScreen = ProjectsList as any;
 const CreateProjectScreen = CreateProject as any;
@@ -117,8 +122,10 @@ const isAuthOrStaffScreen = (screenName: string): boolean => {
     'stafflogin',
     'staffdashboard',
     'staffprofile',
+    'stafftasksself',
     'chooseindustry',
     'aibot',
+    'dealchat',
   ].includes(s);
 };
 
@@ -132,6 +139,7 @@ const getScreenStatusBarConfig = (screenName: string) => {
     case 'AIBot':
     case 'ProjectsList':
     case 'StaffDashboard':
+    case 'StaffTasksSelf':
       return { bg: '#2327D8', barStyle: 'light-content' as const };
     case 'Notifications':
     case 'MyCompanies':
@@ -158,7 +166,7 @@ const getScreenStatusBarConfig = (screenName: string) => {
 
 function App() {
   const [navigationStack, setNavigationStack] = useState([
-    { screen: 'StaffDashboard', data: {} as any },
+    { screen: 'Login', data: {} as any },
   ]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
@@ -187,7 +195,21 @@ function App() {
     const initializeAuth = async () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
+        const role = await AsyncStorage.getItem('userRole');
+
         if (token) {
+          // If staff role is saved, direct to StaffDashboard
+          if (role === 'staff') {
+            const cachedStaff = await AsyncStorage.getItem('userInfo');
+            let staffData = {};
+            if (cachedStaff) {
+              try { staffData = JSON.parse(cachedStaff); } catch { }
+            }
+            setNavigationStack([{ screen: 'StaffDashboard', data: { user: staffData, role: 'staff' } }]);
+            setIsInitializing(false);
+            return;
+          }
+
           const storedProfileStr = await AsyncStorage.getItem('user_completed_profile');
           let cachedUser: any = null;
           if (storedProfileStr) {
@@ -221,15 +243,20 @@ function App() {
             } else if (response?.statusCode === 401 || (response?.message && response.message.toLowerCase().includes('token'))) {
               // Token strictly invalid/expired by auth server
               await AsyncStorage.removeItem('userToken');
+              await AsyncStorage.removeItem('userRole');
               await AsyncStorage.removeItem('user_completed_profile');
               setNavigationStack([{ screen: 'Login', data: {} }]);
             }
           } catch (netErr) {
             console.warn('Network error during session verification, continuing with cached session:', netErr);
           }
+        } else {
+          // No token saved, show Login screen
+          setNavigationStack([{ screen: 'Login', data: {} }]);
         }
       } catch (error) {
         console.warn('Failed to restore session automatically', error);
+        setNavigationStack([{ screen: 'Login', data: {} }]);
       } finally {
         setIsInitializing(false);
       }
@@ -447,12 +474,20 @@ function App() {
         return <OnboardedUsersScreen onNavigate={onNavigate} routeData={data} />;
       case 'CompanyPayments':
         return <CompanyPaymentsScreen onNavigate={onNavigate} routeData={data} />;
+      case 'CompanyDeliveries':
+      case 'Deliveries':
+        return <CompanyDeliveriesScreen onNavigate={onNavigate} routeData={data} />;
+      case 'CompanyLedger':
+      case 'Ledger':
+        return <CompanyLedgerScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerDashboard':
         return <BrokerDashboardScreen onNavigate={onNavigate} routeData={data} />;
       case 'StaffDashboard':
         return <StaffDashboardScreen onNavigate={onNavigate} routeData={data} />;
       case 'StaffProfile':
         return <StaffProfileScreen onNavigate={onNavigate} routeData={data} onBack={() => onNavigate('pop')} />;
+      case 'StaffTasksSelf':
+        return <StaffTasksSelfScreen onNavigate={onNavigate} routeData={data} onBack={() => onNavigate('pop')} />;
       case 'BrokerAddCompany':
         return <BrokerAddCompanyScreen onNavigate={onNavigate} routeData={data} />;
       case 'BrokerOnboardUser':

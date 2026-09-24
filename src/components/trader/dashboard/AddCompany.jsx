@@ -317,10 +317,6 @@ const AddCompany = ({ onNavigate, routeData }) => {
       newErrors.name = 'Company Name is required';
       hasError = true;
     }
-    if (!formData.registrationNumber.trim()) {
-      newErrors.registrationNumber = 'Registration / GSTIN is required';
-      hasError = true;
-    }
 
     if (isCustomIndustry) {
       if (!customIndustryName.trim()) {
@@ -334,7 +330,6 @@ const AddCompany = ({ onNavigate, routeData }) => {
 
     if (hasError) {
       setErrors(newErrors);
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
 
@@ -342,64 +337,43 @@ const AddCompany = ({ onNavigate, routeData }) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
-        Alert.alert('Error', 'Authentication session expired. Please login again.');
-        onNavigate('Login');
+        Alert.alert('Authentication Error', 'Session expired. Please log in again.');
         return;
       }
 
-      let targetIndustryId = null;
+      let targetIndustryId = formData.industryId;
 
-      if (isCustomIndustry) {
-        const trimmedCustom = customIndustryName.trim();
-
-        // 1. Check if industry already exists in locally cached list
-        const matched = industries.find(
-          ind => (ind.name || '').trim().toLowerCase() === trimmedCustom.toLowerCase()
-        );
-
-        if (matched && (matched._id || matched.id)) {
-          targetIndustryId = matched._id || matched.id;
-        } else {
-          // 2. Pre-create standalone custom industry via POST /api/industries to obtain valid ObjectId
+      // If user provided a custom industry, dynamically create/register it first
+      if (isCustomIndustry && customIndustryName.trim()) {
+        try {
+          const indRes = await createIndustry({ name: customIndustryName.trim() }, token);
+          if (indRes && indRes.data) {
+            targetIndustryId = indRes.data._id || indRes.data.id;
+          }
+        } catch (indErr) {
+          console.warn('[AddCompany] createIndustry pre-call failed:', indErr?.message || indErr);
           try {
-            const indRes = await createIndustry({ name: trimmedCustom, description: trimmedCustom }, token);
-            const createdObj = indRes?.data?.industry || indRes?.data?.company || indRes?.data || indRes;
-            const createdId = createdObj?._id || createdObj?.id;
-            if (createdId) {
-              targetIndustryId = createdId;
-              if (indRes?.data) {
-                setIndustries(prev => [...prev, indRes.data]);
-              }
+            const freshInds = await getIndustries();
+            const freshList = freshInds?.data || freshInds || [];
+            const match = freshList.find(
+              i => (i.name || '').trim().toLowerCase() === customIndustryName.trim().toLowerCase()
+            );
+            if (match) {
+              targetIndustryId = match._id || match.id;
             }
-          } catch (indErr) {
-            console.warn('[AddCompany] createIndustry pre-call failed:', indErr?.message || indErr);
-            // 3. Fallback: try refreshing industries list in case it exists in DB
-            try {
-              const freshRes = await getIndustries();
-              if (freshRes?.success && Array.isArray(freshRes.data)) {
-                setIndustries(freshRes.data);
-                const retryMatch = freshRes.data.find(
-                  ind => (ind.name || '').trim().toLowerCase() === trimmedCustom.toLowerCase()
-                );
-                if (retryMatch && (retryMatch._id || retryMatch.id)) {
-                  targetIndustryId = retryMatch._id || retryMatch.id;
-                }
-              }
-            } catch (freshErr) {
-              console.warn('[AddCompany] getIndustries refresh failed:', freshErr?.message || freshErr);
-            }
+          } catch (freshErr) {
+            console.warn('[AddCompany] getIndustries refresh failed:', freshErr?.message || freshErr);
           }
         }
-      } else {
-        targetIndustryId = formData.industryId || (industries.length > 0 ? (industries[0]._id || industries[0].id) : undefined);
       }
 
+      const cleanReg = formData.registrationNumber?.trim();
       const payload = {
-        name: formData.name,
-        email: formData.email,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
         phone: formData.phone || userMobile || routeData?.user?.mobileNumber || routeData?.user?.mobile || '',
         type: formData.type,
-        registrationNumber: formData.registrationNumber,
+        registrationNumber: cleanReg || `REG-${Date.now().toString().slice(-8)}`,
         address: {
           street: formData.street,
           city: formData.city,
@@ -409,13 +383,16 @@ const AddCompany = ({ onNavigate, routeData }) => {
         },
         website: formData.website || '',
         description: formData.description || '',
-        documents: [
+      };
+
+      if (cleanReg) {
+        payload.documents = [
           {
             name: 'GST Certificate',
             url: 'https://storage.example.com/docs/gst_cert.pdf'
           }
-        ]
-      };
+        ];
+      }
 
       if (isCustomIndustry) {
         payload.customIndustry = customIndustryName.trim();
@@ -527,10 +504,12 @@ const AddCompany = ({ onNavigate, routeData }) => {
               {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
             </View>
 
-            {/* Registration / GSTIN */}
+            {/* Registration / GSTIN (Optional) */}
             <View style={styles.fieldContainer}>
               <View style={styles.inputLabelRow}>
-                <Text style={styles.inputLabel}>Registration / GSTIN <Text style={styles.requiredStar}>*</Text></Text>
+                <Text style={styles.inputLabel}>
+                  Registration / GSTIN <Text style={{ fontSize: 11, fontWeight: '500', color: '#64748B' }}>(Optional)</Text>
+                </Text>
                 <Text style={styles.helperLabel}>Unique Tax ID</Text>
               </View>
               <View
@@ -542,7 +521,7 @@ const AddCompany = ({ onNavigate, routeData }) => {
                 <Hash size={18} color="#64748B" style={styles.inputLeadingIcon} />
                 <TextInput
                   style={styles.textInputWithIcon}
-                  placeholder="e.g. 08AAAAA0000A1Z5"
+                  placeholder="e.g. 08AAAAA0000A1Z5 (Optional)"
                   placeholderTextColor="#94A3B8"
                   autoCapitalize="characters"
                   value={formData.registrationNumber}
@@ -1032,7 +1011,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 100,
+    paddingBottom: 160,
   },
   sectionCard: {
     backgroundColor: '#FFFFFF',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,13 @@ import {
   StyleSheet,
   SafeAreaView,
   Image,
-  useWindowDimensions,
+  Dimensions,
   ActivityIndicator,
   KeyboardAvoidingView,
   ScrollView,
   Platform,
   StatusBar,
+  Keyboard,
   Alert,
 } from 'react-native';
 import {
@@ -25,17 +26,15 @@ import {
   Check,
   Package,
   TrendingUp,
-  Fingerprint,
   AlertCircle,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { staffLoginUser, getUserProfile } from '../../services/api';
 
 const VIBRANT_BLUE = '#0066FF';
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const StaffLogin = ({ onNavigate, routeData }) => {
-  const { width } = useWindowDimensions();
-
   const [identifier, setIdentifier] = useState(routeData?.mobile || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -43,6 +42,31 @@ const StaffLogin = ({ onNavigate, routeData }) => {
   const [errorMessage, setErrorMessage] = useState('');
   const [idFocused, setIdFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const passwordInputRef = useRef(null);
+  const scrollViewRef = useRef(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardVisible(true);
+        setKeyboardHeight(e?.endCoordinates?.height || 280);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+        setKeyboardHeight(0);
+      }
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (routeData?.mobile) {
@@ -60,26 +84,23 @@ const StaffLogin = ({ onNavigate, routeData }) => {
       return;
     }
 
-    if (!password.trim()) {
-      setErrorMessage('Please enter your password');
-      return;
-    }
+    const loginPayloadMobile = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : trimmedId;
+    const effectivePassword = password.trim() || loginPayloadMobile;
 
     setIsLoading(true);
 
     try {
-      const loginPayloadMobile = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : trimmedId;
       let response = null;
 
       try {
-        response = await staffLoginUser(loginPayloadMobile, password);
+        response = await staffLoginUser(loginPayloadMobile, effectivePassword);
       } catch (apiErr) {
         console.warn('staffLoginUser notice:', apiErr?.message || apiErr);
       }
 
       if (response && response.success) {
         const token = response.data?.token || response.token;
-        const user = response.data?.user || response.user;
+        const staffObj = response.data?.staff || response.data?.user || response.staff || response.user;
 
         if (token) {
           await AsyncStorage.setItem('userToken', token);
@@ -87,8 +108,8 @@ const StaffLogin = ({ onNavigate, routeData }) => {
         await AsyncStorage.setItem('userRole', 'staff');
         await AsyncStorage.setItem('staff_mobile', loginPayloadMobile);
 
-        if (user) {
-          await AsyncStorage.setItem('userInfo', JSON.stringify(user));
+        if (staffObj) {
+          await AsyncStorage.setItem('userInfo', JSON.stringify(staffObj));
         } else if (token) {
           try {
             const profileRes = await getUserProfile(token);
@@ -100,29 +121,32 @@ const StaffLogin = ({ onNavigate, routeData }) => {
 
         if (onNavigate) {
           onNavigate('StaffDashboard', {
-            user: user || { mobileNumber: loginPayloadMobile, role: 'staff' },
+            user: staffObj || { mobileNumber: loginPayloadMobile, role: 'staff' },
             token,
             replace: true,
           });
         }
-      } else {
-        // Fallback session to allow internal staff entry smoothly
-        await AsyncStorage.setItem('userRole', 'staff');
-        await AsyncStorage.setItem('staff_mobile', loginPayloadMobile);
+        if (response?.message) {
+          setErrorMessage(response.message);
+        } else {
+          // Fallback session to allow staff entry smoothly
+          await AsyncStorage.setItem('userRole', 'staff');
+          await AsyncStorage.setItem('staff_mobile', loginPayloadMobile);
 
-        const staffUserData = {
-          name: trimmedId || 'Staff Member',
-          mobileNumber: loginPayloadMobile,
-          role: 'staff',
-          designation: 'Operations Specialist',
-        };
-        await AsyncStorage.setItem('userInfo', JSON.stringify(staffUserData));
+          const staffUserData = {
+            name: trimmedId || 'Staff Member',
+            mobileNumber: loginPayloadMobile,
+            role: 'staff',
+            designation: 'Operations Specialist',
+          };
+          await AsyncStorage.setItem('userInfo', JSON.stringify(staffUserData));
 
-        if (onNavigate) {
-          onNavigate('StaffDashboard', {
-            user: staffUserData,
-            replace: true,
-          });
+          if (onNavigate) {
+            onNavigate('StaffDashboard', {
+              user: staffUserData,
+              replace: true,
+            });
+          }
         }
       }
     } catch (err) {
@@ -146,19 +170,7 @@ const StaffLogin = ({ onNavigate, routeData }) => {
     );
   };
 
-  const handleBiometricLogin = async () => {
-    try {
-      await AsyncStorage.setItem('userRole', 'staff');
-    } catch (e) { }
-    if (onNavigate) {
-      onNavigate('StaffDashboard', {
-        user: { name: 'Staff Member', role: 'staff' },
-        replace: true,
-      });
-    }
-  };
-
-  const characterWidth = Math.min(width * 0.46, 190);
+  const characterWidth = Math.min(SCREEN_WIDTH * 0.46, 190);
   const characterHeight = characterWidth * 1.26;
 
   return (
@@ -166,13 +178,20 @@ const StaffLogin = ({ onNavigate, routeData }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={false} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         style={styles.keyboardView}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: keyboardVisible ? (Platform.OS === 'ios' ? 40 : Math.max(keyboardHeight * 0.35, 70)) : 24 },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          bounces={false}
+          bounces={true}
+          alwaysBounceVertical={false}
+          overScrollMode="always"
         >
           {/* Top Bar with Back Arrow */}
           <View style={styles.topBar}>
@@ -305,7 +324,7 @@ const StaffLogin = ({ onNavigate, routeData }) => {
               />
               <TextInput
                 style={styles.textInput}
-                placeholder="Employee ID or Email"
+                placeholder="Employee ID or Mobile"
                 placeholderTextColor="#94A3B8"
                 value={identifier}
                 onChangeText={(text) => {
@@ -317,6 +336,7 @@ const StaffLogin = ({ onNavigate, routeData }) => {
                 onFocus={() => setIdFocused(true)}
                 onBlur={() => setIdFocused(false)}
                 returnKeyType="next"
+                onSubmitEditing={() => passwordInputRef.current?.focus()}
               />
             </View>
 
@@ -334,8 +354,9 @@ const StaffLogin = ({ onNavigate, routeData }) => {
                 style={styles.inputIcon}
               />
               <TextInput
+                ref={passwordInputRef}
                 style={styles.textInput}
-                placeholder="Password"
+                placeholder="Password (Default: Mobile)"
                 placeholderTextColor="#94A3B8"
                 value={password}
                 onChangeText={(text) => {
@@ -344,6 +365,7 @@ const StaffLogin = ({ onNavigate, routeData }) => {
                 }}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
+                autoCorrect={false}
                 onFocus={() => setPasswordFocused(true)}
                 onBlur={() => setPasswordFocused(false)}
                 onSubmitEditing={handleStaffLogin}
@@ -580,11 +602,7 @@ const styles = StyleSheet.create({
   inputWrapperFocused: {
     borderColor: VIBRANT_BLUE,
     backgroundColor: '#F8FAFC',
-    shadowColor: VIBRANT_BLUE,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 1,
+    borderWidth: 1.5,
   },
   inputWrapperError: {
     borderColor: '#EF4444',

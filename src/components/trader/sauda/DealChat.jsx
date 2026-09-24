@@ -8,6 +8,7 @@ import {
   TextInput,
   FlatList,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   ScrollView,
@@ -599,6 +600,46 @@ const DealChat = ({ onNavigate, routeData }) => {
   const currentUserIdRef = useRef(null);
   const conversationIdRef = useRef(routeData?.conversationId || null);
   const onReceiveMessageRef = useRef();
+
+  // Keyboard management for smooth input visibility across Android & iOS
+  const [androidKeyboardHeight, setAndroidKeyboardHeight] = useState(0);
+  const containerHeightRef = useRef(0);
+  const initialContainerHeightRef = useRef(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      if (Platform.OS === 'android') {
+        const kHeight = e?.endCoordinates?.height || 0;
+        const didWindowResize =
+          initialContainerHeightRef.current > 0 &&
+          containerHeightRef.current > 0 &&
+          containerHeightRef.current < initialContainerHeightRef.current - 100;
+
+        if (!didWindowResize) {
+          setAndroidKeyboardHeight(kHeight);
+        } else {
+          setAndroidKeyboardHeight(0);
+        }
+      }
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      if (Platform.OS === 'android') {
+        setAndroidKeyboardHeight(0);
+      }
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     currentUserIdRef.current = currentUserId;
@@ -3159,7 +3200,20 @@ const DealChat = ({ onNavigate, routeData }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+      onLayout={(e) => {
+        const { height } = e.nativeEvent.layout;
+        containerHeightRef.current = height;
+        if (!initialContainerHeightRef.current || (!androidKeyboardHeight && height > initialContainerHeightRef.current)) {
+          initialContainerHeightRef.current = height;
+        } else if (Platform.OS === 'android') {
+          if (initialContainerHeightRef.current > 0 && height < initialContainerHeightRef.current - 100) {
+            setAndroidKeyboardHeight(0);
+          }
+        }
+      }}
+    >
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* ─── 0. SUCCESS POPUP TOAST (Auto-closes in 2s) ─── */}
@@ -3337,7 +3391,11 @@ const DealChat = ({ onNavigate, routeData }) => {
               </Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={styles.emptyContainer} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              contentContainerStyle={styles.emptyContainer}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <View style={styles.emptyCard}>
                 <View style={styles.emptyIconCircle}>
                   <Handshake size={36} color="#1541D8" />
@@ -3368,6 +3426,8 @@ const DealChat = ({ onNavigate, routeData }) => {
             keyExtractor={(item, idx) => (item.id ? String(item.id) : String(idx))}
             contentContainerStyle={styles.messageListContent}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           />
         )}
@@ -3384,7 +3444,14 @@ const DealChat = ({ onNavigate, routeData }) => {
         )}
 
         {/* ─── 4. BOTTOM INPUT BAR ─── */}
-        <View style={styles.bottomBarContainer}>
+        <View
+          style={[
+            styles.bottomBarContainer,
+            Platform.OS === 'android' && androidKeyboardHeight > 0
+              ? { marginBottom: androidKeyboardHeight + 40, paddingBottom: 10 }
+              : null,
+          ]}
+        >
           {showAttachMenu && (
             <View style={styles.attachMenuPopup}>
               {myRole === 'Buyer' ? (
@@ -3459,6 +3526,11 @@ const DealChat = ({ onNavigate, routeData }) => {
                 placeholderTextColor="#94A3B8"
                 value={message}
                 onChangeText={handleInputChange}
+                onFocus={() => {
+                  setTimeout(() => {
+                    flatListRef.current?.scrollToEnd({ animated: true });
+                  }, 150);
+                }}
                 multiline
               />
               <TouchableOpacity

@@ -101,7 +101,6 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
       let list = [];
       const seen = new Set();
 
-      // 1. Live GET /api/production/tasks (Primary)
       if (prodTasksRes.status === 'fulfilled' && prodTasksRes.value?.success && Array.isArray(prodTasksRes.value?.data)) {
         const rawProdTasks = prodTasksRes.value.data;
         rawProdTasks.forEach((t) => {
@@ -137,7 +136,6 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
         });
       }
 
-      // 2. Official my-tasks endpoint (Fallback/Secondary)
       if (myTasksRes.status === 'fulfilled' && myTasksRes.value?.success) {
         const raw = Array.isArray(myTasksRes.value.data) ? myTasksRes.value.data : [];
         raw.forEach((t) => {
@@ -158,7 +156,6 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
         });
       }
 
-      // 3. Scan projects for strictly assigned tasks
       if (projectsRes.status === 'fulfilled' && projectsRes.value?.success) {
         const pData = projectsRes.value.data;
         const allProjects = Array.isArray(pData) ? pData : (pData?.projects || []);

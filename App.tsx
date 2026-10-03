@@ -4,10 +4,12 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserProfile, getPendingVerificationStatus } from './src/services/api';
 
-import Login from './src/components/login/login';
-import Signup from './src/components/login/Signup';
-import StaffLogin from './src/components/login/StaffLogin';
-import ChooseIndustry from './src/components/login/ChooseIndustry';
+import {
+  Login,
+  Signup,
+  StaffLogin,
+  ChooseIndustry,
+} from './src/components/login';
 import {
   Dashboard,
   AddCompany,
@@ -37,9 +39,11 @@ import {
   MaterialDemandsPage,
   StaffDirectoryPage,
 } from './src/components/trader';
-import Notifications from './src/components/common/Notifications';
-import AIBotScreen from './src/components/common/AIBotScreen';
-import AIBotFloatingButton from './src/components/common/AIBotFloatingButton';
+import {
+  Notifications,
+  AIBotScreen,
+  AIBotFloatingButton,
+} from './src/components/common';
 import {
   BrokerDashboard,
   BrokerAddCompany,

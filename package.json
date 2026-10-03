@@ -3,16 +3,16 @@
   "version": "2.0.4",
   "private": true,
   "scripts": {
-    "android": "dot_clean . 2>/dev/null; COPYFILE_DISABLE=1; adb reverse tcp:8081 tcp:8081 2>/dev/null || true; react-native run-android --no-packager",
-    "android:device": "dot_clean . 2>/dev/null; COPYFILE_DISABLE=1; adb -s PF99L795ZXGQCEP7 reverse tcp:8081 tcp:8081 2>/dev/null || true; react-native run-android --deviceId PF99L795ZXGQCEP7 --no-packager",
-    "ios": "dot_clean . 2>/dev/null; COPYFILE_DISABLE=1 react-native run-ios --no-packager",
-    "lint": "eslint .",
     "start": "react-native start",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "clean:android": "cd android && ./gradlew clean && cd ..",
+    "bundle:android": "react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/",
+    "build:apk": "cd android && ./gradlew assembleRelease && cd ..",
+    "build:bundle": "cd android && ./gradlew bundleRelease && cd ..",
+    "lint": "eslint .",
     "test": "jest",
-    "postinstall": "patch-package",
-    "bundle:android": "mkdir -p android/app/src/main/assets && npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/",
-    "build:apk": "npm run bundle:android && cd android && rm -rf app/.cxx app/build && ./gradlew assembleRelease",
-    "build:bundle": "npm run bundle:android && cd android && rm -rf app/.cxx app/build && ./gradlew bundleRelease"
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.23.1",

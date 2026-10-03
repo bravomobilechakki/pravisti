@@ -296,7 +296,7 @@ const StaffLogin = ({ onNavigate, routeData }) => {
 
               {/* Worker Character PNG */}
               <Image
-                source={require('../../images/staff image.png')}
+                source={require('../../images/staff_image.png')}
                 style={[
                   styles.characterImg,
                   { width: characterWidth, height: characterHeight },

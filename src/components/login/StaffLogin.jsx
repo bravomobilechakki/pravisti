@@ -29,7 +29,10 @@ import {
   AlertCircle,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { staffLoginUser, getUserProfile } from '../../services/api';
+import { staffLoginUser, productionStaffLogin, getUserProfile } from '../../services/api';
+
+
+// now we have to work on staff mannagement so i have shareing you documnt of complete requirement buz staff manangement  is completly different like trader nd broker role so use the flow depend on roles trader/broker/staff you have oky so you  you ahve to cartee teh staff flow ui very easy to user unerstand in steps dont make ui complicated  nd to muchb conetct in one scr een this feature work like crm. to mannge companies staff crm in phone so you have to create like this to unsetand suer easily how ita work 
 
 const VIBRANT_BLUE = '#0066FF';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -93,9 +96,13 @@ const StaffLogin = ({ onNavigate, routeData }) => {
       let response = null;
 
       try {
-        response = await staffLoginUser(loginPayloadMobile, effectivePassword);
-      } catch (apiErr) {
-        console.warn('staffLoginUser notice:', apiErr?.message || apiErr);
+        response = await productionStaffLogin(loginPayloadMobile, effectivePassword, routeData?.companyId || null);
+      } catch (prodErr) {
+        try {
+          response = await staffLoginUser(loginPayloadMobile, effectivePassword);
+        } catch (apiErr) {
+          console.warn('staffLogin notice:', apiErr?.message || apiErr);
+        }
       }
 
       if (response && response.success) {

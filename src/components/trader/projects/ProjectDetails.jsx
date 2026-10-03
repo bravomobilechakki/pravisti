@@ -11,6 +11,8 @@ import {
   Modal,
   RefreshControl,
   Platform,
+  Image,
+  Linking,
 } from 'react-native';
 import {
   ArrowLeft,
@@ -35,6 +37,25 @@ import {
   Trash2,
   ArrowUp,
   ArrowDown,
+  DollarSign,
+  TrendingUp,
+  Package,
+  Truck,
+  ClipboardList,
+  ShieldCheck,
+  AlertTriangle,
+  FileSpreadsheet,
+  RefreshCw,
+  Send,
+  Boxes,
+  PieChart,
+  HardHat,
+  ArrowRightLeft,
+  FileText,
+  Paperclip,
+  ExternalLink,
+  FolderOpen,
+  Eye,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -44,6 +65,7 @@ import {
   addProjectStage,
   reorderProjectStages,
   addProjectMilestone,
+  createProductionMilestone,
   reorderProjectMilestones,
   addProjectTask,
   updateProjectTaskStatus,
@@ -52,7 +74,19 @@ import {
   addEmployeeToCompany,
   onboardStaff,
   getStaffList,
+  getProjectProductionSummary,
+  getProductionDemands,
+  raiseProductionDemand,
+  reviewProductionDemand,
+  issueProductionMaterial,
+  receiveProductionMaterial,
+  consumeProductionMaterial,
+  getProductionMaterials,
+  getProductionStaffMembers,
+  getProductionStaffAssignments,
+  assignProductionStaff,
 } from '../../../services/api';
+import { resolveImageUrl } from '../../../services/uploadService';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -64,8 +98,9 @@ const WEEK_DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const TASK_STATUSES = [
   { key: 'TODO', label: 'To Do', color: '#64748B', bg: '#F1F5F9' },
   { key: 'IN_PROGRESS', label: 'In Progress', color: '#D97706', bg: '#FEF3C7' },
-  { key: 'DONE', label: 'Done', color: '#059669', bg: '#D1FAE5' },
   { key: 'BLOCKED', label: 'Blocked', color: '#DC2626', bg: '#FEE2E2' },
+  { key: 'COMPLETED', label: 'Completed', color: '#059669', bg: '#D1FAE5' },
+  { key: 'CANCELLED', label: 'Cancelled', color: '#6B7280', bg: '#F3F4F6' },
 ];
 
 const PROJECT_STATUSES = ['DRAFT', 'ACTIVE', 'ON_HOLD', 'COMPLETED', 'CANCELLED'];
@@ -96,7 +131,13 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
   const [activeStageIdForMilestone, setActiveStageIdForMilestone] = useState(null);
   const [newMilestoneTitle, setNewMilestoneTitle] = useState('');
   const [newMilestoneDesc, setNewMilestoneDesc] = useState('');
+  const [milestoneAllocatedMaterials, setMilestoneAllocatedMaterials] = useState([]);
+  const [selectedMilestoneMatId, setSelectedMilestoneMatId] = useState('');
+  const [selectedMilestoneMatQty, setSelectedMilestoneMatQty] = useState('');
   const [submittingMilestone, setSubmittingMilestone] = useState(false);
+
+  // Staff Assignments
+  const [staffAssignments, setStaffAssignments] = useState([]);
 
   const [taskModalVisible, setTaskModalVisible] = useState(false);
   const [activeStageIdForTask, setActiveStageIdForTask] = useState(null);
@@ -234,6 +275,276 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
   const [statusMenuVisible, setStatusMenuVisible] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
+  // ─── PRODUCTION & COSTING SUB-TABS ───
+  const [activeSubTab, setActiveSubTab] = useState('STAGES'); // 'STAGES' | 'COSTING' | 'DEMANDS' | 'TRANSACTIONS' | 'STAFF'
+
+  // Costing State
+  const [costingData, setCostingData] = useState(null);
+  const [loadingCosting, setLoadingCosting] = useState(false);
+
+  // Demands State
+  const [demandsList, setDemandsList] = useState([]);
+  const [loadingDemands, setLoadingDemands] = useState(false);
+  const [raiseDemandModalVisible, setRaiseDemandModalVisible] = useState(false);
+  const [demandMaterialId, setDemandMaterialId] = useState('');
+  const [demandStageId, setDemandStageId] = useState('');
+  const [demandQty, setDemandQty] = useState('');
+  const [demandReason, setDemandReason] = useState('');
+  const [submittingDemand, setSubmittingDemand] = useState(false);
+
+  // Review Demand State
+  const [reviewDemandModalVisible, setReviewDemandModalVisible] = useState(false);
+  const [reviewingDemand, setReviewingDemand] = useState(null);
+  const [reviewAction, setReviewAction] = useState('APPROVE');
+  const [reviewApprovedQty, setReviewApprovedQty] = useState('');
+  const [reviewRejectionReason, setReviewRejectionReason] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  // Material Transactions State
+  const [availableMaterials, setAvailableMaterials] = useState([]);
+  const [issueModalVisible, setIssueModalVisible] = useState(false);
+  const [issueMaterialId, setIssueMaterialId] = useState('');
+  const [issueStageId, setIssueStageId] = useState('');
+  const [issueQty, setIssueQty] = useState('');
+  const [issueUnit, setIssueUnit] = useState('Kg');
+  const [issueWarehouse, setIssueWarehouse] = useState('Main Warehouse');
+  const [issueNotes, setIssueNotes] = useState('');
+  const [submittingIssue, setSubmittingIssue] = useState(false);
+
+  const [receiveModalVisible, setReceiveModalVisible] = useState(false);
+  const [receiveIssueId, setReceiveIssueId] = useState('');
+  const [receiveQty, setReceiveQty] = useState('');
+  const [receiveNotes, setReceiveNotes] = useState('');
+  const [submittingReceive, setSubmittingReceive] = useState(false);
+
+  const [consumeModalVisible, setConsumeModalVisible] = useState(false);
+  const [consumeMaterialId, setConsumeMaterialId] = useState('');
+  const [consumeStageId, setConsumeStageId] = useState('');
+  const [consumeQty, setConsumeQty] = useState('');
+  const [returnQty, setReturnQty] = useState('0');
+  const [consumeNotes, setConsumeNotes] = useState('');
+  const [submittingConsume, setSubmittingConsume] = useState(false);
+
+  // Production Staff Management State
+  const [productionStaffList, setProductionStaffList] = useState([]);
+  const [loadingStaff, setLoadingStaff] = useState(false);
+  const [assignStaffModalVisible, setAssignStaffModalVisible] = useState(false);
+  const [assignStaffId, setAssignStaffId] = useState('');
+  const [assignStageId, setAssignStageId] = useState('');
+  const [assignRole, setAssignRole] = useState('Machine Operator');
+  const [assignHours, setAssignHours] = useState('8');
+  const [submittingAssign, setSubmittingAssign] = useState(false);
+
+  const fetchCostingSummary = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      setLoadingCosting(true);
+      const compId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId ||
+        null;
+      const res = await getProjectProductionSummary(projectId, compId);
+      if (res?.success && res.data) {
+        setCostingData(res.data);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch costing summary:', e?.message || e);
+    } finally {
+      setLoadingCosting(false);
+    }
+  }, [projectId, project?.companyId, params.companyId]);
+
+  const fetchDemands = useCallback(async () => {
+    try {
+      setLoadingDemands(true);
+      const compId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId ||
+        null;
+      const res = await getProductionDemands({ companyId: compId, projectId });
+      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      setDemandsList(list);
+    } catch (e) {
+      console.warn('Failed to fetch demands:', e?.message || e);
+    } finally {
+      setLoadingDemands(false);
+    }
+  }, [projectId, project?.companyId, params.companyId]);
+
+  const fetchRawMaterials = useCallback(async () => {
+    try {
+      const compId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId ||
+        null;
+      const res = await getProductionMaterials({ companyId: compId, status: 'active' });
+      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      setAvailableMaterials(list);
+    } catch (e) {
+      console.warn('Failed to fetch raw materials:', e?.message || e);
+    }
+  }, [project?.companyId, params.companyId]);
+
+  const fetchProductionStaff = useCallback(async () => {
+    try {
+      setLoadingStaff(true);
+      const compId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId ||
+        null;
+      const [membersRes, assignRes] = await Promise.all([
+        getProductionStaffMembers({ companyId: compId }),
+        getProductionStaffAssignments({ companyId: compId, projectId }),
+      ]);
+      const list = Array.isArray(membersRes?.data) ? membersRes.data : (Array.isArray(membersRes) ? membersRes : []);
+      setProductionStaffList(list);
+      const assigns = Array.isArray(assignRes?.data) ? assignRes.data : (Array.isArray(assignRes) ? assignRes : []);
+      setStaffAssignments(assigns);
+    } catch (e) {
+      console.warn('Failed to fetch production staff members/assignments:', e?.message || e);
+    } finally {
+      setLoadingStaff(false);
+    }
+  }, [project?.companyId, params.companyId, projectId]);
+
+  // All Project Files & Documents Extraction
+  const allProjectFiles = useMemo(() => {
+    const list = [];
+    // 1. Direct Project files / documents
+    const directFiles = project?.files || project?.documents || project?.attachments || [];
+    if (Array.isArray(directFiles)) {
+      directFiles.forEach((f, idx) => {
+        if (typeof f === 'string') {
+          list.push({
+            id: `pfile_${idx}`,
+            name: f.split('/').pop() || `Document ${idx + 1}`,
+            url: f,
+            type: 'document',
+            source: 'Project Document',
+          });
+        } else if (f && typeof f === 'object') {
+          list.push({
+            id: f._id || f.id || `pfile_${idx}`,
+            name: f.name || f.fileName || f.title || `Document ${idx + 1}`,
+            url: f.url || f.path || f.uri,
+            type: f.type || 'document',
+            source: 'Project Document',
+            size: f.size,
+          });
+        }
+      });
+    }
+
+    // 2. Product images / media
+    const prodImages = project?.productId?.images || (project?.productId?.image ? [project.productId.image] : []) || [];
+    if (Array.isArray(prodImages)) {
+      prodImages.forEach((img, idx) => {
+        const url = typeof img === 'string' ? img : img?.url || img?.uri;
+        if (url) {
+          list.push({
+            id: `pimg_${idx}`,
+            name: project?.productId?.name ? `${project.productId.name} Spec ${idx + 1}` : `Product Design ${idx + 1}`,
+            url: url,
+            type: 'image',
+            source: 'Product Specs / CAD',
+          });
+        }
+      });
+    }
+
+    // 3. Stage & Milestone & Task files
+    (project?.stages || []).forEach((stg, sIdx) => {
+      if (Array.isArray(stg.files)) {
+        stg.files.forEach((f, idx) => {
+          const url = typeof f === 'string' ? f : f?.url || f?.path;
+          if (url) {
+            list.push({
+              id: `stg_${sIdx}_f_${idx}`,
+              name: f.name || `Stage File ${idx + 1}`,
+              url,
+              type: 'document',
+              source: `Stage: ${stg.name || sIdx + 1}`,
+            });
+          }
+        });
+      }
+      (stg.milestones || []).forEach((ms, mIdx) => {
+        if (Array.isArray(ms.files)) {
+          ms.files.forEach((f, idx) => {
+            const url = typeof f === 'string' ? f : f?.url || f?.path;
+            if (url) {
+              list.push({
+                id: `ms_${mIdx}_f_${idx}`,
+                name: f.name || `Milestone File ${idx + 1}`,
+                url,
+                type: 'document',
+                source: `Milestone: ${ms.name || mIdx + 1}`,
+              });
+            }
+          });
+        }
+        (ms.tasks || []).forEach((tsk, tIdx) => {
+          const tFiles = tsk.attachments || tsk.files || [];
+          if (Array.isArray(tFiles)) {
+            tFiles.forEach((f, idx) => {
+              const url = typeof f === 'string' ? f : f?.url || f?.path || f?.uri;
+              if (url) {
+                list.push({
+                  id: `tsk_${tIdx}_f_${idx}`,
+                  name: f.name || `Task Attachment ${idx + 1}`,
+                  url,
+                  type: 'document',
+                  source: `Task: ${tsk.title || tIdx + 1}`,
+                });
+              }
+            });
+          }
+        });
+      });
+    });
+
+    return list;
+  }, [project]);
+
+  const handleOpenFile = (fileUrl) => {
+    if (!fileUrl) return;
+    const fullUrl = resolveImageUrl(fileUrl);
+    if (fullUrl) {
+      Linking.canOpenURL(fullUrl)
+        .then((supported) => {
+          if (supported) {
+            Linking.openURL(fullUrl);
+          } else {
+            Alert.alert('File URL', fullUrl);
+          }
+        })
+        .catch(() => {
+          Alert.alert('File URL', fullUrl);
+        });
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'COSTING') {
+      fetchCostingSummary();
+    } else if (activeSubTab === 'DEMANDS') {
+      fetchDemands();
+      fetchRawMaterials();
+    } else if (activeSubTab === 'TRANSACTIONS') {
+      fetchRawMaterials();
+    } else if (activeSubTab === 'STAFF') {
+      fetchProductionStaff();
+    }
+  }, [activeSubTab, fetchCostingSummary, fetchDemands, fetchRawMaterials, fetchProductionStaff]);
+
   const fetchStaffList = useCallback(async (companyRef) => {
     try {
       const resolvedCompId =
@@ -362,24 +673,61 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
         setLoading(true);
       }
 
-      const res = await getProjectDetails(projectId);
-      const projData = res?.data?.project || res?.data;
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId ||
+        params.project?.companyId?._id ||
+        params.project?.companyId?.id ||
+        (typeof params.project?.companyId === 'string' ? params.project?.companyId : null) ||
+        (await AsyncStorage.getItem('selectedCompanyId')) ||
+        (await AsyncStorage.getItem('activeCompanyId'));
+
+      const res = await getProjectDetails(projectId, null, effectiveCompId);
+      let projData = res?.data?.project || res?.data;
       if (res?.success && projData) {
-        setProject(projData);
+        let serverStages = Array.isArray(projData.stages) ? projData.stages : [];
+        if (serverStages.length === 0) {
+          try {
+            const stgRes = await getProductionStages({ projectId, companyId: effectiveCompId });
+            const list = Array.isArray(stgRes?.data) ? stgRes.data : (Array.isArray(stgRes) ? stgRes : []);
+            if (list.length > 0) {
+              serverStages = list;
+              projData = { ...projData, stages: list };
+            }
+          } catch (e) { }
+        }
+
+        setProject((prev) => {
+          const prevStages = Array.isArray(prev?.stages) ? prev.stages : [];
+          const mergedStages = [...serverStages];
+          prevStages.forEach((ps) => {
+            const psId = String(ps._id || ps.id || '');
+            if (psId && !mergedStages.some((ms) => String(ms._id || ms.id || '') === psId)) {
+              mergedStages.push(ps);
+            }
+          });
+          return {
+            ...(prev || {}),
+            ...projData,
+            stages: mergedStages.length > 0 ? mergedStages : serverStages,
+          };
+        });
+
         if (projData.companyId) {
           fetchStaffList(projData.companyId);
         }
-        // Expand first stage by default if not set
-        if (projData.stages && projData.stages.length > 0) {
+        if (serverStages.length > 0) {
           setExpandedStages((prev) => {
             if (Object.keys(prev).length === 0) {
-              return { [projData.stages[0]._id || 0]: true };
+              return { [serverStages[0]._id || serverStages[0].id || 0]: true };
             }
             return prev;
           });
         }
       } else if (projData) {
-        setProject(projData);
+        setProject((prev) => ({ ...(prev || {}), ...projData }));
         if (projData.companyId) {
           fetchStaffList(projData.companyId);
         }
@@ -391,7 +739,7 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
       setLoading(false);
       setRefreshing(false);
     }
-  }, [projectId, fetchStaffList]);
+  }, [projectId, project?.companyId, params.companyId, fetchStaffList]);
 
   useEffect(() => {
     fetchDetails();
@@ -410,7 +758,7 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
     }));
   };
 
-  // Add Stage handler (API 6)
+  // Add Stage handler (POST /api/production/stages)
   const handleAddStage = async () => {
     if (!newStageName.trim()) {
       Alert.alert('Required', 'Please enter a stage name.');
@@ -418,13 +766,64 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
     }
     try {
       setSubmittingStage(true);
-      const orderIndex = Array.isArray(project?.stages) ? project.stages.length : 0;
-      const res = await addProjectStage(projectId, {
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId ||
+        params.project?.companyId?._id ||
+        params.project?.companyId?.id ||
+        (typeof params.project?.companyId === 'string' ? params.project?.companyId : null) ||
+        (await AsyncStorage.getItem('selectedCompanyId')) ||
+        (await AsyncStorage.getItem('activeCompanyId'));
+
+      const sequence = (Array.isArray(project?.stages) ? project.stages.length : 0) + 1;
+      const stagePayload = {
+        companyId: effectiveCompId,
+        projectId: projectId,
         name: newStageName.trim(),
         description: newStageDesc.trim() || undefined,
-        orderIndex,
-      });
-      if (res?.success) {
+        sequence: sequence,
+        plannedStartDate: null,
+        plannedEndDate: null,
+        actualStartDate: null,
+        actualEndDate: null,
+        status: 'PLANNED',
+        selectedMaterials: [],
+      };
+
+      const res = await addProjectStage(projectId, stagePayload);
+      if (res?.success || res?.data) {
+        const createdStage = res?.data?.stage || res?.data || {
+          _id: `stg_${Date.now()}`,
+          companyId: effectiveCompId,
+          projectId: projectId,
+          name: newStageName.trim(),
+          description: newStageDesc.trim(),
+          sequence,
+          status: 'PLANNED',
+          progress: 0,
+          milestones: [],
+        };
+
+        const targetStageId = createdStage._id || createdStage.id || `stg_${Date.now()}`;
+
+        setProject((prev) => {
+          if (!prev) return { stages: [createdStage] };
+          const currentStages = Array.isArray(prev.stages) ? [...prev.stages] : [];
+          // Avoid duplicate insertion
+          const exists = currentStages.some((s) => String(s._id || s.id) === String(targetStageId));
+          return {
+            ...prev,
+            stages: exists ? currentStages : [...currentStages, createdStage],
+          };
+        });
+
+        setExpandedStages((prev) => ({
+          ...prev,
+          [targetStageId]: true,
+        }));
+
         setNewStageName('');
         setNewStageDesc('');
         setStageModalVisible(false);
@@ -468,25 +867,168 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
     }
   };
 
-  // Add Milestone handler (API 8)
+  // Open Milestone Modal & preload available raw materials
+  const openAddMilestoneModal = (stageId) => {
+    setActiveStageIdForMilestone(stageId);
+    setNewMilestoneTitle('');
+    setNewMilestoneDesc('');
+    setMilestoneAllocatedMaterials([]);
+    setSelectedMilestoneMatId('');
+    setSelectedMilestoneMatQty('');
+    if (availableMaterials.length === 0) {
+      fetchRawMaterials();
+    }
+    setMilestoneModalVisible(true);
+  };
+
+  // Add material to pending milestone allocated list
+  const handleAddMaterialToMilestone = () => {
+    if (!selectedMilestoneMatId) {
+      Alert.alert('Required', 'Please select a raw material to allocate.');
+      return;
+    }
+    const qty = parseFloat(selectedMilestoneMatQty);
+    if (!qty || isNaN(qty) || qty <= 0) {
+      Alert.alert('Required', 'Please enter a valid planned quantity greater than 0.');
+      return;
+    }
+    const matObj = availableMaterials.find((m) => (m._id || m.id) === selectedMilestoneMatId);
+    if (!matObj) {
+      Alert.alert('Error', 'Selected material not found.');
+      return;
+    }
+
+    const existingIdx = milestoneAllocatedMaterials.findIndex(
+      (item) => item.materialId === (matObj._id || matObj.id)
+    );
+    if (existingIdx >= 0) {
+      const updated = [...milestoneAllocatedMaterials];
+      updated[existingIdx].plannedQuantity = qty;
+      updated[existingIdx].allocatedQuantity = qty;
+      setMilestoneAllocatedMaterials(updated);
+    } else {
+      setMilestoneAllocatedMaterials((prev) => [
+        ...prev,
+        {
+          materialId: matObj._id || matObj.id,
+          materialObj: matObj,
+          name: matObj.name,
+          materialCode: matObj.materialCode,
+          unit: matObj.unit || 'units',
+          standardCost: matObj.standardCost || 0,
+          plannedQuantity: qty,
+          allocatedQuantity: qty,
+        },
+      ]);
+    }
+    setSelectedMilestoneMatId('');
+    setSelectedMilestoneMatQty('');
+  };
+
+  // Remove material from pending milestone allocated list
+  const handleRemoveMaterialFromMilestone = (materialId) => {
+    setMilestoneAllocatedMaterials((prev) =>
+      prev.filter((item) => (item.materialId || item._id) !== materialId)
+    );
+  };
+
+  // Add Milestone handler (POST /api/production/milestones)
   const handleAddMilestone = async () => {
     if (!newMilestoneTitle.trim()) {
-      Alert.alert('Required', 'Please enter milestone title.');
+      Alert.alert('Required', 'Please enter milestone name.');
       return;
     }
     try {
       setSubmittingMilestone(true);
-      const stage = (project?.stages || []).find((s) => s._id === activeStageIdForMilestone);
-      const orderIndex = Array.isArray(stage?.milestones) ? stage.milestones.length : 0;
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId ||
+        (await AsyncStorage.getItem('selectedCompanyId')) ||
+        (await AsyncStorage.getItem('activeCompanyId'));
 
-      const res = await addProjectMilestone(projectId, activeStageIdForMilestone, {
+      const stage = (project?.stages || []).find(
+        (s) => (s._id || s.id) === activeStageIdForMilestone
+      );
+      const sequence = (Array.isArray(stage?.milestones) ? stage.milestones.length : 0) + 1;
+
+      const plannedCostCalc = milestoneAllocatedMaterials.reduce(
+        (acc, m) => acc + (Number(m.plannedQuantity || 0) * Number(m.standardCost || 0)),
+        0
+      );
+
+      const milestonePayload = {
+        companyId: effectiveCompId,
+        projectId: projectId,
+        stageId: activeStageIdForMilestone,
+        name: newMilestoneTitle.trim(),
         title: newMilestoneTitle.trim(),
-        description: newMilestoneDesc.trim() || undefined,
-        orderIndex,
-      });
-      if (res?.success) {
+        description: newMilestoneDesc.trim() || '',
+        sequence: sequence,
+        status: 'PLANNED',
+        plannedStartDate: null,
+        plannedEndDate: null,
+        actualStartDate: null,
+        actualEndDate: null,
+        plannedCost: plannedCostCalc,
+        allocatedMaterials: milestoneAllocatedMaterials.map((m) => ({
+          materialId: m.materialId,
+          plannedQuantity: Number(m.plannedQuantity || m.allocatedQuantity || 0),
+          allocatedQuantity: Number(m.allocatedQuantity || m.plannedQuantity || 0),
+        })),
+      };
+
+      const res = await addProjectMilestone(projectId, activeStageIdForMilestone, milestonePayload);
+      if (res?.success || res?.data) {
+        const createdMs = res?.data?.milestone || res?.data || {
+          _id: `ms_${Date.now()}`,
+          companyId: effectiveCompId,
+          projectId: projectId,
+          stageId: activeStageIdForMilestone,
+          name: newMilestoneTitle.trim(),
+          title: newMilestoneTitle.trim(),
+          description: newMilestoneDesc.trim(),
+          sequence,
+          status: 'PLANNED',
+          progress: 0,
+          allocatedMaterials: milestoneAllocatedMaterials.map((m) => ({
+            materialId: m.materialObj || {
+              _id: m.materialId,
+              name: m.name,
+              materialCode: m.materialCode,
+              unit: m.unit,
+              standardCost: m.standardCost,
+            },
+            plannedQuantity: m.plannedQuantity,
+            allocatedQuantity: m.allocatedQuantity,
+            issuedQuantity: 0,
+            consumedQuantity: 0,
+            returnedQuantity: 0,
+            remainingQuantity: m.allocatedQuantity,
+          })),
+          tasks: [],
+        };
+
+        setProject((prev) => {
+          if (!prev || !prev.stages) return prev;
+          return {
+            ...prev,
+            stages: prev.stages.map((s) => {
+              if ((s._id || s.id) === activeStageIdForMilestone) {
+                const existingMs = Array.isArray(s.milestones) ? s.milestones : [];
+                return { ...s, milestones: [...existingMs, createdMs] };
+              }
+              return s;
+            }),
+          };
+        });
+
         setNewMilestoneTitle('');
         setNewMilestoneDesc('');
+        setMilestoneAllocatedMaterials([]);
+        setSelectedMilestoneMatId('');
+        setSelectedMilestoneMatQty('');
         setMilestoneModalVisible(false);
         fetchDetails();
       } else {
@@ -655,7 +1197,7 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
           ];
           await AsyncStorage.setItem(cacheKey, JSON.stringify(updated));
         }
-      } catch (e) {}
+      } catch (e) { }
 
       Alert.alert(
         'Staff Onboarded Successfully',
@@ -703,20 +1245,34 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
       const chosenStaffId = selectedStaff?._id || selectedStaff?.id;
       const assignedText = (newTaskAssignedTo || '').trim();
 
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId ||
+        (await AsyncStorage.getItem('selectedCompanyId')) ||
+        (await AsyncStorage.getItem('activeCompanyId'));
+
       const payload = {
+        companyId: effectiveCompId,
+        projectId: projectId,
+        stageId: activeStageIdForTask,
+        milestoneId: activeMilestoneIdForTask,
         title: newTaskTitle.trim(),
+        name: newTaskTitle.trim(),
         description: newTaskDesc.trim() || undefined,
-        priority: newTaskPriority,
+        priority: newTaskPriority || 'MEDIUM',
         dueDate: formattedDueDate,
+        status: 'TODO',
       };
 
       if (staffTab === 'ONBOARD') {
         if (chosenStaffId && isMongoId(chosenStaffId)) {
+          payload.assignedStaffId = chosenStaffId;
           payload.assignedTo = chosenStaffId;
         } else if (selectedStaff?.name || assignedText) {
           const staffLabel = selectedStaff?.name || assignedText;
           const staffMob = selectedStaff?.mobileNumber ? ` (${selectedStaff.mobileNumber})` : '';
-          // Note: never send payload.assignedToName as backend schema disallows it
           const assignNote = `[Assigned to: ${staffLabel}${staffMob}]`;
           payload.description = payload.description ? `${payload.description}\n${assignNote}` : assignNote;
         }
@@ -730,29 +1286,42 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
       );
 
       if (res?.success || res?.statusCode === 201 || res?.data) {
-        let updatedProj = res.data && res.data.stages ? res.data : null;
-        if (selectedStaff && updatedProj) {
-          updatedProj = {
-            ...updatedProj,
-            stages: (updatedProj.stages || []).map((stg) => ({
-              ...stg,
-              milestones: (stg.milestones || []).map((ms) => ({
-                ...ms,
-                tasks: (ms.tasks || []).map((t) => {
-                  if (t.title === newTaskTitle.trim() && !t.assignedTo) {
-                    return { ...t, assignedTo: selectedStaff, assignedToName: selectedStaff.name };
-                  }
-                  return t;
-                }),
-              })),
-            })),
+        const createdTask = res?.data?.task || res?.data || {
+          _id: `task_${Date.now()}`,
+          companyId: effectiveCompId,
+          projectId: projectId,
+          stageId: activeStageIdForTask,
+          milestoneId: activeMilestoneIdForTask,
+          title: newTaskTitle.trim(),
+          name: newTaskTitle.trim(),
+          description: newTaskDesc.trim(),
+          priority: newTaskPriority,
+          status: 'TODO',
+          dueDate: formattedDueDate,
+          assignedTo: selectedStaff || (chosenStaffId ? { _id: chosenStaffId } : null),
+        };
+
+        setProject((prev) => {
+          if (!prev || !prev.stages) return prev;
+          return {
+            ...prev,
+            stages: prev.stages.map((stg) => {
+              if ((stg._id || stg.id) === activeStageIdForTask) {
+                return {
+                  ...stg,
+                  milestones: (stg.milestones || []).map((ms) => {
+                    if ((ms._id || ms.id) === activeMilestoneIdForTask) {
+                      const currentTasks = Array.isArray(ms.tasks) ? ms.tasks : [];
+                      return { ...ms, tasks: [...currentTasks, createdTask] };
+                    }
+                    return ms;
+                  }),
+                };
+              }
+              return stg;
+            }),
           };
-          setProject(updatedProj);
-        } else if (updatedProj) {
-          setProject(updatedProj);
-        } else {
-          fetchDetails();
-        }
+        });
 
         setNewTaskTitle('');
         setNewTaskDesc('');
@@ -762,6 +1331,7 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
         setStaffTab('UNASSIGNED');
         setShowQuickOnboard(false);
         setTaskModalVisible(false);
+        fetchDetails();
       } else {
         Alert.alert('Error', res?.message || 'Failed to add task');
       }
@@ -799,7 +1369,12 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
     });
 
     try {
-      const res = await updateProjectTaskStatus(projectId, task._id, newStatus);
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId;
+      const res = await updateProjectTaskStatus(projectId, task._id || task.id, newStatus, null, null, effectiveCompId);
       if (res?.success && res?.data) {
         // Backend recalculation sync
         const updateData = res.data;
@@ -894,6 +1469,282 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
     );
   };
 
+  // Raise Material Demand (API 4.1)
+  const handleRaiseDemandSubmit = async () => {
+    if (!demandMaterialId) {
+      Alert.alert('Required', 'Please select a raw material.');
+      return;
+    }
+    if (!demandQty || isNaN(Number(demandQty)) || Number(demandQty) <= 0) {
+      Alert.alert('Required', 'Please enter a valid requested quantity.');
+      return;
+    }
+
+    try {
+      setSubmittingDemand(true);
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId;
+
+      const res = await raiseProductionDemand({
+        companyId: effectiveCompId,
+        projectId,
+        stageId: demandStageId || undefined,
+        materialId: demandMaterialId,
+        requestedQuantity: Number(demandQty),
+        reason: demandReason.trim() || undefined,
+      });
+
+      if (res?.success) {
+        Alert.alert('Success', 'Material demand raised successfully.');
+        setRaiseDemandModalVisible(false);
+        setDemandMaterialId('');
+        setDemandStageId('');
+        setDemandQty('');
+        setDemandReason('');
+        fetchDemands();
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to raise demand.');
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || e?.message || 'Failed to raise demand.');
+    } finally {
+      setSubmittingDemand(false);
+    }
+  };
+
+  // Review Material Demand (API 4.3)
+  const handleReviewDemandSubmit = async () => {
+    if (!reviewingDemand?._id) return;
+    if (reviewAction === 'APPROVE' || reviewAction === 'PARTIALLY_APPROVE') {
+      if (!reviewApprovedQty || isNaN(Number(reviewApprovedQty)) || Number(reviewApprovedQty) <= 0) {
+        Alert.alert('Required', 'Please enter valid approved quantity.');
+        return;
+      }
+    } else if (reviewAction === 'REJECT') {
+      if (!reviewRejectionReason.trim()) {
+        Alert.alert('Required', 'Please enter a rejection reason.');
+        return;
+      }
+    }
+
+    try {
+      setSubmittingReview(true);
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId;
+
+      const payload = {
+        action: reviewAction,
+        ...(reviewAction === 'APPROVE' || reviewAction === 'PARTIALLY_APPROVE'
+          ? { approvedQuantity: Number(reviewApprovedQty) }
+          : { rejectionReason: reviewRejectionReason.trim() }),
+      };
+
+      const res = await reviewProductionDemand(reviewingDemand._id, effectiveCompId, payload);
+      if (res?.success) {
+        Alert.alert('Success', `Demand review complete: ${reviewAction}`);
+        setReviewDemandModalVisible(false);
+        setReviewingDemand(null);
+        fetchDemands();
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to review demand.');
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || e?.message || 'Failed to review demand.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  // Issue Material to Workstation (API 5.1)
+  const handleIssueSubmit = async () => {
+    if (!issueMaterialId) {
+      Alert.alert('Required', 'Please select a material.');
+      return;
+    }
+    if (!issueQty || isNaN(Number(issueQty)) || Number(issueQty) <= 0) {
+      Alert.alert('Required', 'Please enter a valid quantity to issue.');
+      return;
+    }
+
+    try {
+      setSubmittingIssue(true);
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId;
+
+      const res = await issueProductionMaterial({
+        companyId: effectiveCompId,
+        projectId,
+        stageId: issueStageId || undefined,
+        materialId: issueMaterialId,
+        warehouse: issueWarehouse.trim() || 'Main Warehouse',
+        quantity: Number(issueQty),
+        unit: issueUnit.trim() || 'Kg',
+        notes: issueNotes.trim() || undefined,
+      });
+
+      if (res?.success) {
+        Alert.alert('Success', 'Material issued to workstation successfully.');
+        setIssueModalVisible(false);
+        setIssueMaterialId('');
+        setIssueStageId('');
+        setIssueQty('');
+        setIssueNotes('');
+        fetchCostingSummary();
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to issue material.');
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || e?.message || 'Failed to issue material.');
+    } finally {
+      setSubmittingIssue(false);
+    }
+  };
+
+  // Receive Material (API 5.2)
+  const handleReceiveSubmit = async () => {
+    if (!receiveIssueId.trim()) {
+      Alert.alert('Required', 'Please enter the Issue ID.');
+      return;
+    }
+    if (!receiveQty || isNaN(Number(receiveQty)) || Number(receiveQty) <= 0) {
+      Alert.alert('Required', 'Please enter received quantity.');
+      return;
+    }
+
+    try {
+      setSubmittingReceive(true);
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId;
+
+      const res = await receiveProductionMaterial({
+        companyId: effectiveCompId,
+        issueId: receiveIssueId.trim(),
+        receivedQuantity: Number(receiveQty),
+        notes: receiveNotes.trim() || undefined,
+      });
+
+      if (res?.success) {
+        Alert.alert('Success', 'Material receipt confirmed by floor staff.');
+        setReceiveModalVisible(false);
+        setReceiveIssueId('');
+        setReceiveQty('');
+        setReceiveNotes('');
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to confirm receipt.');
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || e?.message || 'Failed to confirm receipt.');
+    } finally {
+      setSubmittingReceive(false);
+    }
+  };
+
+  // Log Consumption (API 5.3)
+  const handleConsumeSubmit = async () => {
+    if (!consumeMaterialId) {
+      Alert.alert('Required', 'Please select the material consumed.');
+      return;
+    }
+    if (!consumeQty || isNaN(Number(consumeQty)) || Number(consumeQty) <= 0) {
+      Alert.alert('Required', 'Please enter consumed quantity.');
+      return;
+    }
+
+    try {
+      setSubmittingConsume(true);
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId;
+
+      const res = await consumeProductionMaterial({
+        companyId: effectiveCompId,
+        projectId,
+        stageId: consumeStageId || undefined,
+        materialId: consumeMaterialId,
+        consumedQuantity: Number(consumeQty),
+        returnedQuantity: Number(returnQty || 0),
+        notes: consumeNotes.trim() || undefined,
+      });
+
+      if (res?.success) {
+        Alert.alert('Success', 'Material consumption recorded successfully.');
+        setConsumeModalVisible(false);
+        setConsumeMaterialId('');
+        setConsumeStageId('');
+        setConsumeQty('');
+        setReturnQty('0');
+        setConsumeNotes('');
+        fetchCostingSummary();
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to record consumption.');
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || e?.message || 'Failed to record consumption.');
+    } finally {
+      setSubmittingConsume(false);
+    }
+  };
+
+  // Assign Staff to Stage (API 7.6)
+  const handleAssignStaffSubmit = async () => {
+    if (!assignStaffId) {
+      Alert.alert('Required', 'Please select a staff member.');
+      return;
+    }
+    if (!assignStageId) {
+      Alert.alert('Required', 'Please select a stage.');
+      return;
+    }
+
+    try {
+      setSubmittingAssign(true);
+      const effectiveCompId =
+        project?.companyId?._id ||
+        project?.companyId?.id ||
+        (typeof project?.companyId === 'string' ? project?.companyId : null) ||
+        params.companyId;
+
+      const res = await assignProductionStaff({
+        companyId: effectiveCompId,
+        staffId: assignStaffId,
+        stageId: assignStageId,
+        roleInStage: assignRole.trim() || 'Machine Operator',
+        assignedHours: Number(assignHours || 8),
+        status: 'ASSIGNED',
+      });
+
+      if (res?.success) {
+        Alert.alert('Success', 'Staff member assigned to stage.');
+        setAssignStaffModalVisible(false);
+        setAssignStaffId('');
+        setAssignStageId('');
+        setAssignHours('8');
+        fetchProductionStaff();
+        fetchDetails();
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to assign staff.');
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.message || e?.message || 'Failed to assign staff.');
+    } finally {
+      setSubmittingAssign(false);
+    }
+  };
+
   const getStatusBadge = (status) => {
     const s = (status || 'DRAFT').toUpperCase();
     let bg = '#F1F5F9';
@@ -924,7 +1775,32 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
   }
 
   const projectStatusBadge = getStatusBadge(project?.status);
-  const overallProgress = Math.round(project?.overallProgress || 0);
+  const overallProgress = Math.min(
+    100,
+    Math.max(
+      0,
+      Math.round(
+        typeof project?.overallProgress === 'number'
+          ? project.overallProgress
+          : typeof project?.progress === 'number'
+            ? project.progress
+            : typeof project?.completionPercentage === 'number'
+              ? project.completionPercentage
+              : Array.isArray(project?.stages) && project.stages.length > 0
+                ? project.stages.reduce((acc, s) => {
+                  const p = Number(
+                    s.progressPercentage ??
+                    s.progress ??
+                    (s.status === 'COMPLETED' || s.isCompleted ? 100 : s.status === 'IN_PROGRESS' ? (s.progress || 0) : 0)
+                  ) || 0;
+                  return acc + p;
+                }, 0) / project.stages.length
+                : (project?.status || '').toUpperCase() === 'COMPLETED'
+                  ? 100
+                  : 0
+      )
+    )
+  );
 
   return (
     <View style={styles.container}>
@@ -1008,436 +1884,1118 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
           </View>
         </View>
 
-        {/* Stages Header with "+ Add Stage" */}
-        <View style={styles.sectionHeaderRow}>
-          <View style={styles.sectionTitleGroup}>
-            <View style={styles.sectionIconBadge}>
-              <Layers size={17} color="#2327D8" strokeWidth={2.2} />
-            </View>
-            <View>
-              <Text style={styles.sectionTitle}>Project Stages & Tasks</Text>
-              <Text style={styles.sectionSubtitle}>Track milestones & task execution</Text>
-            </View>
-          </View>
+        {/* ─── SUB-TAB NAVIGATION BAR ─── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.subTabBar}
+          contentContainerStyle={styles.subTabBarContent}
+        >
           <TouchableOpacity
-            style={styles.addStageBtn}
-            onPress={() => {
-              setNewStageName('');
-              setStageModalVisible(true);
-            }}
+            style={[styles.subTabPill, activeSubTab === 'STAGES' && styles.subTabPillActive]}
+            onPress={() => setActiveSubTab('STAGES')}
             activeOpacity={0.8}
           >
-            <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={styles.addStageBtnText}>Add Stage</Text>
+            <Layers size={14} color={activeSubTab === 'STAGES' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
+            <Text style={[styles.subTabPillText, activeSubTab === 'STAGES' && styles.subTabPillTextActive]}>
+              Stages & Tasks
+            </Text>
           </TouchableOpacity>
-        </View>
 
-        {/* Stages Accordion List */}
-        {project?.stages && project.stages.length > 0 ? (
-          project.stages.map((stage, sIdx) => {
-            const stageId = stage._id || sIdx;
-            const isExpanded = !!expandedStages[stageId];
-            const stageProgress = Math.round(stage.progressPercentage ?? stage.progress ?? 0);
-            const totalTasksCount = (stage.milestones || []).reduce(
-              (acc, m) => acc + (m.tasks?.length || 0),
-              0
-            );
+          <TouchableOpacity
+            style={[styles.subTabPill, activeSubTab === 'COSTING' && styles.subTabPillActive]}
+            onPress={() => setActiveSubTab('COSTING')}
+            activeOpacity={0.8}
+          >
+            <DollarSign size={14} color={activeSubTab === 'COSTING' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
+            <Text style={[styles.subTabPillText, activeSubTab === 'COSTING' && styles.subTabPillTextActive]}>
+              Costing & Summary
+            </Text>
+          </TouchableOpacity>
 
-            return (
-              <View key={stageId} style={styles.stageCard}>
-                {/* Stage Header */}
+          <TouchableOpacity
+            style={[styles.subTabPill, activeSubTab === 'DEMANDS' && styles.subTabPillActive]}
+            onPress={() => setActiveSubTab('DEMANDS')}
+            activeOpacity={0.8}
+          >
+            <Package size={14} color={activeSubTab === 'DEMANDS' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
+            <Text style={[styles.subTabPillText, activeSubTab === 'DEMANDS' && styles.subTabPillTextActive]}>
+              Material Demands
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.subTabPill, activeSubTab === 'TRANSACTIONS' && styles.subTabPillActive]}
+            onPress={() => setActiveSubTab('TRANSACTIONS')}
+            activeOpacity={0.8}
+          >
+            <ArrowRightLeft size={14} color={activeSubTab === 'TRANSACTIONS' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
+            <Text style={[styles.subTabPillText, activeSubTab === 'TRANSACTIONS' && styles.subTabPillTextActive]}>
+              Transactions
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.subTabPill, activeSubTab === 'STAFF' && styles.subTabPillActive]}
+            onPress={() => setActiveSubTab('STAFF')}
+            activeOpacity={0.8}
+          >
+            <HardHat size={14} color={activeSubTab === 'STAFF' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
+            <Text style={[styles.subTabPillText, activeSubTab === 'STAFF' && styles.subTabPillTextActive]}>
+              Staff Allocation
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.subTabPill, activeSubTab === 'FILES' && styles.subTabPillActive]}
+            onPress={() => setActiveSubTab('FILES')}
+            activeOpacity={0.8}
+          >
+            <FileText size={14} color={activeSubTab === 'FILES' ? '#FFFFFF' : '#64748B'} style={{ marginRight: 6 }} />
+            <Text style={[styles.subTabPillText, activeSubTab === 'FILES' && styles.subTabPillTextActive]}>
+              Files & Media{allProjectFiles.length > 0 ? ` (${allProjectFiles.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* ─── TAB 1: STAGES & TASKS ─── */}
+        {activeSubTab === 'STAGES' && (
+          <>
+            {/* Stages Header with "+ Add Stage" */}
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionTitleGroup}>
+                <View style={styles.sectionIconBadge}>
+                  <Layers size={17} color="#2327D8" strokeWidth={2.2} />
+                </View>
+                <View>
+                  <Text style={styles.sectionTitle}>Project Stages & Tasks</Text>
+                  <Text style={styles.sectionSubtitle}>Track milestones & task execution</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.addStageBtn}
+                onPress={() => {
+                  setNewStageName('');
+                  setStageModalVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
+                <Text style={styles.addStageBtnText}>Add Stage</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Stages Accordion List */}
+            {project?.stages && project.stages.length > 0 ? (
+              project.stages.map((stage, sIdx) => {
+                const stageId = stage._id || sIdx;
+                const isExpanded = !!expandedStages[stageId];
+                const stageProgress = Math.round(stage.progressPercentage ?? stage.progress ?? 0);
+                const totalTasksCount = (stage.milestones || []).reduce(
+                  (acc, m) => acc + (m.tasks?.length || 0),
+                  0
+                );
+
+                return (
+                  <View key={stageId} style={styles.stageCard}>
+                    {/* Stage Header */}
+                    <TouchableOpacity
+                      style={styles.stageHeader}
+                      activeOpacity={0.8}
+                      onPress={() => toggleStage(stageId)}
+                    >
+                      <View style={styles.stageIndexBadge}>
+                        <Text style={styles.stageIndexText}>{sIdx + 1}</Text>
+                      </View>
+
+                      <View style={styles.stageTitleWrap}>
+                        <Text style={styles.stageName}>{stage.name || stage.stageName || `Stage ${sIdx + 1}`}</Text>
+                        {stage.description ? (
+                          <Text style={styles.stageDescText} numberOfLines={1}>
+                            {stage.description}
+                          </Text>
+                        ) : null}
+                        <View style={styles.stageMetaRow}>
+                          <View
+                            style={[
+                              styles.stageProgressPill,
+                              stageProgress === 100 && styles.stageProgressPillComplete,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.stageProgressText,
+                                stageProgress === 100 && styles.stageProgressTextComplete,
+                              ]}
+                            >
+                              {stageProgress}%
+                            </Text>
+                          </View>
+                          <Text style={styles.stageCountText}>
+                            {(stage.milestones || []).length}{' '}
+                            {(stage.milestones || []).length === 1 ? 'Milestone' : 'Milestones'}
+                          </Text>
+                          <Text style={styles.dot}>•</Text>
+                          <Text style={styles.stageCountText}>
+                            {totalTasksCount} {totalTasksCount === 1 ? 'Task' : 'Tasks'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Stage Reorder Controls */}
+                      {project.stages.length > 1 && (
+                        <View style={styles.reorderCol}>
+                          {sIdx > 0 && (
+                            <TouchableOpacity
+                              style={styles.reorderBtn}
+                              onPress={() => handleReorderStage(sIdx, 'up')}
+                              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            >
+                              <ArrowUp size={13} color="#64748B" />
+                            </TouchableOpacity>
+                          )}
+                          {sIdx < project.stages.length - 1 && (
+                            <TouchableOpacity
+                              style={styles.reorderBtn}
+                              onPress={() => handleReorderStage(sIdx, 'down')}
+                              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            >
+                              <ArrowDown size={13} color="#64748B" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+
+                      <View style={styles.stageChevronWrap}>
+                        {isExpanded ? (
+                          <ChevronUp size={20} color="#64748B" />
+                        ) : (
+                          <ChevronDown size={20} color="#64748B" />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Stage Body */}
+                    {isExpanded && (
+                      <View style={styles.stageBody}>
+                        {/* Stage Progress Mini Bar */}
+                        <View style={styles.stageMiniBarTrack}>
+                          <View
+                            style={[
+                              styles.stageMiniBarFill,
+                              {
+                                width: `${Math.min(stageProgress, 100)}%`,
+                                backgroundColor: stageProgress === 100 ? '#10B981' : '#2327D8',
+                              },
+                            ]}
+                          />
+                        </View>
+
+                        {/* Milestones inside this Stage */}
+                        {(stage.milestones || []).map((milestone, mIdx) => {
+                          const milestoneId = milestone._id || mIdx;
+                          const milestoneProgress = Math.round(
+                            milestone.progressPercentage ?? milestone.progress ?? 0
+                          );
+
+                          return (
+                            <View key={milestoneId} style={styles.milestoneCard}>
+                              {/* Milestone Header */}
+                              <View style={styles.milestoneHeader}>
+                                <View style={styles.milestoneTitleRow}>
+                                  <View style={styles.milestoneIconWrap}>
+                                    <Flag size={13} color="#4F46E5" strokeWidth={2.5} />
+                                  </View>
+                                  <View style={{ flex: 1 }}>
+                                    <View style={styles.milestoneHeadingRow}>
+                                      <Text style={styles.milestoneIndexLabel}>Milestone {mIdx + 1}</Text>
+                                      <View
+                                        style={[
+                                          styles.milestoneProgressPill,
+                                          milestoneProgress === 100 && styles.milestoneProgressPillDone,
+                                        ]}
+                                      >
+                                        <Text
+                                          style={[
+                                            styles.milestoneProgressPillText,
+                                            milestoneProgress === 100 && styles.milestoneProgressPillTextDone,
+                                          ]}
+                                        >
+                                          {milestoneProgress}%
+                                        </Text>
+                                      </View>
+                                    </View>
+                                    <Text style={styles.milestoneTitle}>{milestone.name || milestone.title}</Text>
+                                    {milestone.description ? (
+                                      <Text style={styles.milestoneDescText} numberOfLines={2}>
+                                        {milestone.description}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                </View>
+
+                                <View style={styles.milestoneActionRow}>
+                                  {/* Milestone Reorder Buttons */}
+                                  {stage.milestones.length > 1 && (
+                                    <View style={styles.reorderRowMini}>
+                                      {mIdx > 0 && (
+                                        <TouchableOpacity
+                                          style={styles.reorderMiniBtn}
+                                          onPress={() => handleReorderMilestone(stageId, mIdx, 'up')}
+                                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                        >
+                                          <ArrowUp size={12} color="#64748B" />
+                                        </TouchableOpacity>
+                                      )}
+                                      {mIdx < stage.milestones.length - 1 && (
+                                        <TouchableOpacity
+                                          style={styles.reorderMiniBtn}
+                                          onPress={() => handleReorderMilestone(stageId, mIdx, 'down')}
+                                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                        >
+                                          <ArrowDown size={12} color="#64748B" />
+                                        </TouchableOpacity>
+                                      )}
+                                    </View>
+                                  )}
+
+                                  <TouchableOpacity
+                                    style={styles.addTaskBtn}
+                                    onPress={() => openAddTaskModal(stageId, milestoneId, milestone.name || milestone.title)}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Plus size={12} color="#2327D8" strokeWidth={2.5} />
+                                    <Text style={styles.addTaskBtnText}>Add Task</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+
+                              {/* Milestone Progress Bar */}
+                              <View style={styles.milestoneProgressBarRow}>
+                                <View style={styles.milestoneMiniBarTrack}>
+                                  <View
+                                    style={[
+                                      styles.milestoneMiniBarFill,
+                                      {
+                                        width: `${Math.min(milestoneProgress, 100)}%`,
+                                        backgroundColor: milestoneProgress === 100 ? '#10B981' : '#4F46E5',
+                                      },
+                                    ]}
+                                  />
+                                </View>
+                              </View>
+
+                              {/* Allocated Raw Materials for Milestone */}
+                              {Array.isArray(milestone.allocatedMaterials) && milestone.allocatedMaterials.length > 0 && (
+                                <View style={styles.milestoneMaterialsContainer}>
+                                  <View style={styles.milestoneMaterialsHeader}>
+                                    <Package size={12} color="#4F46E5" />
+                                    <Text style={styles.milestoneMaterialsHeaderTitle}>
+                                      Allocated Materials ({milestone.allocatedMaterials.length})
+                                    </Text>
+                                  </View>
+                                  <View style={styles.milestoneMaterialsGrid}>
+                                    {milestone.allocatedMaterials.map((mat, matIdx) => {
+                                      const matObj = (typeof mat.materialId === 'object' && mat.materialId !== null)
+                                        ? mat.materialId
+                                        : (availableMaterials.find(m => (m._id || m.id) === (mat.materialId || mat._id)) || {});
+                                      const name = matObj.name || mat.name || 'Raw Material';
+                                      const code = matObj.materialCode || mat.materialCode || '';
+                                      const unit = matObj.unit || mat.unit || 'units';
+                                      const allocated = Number(mat.allocatedQuantity ?? mat.plannedQuantity ?? 0);
+                                      const consumed = Number(mat.consumedQuantity ?? 0);
+                                      const remaining = Number(mat.remainingQuantity ?? (allocated - consumed));
+
+                                      return (
+                                        <View key={mat._id || matIdx} style={styles.milestoneMaterialCard}>
+                                          <View style={styles.milestoneMaterialTopRow}>
+                                            <View style={{ flex: 1, marginRight: 8 }}>
+                                              <Text style={styles.milestoneMaterialName} numberOfLines={1}>
+                                                {name}
+                                              </Text>
+                                              {code ? (
+                                                <Text style={styles.milestoneMaterialCode}>{code}</Text>
+                                              ) : null}
+                                            </View>
+                                            <View style={styles.milestoneMaterialAllocPill}>
+                                              <Text style={styles.milestoneMaterialAllocText}>
+                                                {allocated} {unit}
+                                              </Text>
+                                            </View>
+                                          </View>
+                                          {(consumed > 0 || remaining !== allocated) && (
+                                            <View style={styles.milestoneMaterialStatsRow}>
+                                              <Text style={styles.milestoneMaterialStatText}>
+                                                Used: <Text style={{ fontWeight: '700', color: '#0F172A' }}>{consumed} {unit}</Text>
+                                              </Text>
+                                              <Text style={styles.milestoneMaterialStatDivider}>•</Text>
+                                              <Text style={styles.milestoneMaterialStatText}>
+                                                Left: <Text style={{ fontWeight: '700', color: remaining > 0 ? '#059669' : '#DC2626' }}>{remaining} {unit}</Text>
+                                              </Text>
+                                            </View>
+                                          )}
+                                        </View>
+                                      );
+                                    })}
+                                  </View>
+                                </View>
+                              )}
+
+                              {/* Tasks under this Milestone - SINGLE INDIVIDUAL CARDS */}
+                              <View style={styles.tasksContainer}>
+                                {(milestone.tasks || []).length > 0 ? (
+                                  <>
+                                    {milestone.tasks.map((task) => {
+                                      const statusConfig =
+                                        TASK_STATUSES.find((s) => s.key === task.status) ||
+                                        TASK_STATUSES[0];
+                                      const priorityConfig =
+                                        PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.MEDIUM;
+                                      const matchedStaff = onboardedStaffList.find(
+                                        (s) =>
+                                          String(s._id) === String(task.assignedTo?._id || task.assignedTo) ||
+                                          (s.mobileNumber && String(task.assignedTo).includes(s.mobileNumber))
+                                      );
+                                      const assignedUser =
+                                        task.assignedTo?.name ||
+                                        task.assignedToName ||
+                                        matchedStaff?.name ||
+                                        (typeof task.assignedTo === 'string' && !/^[0-9a-fA-F]{24}$/.test(task.assignedTo)
+                                          ? task.assignedTo
+                                          : null);
+                                      const assignedRole = task.assignedTo?.roles?.[0] || matchedStaff?.roles?.[0] || 'Staff';
+
+                                      return (
+                                        <View key={task._id} style={styles.singleTaskCard}>
+                                          {/* Top Row: Status pill & Priority badge */}
+                                          <View style={styles.singleTaskTopRow}>
+                                            <TouchableOpacity
+                                              style={[
+                                                styles.singleTaskStatusPill,
+                                                { backgroundColor: statusConfig.bg },
+                                              ]}
+                                              onPress={() =>
+                                                handleCycleTaskStatus(stageId, milestoneId, task)
+                                              }
+                                              activeOpacity={0.7}
+                                            >
+                                              {(task.status === 'COMPLETED' || task.status === 'DONE') ? (
+                                                <CheckCircle2 size={13} color="#059669" strokeWidth={2.5} />
+                                              ) : task.status === 'IN_PROGRESS' ? (
+                                                <Clock size={13} color="#D97706" strokeWidth={2.5} />
+                                              ) : task.status === 'BLOCKED' ? (
+                                                <AlertCircle size={13} color="#DC2626" strokeWidth={2.5} />
+                                              ) : (
+                                                <View style={styles.todoDot} />
+                                              )}
+                                              <Text
+                                                style={[
+                                                  styles.singleTaskStatusText,
+                                                  { color: statusConfig.color },
+                                                ]}
+                                              >
+                                                {statusConfig.label}
+                                              </Text>
+                                            </TouchableOpacity>
+
+                                            {task.priority ? (
+                                              <View
+                                                style={[
+                                                  styles.singleTaskPriorityBadge,
+                                                  { backgroundColor: priorityConfig.bg },
+                                                ]}
+                                              >
+                                                <Text
+                                                  style={[
+                                                    styles.singleTaskPriorityText,
+                                                    { color: priorityConfig.color },
+                                                  ]}
+                                                >
+                                                  {task.priority}
+                                                </Text>
+                                              </View>
+                                            ) : null}
+                                          </View>
+
+                                          {/* Task Title */}
+                                          <Text
+                                            style={[
+                                              styles.singleTaskTitle,
+                                              (task.status === 'COMPLETED' || task.status === 'DONE') && styles.singleTaskTitleDone,
+                                            ]}
+                                          >
+                                            {task.title}
+                                          </Text>
+
+                                          {/* Task Description */}
+                                          {task.description ? (
+                                            <Text style={styles.singleTaskDesc} numberOfLines={3}>
+                                              {task.description}
+                                            </Text>
+                                          ) : null}
+
+                                          {/* Task Footer: Assigned Staff & Due Date */}
+                                          <View style={styles.singleTaskFooter}>
+                                            {assignedUser ? (
+                                              <View style={styles.singleTaskStaffBadge}>
+                                                <View style={styles.singleTaskStaffAvatar}>
+                                                  <Text style={styles.singleTaskStaffAvatarText}>
+                                                    {(assignedUser || 'S').charAt(0).toUpperCase()}
+                                                  </Text>
+                                                </View>
+                                                <Text style={styles.singleTaskStaffName} numberOfLines={1}>
+                                                  {assignedUser}
+                                                </Text>
+                                                <Text style={styles.singleTaskStaffRole}>
+                                                  ({assignedRole})
+                                                </Text>
+                                              </View>
+                                            ) : (
+                                              <View style={styles.singleTaskUnassignedBadge}>
+                                                <User size={11} color="#94A3B8" />
+                                                <Text style={styles.singleTaskUnassignedText}>Unassigned</Text>
+                                              </View>
+                                            )}
+
+                                            {task.dueDate ? (
+                                              <View style={styles.singleTaskDueDateBadge}>
+                                                <Calendar size={11} color="#64748B" />
+                                                <Text style={styles.singleTaskDueDateText}>
+                                                  Due:{' '}
+                                                  {new Date(task.dueDate).toLocaleDateString('en-IN', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                  })}
+                                                </Text>
+                                              </View>
+                                            ) : null}
+                                          </View>
+                                        </View>
+                                      );
+                                    })}
+
+                                    {/* Bottom inline button to add task */}
+                                    <TouchableOpacity
+                                      style={styles.addTaskBottomRowBtn}
+                                      onPress={() => openAddTaskModal(stageId, milestoneId, milestone.title)}
+                                      activeOpacity={0.7}
+                                    >
+                                      <Plus size={13} color="#2327D8" strokeWidth={2.2} />
+                                      <Text style={styles.addTaskBottomRowBtnText}>+ Add Task to Milestone</Text>
+                                    </TouchableOpacity>
+                                  </>
+                                ) : (
+                                  <TouchableOpacity
+                                    style={styles.noTasksCard}
+                                    onPress={() => openAddTaskModal(stageId, milestoneId, milestone.title)}
+                                    activeOpacity={0.7}
+                                  >
+                                    <View style={styles.noTasksIconCircle}>
+                                      <Plus size={15} color="#2327D8" strokeWidth={2.5} />
+                                    </View>
+                                    <View style={styles.noTasksTextGroup}>
+                                      <Text style={styles.noTasksTitle}>No tasks added yet</Text>
+                                      <Text style={styles.noTasksSubtitle}>
+                                        Tap to add a task to this milestone
+                                      </Text>
+                                    </View>
+                                    <View style={styles.noTasksAddPill}>
+                                      <Text style={styles.noTasksAddPillText}>+ Add Task</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                            </View>
+                          );
+                        })}
+
+                        {/* "+ Add Milestone" button at bottom of stage */}
+                        <TouchableOpacity
+                          style={styles.addMilestoneBtn}
+                          onPress={() => openAddMilestoneModal(stageId)}
+                          activeOpacity={0.7}
+                        >
+                          <Plus size={14} color="#4F46E5" strokeWidth={2.2} />
+                          <Text style={styles.addMilestoneBtnText}>Add Milestone to Stage</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.emptyStagesCard}>
+                <Layers size={36} color="#CBD5E1" />
+                <Text style={styles.emptyStagesTitle}>No Stages Defined Yet</Text>
+                <Text style={styles.emptyStagesSubtitle}>
+                  Break this project into manageable phases (e.g. Procurement, Milling, Quality Check,
+                  Dispatch).
+                </Text>
                 <TouchableOpacity
-                  style={styles.stageHeader}
-                  activeOpacity={0.8}
-                  onPress={() => toggleStage(stageId)}
+                  style={styles.createFirstStageBtn}
+                  onPress={() => {
+                    setNewStageName('');
+                    setNewStageDesc('');
+                    setStageModalVisible(true);
+                  }}
                 >
-                  <View style={styles.stageIndexBadge}>
-                    <Text style={styles.stageIndexText}>{sIdx + 1}</Text>
+                  <Plus size={16} color="#FFFFFF" />
+                  <Text style={styles.createFirstStageText}>Add First Stage</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ─── TAB 2: PRODUCTION COSTING & SUMMARY (API 6.1) ─── */}
+        {activeSubTab === 'COSTING' && (
+          <View style={styles.tabContentWrap}>
+            {loadingCosting ? (
+              <View style={styles.tabLoadingBox}>
+                <ActivityIndicator size="small" color="#2327D8" />
+                <Text style={styles.tabLoadingText}>Calculating live production costing...</Text>
+              </View>
+            ) : (
+              <>
+                {/* Hero Costing Card */}
+                <View style={styles.costHeroCard}>
+                  <View style={styles.costHeroTop}>
+                    <View>
+                      <Text style={styles.costHeroLabel}>Grand Total Production Cost</Text>
+                      <Text style={styles.costHeroValue}>
+                        ₹{Number(costingData?.costingSummary?.grandTotalProductionCost || costingData?.totalCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.budgetStatusPill,
+                        costingData?.costingSummary?.budgetStatus === 'UNDER_BUDGET'
+                          ? styles.budgetUnder
+                          : costingData?.costingSummary?.budgetStatus === 'OVER_BUDGET'
+                            ? styles.budgetOver
+                            : styles.budgetTrack,
+                      ]}
+                    >
+                      <Text style={styles.budgetStatusText}>
+                        {(costingData?.costingSummary?.budgetStatus || 'ON_TRACK').replace('_', ' ')}
+                      </Text>
+                    </View>
                   </View>
 
-                  <View style={styles.stageTitleWrap}>
-                    <Text style={styles.stageName}>{stage.name}</Text>
-                    {stage.description ? (
-                      <Text style={styles.stageDescText} numberOfLines={1}>
-                        {stage.description}
+                  <View style={styles.costHeroGrid}>
+                    <View style={styles.costHeroCol}>
+                      <Text style={styles.costHeroSubLabel}>Planned Budget</Text>
+                      <Text style={styles.costHeroSubVal}>
+                        ₹{Number(costingData?.costingSummary?.plannedBudget || project?.plannedBudget || 0).toLocaleString('en-IN')}
                       </Text>
-                    ) : null}
-                    <View style={styles.stageMetaRow}>
+                    </View>
+                    <View style={styles.costHeroCol}>
+                      <Text style={styles.costHeroSubLabel}>Cost Per Unit</Text>
+                      <Text style={styles.costHeroSubVal}>
+                        ₹{Number(costingData?.costingSummary?.costPerUnit || 0).toFixed(2)}
+                      </Text>
+                    </View>
+                    <View style={styles.costHeroCol}>
+                      <Text style={styles.costHeroSubLabel}>Budget Variance</Text>
+                      <Text
+                        style={[
+                          styles.costHeroSubVal,
+                          {
+                            color:
+                              (costingData?.costingSummary?.budgetVariance || 0) >= 0
+                                ? '#10B981'
+                                : '#EF4444',
+                          },
+                        ]}
+                      >
+                        ₹{Number(costingData?.costingSummary?.budgetVariance || 0).toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* 3 Pillars of Production Cost */}
+                <View style={styles.costPillarsRow}>
+                  <View style={styles.costPillarCard}>
+                    <Package size={16} color="#2563EB" />
+                    <Text style={styles.costPillarTitle}>Material Cost</Text>
+                    <Text style={styles.costPillarAmount}>
+                      ₹{Number(costingData?.costingSummary?.totalMaterialCost || 0).toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                  <View style={styles.costPillarCard}>
+                    <Users size={16} color="#059669" />
+                    <Text style={styles.costPillarTitle}>Labour Cost</Text>
+                    <Text style={styles.costPillarAmount}>
+                      ₹{Number(costingData?.costingSummary?.totalLabourCost || 0).toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                  <View style={styles.costPillarCard}>
+                    <DollarSign size={16} color="#D97706" />
+                    <Text style={styles.costPillarTitle}>Other Cost</Text>
+                    <Text style={styles.costPillarAmount}>
+                      ₹{Number(costingData?.costingSummary?.totalOtherCost || 0).toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Consumed Materials Breakdown */}
+                <View style={styles.breakdownSectionCard}>
+                  <View style={styles.sectionHeaderRow}>
+                    <View style={styles.sectionTitleGroup}>
+                      <View style={[styles.sectionIconBadge, { backgroundColor: '#EFF6FF' }]}>
+                        <Package size={16} color="#2563EB" />
+                      </View>
+                      <Text style={styles.sectionTitle}>Consumed Raw Materials</Text>
+                    </View>
+                  </View>
+
+                  {Array.isArray(costingData?.consumedMaterials) && costingData.consumedMaterials.length > 0 ? (
+                    costingData.consumedMaterials.map((mat, mIdx) => (
+                      <View key={mat.materialId || mIdx} style={styles.consumedMaterialRow}>
+                        <View style={styles.consumedMatLeft}>
+                          <Text style={styles.consumedMatName}>{mat.name || mat.materialCode || 'Raw Material'}</Text>
+                          <Text style={styles.consumedMatSub}>Code: {mat.materialCode || 'N/A'}</Text>
+                        </View>
+                        <View style={styles.consumedMatMid}>
+                          <Text style={styles.consumedMatQty}>
+                            {mat.consumedQuantity} {mat.unit || 'Kg'}
+                          </Text>
+                          {Number(mat.returnedQuantity) > 0 && (
+                            <Text style={styles.consumedMatReturned}>
+                              ({mat.returnedQuantity} unused returned)
+                            </Text>
+                          )}
+                        </View>
+                        <View style={styles.consumedMatRight}>
+                          <Text style={styles.consumedMatCost}>
+                            ₹{Number(mat.totalCost || 0).toLocaleString('en-IN')}
+                          </Text>
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyNoticeText}>No materials consumed yet. Use the Transactions tab to log consumption.</Text>
+                  )}
+                </View>
+
+                {/* Labour Hours Breakdown */}
+                <View style={styles.breakdownSectionCard}>
+                  <View style={styles.sectionHeaderRow}>
+                    <View style={styles.sectionTitleGroup}>
+                      <View style={[styles.sectionIconBadge, { backgroundColor: '#ECFDF5' }]}>
+                        <HardHat size={16} color="#059669" />
+                      </View>
+                      <Text style={styles.sectionTitle}>Labour & Floor Staff</Text>
+                    </View>
+                    <Text style={styles.totalHoursBadge}>
+                      {costingData?.labourBreakdown?.totalLabourHours || 0} Total Hrs
+                    </Text>
+                  </View>
+
+                  {Array.isArray(costingData?.labourBreakdown?.staffBreakdown) &&
+                    costingData.labourBreakdown.staffBreakdown.length > 0 ? (
+                    costingData.labourBreakdown.staffBreakdown.map((st, sIdx) => (
+                      <View key={st.staffId || sIdx} style={styles.consumedMaterialRow}>
+                        <View style={styles.consumedMatLeft}>
+                          <Text style={styles.consumedMatName}>{st.name || 'Floor Operator'}</Text>
+                        </View>
+                        <View style={styles.consumedMatMid}>
+                          <Text style={styles.consumedMatQty}>{st.totalHours} hrs</Text>
+                        </View>
+                        <View style={styles.consumedMatRight}>
+                          <Text style={styles.consumedMatCost}>
+                            ₹{Number(st.totalLabourCost || 0).toLocaleString('en-IN')}
+                          </Text>
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyNoticeText}>No labour hours recorded yet.</Text>
+                  )}
+                </View>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* ─── TAB 3: MATERIAL DEMANDS (API 4) ─── */}
+        {activeSubTab === 'DEMANDS' && (
+          <View style={styles.tabContentWrap}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionTitleGroup}>
+                <View style={[styles.sectionIconBadge, { backgroundColor: '#EFF6FF' }]}>
+                  <Package size={16} color="#2563EB" />
+                </View>
+                <View>
+                  <Text style={styles.sectionTitle}>Material Demands</Text>
+                  <Text style={styles.sectionSubtitle}>Floor demand raise & review</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.addStageBtn}
+                onPress={() => {
+                  setDemandMaterialId('');
+                  setDemandQty('');
+                  setDemandReason('');
+                  setRaiseDemandModalVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
+                <Text style={styles.addStageBtnText}>Raise Demand</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingDemands ? (
+              <View style={styles.tabLoadingBox}>
+                <ActivityIndicator size="small" color="#2327D8" />
+                <Text style={styles.tabLoadingText}>Loading material demands...</Text>
+              </View>
+            ) : demandsList && demandsList.length > 0 ? (
+              demandsList.map((demand, dIdx) => {
+                const matName =
+                  typeof demand.materialId === 'object'
+                    ? demand.materialId?.name || demand.materialId?.materialCode
+                    : 'Raw Material';
+                const matUnit =
+                  typeof demand.materialId === 'object' ? demand.materialId?.unit || 'Kg' : 'Kg';
+                const reqName =
+                  typeof demand.requestedBy === 'object'
+                    ? demand.requestedBy?.name || demand.requestedBy?.mobileNumber
+                    : 'Floor Supervisor';
+                const isPending = (demand.status || 'PENDING').toUpperCase() === 'PENDING';
+                const isApproved = (demand.status || '').toUpperCase() === 'APPROVED';
+                const isRejected = (demand.status || '').toUpperCase() === 'REJECTED';
+
+                return (
+                  <View key={demand._id || dIdx} style={styles.demandCard}>
+                    <View style={styles.demandCardHeader}>
+                      <View style={styles.demandMatWrap}>
+                        <Text style={styles.demandMatName}>{matName}</Text>
+                        <Text style={styles.demandSubText}>
+                          By: {reqName} • {demand.createdAt ? new Date(demand.createdAt).toLocaleDateString('en-IN') : 'Recent'}
+                        </Text>
+                      </View>
                       <View
                         style={[
-                          styles.stageProgressPill,
-                          stageProgress === 100 && styles.stageProgressPillComplete,
+                          styles.demandStatusPill,
+                          isApproved
+                            ? styles.statusApproved
+                            : isRejected
+                              ? styles.statusRejected
+                              : styles.statusPending,
                         ]}
                       >
                         <Text
                           style={[
-                            styles.stageProgressText,
-                            stageProgress === 100 && styles.stageProgressTextComplete,
+                            styles.demandStatusText,
+                            isApproved
+                              ? styles.statusApprovedText
+                              : isRejected
+                                ? styles.statusRejectedText
+                                : styles.statusPendingText,
                           ]}
                         >
-                          {stageProgress}%
+                          {demand.status || 'PENDING'}
                         </Text>
                       </View>
-                      <Text style={styles.stageCountText}>
-                        {(stage.milestones || []).length}{' '}
-                        {(stage.milestones || []).length === 1 ? 'Milestone' : 'Milestones'}
+                    </View>
+
+                    <View style={styles.demandQtyRow}>
+                      <View style={styles.demandQtyCol}>
+                        <Text style={styles.demandQtyLabel}>Requested Qty</Text>
+                        <Text style={styles.demandQtyValue}>
+                          {demand.requestedQuantity} {matUnit}
+                        </Text>
+                      </View>
+                      <View style={styles.demandQtyCol}>
+                        <Text style={styles.demandQtyLabel}>Approved Qty</Text>
+                        <Text style={styles.demandQtyValue}>
+                          {demand.approvedQuantity || 0} {matUnit}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {demand.reason ? (
+                      <View style={styles.demandReasonBox}>
+                        <Text style={styles.demandReasonLabel}>Reason:</Text>
+                        <Text style={styles.demandReasonText}>{demand.reason}</Text>
+                      </View>
+                    ) : null}
+
+                    {isPending && (
+                      <View style={styles.demandActionsRow}>
+                        <TouchableOpacity
+                          style={styles.reviewDemandBtn}
+                          onPress={() => {
+                            setReviewingDemand(demand);
+                            setReviewAction('APPROVE');
+                            setReviewApprovedQty(String(demand.requestedQuantity || ''));
+                            setReviewRejectionReason('');
+                            setReviewDemandModalVisible(true);
+                          }}
+                        >
+                          <ShieldCheck size={14} color="#FFFFFF" style={{ marginRight: 5 }} />
+                          <Text style={styles.reviewDemandBtnText}>Review / Approve</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.emptyTabCard}>
+                <Package size={36} color="#CBD5E1" />
+                <Text style={styles.emptyTabTitle}>No Demands Raised Yet</Text>
+                <Text style={styles.emptyTabDesc}>
+                  Need extra raw materials for this project? Tap "Raise Demand" to notify management.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* ─── TAB 4: MATERIAL TRANSACTIONS (API 5) ─── */}
+        {activeSubTab === 'TRANSACTIONS' && (
+          <View style={styles.tabContentWrap}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionTitleGroup}>
+                <View style={[styles.sectionIconBadge, { backgroundColor: '#EEF2FF' }]}>
+                  <ArrowRightLeft size={16} color="#2327D8" />
+                </View>
+                <View>
+                  <Text style={styles.sectionTitle}>Material Transactions</Text>
+                  <Text style={styles.sectionSubtitle}>Warehouse & floor inventory flows</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* 3 Quick Flow Action Cards */}
+            <TouchableOpacity
+              style={styles.transactionActionCard}
+              onPress={() => {
+                setIssueMaterialId('');
+                setIssueQty('');
+                setIssueNotes('');
+                setIssueModalVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.txActionIconBox, { backgroundColor: '#EFF6FF' }]}>
+                <Truck size={20} color="#2563EB" />
+              </View>
+              <View style={styles.txActionTextWrap}>
+                <Text style={styles.txActionTitle}>1. Issue Material to Floor</Text>
+                <Text style={styles.txActionSubtitle}>Dispatch raw material from warehouse to production floor</Text>
+              </View>
+              <ChevronRight size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.transactionActionCard}
+              onPress={() => {
+                setReceiveIssueId('');
+                setReceiveQty('');
+                setReceiveNotes('');
+                setReceiveModalVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.txActionIconBox, { backgroundColor: '#ECFDF5' }]}>
+                <CheckCircle2 size={20} color="#059669" />
+              </View>
+              <View style={styles.txActionTextWrap}>
+                <Text style={styles.txActionTitle}>2. Confirm Material Receipt</Text>
+                <Text style={styles.txActionSubtitle}>Floor worker acknowledges delivered batch and quantity</Text>
+              </View>
+              <ChevronRight size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.transactionActionCard}
+              onPress={() => {
+                setConsumeMaterialId('');
+                setConsumeQty('');
+                setReturnQty('0');
+                setConsumeNotes('');
+                setConsumeModalVisible(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.txActionIconBox, { backgroundColor: '#FEF3C7' }]}>
+                <Boxes size={20} color="#D97706" />
+              </View>
+              <View style={styles.txActionTextWrap}>
+                <Text style={styles.txActionTitle}>3. Record Actual Consumption</Text>
+                <Text style={styles.txActionSubtitle}>Log units consumed and unused returns for actual costing</Text>
+              </View>
+              <ChevronRight size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ─── TAB 5: STAFF ALLOCATION (API 7) ─── */}
+        {activeSubTab === 'STAFF' && (
+          <View style={styles.tabContentWrap}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionTitleGroup}>
+                <View style={[styles.sectionIconBadge, { backgroundColor: '#ECFDF5' }]}>
+                  <HardHat size={16} color="#059669" />
+                </View>
+                <View>
+                  <Text style={styles.sectionTitle}>Floor Staff Management</Text>
+                  <Text style={styles.sectionSubtitle}>Factory operators & hourly rates</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.addStageBtn}
+                onPress={() => {
+                  setAssignStaffId('');
+                  setAssignHours('8');
+                  setAssignStaffModalVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
+                <Text style={styles.addStageBtnText}>Assign Staff</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingStaff ? (
+              <View style={styles.tabLoadingBox}>
+                <ActivityIndicator size="small" color="#2327D8" />
+                <Text style={styles.tabLoadingText}>Loading staff directory...</Text>
+              </View>
+            ) : productionStaffList && productionStaffList.length > 0 ? (
+              productionStaffList.map((st, stIdx) => (
+                <View key={st._id || stIdx} style={styles.staffMemberCard}>
+                  <View style={styles.staffCardHeader}>
+                    <View style={styles.staffAvatarCircle}>
+                      <Text style={styles.staffAvatarText}>
+                        {(st.name || 'S').charAt(0).toUpperCase()}
                       </Text>
-                      <Text style={styles.dot}>•</Text>
-                      <Text style={styles.stageCountText}>
-                        {totalTasksCount} {totalTasksCount === 1 ? 'Task' : 'Tasks'}
+                    </View>
+                    <View style={styles.staffInfoCol}>
+                      <Text style={styles.staffMemberName}>{st.name}</Text>
+                      <Text style={styles.staffMemberRole}>
+                        {st.role || 'Machine Operator'} • {st.mobileNumber}
                       </Text>
+                    </View>
+                    <View style={styles.staffRateBadge}>
+                      <Text style={styles.staffRateText}>₹{st.hourlyRate || 200}/hr</Text>
                     </View>
                   </View>
 
-                  {/* Stage Reorder Controls */}
-                  {project.stages.length > 1 && (
-                    <View style={styles.reorderCol}>
-                      {sIdx > 0 && (
-                        <TouchableOpacity
-                          style={styles.reorderBtn}
-                          onPress={() => handleReorderStage(sIdx, 'up')}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        >
-                          <ArrowUp size={13} color="#64748B" />
-                        </TouchableOpacity>
-                      )}
-                      {sIdx < project.stages.length - 1 && (
-                        <TouchableOpacity
-                          style={styles.reorderBtn}
-                          onPress={() => handleReorderStage(sIdx, 'down')}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        >
-                          <ArrowDown size={13} color="#64748B" />
-                        </TouchableOpacity>
-                      )}
+                  {Array.isArray(st.skillTags) && st.skillTags.length > 0 && (
+                    <View style={styles.skillTagsRow}>
+                      {st.skillTags.map((tag, tIdx) => (
+                        <View key={tIdx} style={styles.skillTagPill}>
+                          <Text style={styles.skillTagText}>{tag}</Text>
+                        </View>
+                      ))}
                     </View>
                   )}
 
-                  <View style={styles.stageChevronWrap}>
-                    {isExpanded ? (
-                      <ChevronUp size={20} color="#64748B" />
-                    ) : (
-                      <ChevronDown size={20} color="#64748B" />
-                    )}
-                  </View>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.assignStageMiniBtn}
+                    onPress={() => {
+                      setAssignStaffId(st._id);
+                      setAssignRole(st.role || 'Machine Operator');
+                      setAssignHours('8');
+                      setAssignStaffModalVisible(true);
+                    }}
+                  >
+                    <Text style={styles.assignStageMiniBtnText}>+ Assign to Stage</Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyTabCard}>
+                <HardHat size={36} color="#CBD5E1" />
+                <Text style={styles.emptyTabTitle}>No Floor Staff Members</Text>
+                <Text style={styles.emptyTabDesc}>
+                  Onboard operators and inspectors to assign them directly to project stages.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
-                {/* Stage Body */}
-                {isExpanded && (
-                  <View style={styles.stageBody}>
-                    {/* Stage Progress Mini Bar */}
-                    <View style={styles.stageMiniBarTrack}>
-                      <View
-                        style={[
-                          styles.stageMiniBarFill,
-                          {
-                            width: `${Math.min(stageProgress, 100)}%`,
-                            backgroundColor: stageProgress === 100 ? '#10B981' : '#2327D8',
-                          },
-                        ]}
-                      />
-                    </View>
+        {/* ─── TAB 6: FILES & DOCUMENTS ─── */}
+        {activeSubTab === 'FILES' && (
+          <View style={styles.tabContentWrap}>
+            <View style={styles.tabHeaderCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tabHeaderTitle}>Project Files & Attachments</Text>
+                <Text style={styles.tabHeaderSubtitle}>
+                  Design sheets, blueprints, CAD drawings, spec documents, and task media
+                </Text>
+              </View>
+              <View style={styles.filesCountBadge}>
+                <Text style={styles.filesCountBadgeText}>
+                  {allProjectFiles.length} {allProjectFiles.length === 1 ? 'File' : 'Files'}
+                </Text>
+              </View>
+            </View>
 
-                    {/* Milestones inside this Stage */}
-                    {(stage.milestones || []).map((milestone, mIdx) => {
-                      const milestoneId = milestone._id || mIdx;
-                      const milestoneProgress = Math.round(
-                        milestone.progressPercentage ?? milestone.progress ?? 0
-                      );
+            {allProjectFiles.length > 0 ? (
+              <View style={styles.filesGrid}>
+                {allProjectFiles.map((file, fIdx) => {
+                  const isImg = file.type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(file.url || '');
+                  const resolvedUrl = resolveImageUrl(file.url);
 
-                      return (
-                        <View key={milestoneId} style={styles.milestoneCard}>
-                          {/* Milestone Header */}
-                          <View style={styles.milestoneHeader}>
-                            <View style={styles.milestoneTitleRow}>
-                              <View style={styles.milestoneIconWrap}>
-                                <Flag size={13} color="#4F46E5" strokeWidth={2.5} />
-                              </View>
-                              <View style={{ flex: 1 }}>
-                                <View style={styles.milestoneHeadingRow}>
-                                  <Text style={styles.milestoneIndexLabel}>Milestone {mIdx + 1}</Text>
-                                  <View
-                                    style={[
-                                      styles.milestoneProgressPill,
-                                      milestoneProgress === 100 && styles.milestoneProgressPillDone,
-                                    ]}
-                                  >
-                                    <Text
-                                      style={[
-                                        styles.milestoneProgressPillText,
-                                        milestoneProgress === 100 && styles.milestoneProgressPillTextDone,
-                                      ]}
-                                    >
-                                      {milestoneProgress}%
-                                    </Text>
-                                  </View>
-                                </View>
-                                <Text style={styles.milestoneTitle}>{milestone.title}</Text>
-                                {milestone.description ? (
-                                  <Text style={styles.milestoneDescText} numberOfLines={2}>
-                                    {milestone.description}
-                                  </Text>
-                                ) : null}
-                              </View>
-                            </View>
-
-                            <View style={styles.milestoneActionRow}>
-                              {/* Milestone Reorder Buttons */}
-                              {stage.milestones.length > 1 && (
-                                <View style={styles.reorderRowMini}>
-                                  {mIdx > 0 && (
-                                    <TouchableOpacity
-                                      style={styles.reorderMiniBtn}
-                                      onPress={() => handleReorderMilestone(stageId, mIdx, 'up')}
-                                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                                    >
-                                      <ArrowUp size={12} color="#64748B" />
-                                    </TouchableOpacity>
-                                  )}
-                                  {mIdx < stage.milestones.length - 1 && (
-                                    <TouchableOpacity
-                                      style={styles.reorderMiniBtn}
-                                      onPress={() => handleReorderMilestone(stageId, mIdx, 'down')}
-                                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                                    >
-                                      <ArrowDown size={12} color="#64748B" />
-                                    </TouchableOpacity>
-                                  )}
-                                </View>
-                              )}
-
-                              <TouchableOpacity
-                                style={styles.addTaskBtn}
-                                onPress={() => openAddTaskModal(stageId, milestoneId, milestone.title)}
-                                activeOpacity={0.7}
-                              >
-                                <Plus size={12} color="#2327D8" strokeWidth={2.5} />
-                                <Text style={styles.addTaskBtnText}>Add Task</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-
-                          {/* Milestone Progress Bar */}
-                          <View style={styles.milestoneProgressBarRow}>
-                            <View style={styles.milestoneMiniBarTrack}>
-                              <View
-                                style={[
-                                  styles.milestoneMiniBarFill,
-                                  {
-                                    width: `${Math.min(milestoneProgress, 100)}%`,
-                                    backgroundColor: milestoneProgress === 100 ? '#10B981' : '#4F46E5',
-                                  },
-                                ]}
-                              />
-                            </View>
-                          </View>
-
-                          {/* Tasks under this Milestone - SINGLE INDIVIDUAL CARDS */}
-                          <View style={styles.tasksContainer}>
-                            {(milestone.tasks || []).length > 0 ? (
-                              <>
-                                {milestone.tasks.map((task) => {
-                                  const statusConfig =
-                                    TASK_STATUSES.find((s) => s.key === task.status) ||
-                                    TASK_STATUSES[0];
-                                  const priorityConfig =
-                                    PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.MEDIUM;
-                                  const matchedStaff = onboardedStaffList.find(
-                                    (s) =>
-                                      String(s._id) === String(task.assignedTo?._id || task.assignedTo) ||
-                                      (s.mobileNumber && String(task.assignedTo).includes(s.mobileNumber))
-                                  );
-                                  const assignedUser =
-                                    task.assignedTo?.name ||
-                                    task.assignedToName ||
-                                    matchedStaff?.name ||
-                                    (typeof task.assignedTo === 'string' && !/^[0-9a-fA-F]{24}$/.test(task.assignedTo)
-                                      ? task.assignedTo
-                                      : null);
-                                  const assignedRole = task.assignedTo?.roles?.[0] || matchedStaff?.roles?.[0] || 'Staff';
-
-                                  return (
-                                    <View key={task._id} style={styles.singleTaskCard}>
-                                      {/* Top Row: Status pill & Priority badge */}
-                                      <View style={styles.singleTaskTopRow}>
-                                        <TouchableOpacity
-                                          style={[
-                                            styles.singleTaskStatusPill,
-                                            { backgroundColor: statusConfig.bg },
-                                          ]}
-                                          onPress={() =>
-                                            handleCycleTaskStatus(stageId, milestoneId, task)
-                                          }
-                                          activeOpacity={0.7}
-                                        >
-                                          {task.status === 'DONE' ? (
-                                            <CheckCircle2 size={13} color="#059669" strokeWidth={2.5} />
-                                          ) : task.status === 'IN_PROGRESS' ? (
-                                            <Clock size={13} color="#D97706" strokeWidth={2.5} />
-                                          ) : task.status === 'BLOCKED' ? (
-                                            <AlertCircle size={13} color="#DC2626" strokeWidth={2.5} />
-                                          ) : (
-                                            <View style={styles.todoDot} />
-                                          )}
-                                          <Text
-                                            style={[
-                                              styles.singleTaskStatusText,
-                                              { color: statusConfig.color },
-                                            ]}
-                                          >
-                                            {statusConfig.label}
-                                          </Text>
-                                        </TouchableOpacity>
-
-                                        {task.priority ? (
-                                          <View
-                                            style={[
-                                              styles.singleTaskPriorityBadge,
-                                              { backgroundColor: priorityConfig.bg },
-                                            ]}
-                                          >
-                                            <Text
-                                              style={[
-                                                styles.singleTaskPriorityText,
-                                                { color: priorityConfig.color },
-                                              ]}
-                                            >
-                                              {task.priority}
-                                            </Text>
-                                          </View>
-                                        ) : null}
-                                      </View>
-
-                                      {/* Task Title */}
-                                      <Text
-                                        style={[
-                                          styles.singleTaskTitle,
-                                          task.status === 'DONE' && styles.singleTaskTitleDone,
-                                        ]}
-                                      >
-                                        {task.title}
-                                      </Text>
-
-                                      {/* Task Description */}
-                                      {task.description ? (
-                                        <Text style={styles.singleTaskDesc} numberOfLines={3}>
-                                          {task.description}
-                                        </Text>
-                                      ) : null}
-
-                                      {/* Task Footer: Assigned Staff & Due Date */}
-                                      <View style={styles.singleTaskFooter}>
-                                        {assignedUser ? (
-                                          <View style={styles.singleTaskStaffBadge}>
-                                            <View style={styles.singleTaskStaffAvatar}>
-                                              <Text style={styles.singleTaskStaffAvatarText}>
-                                                {(assignedUser || 'S').charAt(0).toUpperCase()}
-                                              </Text>
-                                            </View>
-                                            <Text style={styles.singleTaskStaffName} numberOfLines={1}>
-                                              {assignedUser}
-                                            </Text>
-                                            <Text style={styles.singleTaskStaffRole}>
-                                              ({assignedRole})
-                                            </Text>
-                                          </View>
-                                        ) : (
-                                          <View style={styles.singleTaskUnassignedBadge}>
-                                            <User size={11} color="#94A3B8" />
-                                            <Text style={styles.singleTaskUnassignedText}>Unassigned</Text>
-                                          </View>
-                                        )}
-
-                                        {task.dueDate ? (
-                                          <View style={styles.singleTaskDueDateBadge}>
-                                            <Calendar size={11} color="#64748B" />
-                                            <Text style={styles.singleTaskDueDateText}>
-                                              Due:{' '}
-                                              {new Date(task.dueDate).toLocaleDateString('en-IN', {
-                                                month: 'short',
-                                                day: 'numeric',
-                                              })}
-                                            </Text>
-                                          </View>
-                                        ) : null}
-                                      </View>
-                                    </View>
-                                  );
-                                })}
-
-                                {/* Bottom inline button to add task */}
-                                <TouchableOpacity
-                                  style={styles.addTaskBottomRowBtn}
-                                  onPress={() => openAddTaskModal(stageId, milestoneId, milestone.title)}
-                                  activeOpacity={0.7}
-                                >
-                                  <Plus size={13} color="#2327D8" strokeWidth={2.2} />
-                                  <Text style={styles.addTaskBottomRowBtnText}>+ Add Task to Milestone</Text>
-                                </TouchableOpacity>
-                              </>
-                            ) : (
-                              <TouchableOpacity
-                                style={styles.noTasksCard}
-                                onPress={() => openAddTaskModal(stageId, milestoneId, milestone.title)}
-                                activeOpacity={0.7}
-                              >
-                                <View style={styles.noTasksIconCircle}>
-                                  <Plus size={15} color="#2327D8" strokeWidth={2.5} />
-                                </View>
-                                <View style={styles.noTasksTextGroup}>
-                                  <Text style={styles.noTasksTitle}>No tasks added yet</Text>
-                                  <Text style={styles.noTasksSubtitle}>
-                                    Tap to add a task to this milestone
-                                  </Text>
-                                </View>
-                                <View style={styles.noTasksAddPill}>
-                                  <Text style={styles.noTasksAddPillText}>+ Add Task</Text>
-                                </View>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                        </View>
-                      );
-                    })}
-
-                    {/* "+ Add Milestone" button at bottom of stage */}
+                  return (
                     <TouchableOpacity
-                      style={styles.addMilestoneBtn}
-                      onPress={() => {
-                        setActiveStageIdForMilestone(stageId);
-                        setNewMilestoneTitle('');
-                        setNewMilestoneDesc('');
-                        setMilestoneModalVisible(true);
-                      }}
+                      key={file.id || fIdx}
+                      style={styles.fileItemCard}
+                      onPress={() => handleOpenFile(file.url)}
                       activeOpacity={0.7}
                     >
-                      <Plus size={14} color="#4F46E5" strokeWidth={2.2} />
-                      <Text style={styles.addMilestoneBtnText}>Add Milestone to Stage</Text>
+                      <View style={styles.fileItemPreviewWrap}>
+                        {isImg && resolvedUrl ? (
+                          <Image
+                            source={{ uri: resolvedUrl }}
+                            style={styles.fileItemThumbnail}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.fileItemDocIconBox}>
+                            <FileText size={24} color="#4F46E5" />
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.fileItemDetails}>
+                        <Text style={styles.fileItemName} numberOfLines={2}>
+                          {file.name}
+                        </Text>
+                        <View style={styles.fileItemMetaRow}>
+                          <Text style={styles.fileItemSource}>{file.source}</Text>
+                          {file.size ? (
+                            <Text style={styles.fileItemSize}>
+                              {(file.size / 1024).toFixed(1)} KB
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+
+                      <View style={styles.fileItemActionBtn}>
+                        <ExternalLink size={14} color="#64748B" />
+                      </View>
                     </TouchableOpacity>
-                  </View>
-                )}
+                  );
+                })}
               </View>
-            );
-          })
-        ) : (
-          <View style={styles.emptyStagesCard}>
-            <Layers size={36} color="#CBD5E1" />
-            <Text style={styles.emptyStagesTitle}>No Stages Defined Yet</Text>
-            <Text style={styles.emptyStagesSubtitle}>
-              Break this project into manageable phases (e.g. Procurement, Milling, Quality Check,
-              Dispatch).
-            </Text>
-            <TouchableOpacity
-              style={styles.createFirstStageBtn}
-              onPress={() => {
-                setNewStageName('');
-                setNewStageDesc('');
-                setStageModalVisible(true);
-              }}
-            >
-              <Plus size={16} color="#FFFFFF" />
-              <Text style={styles.createFirstStageText}>Add First Stage</Text>
-            </TouchableOpacity>
+            ) : (
+              <View style={styles.emptyTabCard}>
+                <FolderOpen size={36} color="#CBD5E1" />
+                <Text style={styles.emptyTabTitle}>No Project Files Attached</Text>
+                <Text style={styles.emptyTabDesc}>
+                  Documents uploaded to product catalog, project stages, or task attachments will appear here automatically.
+                </Text>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -1501,34 +3059,129 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
       {/* MODAL: Add Milestone */}
       <Modal visible={milestoneModalVisible} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Milestone</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Add Milestone</Text>
+                <Text style={styles.modalSubtitle}>Define key deliverable and allocate raw materials</Text>
+              </View>
               <TouchableOpacity onPress={() => setMilestoneModalVisible(false)}>
                 <X size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputLabel}>Milestone Title</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Title"
-              placeholderTextColor="#94A3B8"
-              value={newMilestoneTitle}
-              onChangeText={setNewMilestoneTitle}
-              autoFocus
-            />
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              <Text style={styles.inputLabel}>Milestone Name *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. Cutting, Assembly, Finishing"
+                placeholderTextColor="#94A3B8"
+                value={newMilestoneTitle}
+                onChangeText={setNewMilestoneTitle}
+                autoFocus
+              />
 
-            <Text style={styles.inputLabel}>Description (Optional)</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalTextArea]}
-              placeholder="Description"
-              placeholderTextColor="#94A3B8"
-              value={newMilestoneDesc}
-              onChangeText={setNewMilestoneDesc}
-              multiline
-              numberOfLines={3}
-            />
+              <Text style={styles.inputLabel}>Description (Optional)</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalTextArea]}
+                placeholder="Add milestone specifications or acceptance criteria..."
+                placeholderTextColor="#94A3B8"
+                value={newMilestoneDesc}
+                onChangeText={setNewMilestoneDesc}
+                multiline
+                numberOfLines={2}
+              />
+
+              {/* Material Allocation Section */}
+              <View style={styles.milestoneMatAllocSection}>
+                <View style={styles.milestoneMatAllocHeaderRow}>
+                  <Package size={14} color="#2327D8" />
+                  <Text style={styles.milestoneMatAllocHeaderTitle}>
+                    Allocate Raw Materials (Optional)
+                  </Text>
+                </View>
+                <Text style={styles.milestoneMatAllocHeaderDesc}>
+                  Allocate materials from available inventory for this milestone
+                </Text>
+
+                {/* Available Materials Selector */}
+                {availableMaterials.length > 0 ? (
+                  <>
+                    <Text style={styles.miniPickerLabel}>Select Raw Material</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                      {availableMaterials.map((mat) => {
+                        const isSel = selectedMilestoneMatId === (mat._id || mat.id);
+                        return (
+                          <TouchableOpacity
+                            key={mat._id || mat.id}
+                            style={[styles.matSelectChip, isSel && styles.matSelectChipActive]}
+                            onPress={() => setSelectedMilestoneMatId(mat._id || mat.id)}
+                          >
+                            <Text style={[styles.matSelectChipText, isSel && styles.matSelectChipTextActive]}>
+                              {mat.name} ({mat.unit || 'units'})
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+
+                    {selectedMilestoneMatId ? (
+                      <View style={styles.matQtyInputRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.miniPickerLabel}>Quantity to Allocate</Text>
+                          <TextInput
+                            style={styles.modalInput}
+                            placeholder="Enter quantity (e.g. 4)"
+                            placeholderTextColor="#94A3B8"
+                            keyboardType="numeric"
+                            value={selectedMilestoneMatQty}
+                            onChangeText={setSelectedMilestoneMatQty}
+                          />
+                        </View>
+                        <TouchableOpacity
+                          style={styles.addMatToMsBtn}
+                          onPress={handleAddMaterialToMilestone}
+                        >
+                          <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
+                          <Text style={styles.addMatToMsBtnText}>Add</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                  </>
+                ) : (
+                  <Text style={styles.noMatsNoticeText}>
+                    No active raw materials found. Add materials in Inventory to allocate.
+                  </Text>
+                )}
+
+                {/* Added Allocated Materials List */}
+                {milestoneAllocatedMaterials.length > 0 && (
+                  <View style={styles.selectedMatsListWrap}>
+                    <Text style={styles.selectedMatsListTitle}>
+                      Materials to be Allocated ({milestoneAllocatedMaterials.length})
+                    </Text>
+                    {milestoneAllocatedMaterials.map((m) => (
+                      <View key={m.materialId} style={styles.selectedMatRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.selectedMatName}>{m.name}</Text>
+                          <Text style={styles.selectedMatMeta}>
+                            {m.materialCode ? `${m.materialCode} • ` : ''}Qty: {m.plannedQuantity} {m.unit}
+                            {m.standardCost ? ` • ₹${(m.plannedQuantity * m.standardCost).toLocaleString('en-IN')}` : ''}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => handleRemoveMaterialFromMilestone(m.materialId)}
+                          style={styles.removeMatBtn}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                          <X size={14} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </ScrollView>
 
             <View style={styles.modalActionsRow}>
               <TouchableOpacity
@@ -2160,6 +3813,533 @@ const ProjectDetails = ({ route, navigation, onNavigate, onBack, routeData }) =>
               <Trash2 size={16} color="#DC2626" />
               <Text style={styles.deleteProjectOptionText}>Delete Project</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── MODAL: Raise Material Demand (API 4.1) ─── */}
+      <Modal visible={raiseDemandModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Raise Material Demand</Text>
+              <TouchableOpacity onPress={() => setRaiseDemandModalVisible(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Select Raw Material *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {availableMaterials.length > 0 ? (
+                availableMaterials.map((mat) => {
+                  const isSelected = demandMaterialId === mat._id;
+                  return (
+                    <TouchableOpacity
+                      key={mat._id}
+                      style={[styles.matSelectChip, isSelected && styles.matSelectChipActive]}
+                      onPress={() => setDemandMaterialId(mat._id)}
+                    >
+                      <Text style={[styles.matSelectChipText, isSelected && styles.matSelectChipTextActive]}>
+                        {mat.name || mat.materialCode} ({mat.unit || 'Kg'})
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={styles.emptyNoticeText}>No materials found. You can still enter quantity.</Text>
+              )}
+            </ScrollView>
+
+            <Text style={styles.inputLabel}>Requested Quantity *</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. 150"
+              placeholderTextColor="#94A3B8"
+              keyboardType="numeric"
+              value={demandQty}
+              onChangeText={setDemandQty}
+            />
+
+            <Text style={styles.inputLabel}>Stage (Optional)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {(project?.stages || []).map((stg) => {
+                const isSelected = demandStageId === stg._id;
+                return (
+                  <TouchableOpacity
+                    key={stg._id}
+                    style={[styles.matSelectChip, isSelected && styles.matSelectChipActive]}
+                    onPress={() => setDemandStageId(isSelected ? '' : stg._id)}
+                  >
+                    <Text style={[styles.matSelectChipText, isSelected && styles.matSelectChipTextActive]}>
+                      {stg.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.inputLabel}>Reason / Justification</Text>
+            <TextInput
+              style={[styles.modalInput, styles.modalTextArea]}
+              placeholder="Explain why additional material is required..."
+              placeholderTextColor="#94A3B8"
+              multiline
+              numberOfLines={3}
+              value={demandReason}
+              onChangeText={setDemandReason}
+            />
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setRaiseDemandModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, submittingDemand && styles.disabledBtn]}
+                onPress={handleRaiseDemandSubmit}
+                disabled={submittingDemand}
+              >
+                {submittingDemand ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>Submit Demand</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── MODAL: Review Material Demand (API 4.3) ─── */}
+      <Modal visible={reviewDemandModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Review Material Demand</Text>
+              <TouchableOpacity onPress={() => setReviewDemandModalVisible(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.reviewActionToggleRow}>
+              <TouchableOpacity
+                style={[styles.reviewToggleBtn, reviewAction === 'APPROVE' && styles.reviewToggleBtnApprove]}
+                onPress={() => setReviewAction('APPROVE')}
+              >
+                <Text style={[styles.reviewToggleText, reviewAction === 'APPROVE' && styles.reviewToggleTextActive]}>
+                  Approve
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.reviewToggleBtn, reviewAction === 'PARTIALLY_APPROVE' && styles.reviewToggleBtnPartial]}
+                onPress={() => setReviewAction('PARTIALLY_APPROVE')}
+              >
+                <Text style={[styles.reviewToggleText, reviewAction === 'PARTIALLY_APPROVE' && styles.reviewToggleTextActive]}>
+                  Partial
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.reviewToggleBtn, reviewAction === 'REJECT' && styles.reviewToggleBtnReject]}
+                onPress={() => setReviewAction('REJECT')}
+              >
+                <Text style={[styles.reviewToggleText, reviewAction === 'REJECT' && styles.reviewToggleTextActive]}>
+                  Reject
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {reviewAction !== 'REJECT' ? (
+              <>
+                <Text style={styles.inputLabel}>Approved Quantity *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="e.g. 150"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={reviewApprovedQty}
+                  onChangeText={setReviewApprovedQty}
+                />
+              </>
+            ) : (
+              <>
+                <Text style={styles.inputLabel}>Rejection Reason *</Text>
+                <TextInput
+                  style={[styles.modalInput, styles.modalTextArea]}
+                  placeholder="Provide reason for rejecting demand..."
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  numberOfLines={3}
+                  value={reviewRejectionReason}
+                  onChangeText={setReviewRejectionReason}
+                />
+              </>
+            )}
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setReviewDemandModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, submittingReview && styles.disabledBtn]}
+                onPress={handleReviewDemandSubmit}
+                disabled={submittingReview}
+              >
+                {submittingReview ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>Save Decision</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── MODAL: Issue Material (API 5.1) ─── */}
+      <Modal visible={issueModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Issue Material to Floor</Text>
+              <TouchableOpacity onPress={() => setIssueModalVisible(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Select Material *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {availableMaterials.map((mat) => {
+                const isSelected = issueMaterialId === mat._id;
+                return (
+                  <TouchableOpacity
+                    key={mat._id}
+                    style={[styles.matSelectChip, isSelected && styles.matSelectChipActive]}
+                    onPress={() => {
+                      setIssueMaterialId(mat._id);
+                      if (mat.unit) setIssueUnit(mat.unit);
+                    }}
+                  >
+                    <Text style={[styles.matSelectChipText, isSelected && styles.matSelectChipTextActive]}>
+                      {mat.name || mat.materialCode}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.twoColModalRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.inputLabel}>Quantity *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="e.g. 100"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={issueQty}
+                  onChangeText={setIssueQty}
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.inputLabel}>Unit</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Kg / Pc"
+                  placeholderTextColor="#94A3B8"
+                  value={issueUnit}
+                  onChangeText={setIssueUnit}
+                />
+              </View>
+            </View>
+
+            <Text style={styles.inputLabel}>Warehouse Location</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. Main Warehouse"
+              placeholderTextColor="#94A3B8"
+              value={issueWarehouse}
+              onChangeText={setIssueWarehouse}
+            />
+
+            <Text style={styles.inputLabel}>Notes (Optional)</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. Issued for spinning batch #1"
+              placeholderTextColor="#94A3B8"
+              value={issueNotes}
+              onChangeText={setIssueNotes}
+            />
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setIssueModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, submittingIssue && styles.disabledBtn]}
+                onPress={handleIssueSubmit}
+                disabled={submittingIssue}
+              >
+                {submittingIssue ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>Issue to Floor</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── MODAL: Receive Material (API 5.2) ─── */}
+      <Modal visible={receiveModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Confirm Material Receipt</Text>
+              <TouchableOpacity onPress={() => setReceiveModalVisible(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Issue ID / Ref *</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Enter Issue ID"
+              placeholderTextColor="#94A3B8"
+              value={receiveIssueId}
+              onChangeText={setReceiveIssueId}
+            />
+
+            <Text style={styles.inputLabel}>Received Quantity *</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. 100"
+              placeholderTextColor="#94A3B8"
+              keyboardType="numeric"
+              value={receiveQty}
+              onChangeText={setReceiveQty}
+            />
+
+            <Text style={styles.inputLabel}>Condition / Notes</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. Received in good condition"
+              placeholderTextColor="#94A3B8"
+              value={receiveNotes}
+              onChangeText={setReceiveNotes}
+            />
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setReceiveModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, submittingReceive && styles.disabledBtn]}
+                onPress={handleReceiveSubmit}
+                disabled={submittingReceive}
+              >
+                {submittingReceive ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>Confirm Receipt</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── MODAL: Log Consumption (API 5.3) ─── */}
+      <Modal visible={consumeModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Record Material Consumption</Text>
+              <TouchableOpacity onPress={() => setConsumeModalVisible(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Select Consumed Material *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {availableMaterials.map((mat) => {
+                const isSelected = consumeMaterialId === mat._id;
+                return (
+                  <TouchableOpacity
+                    key={mat._id}
+                    style={[styles.matSelectChip, isSelected && styles.matSelectChipActive]}
+                    onPress={() => setConsumeMaterialId(mat._id)}
+                  >
+                    <Text style={[styles.matSelectChipText, isSelected && styles.matSelectChipTextActive]}>
+                      {mat.name || mat.materialCode}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.twoColModalRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.inputLabel}>Consumed Qty *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="e.g. 95"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={consumeQty}
+                  onChangeText={setConsumeQty}
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.inputLabel}>Returned Qty</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="e.g. 5"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={returnQty}
+                  onChangeText={setReturnQty}
+                />
+              </View>
+            </View>
+
+            <Text style={styles.inputLabel}>Notes</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. 95kg consumed, 5kg unused returned"
+              placeholderTextColor="#94A3B8"
+              value={consumeNotes}
+              onChangeText={setConsumeNotes}
+            />
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setConsumeModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, submittingConsume && styles.disabledBtn]}
+                onPress={handleConsumeSubmit}
+                disabled={submittingConsume}
+              >
+                {submittingConsume ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>Save Consumption</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── MODAL: Assign Staff to Stage (API 7.6) ─── */}
+      <Modal visible={assignStaffModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Assign Staff to Stage</Text>
+              <TouchableOpacity onPress={() => setAssignStaffModalVisible(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Select Staff Member *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {(productionStaffList.length > 0 ? productionStaffList : onboardedStaffList).map((st) => {
+                const isSelected = assignStaffId === st._id;
+                return (
+                  <TouchableOpacity
+                    key={st._id}
+                    style={[styles.matSelectChip, isSelected && styles.matSelectChipActive]}
+                    onPress={() => {
+                      setAssignStaffId(st._id);
+                      if (st.role) setAssignRole(st.role);
+                    }}
+                  >
+                    <Text style={[styles.matSelectChipText, isSelected && styles.matSelectChipTextActive]}>
+                      {st.name} ({st.role || 'Operator'})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.inputLabel}>Select Target Stage *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {(project?.stages || []).map((stg) => {
+                const isSelected = assignStageId === stg._id;
+                return (
+                  <TouchableOpacity
+                    key={stg._id}
+                    style={[styles.matSelectChip, isSelected && styles.matSelectChipActive]}
+                    onPress={() => setAssignStageId(stg._id)}
+                  >
+                    <Text style={[styles.matSelectChipText, isSelected && styles.matSelectChipTextActive]}>
+                      {stg.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.twoColModalRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.inputLabel}>Role in Stage</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="e.g. Machine Operator"
+                  placeholderTextColor="#94A3B8"
+                  value={assignRole}
+                  onChangeText={setAssignRole}
+                />
+              </View>
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.inputLabel}>Assigned Hours</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="e.g. 8"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={assignHours}
+                  onChangeText={setAssignHours}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setAssignStaffModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, submittingAssign && styles.disabledBtn]}
+                onPress={handleAssignStaffSubmit}
+                disabled={submittingAssign}
+              >
+                {submittingAssign ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>Confirm Assignment</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -3630,6 +5810,789 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  /* ─── Production Sub-Tabs ─── */
+  subTabBar: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  subTabBarContent: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 2,
+  },
+  subTabPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  subTabPillActive: {
+    backgroundColor: '#2327D8',
+    borderColor: '#2327D8',
+  },
+  subTabPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  subTabPillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  tabContentWrap: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  tabLoadingBox: {
+    padding: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  tabLoadingText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+
+  /* ─── Production Costing Cards ─── */
+  costHeroCard: {
+    backgroundColor: '#1E1B4B',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+  },
+  costHeroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  costHeroLabel: {
+    fontSize: 12,
+    color: '#C7D2FE',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  costHeroValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  budgetStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  budgetUnder: {
+    backgroundColor: '#065F46',
+  },
+  budgetOver: {
+    backgroundColor: '#991B1B',
+  },
+  budgetTrack: {
+    backgroundColor: '#1E40AF',
+  },
+  budgetStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+  },
+  costHeroGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+  },
+  costHeroCol: {
+    flex: 1,
+  },
+  costHeroSubLabel: {
+    fontSize: 11,
+    color: '#A5B4FC',
+    marginBottom: 3,
+  },
+  costHeroSubVal: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  costPillarsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  costPillarCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'flex-start',
+  },
+  costPillarTitle: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  costPillarAmount: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  breakdownSectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+  },
+  consumedMaterialRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  consumedMatLeft: {
+    flex: 2,
+  },
+  consumedMatName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  consumedMatSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  consumedMatMid: {
+    flex: 1.5,
+    alignItems: 'center',
+  },
+  consumedMatQty: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  consumedMatReturned: {
+    fontSize: 10,
+    color: '#D97706',
+    marginTop: 2,
+  },
+  consumedMatRight: {
+    flex: 1.5,
+    alignItems: 'flex-end',
+  },
+  consumedMatCost: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  totalHoursBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  emptyNoticeText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+    paddingVertical: 8,
+  },
+  emptyTabCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginVertical: 8,
+  },
+  emptyTabTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  emptyTabDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
+  /* ─── Demand Cards ─── */
+  demandCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  demandCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  demandMatWrap: {
+    flex: 1,
+    marginRight: 8,
+  },
+  demandMatName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  demandSubText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  demandStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusApproved: {
+    backgroundColor: '#ECFDF5',
+  },
+  statusApprovedText: {
+    color: '#059669',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusRejected: {
+    backgroundColor: '#FEF2F2',
+  },
+  statusRejectedText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusPending: {
+    backgroundColor: '#FFFBEB',
+  },
+  statusPendingText: {
+    color: '#D97706',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  demandQtyRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 8,
+  },
+  demandQtyCol: {
+    flex: 1,
+  },
+  demandQtyLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  demandQtyValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  demandReasonBox: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 8,
+  },
+  demandReasonLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  demandReasonText: {
+    fontSize: 12,
+    color: '#334155',
+    marginTop: 2,
+  },
+  demandActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+  },
+  reviewDemandBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2327D8',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  reviewDemandBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  /* ─── Transactions Tab ─── */
+  transactionActionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  txActionIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  txActionTextWrap: {
+    flex: 1,
+    marginRight: 8,
+  },
+  txActionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  txActionSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+
+  /* ─── Staff Tab ─── */
+  staffMemberCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  staffCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  staffAvatarCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  staffAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#2327D8',
+  },
+  staffInfoCol: {
+    flex: 1,
+  },
+  staffMemberName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  staffMemberRole: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  staffRateBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  staffRateText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  skillTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  skillTagPill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  skillTagText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  assignStageMiniBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  assignStageMiniBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2327D8',
+  },
+
+  /* ─── Production Modal Helpers ─── */
+  matSelectChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginRight: 8,
+  },
+  matSelectChipActive: {
+    backgroundColor: '#2327D8',
+    borderColor: '#2327D8',
+  },
+  matSelectChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  matSelectChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  twoColModalRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  reviewActionToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  reviewToggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+  },
+  reviewToggleBtnApprove: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  reviewToggleBtnPartial: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  reviewToggleBtnReject: {
+    backgroundColor: '#EF4444',
+    borderColor: '#EF4444',
+  },
+  reviewToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  reviewToggleTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  /* ─── Milestone Allocated Materials Cards ─── */
+  milestoneMaterialsContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
+  },
+  milestoneMaterialsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 5,
+  },
+  milestoneMaterialsHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4F46E5',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  milestoneMaterialsGrid: {
+    gap: 6,
+  },
+  milestoneMaterialCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  milestoneMaterialTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  milestoneMaterialName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  milestoneMaterialCode: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  milestoneMaterialAllocPill: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  milestoneMaterialAllocText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#3730A3',
+  },
+  milestoneMaterialStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: '#E2E8F0',
+    gap: 6,
+  },
+  milestoneMaterialStatText: {
+    fontSize: 10,
+    color: '#64748B',
+  },
+  milestoneMaterialStatDivider: {
+    fontSize: 10,
+    color: '#CBD5E1',
+  },
+
+  /* ─── Add Milestone Material Allocation Section ─── */
+  milestoneMatAllocSection: {
+    marginTop: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  milestoneMatAllocHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  milestoneMatAllocHeaderTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  milestoneMatAllocHeaderDesc: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  miniPickerLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 4,
+  },
+  matQtyInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginTop: 4,
+  },
+  addMatToMsBtn: {
+    backgroundColor: '#2327D8',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    height: 44,
+    borderRadius: 10,
+    gap: 4,
+    marginBottom: 12,
+  },
+  addMatToMsBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  noMatsNoticeText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+    paddingVertical: 6,
+  },
+  selectedMatsListWrap: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    gap: 6,
+  },
+  selectedMatsListTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 4,
+  },
+  selectedMatRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  selectedMatName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  selectedMatMeta: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  removeMatBtn: {
+    padding: 4,
+  },
+
+  /* ─── Files & Documents Tab ─── */
+  filesCountBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  filesCountBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#3730A3',
+  },
+  filesGrid: {
+    gap: 10,
+  },
+  fileItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  fileItemPreviewWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#F1F5F9',
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fileItemThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  fileItemDocIconBox: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2FF',
+  },
+  fileItemDetails: {
+    flex: 1,
+    marginRight: 10,
+  },
+  fileItemName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 3,
+  },
+  fileItemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fileItemSource: {
+    fontSize: 11,
+    color: '#64748B',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  fileItemSize: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  fileItemActionBtn: {
+    padding: 6,
   },
 });
 

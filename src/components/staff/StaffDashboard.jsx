@@ -47,6 +47,7 @@ import {
   getCompanyDetails,
   getMyAssignedTasks,
   getProjects,
+  getProductionTasks,
   updateProjectTaskStatus,
   raiseMaterialDemand,
 } from '../../services/api';
@@ -96,9 +97,14 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
     try {
       const token = await AsyncStorage.getItem('userToken');
 
-      const [userRes, myTasksRes, projectsRes, statsRes] = await Promise.allSettled([
+      let activeUserId = currentUser?._id || currentUser?.id;
+      let activeUserPhone = (currentUser?.mobileNumber || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
+      const activeCompId = currentUser?.companyId?._id || currentUser?.companyId || currentUser?.company?._id || currentUser?.company || null;
+
+      const [userRes, myTasksRes, prodTasksRes, projectsRes, statsRes] = await Promise.allSettled([
         token ? getStaffProfile(token) : Promise.resolve(null),
         token ? getMyAssignedTasks(null, token) : Promise.resolve(null),
+        getProductionTasks({ companyId: activeCompId || undefined, assignedStaffId: activeUserId || undefined }, token),
         getProjects({}, token),
         token ? getStaffDashboardStats(token) : Promise.resolve(null),
       ]);
@@ -112,9 +118,6 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
           setCurrentUser((prev) => ({ ...prev, ...sData.staff }));
         }
       }
-
-      let activeUserId = currentUser?._id || currentUser?.id;
-      let activeUserPhone = (currentUser?.mobileNumber || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
 
       if (userRes.status === 'fulfilled' && userRes.value?.success && userRes.value.data) {
         const uData = userRes.value.data;
@@ -136,18 +139,53 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
       }
 
       let fetchedTasks = [];
+
+      // 1. Process live GET /api/production/tasks
+      if (prodTasksRes.status === 'fulfilled' && prodTasksRes.value?.success && Array.isArray(prodTasksRes.value?.data)) {
+        const rawProdTasks = prodTasksRes.value.data;
+        rawProdTasks.forEach((t) => {
+          const projObj = typeof t.projectId === 'object' && t.projectId !== null ? t.projectId : {};
+          const stageObj = typeof t.stageId === 'object' && t.stageId !== null ? t.stageId : {};
+          const msObj = typeof t.milestoneId === 'object' && t.milestoneId !== null ? t.milestoneId : {};
+          const staffObj = typeof t.assignedStaffId === 'object' && t.assignedStaffId !== null ? t.assignedStaffId : {};
+
+          fetchedTasks.push({
+            ...t,
+            _id: t._id || t.id,
+            title: t.title || 'Production Task',
+            description: t.description || '',
+            status: t.status || 'PENDING',
+            priority: t.priority || 'MEDIUM',
+            projectId: projObj._id || projObj.id || t.projectId,
+            projectTitle: projObj.name || projObj.projectNumber || 'Production Batch',
+            projectJobCode: projObj.projectNumber || projObj.code,
+            stageName: stageObj.name || 'Stage',
+            stageId: stageObj._id || stageObj.id || t.stageId,
+            milestoneTitle: msObj.name || msObj.title || 'Milestone',
+            milestoneId: msObj._id || msObj.id || t.milestoneId,
+            assignedTo: staffObj.name ? staffObj : t.assignedStaffId,
+          });
+        });
+      }
+
+      // 2. Process legacy my-assigned-tasks
       if (myTasksRes.status === 'fulfilled' && myTasksRes.value?.success) {
         const rawTasks = Array.isArray(myTasksRes.value.data) ? myTasksRes.value.data : [];
-        fetchedTasks = rawTasks.map((t) => ({
-          ...t,
-          _id: t.taskId || t._id || t.id,
-          title: t.taskTitle || t.title || 'Production Task',
-          projectId: t.projectId || t.project?._id || t.project,
-          projectTitle: t.projectTitle || t.project?.title,
-          projectJobCode: t.jobCode || t.projectJobCode,
-          stageName: t.stageName || t.stage?.name,
-          milestoneTitle: t.milestoneTitle || t.milestone?.title,
-        }));
+        rawTasks.forEach((t) => {
+          const tId = t.taskId || t._id || t.id;
+          if (!fetchedTasks.some((existing) => String(existing._id) === String(tId))) {
+            fetchedTasks.push({
+              ...t,
+              _id: tId,
+              title: t.taskTitle || t.title || 'Production Task',
+              projectId: t.projectId || t.project?._id || t.project,
+              projectTitle: t.projectTitle || t.project?.title,
+              projectJobCode: t.jobCode || t.projectJobCode,
+              stageName: t.stageName || t.stage?.name,
+              milestoneTitle: t.milestoneTitle || t.milestone?.title,
+            });
+          }
+        });
       }
 
       if (projectsRes.status === 'fulfilled' && projectsRes.value?.success) {
@@ -521,6 +559,21 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
     ? new Date(activeJob.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : '';
 
+  const handleOpenProfile = () => {
+    if (onNavigate) {
+      onNavigate('StaffProfile', {
+        user: currentUser,
+        company: activeCompany,
+        tasksCount: tasks?.length || 0,
+        projectsCount: projects?.length || 0,
+        demandsCount: recentDemands?.length || 0,
+        stats: serverStats,
+      });
+    } else {
+      setActiveTab('Profile');
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, activeTab === 'Profile' && { backgroundColor: '#FFFFFF' }]}>
       <StatusBar
@@ -584,7 +637,7 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
 
               <TouchableOpacity
                 style={styles.userAvatarCircle}
-                onPress={() => setActiveTab('Profile')}
+                onPress={handleOpenProfile}
                 activeOpacity={0.8}
               >
                 <Text style={styles.userAvatarText}>{userInitials}</Text>
@@ -1310,7 +1363,7 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
 
             <TouchableOpacity
               style={styles.tabItem}
-              onPress={() => setActiveTab('Profile')}
+              onPress={handleOpenProfile}
               activeOpacity={0.7}
             >
               <User
@@ -1344,7 +1397,14 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
         >
           <View style={styles.drawerContent} onStartShouldSetResponder={() => true}>
             <View style={styles.drawerHeader}>
-              <View style={styles.drawerUserRow}>
+              <TouchableOpacity
+                style={styles.drawerUserRow}
+                onPress={() => {
+                  setShowDrawer(false);
+                  handleOpenProfile();
+                }}
+                activeOpacity={0.7}
+              >
                 <View style={styles.userAvatarCircle}>
                   <Text style={styles.userAvatarText}>{userInitials}</Text>
                 </View>
@@ -1354,7 +1414,7 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
                   </Text>
                   <Text style={styles.drawerUserRole}>Staff Portal</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowDrawer(false)}>
                 <X size={20} color="#64748B" />
               </TouchableOpacity>

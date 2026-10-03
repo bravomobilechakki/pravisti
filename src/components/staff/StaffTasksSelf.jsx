@@ -29,6 +29,7 @@ import {
 import {
   getStaffProfile,
   getMyAssignedTasks,
+  getProductionTasks,
   getProjects,
   updateProjectTaskStatus,
   raiseMaterialDemand,
@@ -65,15 +66,27 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
   const fetchTasks = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-
-      const [userRes, myTasksRes, projectsRes] = await Promise.allSettled([
-        token ? getStaffProfile(token) : Promise.resolve(null),
-        token ? getMyAssignedTasks(null, token) : Promise.resolve(null),
-        getProjects({}, token),
-      ]);
+      const activeCompId =
+        currentUser?.companyId?._id ||
+        currentUser?.companyId ||
+        currentUser?.company?._id ||
+        currentUser?.company ||
+        (await AsyncStorage.getItem('selectedCompanyId')) ||
+        (await AsyncStorage.getItem('activeCompanyId')) ||
+        null;
 
       let activeStaffId = currentUser?._id || currentUser?.id;
       let activeStaffPhone = (currentUser?.mobileNumber || currentUser?.phone || '').replace(/\D/g, '').slice(-10);
+
+      const [userRes, prodTasksRes, myTasksRes, projectsRes] = await Promise.allSettled([
+        token ? getStaffProfile(token) : Promise.resolve(null),
+        getProductionTasks({
+          companyId: (typeof activeCompId === 'object' ? activeCompId?._id : activeCompId) || undefined,
+          assignedStaffId: activeStaffId || undefined,
+        }, token),
+        token ? getMyAssignedTasks(null, token) : Promise.resolve(null),
+        getProjects({}, token),
+      ]);
 
       if (userRes.status === 'fulfilled' && userRes.value?.success && userRes.value.data) {
         const u = userRes.value.data;
@@ -85,27 +98,70 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
       const staffIdClean = String(activeStaffId || '');
       const staffPhoneClean = String(activeStaffPhone || '');
 
-      // 1. Official my-tasks endpoint
       let list = [];
-      if (myTasksRes.status === 'fulfilled' && myTasksRes.value?.success) {
-        const raw = Array.isArray(myTasksRes.value.data) ? myTasksRes.value.data : [];
-        list = raw.map((t) => ({
-          ...t,
-          _id: t.taskId || t._id || t.id,
-          title: t.taskTitle || t.title || 'Production Task',
-          projectId: t.projectId || t.project?._id || t.project,
-          projectTitle: t.projectTitle || t.project?.title,
-          projectJobCode: t.jobCode || t.projectJobCode,
-          stageName: t.stageName || t.stage?.name,
-          milestoneTitle: t.milestoneTitle || t.milestone?.title,
-        }));
+      const seen = new Set();
+
+      // 1. Live GET /api/production/tasks (Primary)
+      if (prodTasksRes.status === 'fulfilled' && prodTasksRes.value?.success && Array.isArray(prodTasksRes.value?.data)) {
+        const rawProdTasks = prodTasksRes.value.data;
+        rawProdTasks.forEach((t) => {
+          const tId = String(t._id || t.id || t.taskId || '');
+          if (!tId || seen.has(tId)) return;
+          seen.add(tId);
+
+          const projObj = typeof t.projectId === 'object' && t.projectId !== null ? t.projectId : {};
+          const stageObj = typeof t.stageId === 'object' && t.stageId !== null ? t.stageId : {};
+          const msObj = typeof t.milestoneId === 'object' && t.milestoneId !== null ? t.milestoneId : {};
+          const staffObj = typeof t.assignedStaffId === 'object' && t.assignedStaffId !== null ? t.assignedStaffId : {};
+
+          list.push({
+            ...t,
+            _id: tId,
+            title: t.title || t.name || 'Production Task',
+            description: t.description || '',
+            status: t.status || 'TODO',
+            priority: t.priority || 'MEDIUM',
+            projectId: projObj._id || projObj.id || t.projectId,
+            projectTitle: projObj.name || projObj.projectNumber || 'Production Batch',
+            projectJobCode: projObj.projectNumber || projObj.code,
+            stageName: stageObj.name || t.stageName || 'Stage',
+            stageId: stageObj._id || stageObj.id || t.stageId,
+            milestoneTitle: msObj.name || msObj.title || t.milestoneTitle || 'Milestone',
+            milestoneId: msObj._id || msObj.id || t.milestoneId,
+            assignedTo: staffObj.name ? staffObj : t.assignedStaffId,
+            dueDate: t.dueDate,
+            isDelayed: t.isDelayed,
+            delayReason: t.delayReason,
+            estimatedHours: t.estimatedHours,
+          });
+        });
       }
 
-      // 2. Scan projects for STRICTLY assigned tasks only
+      // 2. Official my-tasks endpoint (Fallback/Secondary)
+      if (myTasksRes.status === 'fulfilled' && myTasksRes.value?.success) {
+        const raw = Array.isArray(myTasksRes.value.data) ? myTasksRes.value.data : [];
+        raw.forEach((t) => {
+          const tId = String(t.taskId || t._id || t.id || '');
+          if (!tId || seen.has(tId)) return;
+          seen.add(tId);
+
+          list.push({
+            ...t,
+            _id: tId,
+            title: t.taskTitle || t.title || 'Production Task',
+            projectId: t.projectId || t.project?._id || t.project,
+            projectTitle: t.projectTitle || t.project?.title,
+            projectJobCode: t.jobCode || t.projectJobCode,
+            stageName: t.stageName || t.stage?.name,
+            milestoneTitle: t.milestoneTitle || t.milestone?.title,
+          });
+        });
+      }
+
+      // 3. Scan projects for strictly assigned tasks
       if (projectsRes.status === 'fulfilled' && projectsRes.value?.success) {
         const pData = projectsRes.value.data;
         const allProjects = Array.isArray(pData) ? pData : (pData?.projects || []);
-        const seen = new Set(list.map((t) => String(t._id || t.id || t.taskId)));
 
         allProjects.forEach((proj) => {
           (proj.stages || []).forEach((stg) => {
@@ -128,10 +184,10 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
                     ...tsk,
                     _id: taskId,
                     projectId: proj._id,
-                    projectTitle: proj.title,
-                    projectJobCode: proj.jobCode,
+                    projectTitle: proj.title || proj.name,
+                    projectJobCode: proj.jobCode || proj.projectNumber,
                     stageName: stg.name,
-                    milestoneTitle: ms.title,
+                    milestoneTitle: ms.title || ms.name,
                   });
                 }
               });
@@ -147,7 +203,7 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentUser?._id, currentUser?.id, currentUser?.mobileNumber, currentUser?.phone]);
+  }, [currentUser?._id, currentUser?.id, currentUser?.mobileNumber, currentUser?.phone, currentUser?.companyId, currentUser?.company]);
 
   useEffect(() => {
     fetchTasks();
@@ -161,25 +217,28 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
   const handleCycleTaskStatus = async (task) => {
     const cycle = {
       TODO: 'IN_PROGRESS',
-      IN_PROGRESS: 'DONE',
+      IN_PROGRESS: 'COMPLETED',
+      COMPLETED: 'TODO',
       DONE: 'TODO',
       BLOCKED: 'IN_PROGRESS',
+      CANCELLED: 'TODO',
     };
     const nextStatus = cycle[task.status] || 'IN_PROGRESS';
     const taskId = task._id || task.id;
     const projectId = task.projectId;
+    const effectiveCompId =
+      task.companyId ||
+      currentUser?.companyId?._id ||
+      currentUser?.companyId ||
+      currentUser?.company?._id ||
+      currentUser?.company;
 
-    if (!projectId || !taskId) {
-      setTasks((prev) =>
-        prev.map((t) => (t._id === taskId ? { ...t, status: nextStatus } : t))
-      );
-      return;
-    }
+    if (!taskId) return;
 
     try {
       setUpdatingTaskId(taskId);
       const token = await AsyncStorage.getItem('userToken');
-      await updateProjectTaskStatus(projectId, taskId, nextStatus, token);
+      await updateProjectTaskStatus(projectId, taskId, nextStatus, token, null, effectiveCompId);
       setTasks((prev) =>
         prev.map((t) => (t._id === taskId ? { ...t, status: nextStatus } : t))
       );
@@ -194,7 +253,7 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
 
   const handleVerifyTask = (taskId) => {
     setTasks((prev) =>
-      prev.map((t) => (t._id === taskId ? { ...t, status: 'DONE', verified: true } : t))
+      prev.map((t) => (t._id === taskId ? { ...t, status: 'COMPLETED', verified: true } : t))
     );
     Alert.alert('Verified', 'Task marked as verified.');
   };
@@ -280,14 +339,20 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
 
   const filteredTasks = useMemo(() => {
     if (activeFilter === 'ALL') return tasks;
+    if (activeFilter === 'COMPLETED' || activeFilter === 'DONE') {
+      return tasks.filter((t) => t.status === 'COMPLETED' || t.status === 'DONE');
+    }
+    if (activeFilter === 'TODO') {
+      return tasks.filter((t) => t.status === 'TODO' || t.status === 'PLANNED' || !t.status);
+    }
     return tasks.filter((t) => t.status === activeFilter);
   }, [tasks, activeFilter]);
 
   const stats = useMemo(() => {
     const total = tasks.length;
     const inProgress = tasks.filter((t) => t.status === 'IN_PROGRESS').length;
-    const done = tasks.filter((t) => t.status === 'DONE').length;
-    const pending = tasks.filter((t) => t.status === 'TODO' || !t.status).length;
+    const done = tasks.filter((t) => t.status === 'COMPLETED' || t.status === 'DONE').length;
+    const pending = tasks.filter((t) => t.status === 'TODO' || t.status === 'PLANNED' || !t.status).length;
     return { total, inProgress, done, pending };
   }, [tasks]);
 
@@ -300,10 +365,12 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
   };
 
   const getStatusConfig = (status) => {
-    switch (status) {
+    const s = String(status || '').toUpperCase();
+    switch (s) {
       case 'DONE':
+      case 'COMPLETED':
         return {
-          label: 'DONE',
+          label: 'COMPLETED',
           bg: '#DCFCE7',
           border: '#86EFAC',
           text: '#15803D',
@@ -325,6 +392,14 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
           border: '#FECACA',
           text: '#B91C1C',
           iconColor: '#DC2626',
+        };
+      case 'CANCELLED':
+        return {
+          label: 'CANCELLED',
+          bg: '#F1F5F9',
+          border: '#CBD5E1',
+          text: '#64748B',
+          iconColor: '#64748B',
         };
       case 'TODO':
       default:
@@ -356,7 +431,7 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>My Assigned Tasks</Text>
           <Text style={styles.headerSub}>
-            {currentUser?.name ? `${currentUser.name} • Strictly Assigned` : 'Strictly Assigned Tasks'}
+            {currentUser?.name ? `${currentUser.name} • Assigned Tasks` : 'Assigned Tasks'}
           </Text>
         </View>
 
@@ -395,8 +470,8 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.quickStatCard, activeFilter === 'DONE' && styles.quickStatActive]}
-          onPress={() => setActiveFilter('DONE')}
+          style={[styles.quickStatCard, (activeFilter === 'DONE' || activeFilter === 'COMPLETED') && styles.quickStatActive]}
+          onPress={() => setActiveFilter('COMPLETED')}
           activeOpacity={0.8}
         >
           <Text style={[styles.quickStatNum, { color: '#16A34A' }]}>{stats.done}</Text>
@@ -424,13 +499,13 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
             <Text style={styles.emptyTitle}>No Tasks Found</Text>
             <Text style={styles.emptySubtitle}>
               {activeFilter === 'ALL'
-                ? 'No production tasks are strictly assigned to you.'
+                ? 'No production tasks are assigned to you.'
                 : `No tasks found with status "${activeFilter}".`}
             </Text>
           </View>
         ) : (
           filteredTasks.map((item) => {
-            const isDone = item.status === 'DONE';
+            const isDone = item.status === 'DONE' || item.status === 'COMPLETED';
             const isUpdating = updatingTaskId === item._id;
             const statusConfig = getStatusConfig(item.status);
 
@@ -520,9 +595,25 @@ export const StaffTasksSelf = ({ onNavigate, routeData, onBack }) => {
                   <View style={styles.metaItem}>
                     <FolderKanban size={12} color="#64748B" style={{ marginRight: 4 }} />
                     <Text style={styles.metaText} numberOfLines={1}>
-                      {item.projectJobCode || item.projectTitle || 'Production'}
+                      {item.projectJobCode ? `${item.projectJobCode} • ` : ''}{item.projectTitle || 'Production'}
                     </Text>
                   </View>
+
+                  {!!item.stageName && (
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaText} numberOfLines={1}>
+                        Stage: {item.stageName}
+                      </Text>
+                    </View>
+                  )}
+
+                  {!!item.milestoneTitle && (
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaText} numberOfLines={1}>
+                        MS: {item.milestoneTitle}
+                      </Text>
+                    </View>
+                  )}
 
                   {item.dueDate && (
                     <View style={styles.metaItem}>

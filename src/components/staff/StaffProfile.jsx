@@ -606,7 +606,7 @@ export const StaffProfile = ({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Brand Header Bar */}
@@ -1421,7 +1421,7 @@ export const StaffProfile = ({
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 

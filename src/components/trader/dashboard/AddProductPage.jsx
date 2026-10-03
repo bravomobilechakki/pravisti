@@ -57,32 +57,21 @@ import {
   resolveImageUrl,
 } from '../../../services/api';
 
-let DYNAMIC_UNIT_MAPPING = {
-  bale: '6a0c118913e627687603da11',
-  ton: '6a0c118913e627687603da12',
-  quintal: '6a0c118913e627687603da13',
-  kg: '6a0eac4cd59663585920f09c',
-  kilogram: '6a0eac4cd59663585920f09c',
-  litre: '6a0c118913e627687603da15',
-  meter: '6a0c118913e627687603da16',
-  candy: '6a0c118913e627687603da17',
-  piece: '6a0c118913e627687603da18',
-  bag: '6a0c118913e627687603da19',
-  tin: '6a0c118913e627687603da20',
-};
+let DYNAMIC_UNIT_MAPPING = {};
 
 const getUnitId = (unitName) => {
-  const norm = String(unitName || 'bale').toLowerCase().trim();
-  return DYNAMIC_UNIT_MAPPING[norm] || '6a0c118913e627687603da11';
+  if (!unitName) return '';
+  const norm = String(unitName).toLowerCase().trim();
+  return DYNAMIC_UNIT_MAPPING[norm] || '';
 };
 
 const getUnitName = (unitId) => {
-  if (!unitId) return 'Bag';
+  if (!unitId) return 'Unit';
   if (typeof unitId === 'object') {
-    return unitId.shortName || unitId.name || 'Bag';
+    return unitId.shortName || unitId.name || 'Unit';
   }
   const entry = Object.entries(DYNAMIC_UNIT_MAPPING).find(([_, id]) => id === unitId);
-  return entry ? entry[0].charAt(0).toUpperCase() + entry[0].slice(1) : 'Bag';
+  return entry ? entry[0].charAt(0).toUpperCase() + entry[0].slice(1) : 'Unit';
 };
 
 const getProductUnitText = (prod) => {
@@ -545,18 +534,18 @@ const AddProductPage = ({ onNavigate, routeData }) => {
         }
       }
 
-      if (!resolvedCategoryId) {
-        resolvedCategoryId = '64d0a1b2c3d4e5f6a7b8c9de';
-      }
-
       const payload = {
         name: productForm.name.trim(),
-        categoryId: resolvedCategoryId,
         unitId: productForm.unitId || getUnitId(productForm.unit),
+        companyId: companyId,
       };
 
-      if (!editingProduct) {
-        payload.companyId = companyId;
+      if (resolvedCategoryId) {
+        payload.categoryId = resolvedCategoryId;
+      }
+
+      if (Array.isArray(productForm.rawMaterials) && productForm.rawMaterials.length > 0) {
+        payload.rawMaterials = productForm.rawMaterials;
       }
 
       if (productForm.subcategoryId) payload.subCategoryId = productForm.subcategoryId;
@@ -2995,23 +2984,26 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
   },
   toastCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 20,
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    maxWidth: 280,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 5,
   },
   toastText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#0F172A',
+    textAlign: 'center',
   },
 });

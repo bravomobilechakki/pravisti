@@ -21,6 +21,10 @@ import DealInvoice from './sauda/DealInvoice';
 import ProjectsList from './projects/ProjectsList';
 import CreateProject from './projects/CreateProject';
 import ProjectDetails from './projects/ProjectDetails';
+import RawMaterialsPage from './projects/RawMaterialsPage';
+import InventoryStockPage from './projects/InventoryStockPage';
+import MaterialDemandsPage from './projects/MaterialDemandsPage';
+import StaffDirectoryPage from './projects/StaffDirectoryPage';
 
 const Dashboard = TraderDashboard;
 
@@ -49,5 +53,10 @@ export {
   ProjectsList,
   CreateProject,
   ProjectDetails,
+  RawMaterialsPage,
+  InventoryStockPage,
+  MaterialDemandsPage,
+  StaffDirectoryPage,
 };
+
 

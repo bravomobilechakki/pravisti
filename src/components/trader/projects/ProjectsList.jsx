@@ -6,7 +6,6 @@ import {
   SafeAreaView,
   TouchableOpacity,
   FlatList,
-  TextInput,
   ActivityIndicator,
   RefreshControl,
   StatusBar,
@@ -14,56 +13,46 @@ import {
 } from 'react-native';
 import {
   ArrowLeft,
-  Search,
   Plus,
   Calendar,
+  ChevronRight,
+  Boxes,
+  Package,
+  FileSpreadsheet,
+  Users,
+  RefreshCw,
+  TrendingUp,
   Clock,
+  Layers,
+  Sparkles,
+  IndianRupee,
   CheckCircle2,
   AlertCircle,
   FolderKanban,
-  User,
-  ChevronRight,
-  Briefcase,
-  X,
-  ListTodo,
-  Building2,
 } from 'lucide-react-native';
 import {
   getProjects,
-  getMyAssignedTasks,
-  updateProjectTaskStatus,
+  getProductionDashboardStats,
 } from '../../../services/api';
 
 const THEME = '#2327D8';
-const BG_COLOR = '#F4F6FB';
+const THEME_LIGHT = '#EEF2FF';
+const BG_COLOR = '#F8FAFC';
 
-const STATUS_FILTERS = [
-  { label: 'All', value: 'ALL' },
-  { label: 'Active', value: 'ACTIVE' },
-  { label: 'Completed', value: 'COMPLETED' },
-  { label: 'On Hold', value: 'ON_HOLD' },
-  { label: 'Draft', value: 'DRAFT' },
-];
-
-const TASK_STATUS_FILTERS = [
-  { label: 'All Tasks', value: 'ALL' },
-  { label: 'To Do', value: 'TODO' },
-  { label: 'In Progress', value: 'IN_PROGRESS' },
-  { label: 'Done', value: 'DONE' },
-];
-
-const getStatusStyle = (status = '') => {
+const getStatusBadge = (status = '') => {
   const s = (status || '').toUpperCase();
   switch (s) {
     case 'ACTIVE':
-      return { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0', dot: '#10B981' };
+    case 'IN_PROGRESS':
+      return { label: 'Active', bg: '#ECFDF5', text: '#059669', border: '#A7F3D0' };
     case 'COMPLETED':
-      return { bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE', dot: '#3B82F6' };
+    case 'DONE':
+      return { label: 'Completed', bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE' };
     case 'ON_HOLD':
-      return { bg: '#FFFBEB', text: '#D97706', border: '#FDE68A', dot: '#F59E0B' };
+      return { label: 'On Hold', bg: '#FFFBEB', text: '#D97706', border: '#FDE68A' };
     case 'DRAFT':
     default:
-      return { bg: '#F1F5F9', text: '#64748B', border: '#CBD5E1', dot: '#94A3B8' };
+      return { label: 'Draft', bg: '#F1F5F9', text: '#64748B', border: '#CBD5E1' };
   }
 };
 
@@ -78,6 +67,11 @@ const formatDate = (dateStr) => {
   }
 };
 
+const formatCurrency = (amount) => {
+  if (amount === undefined || amount === null || isNaN(amount)) return '₹0';
+  return '₹' + Number(amount).toLocaleString('en-IN');
+};
+
 const ProjectsList = ({ route, navigation, onNavigate, onBack, routeData }) => {
   const params = route?.params || routeData || {};
   const company = params.company;
@@ -86,27 +80,27 @@ const ProjectsList = ({ route, navigation, onNavigate, onBack, routeData }) => {
 
   const effectiveCompanyId = companyId || company?._id || company?.id || null;
 
-  const [viewMode, setViewMode] = useState('PROJECTS'); // 'PROJECTS' | 'MY_TASKS'
   const [projects, setProjects] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [dashboardStats, setDashboardStats] = useState(null);
 
-  // Worker view: Assigned tasks (API 12)
-  const [assignedTasks, setAssignedTasks] = useState([]);
-  const [tasksLoading, setTasksLoading] = useState(false);
-  const [taskFilter, setTaskFilter] = useState('ALL');
+  const fetchDashboardStats = useCallback(async () => {
+    if (!effectiveCompanyId) return;
+    try {
+      const res = await getProductionDashboardStats(effectiveCompanyId);
+      if (res?.success && res.data) {
+        setDashboardStats(res.data);
+      }
+    } catch (e) {
+      console.warn('[ProjectsList] Failed to load production dashboard stats:', e?.message || e);
+    }
+  }, [effectiveCompanyId]);
 
   const fetchProjectsList = useCallback(async () => {
     try {
+      fetchDashboardStats();
       const queryParams = {};
-      if (activeTab !== 'ALL') {
-        queryParams.status = activeTab;
-      }
-      if (searchQuery.trim()) {
-        queryParams.search = searchQuery.trim();
-      }
       if (effectiveCompanyId) {
         queryParams.companyId = effectiveCompanyId;
       }
@@ -127,8 +121,6 @@ const ProjectsList = ({ route, navigation, onNavigate, onBack, routeData }) => {
         list = res;
       }
 
-      // If filtering on server returned 0 items, check without companyId parameter
-      // so displayedProjects can filter client-side smoothly
       if (list.length === 0 && effectiveCompanyId) {
         try {
           const fallbackParams = { ...queryParams };
@@ -154,345 +146,372 @@ const ProjectsList = ({ route, navigation, onNavigate, onBack, routeData }) => {
       setIsLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab, searchQuery, effectiveCompanyId]);
-
-  const fetchAssignedTasks = useCallback(async () => {
-    try {
-      setTasksLoading(true);
-      const statusParam = taskFilter === 'ALL' ? null : taskFilter;
-      const res = await getMyAssignedTasks(statusParam);
-      let taskList = [];
-      if (res?.success && Array.isArray(res.data?.tasks)) {
-        taskList = res.data.tasks;
-      } else if (res?.success && Array.isArray(res.data)) {
-        taskList = res.data;
-      } else if (Array.isArray(res?.data?.tasks)) {
-        taskList = res.data.tasks;
-      } else if (Array.isArray(res?.tasks)) {
-        taskList = res.tasks;
-      } else if (Array.isArray(res)) {
-        taskList = res;
-      }
-      setAssignedTasks(taskList);
-    } catch (e) {
-      console.warn('[ProjectsList] Failed to load assigned tasks:', e?.message || e);
-    } finally {
-      setTasksLoading(false);
-      setRefreshing(false);
-    }
-  }, [taskFilter]);
+  }, [effectiveCompanyId, fetchDashboardStats]);
 
   useEffect(() => {
-    if (viewMode === 'PROJECTS') {
-      setIsLoading(true);
-      fetchProjectsList();
-    } else {
-      fetchAssignedTasks();
-    }
-  }, [viewMode, fetchProjectsList, fetchAssignedTasks]);
+    setIsLoading(true);
+    fetchProjectsList();
+  }, [fetchProjectsList]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    if (viewMode === 'PROJECTS') {
-      fetchProjectsList();
-    } else {
-      fetchAssignedTasks();
-    }
+    fetchProjectsList();
   };
 
-  // Task status cycle from worker view (API 11)
-  const handleTaskStatusCycle = async (taskItem) => {
-    const currentStatus = taskItem.status || 'TODO';
-    const statusCycle = ['TODO', 'IN_PROGRESS', 'DONE'];
-    const currentIdx = statusCycle.indexOf(currentStatus);
-    const nextStatus = statusCycle[(currentIdx + 1) % statusCycle.length];
-
-    setAssignedTasks((prev) =>
-      prev.map((t) => (t.taskId === taskItem.taskId ? { ...t, status: nextStatus } : t))
-    );
-
-    try {
-      const pId = taskItem.project?._id || taskItem.projectId;
-      if (pId && taskItem.taskId) {
-        await updateProjectTaskStatus(pId, taskItem.taskId, nextStatus);
+  const handleBack = () => {
+    if (onBack) return onBack();
+    if (navigation?.goBack) return navigation.goBack();
+    if (onNavigate) {
+      if (company) {
+        return onNavigate('CompanyDetails', { company, companyId: effectiveCompanyId, user });
       }
-    } catch (e) {
-      console.warn('Failed to update task status from worker view:', e);
-      fetchAssignedTasks();
+      return onNavigate('Dashboard', { user });
     }
   };
 
-  // Resolve company name if arriving from CompanyDetails
+  const navigateTo = (screenName, extraData = {}) => {
+    const navPayload = {
+      company,
+      companyId: effectiveCompanyId,
+      user,
+      ...extraData,
+    };
+    if (onNavigate) {
+      onNavigate(screenName, navPayload);
+    } else if (navigation?.navigate) {
+      navigation.navigate(screenName, navPayload);
+    }
+  };
+
   const targetCompanyName = useMemo(() => {
     if (company?.name || company?.companyName) {
       return company?.name || company?.companyName;
     }
-    if (effectiveCompanyId) {
-      const match = projects.find((p) => {
-        const cId =
-          (typeof p.companyId === 'object' && p.companyId
-            ? p.companyId._id || p.companyId.id
-            : p.companyId) ||
-          (typeof p.company === 'object' && p.company
-            ? p.company._id || p.company.id
-            : p.company);
-        return String(cId) === String(effectiveCompanyId);
-      });
-      if (match) {
-        return (
-          match.company?.name ||
-          match.company?.companyName ||
-          (typeof match.companyId === 'object' ? match.companyId?.name : null)
-        );
-      }
+    return 'Operations & Factory';
+  }, [company]);
+
+  const totalProjectsCount = projects.length;
+  const activeProjectsCount = projects.filter((p) => (p.status || '').toUpperCase() === 'ACTIVE').length;
+
+  const renderHeader = () => (
+    <View style={styles.headerBodyContainer}>
+      {/* ─── KPI METRICS SUMMARY ROW ─── */}
+      <View style={styles.kpiRow}>
+        <View style={styles.kpiCard}>
+          <View style={[styles.kpiIconWrap, { backgroundColor: '#EEF2FF' }]}>
+            <Layers size={16} color={THEME} />
+          </View>
+          <Text style={styles.kpiValue}>{totalProjectsCount}</Text>
+          <Text style={styles.kpiLabel}>Total Projects</Text>
+        </View>
+
+        <View style={styles.kpiCard}>
+          <View style={[styles.kpiIconWrap, { backgroundColor: '#ECFDF5' }]}>
+            <TrendingUp size={16} color="#059669" />
+          </View>
+          <Text style={[styles.kpiValue, { color: '#059669' }]}>{activeProjectsCount}</Text>
+          <Text style={styles.kpiLabel}>Active Runs</Text>
+        </View>
+
+        <View style={styles.kpiCard}>
+          <View style={[styles.kpiIconWrap, { backgroundColor: '#FEF3C7' }]}>
+            <FileSpreadsheet size={16} color="#D97706" />
+          </View>
+          <Text style={[styles.kpiValue, { color: '#D97706' }]}>
+            {dashboardStats?.pendingDemands ?? 0}
+          </Text>
+          <Text style={styles.kpiLabel}>Demands</Text>
+        </View>
+
+        <View style={styles.kpiCard}>
+          <View style={[styles.kpiIconWrap, { backgroundColor: '#FAF5FF' }]}>
+            <Users size={16} color="#9333EA" />
+          </View>
+          <Text style={[styles.kpiValue, { color: '#9333EA' }]}>
+            {dashboardStats?.activeStaff ?? dashboardStats?.staffCount ?? 0}
+          </Text>
+          <Text style={styles.kpiLabel}>Floor Staff</Text>
+        </View>
+      </View>
+
+      {/* ─── PRODUCTION QUICK MODULES ─── */}
+      <View style={styles.sectionHeaderWrap}>
+        <Text style={styles.sectionTitle}>Production & Floor Modules</Text>
+        <Text style={styles.sectionSubtitle}>Direct access to materials, inventory & workers</Text>
+      </View>
+
+      <View style={styles.modulesGrid}>
+        {/* Create Project */}
+        <TouchableOpacity
+          style={[styles.moduleCard, styles.moduleCardPrimary]}
+          onPress={() => navigateTo('CreateProject')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.moduleIconBox, { backgroundColor: THEME }]}>
+            <Plus size={20} color="#FFFFFF" />
+          </View>
+          <View style={styles.moduleInfo}>
+            <Text style={[styles.moduleName, { color: THEME }]}>Create Project</Text>
+            <Text style={styles.moduleSub}>New batch, product & BOM pipeline</Text>
+          </View>
+          <ChevronRight size={18} color={THEME} />
+        </TouchableOpacity>
+
+        {/* Raw Materials */}
+        <TouchableOpacity
+          style={styles.moduleCard}
+          onPress={() => navigateTo('RawMaterialsPage')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.moduleIconBox, { backgroundColor: '#EEF2FF' }]}>
+            <Boxes size={20} color={THEME} />
+          </View>
+          <View style={styles.moduleInfo}>
+            <Text style={styles.moduleName}>Raw Materials Master</Text>
+            <Text style={styles.moduleSub}>Material codes, unit & standard price</Text>
+          </View>
+          <ChevronRight size={18} color="#94A3B8" />
+        </TouchableOpacity>
+
+        {/* Inventory Stock */}
+        <TouchableOpacity
+          style={styles.moduleCard}
+          onPress={() => navigateTo('InventoryStockPage')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.moduleIconBox, { backgroundColor: '#F0FDF4' }]}>
+            <Package size={20} color="#16A34A" />
+          </View>
+          <View style={styles.moduleInfo}>
+            <Text style={styles.moduleName}>Inventory & Floor Stock</Text>
+            <Text style={styles.moduleSub}>Stock balance, issues, receipts & logs</Text>
+          </View>
+          <ChevronRight size={18} color="#94A3B8" />
+        </TouchableOpacity>
+
+        {/* Material Demands */}
+        <TouchableOpacity
+          style={styles.moduleCard}
+          onPress={() => navigateTo('MaterialDemandsPage')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.moduleIconBox, { backgroundColor: '#FFFBEB' }]}>
+            <FileSpreadsheet size={20} color="#D97706" />
+          </View>
+          <View style={styles.moduleInfo}>
+            <Text style={styles.moduleName}>Material Demands</Text>
+            <Text style={styles.moduleSub}>Floor demands & supervisor approval</Text>
+          </View>
+          <ChevronRight size={18} color="#94A3B8" />
+        </TouchableOpacity>
+
+        {/* Staff Directory */}
+        <TouchableOpacity
+          style={styles.moduleCard}
+          onPress={() => navigateTo('StaffDirectoryPage')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.moduleIconBox, { backgroundColor: '#FAF5FF' }]}>
+            <Users size={20} color="#9333EA" />
+          </View>
+          <View style={styles.moduleInfo}>
+            <Text style={styles.moduleName}>Staff & Workforce Directory</Text>
+            <Text style={styles.moduleSub}>Onboard workers, wages & stage allocation</Text>
+          </View>
+          <ChevronRight size={18} color="#94A3B8" />
+        </TouchableOpacity>
+      </View>
+
+      {/* ─── PRODUCTION PROJECTS HEADER ─── */}
+      <View style={styles.projectsSectionHeader}>
+        <View>
+          <Text style={styles.sectionTitle}>Production Projects</Text>
+          <Text style={styles.sectionSubtitle}>
+            {projects.length} {projects.length === 1 ? 'Project' : 'Projects'} in pipeline
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.createProjectBtn}
+          onPress={() => navigateTo('CreateProject')}
+          activeOpacity={0.85}
+        >
+          <Plus size={15} color="#FFFFFF" />
+          <Text style={styles.createProjectBtnText}>New Project</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderProjectItem = ({ item }) => {
+    const badge = getStatusBadge(item.status);
+    const projectName = item.name || item.title || 'Untitled Batch';
+    const projectCode =
+      item.projectNumber ||
+      item.projectCode ||
+      item.code ||
+      (item._id ? `#PRD-${String(item._id).slice(-4).toUpperCase()}` : '#PRD-0001');
+    const productName =
+      item.productId?.name ||
+      item.productName ||
+      item.product?.name ||
+      item.categoryName ||
+      null;
+
+    const prodQty = item.productionQuantity ?? item.targetQuantity ?? null;
+    const prodUnit = item.unit || item.productId?.unit || '';
+    const materialsCount = Array.isArray(item.requiredMaterials) ? item.requiredMaterials.length : 0;
+
+    const stagesCount = Array.isArray(item.stages) ? item.stages.length : 0;
+    let computedProgress = 0;
+    if (typeof item.overallProgress === 'number') {
+      computedProgress = item.overallProgress;
+    } else if (typeof item.progress === 'number') {
+      computedProgress = item.progress;
+    } else if (typeof item.completionPercentage === 'number') {
+      computedProgress = item.completionPercentage;
+    } else if (stagesCount > 0) {
+      const totalStageProgress = item.stages.reduce((acc, s) => {
+        const p = Number(
+          s.progressPercentage ??
+          s.progress ??
+          (s.status === 'COMPLETED' || s.isCompleted ? 100 : s.status === 'IN_PROGRESS' ? (s.progress || 0) : 0)
+        ) || 0;
+        return acc + p;
+      }, 0);
+      computedProgress = Math.round(totalStageProgress / stagesCount);
+    } else {
+      const statusUpper = (item.status || '').toUpperCase();
+      if (statusUpper === 'COMPLETED') computedProgress = 100;
+      else computedProgress = 0;
     }
-    return null;
-  }, [company, effectiveCompanyId, projects]);
 
-  // Filter projects by company (when clicked from CompanyDetails), status tab, and search query
-  const displayedProjects = useMemo(() => {
-    return projects.filter((p) => {
-      // 1. Company Filter (if clicked from a company in CompanyDetails)
-      if (effectiveCompanyId) {
-        const pCompId =
-          (typeof p.companyId === 'object' && p.companyId
-            ? p.companyId._id || p.companyId.id
-            : p.companyId) ||
-          (typeof p.company === 'object' && p.company
-            ? p.company._id || p.company.id
-            : p.company) ||
-          '';
-        if (String(pCompId) !== String(effectiveCompanyId)) {
-          return false;
-        }
-      }
-
-      // 2. Status Filter
-      if (activeTab !== 'ALL') {
-        if ((p.status || '').toUpperCase() !== activeTab) {
-          return false;
-        }
-      }
-
-      // 3. Search Filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const matchTitle = (p.title || '').toLowerCase().includes(q);
-        const matchJobCode = (p.jobCode || '').toLowerCase().includes(q);
-        if (!matchTitle && !matchJobCode) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [projects, effectiveCompanyId, activeTab, searchQuery]);
-
-  // Metrics computation based on filtered projects
-  const totalCount = displayedProjects.length;
-  const activeCount = displayedProjects.filter(
-    (p) => (p.status || '').toUpperCase() === 'ACTIVE'
-  ).length;
-  const completedCount = displayedProjects.filter(
-    (p) => (p.status || '').toUpperCase() === 'COMPLETED'
-  ).length;
-  const avgProgress =
-    totalCount > 0
-      ? Math.round(
-          displayedProjects.reduce(
-            (acc, p) => acc + (Number(p.overallProgress) || 0),
-            0
-          ) / totalCount
-        )
-      : 0;
-
-  const renderProjectCard = ({ item }) => {
-    const statusCfg = getStatusStyle(item.status);
-    const progress = Math.min(100, Math.max(0, Number(item.overallProgress) || 0));
-    const managerName = item.manager?.name || (typeof item.managerId === 'object' ? item.managerId?.name : null) || 'Unassigned';
-    const companyName =
-      item.company?.name ||
-      item.company?.companyName ||
-      (typeof item.companyId === 'object' ? item.companyId?.name : null);
+    const progressPercent = Math.min(100, Math.max(0, Math.round(computedProgress)));
 
     return (
       <TouchableOpacity
         style={styles.projectCard}
-        activeOpacity={0.88}
+        activeOpacity={0.85}
         onPress={() =>
-          onNavigate('ProjectDetails', {
+          navigateTo('ProjectDetails', {
+            projectId: item._id || item.id,
             project: item,
-            projectId: item._id,
-            company,
-            companyId,
-            user,
           })
         }
       >
-        {/* Top: Job Code & Status Badge */}
-        <View style={styles.cardHeaderRow}>
-          {item.jobCode ? (
-            <View style={styles.jobCodeBadge}>
-              <FolderKanban size={13} color={THEME} style={styles.mr4} />
-              <Text style={styles.jobCodeText}>{item.jobCode}</Text>
+        <View style={styles.cardTop}>
+          <View style={styles.codeTag}>
+            <Text style={styles.codeTagText}>{projectCode.toUpperCase()}</Text>
+          </View>
+          <View
+            style={[
+              styles.badgePill,
+              { backgroundColor: badge.bg, borderColor: badge.border },
+            ]}
+          >
+            <Text style={[styles.badgeText, { color: badge.text }]}>
+              {badge.label}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.projectTitle} numberOfLines={2}>
+          {projectName}
+        </Text>
+
+        <View style={styles.projectMetaRow}>
+          {productName && (
+            <View style={styles.productPill}>
+              <Boxes size={12} color="#2563EB" />
+              <Text style={styles.productPillText} numberOfLines={1}>
+                {productName}
+              </Text>
             </View>
-          ) : (
-            <View />
           )}
 
-          <View style={[styles.statusBadge, { backgroundColor: statusCfg.bg, borderColor: statusCfg.border }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusCfg.dot }]} />
-            <Text style={[styles.statusText, { color: statusCfg.text }]}>{item.status || 'DRAFT'}</Text>
-          </View>
+          {prodQty !== null && (
+            <View style={styles.qtyPill}>
+              <Package size={12} color="#059669" />
+              <Text style={styles.qtyPillText}>
+                {prodQty} {prodUnit}
+              </Text>
+            </View>
+          )}
+
+          {materialsCount > 0 && (
+            <View style={styles.matCountPill}>
+              <Layers size={12} color="#7C3AED" />
+              <Text style={styles.matCountPillText}>
+                {materialsCount} {materialsCount === 1 ? 'Material' : 'Materials'}
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Title & Description */}
-        <Text style={styles.projectTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        {item.description ? (
-          <Text style={styles.projectDesc} numberOfLines={2}>
-            {item.description}
-          </Text>
-        ) : null}
-
-        {/* Progress Bar */}
+        {/* Clean Progress Bar */}
         <View style={styles.progressContainer}>
-          <View style={styles.progressHeaderRow}>
-            <Text style={styles.progressLabel}>Overall Progress</Text>
-            <Text style={styles.progressValue}>{progress}%</Text>
+          <View style={styles.progressTopRow}>
+            <Text style={styles.progressLabel}>
+              {stagesCount > 0 ? `${completedStages}/${stagesCount} Stages Done` : 'Production Stage Progress'}
+            </Text>
+            <Text style={styles.progressValue}>{progressPercent}%</Text>
           </View>
           <View style={styles.progressBarTrack}>
-            <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: `${Math.min(Math.max(progressPercent, 6), 100)}%`,
+                  backgroundColor: progressPercent === 100 ? '#16A34A' : THEME,
+                },
+              ]}
+            />
           </View>
         </View>
 
-        {/* Divider */}
-        <View style={styles.cardDivider} />
-
-        {/* Footer: Dates & Manager & Company */}
-        <View style={styles.cardFooterRow}>
-          <View style={styles.dateMetaCol}>
-            <View style={styles.dateRow}>
-              <Calendar size={13} color="#64748B" style={styles.mr4} />
-              <Text style={styles.dateText}>Due: {formatDate(item.targetDeliveryDate)}</Text>
-            </View>
-            {companyName ? (
-              <View style={styles.companyRow}>
-                <Building2 size={12} color="#64748B" style={styles.mr4} />
-                <Text style={styles.companyText} numberOfLines={1}>
-                  {companyName}
-                </Text>
-              </View>
-            ) : null}
+        {/* Card Bottom Row */}
+        <View style={styles.cardBottom}>
+          <View style={styles.dateWrap}>
+            <Calendar size={13} color="#64748B" />
+            <Text style={styles.dateText}>
+              {formatDate(item.startDate || item.createdAt)}
+              {item.expectedCompletionDate ? ` → ${formatDate(item.expectedCompletionDate)}` : ''}
+            </Text>
           </View>
 
-          <View style={styles.managerCol}>
-            <View style={styles.managerAvatarMini}>
-              <User size={12} color={THEME} />
-            </View>
-            <Text style={styles.managerName} numberOfLines={1}>
-              {managerName}
-            </Text>
-            <ChevronRight size={16} color="#94A3B8" style={{ marginLeft: 4 }} />
+          <View style={styles.viewLink}>
+            <Text style={styles.viewLinkText}>Manage Stages</Text>
+            <ChevronRight size={14} color={THEME} />
           </View>
         </View>
       </TouchableOpacity>
     );
   };
 
-  const renderAssignedTaskItem = ({ item }) => {
-    const isDone = item.status === 'DONE';
-    const isInProgress = item.status === 'IN_PROGRESS';
-    const isBlocked = item.status === 'BLOCKED';
-    const statusBg = isDone
-      ? '#ECFDF5'
-      : isInProgress
-      ? '#FEF3C7'
-      : isBlocked
-      ? '#FEE2E2'
-      : '#F1F5F9';
-    const statusColor = isDone
-      ? '#059669'
-      : isInProgress
-      ? '#D97706'
-      : isBlocked
-      ? '#DC2626'
-      : '#64748B';
-
+  const renderEmpty = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.centerLoading}>
+          <ActivityIndicator size="large" color={THEME} />
+          <Text style={styles.loadingText}>Loading production operations...</Text>
+        </View>
+      );
+    }
     return (
-      <View style={styles.taskCard}>
-        <View style={styles.taskCardTop}>
-          <TouchableOpacity
-            style={[styles.taskStatusPill, { backgroundColor: statusBg }]}
-            onPress={() => handleTaskStatusCycle(item)}
-            activeOpacity={0.75}
-          >
-            {isDone ? (
-              <CheckCircle2 size={13} color="#059669" />
-            ) : isInProgress ? (
-              <Clock size={13} color="#D97706" />
-            ) : isBlocked ? (
-              <AlertCircle size={13} color="#DC2626" />
-            ) : (
-              <View style={styles.todoDotMini} />
-            )}
-            <Text style={[styles.taskStatusPillText, { color: statusColor }]}>
-              {item.status || 'TODO'}
-            </Text>
-          </TouchableOpacity>
-
-          {item.priority ? (
-            <View style={styles.priorityMiniBadge}>
-              <Text style={styles.priorityMiniText}>{item.priority}</Text>
-            </View>
-          ) : null}
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconCircle}>
+          <FolderKanban size={38} color="#94A3B8" />
         </View>
-
-        <Text style={[styles.taskTitleText, isDone && styles.taskTitleDone]}>
-          {item.taskTitle}
+        <Text style={styles.emptyTitle}>No Projects Created Yet</Text>
+        <Text style={styles.emptySub}>
+          Start a new production batch or project with linked Bill of Materials (BOM) and stages.
         </Text>
-
-        <View style={styles.taskBreadcrumbRow}>
-          <Text style={styles.taskBreadcrumbText} numberOfLines={1}>
-            {item.stageName || 'Stage'} ➔ {item.milestoneTitle || 'Milestone'}
-          </Text>
-        </View>
-
-        {item.dueDate ? (
-          <View style={styles.taskDueRow}>
-            <Calendar size={12} color="#64748B" />
-            <Text style={styles.taskDueText}>Due: {formatDate(item.dueDate)}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.taskCardDivider} />
-
         <TouchableOpacity
-          style={styles.taskProjectFooter}
-          activeOpacity={0.7}
-          onPress={() => {
-            if (item.project?._id) {
-              onNavigate('ProjectDetails', {
-                projectId: item.project._id,
-                project: item.project,
-                company,
-                companyId,
-                user,
-              });
-            }
-          }}
+          style={styles.emptyCreateBtn}
+          onPress={() => navigateTo('CreateProject')}
+          activeOpacity={0.85}
         >
-          <View style={styles.taskProjectInfo}>
-            <FolderKanban size={13} color={THEME} />
-            {item.project?.jobCode ? (
-              <Text style={styles.taskProjectJobCode}>{item.project.jobCode}</Text>
-            ) : null}
-            <Text style={styles.taskProjectTitle} numberOfLines={1}>
-              {item.project?.title}
-            </Text>
-          </View>
-          <ChevronRight size={14} color="#94A3B8" />
+          <Plus size={16} color="#FFFFFF" />
+          <Text style={styles.emptyCreateBtnText}>Create First Project</Text>
         </TouchableOpacity>
       </View>
     );
@@ -502,268 +521,43 @@ const ProjectsList = ({ route, navigation, onNavigate, onBack, routeData }) => {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={THEME} />
 
-      {/* ─── 1. TOP HERO HEADER ─── */}
-      <View style={styles.heroHeader}>
-        <View style={styles.topNavRow}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => (onBack ? onBack() : onNavigate ? onNavigate('pop') : navigation?.goBack?.())}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
-          </TouchableOpacity>
-
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Projects & Jobs</Text>
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
-              {targetCompanyName || 'Operations & Execution'}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.headerAddBtn}
-            onPress={() =>
-              onNavigate('CreateProject', {
-                company,
-                companyId: effectiveCompanyId,
-                user,
-              })
-            }
-            activeOpacity={0.85}
-          >
-            <Plus size={18} color={THEME} strokeWidth={2.8} />
-            <Text style={styles.headerAddBtnText}>New</Text>
-          </TouchableOpacity>
+      {/* ─── APP HEADER ─── */}
+      <View style={styles.appHeader}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={handleBack}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+        <View style={styles.headerTitleWrap}>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {targetCompanyName}
+          </Text>
+          <Text style={styles.headerTitle}>Projects & Operations</Text>
         </View>
-
-        {/* ─── Summary Stats Strip ─── */}
-        <View style={styles.statsStrip}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{totalCount}</Text>
-            <Text style={styles.statLabel}>Total Jobs</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, { color: '#34D399' }]}>{activeCount}</Text>
-            <Text style={styles.statLabel}>Active</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, { color: '#60A5FA' }]}>{completedCount}</Text>
-            <Text style={styles.statLabel}>Completed</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, { color: '#FCD34D' }]}>{avgProgress}%</Text>
-            <Text style={styles.statLabel}>Avg Progress</Text>
-          </View>
-        </View>
-
-        {/* ─── View Mode Switch: Projects vs My Tasks (Worker View) ─── */}
-        <View style={styles.modeToggleRow}>
-          <TouchableOpacity
-            style={[styles.modeToggleBtn, viewMode === 'PROJECTS' && styles.modeToggleBtnActive]}
-            onPress={() => setViewMode('PROJECTS')}
-            activeOpacity={0.8}
-          >
-            <FolderKanban
-              size={14}
-              color={viewMode === 'PROJECTS' ? THEME : '#FFFFFF'}
-              style={{ marginRight: 6 }}
-            />
-            <Text
-              style={[
-                styles.modeToggleBtnText,
-                viewMode === 'PROJECTS' && styles.modeToggleBtnTextActive,
-              ]}
-            >
-              All Projects ({totalCount})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.modeToggleBtn, viewMode === 'MY_TASKS' && styles.modeToggleBtnActive]}
-            onPress={() => setViewMode('MY_TASKS')}
-            activeOpacity={0.8}
-          >
-            <ListTodo
-              size={14}
-              color={viewMode === 'MY_TASKS' ? THEME : '#FFFFFF'}
-              style={{ marginRight: 6 }}
-            />
-            <Text
-              style={[
-                styles.modeToggleBtnText,
-                viewMode === 'MY_TASKS' && styles.modeToggleBtnTextActive,
-              ]}
-            >
-              My Tasks ({assignedTasks.length})
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.refreshBtn}
+          onPress={onRefresh}
+          activeOpacity={0.7}
+        >
+          <RefreshCw size={18} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
 
-      {/* ─── MAIN BODY (Fills full remaining screen with BG_COLOR) ─── */}
-      <View style={styles.bodyContainer}>
-        {/* ─── 2. SEARCH & FILTER SECTION ─── */}
-        <View style={styles.filterSection}>
-          {viewMode === 'PROJECTS' ? (
-            <>
-              {/* Search Input for Projects */}
-              <View style={styles.searchBarWrapper}>
-                <Search size={17} color="#64748B" style={styles.mr8} />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search"
-                  placeholderTextColor="#94A3B8"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  selectionColor={THEME}
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity
-                    onPress={() => setSearchQuery('')}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <X size={16} color="#94A3B8" />
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Horizontal Status Pills for Projects */}
-              <View style={styles.tabsRow}>
-                <FlatList
-                  data={STATUS_FILTERS}
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  keyExtractor={(item) => item.value}
-                  contentContainerStyle={styles.tabsList}
-                  renderItem={({ item }) => {
-                    const isActive = activeTab === item.value;
-                    return (
-                      <TouchableOpacity
-                        style={[styles.tabPill, isActive && styles.tabPillActive]}
-                        onPress={() => setActiveTab(item.value)}
-                        activeOpacity={0.75}
-                      >
-                        <Text
-                          style={[styles.tabPillText, isActive && styles.tabPillTextActive]}
-                        >
-                          {item.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  }}
-                />
-              </View>
-            </>
-          ) : (
-            /* Task Status Pills for My Tasks (API 12) */
-            <View style={styles.tabsRow}>
-              <FlatList
-                data={TASK_STATUS_FILTERS}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => item.value}
-                contentContainerStyle={styles.tabsList}
-                renderItem={({ item }) => {
-                  const isActive = taskFilter === item.value;
-                  return (
-                    <TouchableOpacity
-                      style={[styles.tabPill, isActive && styles.tabPillActive]}
-                      onPress={() => setTaskFilter(item.value)}
-                      activeOpacity={0.75}
-                    >
-                      <Text
-                        style={[styles.tabPillText, isActive && styles.tabPillTextActive]}
-                      >
-                        {item.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            </View>
-          )}
-        </View>
-
-        {/* ─── 3. CONTENT LIST ─── */}
-        {viewMode === 'PROJECTS' ? (
-          isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={THEME} />
-              <Text style={styles.loadingText}>Loading projects & jobs...</Text>
-            </View>
-          ) : displayedProjects.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconCircle}>
-                <Briefcase size={36} color={THEME} />
-              </View>
-              <Text style={styles.emptyTitle}>No Projects Found</Text>
-              <Text style={styles.emptyDesc}>
-                {activeTab !== 'ALL' || searchQuery
-                  ? 'No projects match your search or filter criteria.'
-                  : company?.name || company?.companyName
-                  ? `No projects yet for ${company.name || company.companyName}. Create one to get started!`
-                  : 'Create production batches, export jobs, and work orders to track stages and milestones.'}
-              </Text>
-              <TouchableOpacity
-                style={styles.emptyCreateBtn}
-                onPress={() =>
-                  onNavigate('CreateProject', {
-                    company,
-                    companyId: effectiveCompanyId,
-                    user,
-                  })
-                }
-                activeOpacity={0.88}
-              >
-                <Plus size={18} color="#FFFFFF" strokeWidth={2.6} style={styles.mr6} />
-                <Text style={styles.emptyCreateBtnText}>Create Project</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <FlatList
-              data={displayedProjects}
-              keyExtractor={(item) => item._id}
-              renderItem={renderProjectCard}
-              style={styles.flatList}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[THEME]} />
-              }
-            />
-          )
-        ) : tasksLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={THEME} />
-            <Text style={styles.loadingText}>Loading your assigned tasks...</Text>
-          </View>
-        ) : assignedTasks.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconCircle}>
-              <ListTodo size={36} color={THEME} />
-            </View>
-            <Text style={styles.emptyTitle}>No Tasks Assigned</Text>
-            <Text style={styles.emptyDesc}>
-              You currently have no tasks assigned to you in active projects.
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={assignedTasks}
-            keyExtractor={(item, index) => item.taskId || String(index)}
-            renderItem={renderAssignedTaskItem}
-            style={styles.flatList}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[THEME]} />
-            }
-          />
-        )}
-      </View>
+      {/* ─── MAIN CONTENT ─── */}
+      <FlatList
+        data={projects}
+        keyExtractor={(item, index) => item._id || item.id || `proj_${index}`}
+        renderItem={renderProjectItem}
+        ListHeaderComponent={renderHeader}
+        ListEmptyComponent={renderEmpty}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[THEME]} />
+        }
+        showsVerticalScrollIndicator={false}
+      />
     </SafeAreaView>
   );
 };
@@ -771,23 +565,41 @@ const ProjectsList = ({ route, navigation, onNavigate, onBack, routeData }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: THEME,
+    backgroundColor: BG_COLOR,
   },
-  heroHeader: {
+  appHeader: {
     backgroundColor: THEME,
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? 12 : 8,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  topNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 8 : 14,
+    paddingBottom: 14,
   },
-  backButton: {
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  headerTitleWrap: {
+    flex: 1,
+  },
+  headerSubtitle: {
+    fontSize: 11.5,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontWeight: '600',
+    marginBottom: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  refreshBtn: {
     width: 38,
     height: 38,
     borderRadius: 12,
@@ -795,95 +607,77 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitleWrap: {
-    alignItems: 'center',
-    flex: 1,
-    paddingHorizontal: 8,
+  listContent: {
+    paddingBottom: 40,
   },
-  headerTitle: {
-    fontSize: 17.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
+  headerBodyContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
-  headerSubtitle: {
-    fontSize: 11.5,
-    color: '#C7D2FE',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  headerAddBtn: {
+  kpiRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    gap: 8,
+    marginBottom: 20,
+  },
+  kpiCard: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    gap: 2,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  headerAddBtnText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: THEME,
-  },
-
-  /* Stats Strip */
-  statsStrip: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  statBox: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  statLabel: {
-    fontSize: 10,
-    color: '#C7D2FE',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-
-  /* Body Container filling screen */
-  bodyContainer: {
-    flex: 1,
-    backgroundColor: BG_COLOR,
-  },
-
-  /* Filters & Search */
-  filterSection: {
-    backgroundColor: BG_COLOR,
-    paddingTop: 14,
-  },
-  searchBarWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 10 : 6,
     borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  kpiIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  kpiValue: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  kpiLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  sectionHeaderWrap: {
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  sectionSubtitle: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  modulesGrid: {
+    gap: 10,
+    marginBottom: 24,
+  },
+  moduleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 13,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#0F172A',
@@ -892,133 +686,170 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 1,
   },
-  searchInput: {
+  moduleCardPrimary: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#C7D2FE',
+  },
+  moduleIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  moduleInfo: {
     flex: 1,
-    fontSize: 13.5,
-    color: '#0F172A',
-    paddingVertical: 4,
   },
-  mr8: {
-    marginRight: 8,
-  },
-  mr6: {
-    marginRight: 6,
-  },
-  tabsRow: {
-    marginTop: 6,
-    marginBottom: 6,
-  },
-  tabsList: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  tabPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  tabPillActive: {
-    backgroundColor: THEME,
-    borderColor: THEME,
-  },
-  tabPillText: {
-    fontSize: 12,
+  moduleName: {
+    fontSize: 14,
     fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  moduleSub: {
+    fontSize: 11,
     color: '#64748B',
   },
-  tabPillTextActive: {
+  projectsSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  createProjectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 5,
+    shadowColor: THEME,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  createProjectBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
     color: '#FFFFFF',
-  },
-
-  /* Project List & Cards */
-  flatList: {
-    flex: 1,
-    backgroundColor: BG_COLOR,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 40,
-    backgroundColor: BG_COLOR,
-    flexGrow: 1,
   },
   projectCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
+    borderRadius: 16,
+    marginHorizontal: 16,
     marginBottom: 12,
+    padding: 15,
     borderWidth: 1,
-    borderColor: '#EDF2F7',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 2 },
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
-    elevation: 1.5,
+    elevation: 1,
   },
-  cardHeaderRow: {
+  cardTop: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
-  jobCodeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
+  codeTag: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  codeTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  badgePill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#C7D2FE',
   },
-  jobCodeText: {
+  badgeText: {
     fontSize: 11,
-    fontWeight: '800',
-    color: THEME,
-    letterSpacing: 0.3,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 4,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontWeight: '700',
   },
   projectTitle: {
-    fontSize: 15,
+    fontSize: 15.5,
     fontWeight: '800',
     color: '#0F172A',
-    lineHeight: 20,
-    marginBottom: 4,
+    marginBottom: 6,
+    letterSpacing: -0.2,
   },
-  projectDesc: {
+  projectMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  productPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    maxWidth: '100%',
+  },
+  productPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1D4ED8',
+    flexShrink: 1,
+  },
+  qtyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  qtyPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  matCountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FAF5FF',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  matCountPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  productRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  productText: {
     fontSize: 12,
     color: '#64748B',
-    lineHeight: 16,
-    marginBottom: 10,
+    fontWeight: '500',
   },
-
-  /* Progress */
   progressContainer: {
-    marginTop: 4,
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  progressHeaderRow: {
+  progressTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1030,281 +861,115 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   progressValue: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: THEME,
+    fontSize: 11,
+    color: '#0F172A',
+    fontWeight: '700',
   },
   progressBarTrack: {
     height: 6,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F1F5F9',
     borderRadius: 3,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: THEME,
     borderRadius: 3,
   },
-
-  cardDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginBottom: 10,
-  },
-  cardFooterRow: {
+  cardBottom: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
-  dateMetaCol: {
-    flex: 1,
-  },
-  dateRow: {
+  dateWrap: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
   dateText: {
-    fontSize: 11.5,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  companyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-  companyText: {
     fontSize: 11,
     color: '#64748B',
-    fontWeight: '600',
-    maxWidth: 160,
   },
-  mr4: {
-    marginRight: 4,
-  },
-  managerCol: {
+  budgetWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '50%',
   },
-  managerAvatarMini: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#EEF2FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 6,
+  budgetLabel: {
+    fontSize: 11,
+    color: '#64748B',
   },
-  managerName: {
-    fontSize: 11.5,
+  budgetText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: '#334155',
+    color: '#16A34A',
   },
-
-  /* Loading & Empty States */
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  viewLink: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: BG_COLOR,
-    gap: 12,
+    gap: 2,
+  },
+  viewLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME,
+  },
+  centerLoading: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
   loadingText: {
-    fontSize: 13.5,
+    fontSize: 13,
     color: '#64748B',
-    fontWeight: '600',
   },
   emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 28,
     alignItems: 'center',
-    paddingHorizontal: 32,
-    backgroundColor: BG_COLOR,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   emptyIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#EEF2FF',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#C7D2FE',
+    marginBottom: 14,
   },
   emptyTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 6,
   },
-  emptyDesc: {
+  emptySub: {
     fontSize: 12.5,
     color: '#64748B',
     textAlign: 'center',
+    marginTop: 6,
     lineHeight: 18,
-    marginBottom: 20,
   },
   emptyCreateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     backgroundColor: THEME,
-    paddingVertical: 12,
-    paddingHorizontal: 22,
-    borderRadius: 14,
-    elevation: 3,
-    shadowColor: THEME,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 18,
   },
   emptyCreateBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-
-  /* Mode Toggle Strip */
-  modeToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderRadius: 12,
-    padding: 3,
-    marginTop: 12,
-    gap: 4,
-  },
-  modeToggleBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 7,
-    borderRadius: 9,
-  },
-  modeToggleBtnActive: {
-    backgroundColor: '#FFFFFF',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  modeToggleBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#E0E7FF',
-  },
-  modeToggleBtnTextActive: {
-    color: THEME,
-  },
-
-  /* Task Cards (Worker View - API 12) */
-  taskCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    elevation: 1,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-  },
-  taskCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  taskStatusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  todoDotMini: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#64748B',
-  },
-  taskStatusPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  priorityMiniBadge: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  priorityMiniText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#4F46E5',
-  },
-  taskTitleText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  taskTitleDone: {
-    textDecorationLine: 'line-through',
-    color: '#94A3B8',
-  },
-  taskBreadcrumbRow: {
-    marginBottom: 6,
-  },
-  taskBreadcrumbText: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  taskDueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 8,
-  },
-  taskDueText: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  taskCardDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 8,
-  },
-  taskProjectFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 2,
-  },
-  taskProjectInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    paddingRight: 8,
-  },
-  taskProjectJobCode: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: THEME,
-  },
-  taskProjectTitle: {
-    fontSize: 12,
-    color: '#334155',
-    fontWeight: '600',
-    flex: 1,
   },
 });
 

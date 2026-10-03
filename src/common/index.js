@@ -753,6 +753,286 @@ const SummaryApi = {
     url: `${backendDomain}/api/v1/bot/conversations/${id}/clear-action`,
     method: "post",
   }),
+
+  /* ================= PRODUCTION MATERIALS (RAW MATERIALS) ================= */
+  getProductionMaterials: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.status) query.append('status', params.status);
+    if (params.category) query.append('category', params.category);
+    if (params.search) query.append('search', params.search);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/materials${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  createProductionMaterial: {
+    url: `${backendDomain}/api/production/materials`,
+    method: "post",
+  },
+  updateProductionMaterial: (id, companyId) => ({
+    url: `${backendDomain}/api/production/materials/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "put",
+  }),
+  deleteProductionMaterial: (id, companyId) => ({
+    url: `${backendDomain}/api/production/materials/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "delete",
+  }),
+
+  /* ================= PRODUCT DETAILS & RAW MATERIAL LINKAGE ================= */
+  getProductDetails: (id, companyId) => ({
+    url: `${backendDomain}/api/products/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "get",
+  }),
+  linkProductRawMaterial: (id) => ({
+    url: `${backendDomain}/api/products/${id}/raw-materials/add`,
+    method: "patch",
+  }),
+  removeProductRawMaterial: (id, materialId, companyId) => ({
+    url: `${backendDomain}/api/products/${id}/raw-materials/remove/${materialId}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "patch",
+  }),
+  reviewProduct: (id) => ({
+    url: `${backendDomain}/api/products/${id}/review`,
+    method: "patch",
+  }),
+  uploadProductImage: (id) => ({
+    url: `${backendDomain}/api/products/${id}/image`,
+    method: "post",
+  }),
+  uploadProductImages: (id) => ({
+    url: `${backendDomain}/api/products/${id}/images`,
+    method: "post",
+  }),
+
+  /* ================= PRODUCTION MATERIAL DEMANDS ================= */
+  raiseProductionDemand: {
+    url: `${backendDomain}/api/production/transactions/demands`,
+    method: "post",
+  },
+  getProductionDemands: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.projectId) query.append('projectId', params.projectId);
+    if (params.status) query.append('status', params.status);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/transactions/demands${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  reviewProductionDemand: (id, companyId) => ({
+    url: `${backendDomain}/api/production/transactions/demands/${id}/review${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "patch",
+  }),
+
+  /* ================= PRODUCTION TRANSACTIONS ================= */
+  issueProductionMaterial: {
+    url: `${backendDomain}/api/production/transactions/issues`,
+    method: "post",
+  },
+  receiveProductionMaterial: {
+    url: `${backendDomain}/api/production/transactions/receipts`,
+    method: "post",
+  },
+  consumeProductionMaterial: {
+    url: `${backendDomain}/api/production/transactions/consumptions`,
+    method: "post",
+  },
+
+  /* ================= PRODUCTION INVENTORY & ADJUST STOCK ================= */
+  getProductionInventory: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.warehouse) query.append('warehouse', params.warehouse);
+    if (params.materialId) query.append('materialId', params.materialId);
+    if (params.search) query.append('search', params.search);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/inventory${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  adjustProductionStock: {
+    url: `${backendDomain}/api/production/inventory/adjust-stock`,
+    method: "post",
+  },
+
+  /* ================= PRODUCTION SUMMARY & COSTING ================= */
+  getProjectProductionSummary: (projectId, companyId) => ({
+    url: `${backendDomain}/api/production/summary/projects/${projectId}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "get",
+  }),
+  getProductionDashboardStats: (companyId) => ({
+    url: `${backendDomain}/api/production/summary/dashboard/stats${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "get",
+  }),
+
+  /* ================= PRODUCTION STAFF MANAGEMENT ================= */
+  productionStaffLogin: {
+    url: `${backendDomain}/api/production/staff/login`,
+    method: "post",
+  },
+  productionStaffOnboard: {
+    url: `${backendDomain}/api/production/staff/onboard`,
+    method: "post",
+  },
+  getProductionStaffMembers: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.status) query.append('status', params.status);
+    if (params.search) query.append('search', params.search);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/staff-assignments/staff-members${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  getStaffMembers: (companyId) => ({
+    url: `${backendDomain}/api/production/staff-assignments/staff-members${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "get",
+  }),
+  updateProductionStaffMember: (id, companyId) => ({
+    url: `${backendDomain}/api/production/staff/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "put",
+  }),
+  deleteProductionStaffMember: (id, companyId) => ({
+    url: `${backendDomain}/api/production/staff/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "delete",
+  }),
+  assignProductionStaff: {
+    url: `${backendDomain}/api/production/staff-assignments`,
+    method: "post",
+  },
+  getProductionStaffAssignments: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.projectId) query.append('projectId', params.projectId);
+    if (params.stageId) query.append('stageId', params.stageId);
+    if (params.staffId) query.append('staffId', params.staffId);
+    if (params.status) query.append('status', params.status);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/staff-assignments${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  getProductionProjects: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.status) query.append('status', params.status);
+    if (params.search) query.append('search', params.search);
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/projects${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  createProductionProject: {
+    url: `${backendDomain}/api/production/projects`,
+    method: "post",
+  },
+  getProductionProjectDetails: (id, companyId, hierarchy = true) => {
+    const query = new URLSearchParams();
+    if (companyId) query.append('companyId', companyId);
+    if (hierarchy) query.append('hierarchy', 'true');
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/projects/${id}${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  updateProductionProject: (id, companyId) => ({
+    url: `${backendDomain}/api/production/projects/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "put",
+  }),
+  deleteProductionProject: (id, companyId) => ({
+    url: `${backendDomain}/api/production/projects/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "delete",
+  }),
+
+  /* ================= PRODUCTION STAGES ================= */
+  createProductionStage: {
+    url: `${backendDomain}/api/production/stages`,
+    method: "post",
+  },
+  getProductionStages: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.projectId) query.append('projectId', params.projectId);
+    if (params.status) query.append('status', params.status);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/stages${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  updateProductionStage: (id, companyId) => ({
+    url: `${backendDomain}/api/production/stages/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "put",
+  }),
+  deleteProductionStage: (id, companyId) => ({
+    url: `${backendDomain}/api/production/stages/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "delete",
+  }),
+
+  /* ================= PRODUCTION MILESTONES ================= */
+  createProductionMilestone: {
+    url: `${backendDomain}/api/production/milestones`,
+    method: "post",
+  },
+  getProductionMilestones: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.projectId) query.append('projectId', params.projectId);
+    if (params.stageId) query.append('stageId', params.stageId);
+    if (params.status) query.append('status', params.status);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/milestones${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  updateProductionMilestone: (id, companyId) => ({
+    url: `${backendDomain}/api/production/milestones/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "put",
+  }),
+  deleteProductionMilestone: (id, companyId) => ({
+    url: `${backendDomain}/api/production/milestones/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "delete",
+  }),
+
+  /* ================= PRODUCTION TASKS ================= */
+  getProductionTasks: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.projectId) query.append('projectId', params.projectId);
+    if (params.stageId) query.append('stageId', params.stageId);
+    if (params.milestoneId) query.append('milestoneId', params.milestoneId);
+    if (params.assignedStaffId || params.staffId) query.append('assignedStaffId', params.assignedStaffId || params.staffId);
+    if (params.status) query.append('status', params.status);
+    if (params.search) query.append('search', params.search);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/tasks${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  createProductionTask: {
+    url: `${backendDomain}/api/production/tasks`,
+    method: "post",
+  },
+  updateProductionTask: (id, companyId) => ({
+    url: `${backendDomain}/api/production/tasks/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "put",
+  }),
+  deleteProductionTask: (id, companyId) => ({
+    url: `${backendDomain}/api/production/tasks/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "delete",
+  }),
 };
 
 export { backendDomain };

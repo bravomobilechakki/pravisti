@@ -32,6 +32,10 @@ import {
   ProjectsList,
   CreateProject,
   ProjectDetails,
+  RawMaterialsPage,
+  InventoryStockPage,
+  MaterialDemandsPage,
+  StaffDirectoryPage,
 } from './src/components/trader';
 import Notifications from './src/components/common/Notifications';
 import AIBotScreen from './src/components/common/AIBotScreen';
@@ -80,6 +84,10 @@ const DealInvoiceScreen = DealInvoice as any;
 const ProjectsListScreen = ProjectsList as any;
 const CreateProjectScreen = CreateProject as any;
 const ProjectDetailsScreen = ProjectDetails as any;
+const RawMaterialsScreen = RawMaterialsPage as any;
+const InventoryStockScreen = InventoryStockPage as any;
+const MaterialDemandsScreen = MaterialDemandsPage as any;
+const StaffDirectoryScreen = StaffDirectoryPage as any;
 const NotificationsScreen = Notifications as any;
 const BrokerDashboardScreen = BrokerDashboard as any;
 const StaffDashboardScreen = StaffDashboard as any;
@@ -131,6 +139,8 @@ const isAuthOrStaffScreen = (screenName: string): boolean => {
 
 const getScreenStatusBarConfig = (screenName: string) => {
   switch (screenName) {
+    case 'StaffProfile':
+      return { bg: '#FFFFFF', barStyle: 'dark-content' as const };
     case 'Dashboard':
     case 'AddCompany':
     case 'BrokerDashboard':
@@ -138,6 +148,10 @@ const getScreenStatusBarConfig = (screenName: string) => {
     case 'Profile':
     case 'AIBot':
     case 'ProjectsList':
+    case 'RawMaterialsPage':
+    case 'InventoryStockPage':
+    case 'MaterialDemandsPage':
+    case 'StaffDirectoryPage':
     case 'StaffDashboard':
     case 'StaffTasksSelf':
       return { bg: '#2327D8', barStyle: 'light-content' as const };
@@ -506,6 +520,14 @@ function App() {
         return <CreateProjectScreen onNavigate={onNavigate} routeData={data} />;
       case 'ProjectDetails':
         return <ProjectDetailsScreen onNavigate={onNavigate} routeData={data} />;
+      case 'RawMaterialsPage':
+        return <RawMaterialsScreen onNavigate={onNavigate} routeData={data} />;
+      case 'InventoryStockPage':
+        return <InventoryStockScreen onNavigate={onNavigate} routeData={data} />;
+      case 'MaterialDemandsPage':
+        return <MaterialDemandsScreen onNavigate={onNavigate} routeData={data} />;
+      case 'StaffDirectoryPage':
+        return <StaffDirectoryScreen onNavigate={onNavigate} routeData={data} />;
       default:
         if (data?.token || data?.user) {
           return isBrokerUser ? (

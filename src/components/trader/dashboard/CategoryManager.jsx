@@ -821,13 +821,13 @@ const CategoryManager = ({ onNavigate, routeData }) => {
 
       {/* Attractive Auto-Closing Success Popup with Checkmark Icon */}
       <Modal visible={showSuccessModal} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 28, padding: 32, alignItems: 'center', width: '100%', shadowColor: '#10B981', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.2, shadowRadius: 32, elevation: 12, borderWidth: 1, borderColor: '#ECFDF5' }}>
-            <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 20, borderWidth: 3, borderColor: '#A7F3D0', shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 4 }}>
-              <Check size={36} color="#10B981" strokeWidth={3.5} />
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, alignItems: 'center', width: '82%', maxWidth: 290, shadowColor: '#10B981', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 6, borderWidth: 1, borderColor: '#ECFDF5' }}>
+            <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 12, borderWidth: 2, borderColor: '#A7F3D0' }}>
+              <Check size={24} color="#10B981" strokeWidth={3} />
             </View>
-            <Text style={{ fontSize: 22, fontWeight: '900', color: '#0F172A', marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 }}>Success!</Text>
-            <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', fontWeight: '600', lineHeight: 20 }}>{successMessage}</Text>
+            <Text style={{ fontSize: 16.5, fontWeight: '800', color: '#0F172A', marginBottom: 4, textAlign: 'center' }}>Success!</Text>
+            <Text style={{ fontSize: 12.5, color: '#475569', textAlign: 'center', fontWeight: '600', lineHeight: 18 }}>{successMessage}</Text>
           </View>
         </View>
       </Modal>

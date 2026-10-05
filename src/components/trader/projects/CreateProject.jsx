@@ -16,12 +16,10 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ArrowLeft,
-  Box,
   FileText,
   Calendar,
   Flag,
   Clock,
-  User,
   Building2,
   ChevronDown,
   CirclePlus,
@@ -29,7 +27,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Briefcase,
   Search,
   Package,
   Layers,
@@ -42,7 +39,6 @@ import {
 } from 'lucide-react-native';
 import {
   createProject,
-  getDeals,
   getCompanies,
   getProducts,
   getProductionMaterials,
@@ -81,20 +77,6 @@ const STATUS_OPTIONS = [
   { label: 'On Hold', value: 'ON_HOLD', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
 ];
 
-const getDealStatusConfig = (rawStatus = '') => {
-  const s = String(rawStatus || 'active').trim().toLowerCase();
-  if (['completed', 'settled', 'delivered', 'closed'].includes(s)) {
-    return { label: 'Completed', bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE' };
-  }
-  if (['in progress', 'inprogress', 'pending', 'negotiation', 'processing', 'dispatched'].includes(s)) {
-    return { label: 'In Progress', bg: '#FFFBEB', text: '#D97706', border: '#FDE68A' };
-  }
-  if (['draft', 'created'].includes(s)) {
-    return { label: 'Draft', bg: '#F1F5F9', text: '#64748B', border: '#CBD5E1' };
-  }
-  return { label: 'Active', bg: '#ECFDF5', text: '#059669', border: '#A7F3D0' };
-};
-
 const formatDateDisplay = (date) => {
   if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
   const d = String(date.getDate()).padStart(2, '0');
@@ -109,13 +91,10 @@ const CreateProject = ({ route, navigation, onNavigate, onBack, routeData }) => 
   const initialCompanyId = params.companyId || initialCompany?._id || null;
   const initialUser = params.user || null;
 
-  // Project Type: 'INDEPENDENT' or 'DEAL'
-  const [projectType, setProjectType] = useState('INDEPENDENT');
-
   // Form Core Fields
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
-  const [productionQuantity, setProductionQuantity] = useState('1');
+  const [productionQuantity, setProductionQuantity] = useState('');
   const [unit, setUnit] = useState('Kilogram');
 
   // Dates
@@ -131,12 +110,6 @@ const CreateProject = ({ route, navigation, onNavigate, onBack, routeData }) => 
   const [companiesList, setCompaniesList] = useState(initialCompany ? [initialCompany] : []);
   const [selectedCompany, setSelectedCompany] = useState(initialCompany);
   const [currentUser, setCurrentUser] = useState(initialUser);
-
-  // Deals
-  const [deals, setDeals] = useState([]);
-  const [selectedDeal, setSelectedDeal] = useState(null);
-  const [dealSearchQuery, setDealSearchQuery] = useState('');
-  const [loadingDeals, setLoadingDeals] = useState(false);
 
   // Products & Raw Materials (BOM)
   const [productsList, setProductsList] = useState([]);
@@ -163,7 +136,6 @@ const CreateProject = ({ route, navigation, onNavigate, onBack, routeData }) => 
   const [showPriorityModal, setShowPriorityModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
-  const [showDealModal, setShowDealModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [showUnitModal, setShowUnitModal] = useState(false);
@@ -219,43 +191,7 @@ const CreateProject = ({ route, navigation, onNavigate, onBack, routeData }) => 
     };
   }, [currentUser, initialCompany, initialCompanyId, selectedCompany]);
 
-  // Fetch Deals
-  const fetchDeals = useCallback(async () => {
-    try {
-      setLoadingDeals(true);
-      const effectiveCompId = selectedCompany?._id || selectedCompany?.id || initialCompanyId;
-      const token = await AsyncStorage.getItem('userToken');
-      const [compRes, genRes] = await Promise.all([
-        effectiveCompId ? getDeals(token, 1, 50, effectiveCompId).catch(() => null) : Promise.resolve(null),
-        getDeals(token, 1, 50).catch(() => null),
-      ]);
 
-      const extractDealsList = (r) => {
-        if (!r) return [];
-        if (Array.isArray(r?.data?.deals)) return r.data.deals;
-        if (Array.isArray(r?.data?.data)) return r.data.data;
-        if (Array.isArray(r?.data)) return r.data;
-        if (Array.isArray(r?.deals)) return r.deals;
-        if (Array.isArray(r)) return r;
-        return [];
-      };
-
-      const combined = [...extractDealsList(compRes), ...extractDealsList(genRes)];
-      const uniqueMap = new Map();
-      combined.forEach((d) => {
-        const id = String(d._id || d.id || '');
-        if (id && !uniqueMap.has(id)) uniqueMap.set(id, d);
-      });
-      setDeals(Array.from(uniqueMap.values()));
-    } catch (e) {
-    } finally {
-      setLoadingDeals(false);
-    }
-  }, [selectedCompany, initialCompanyId]);
-
-  useEffect(() => {
-    fetchDeals();
-  }, [fetchDeals]);
 
   // Fetch Products and Raw Materials
   const fetchProductsAndMaterials = useCallback(async () => {
@@ -333,16 +269,7 @@ const CreateProject = ({ route, navigation, onNavigate, onBack, routeData }) => 
     else if (navigation?.goBack) navigation.goBack();
   };
 
-  // Filtered lists
-  const filteredDeals = useMemo(() => {
-    if (!dealSearchQuery.trim()) return deals;
-    const q = dealSearchQuery.trim().toLowerCase();
-    return deals.filter((d) => {
-      const code = String(d.saudaNumber || d.dealNumber || d.dealNo || d._id || '').toLowerCase();
-      const comm = String(d.commodity || d.title || d.dealName || '').toLowerCase();
-      return code.includes(q) || comm.includes(q);
-    });
-  }, [deals, dealSearchQuery]);
+
 
   const filteredProducts = useMemo(() => {
     if (!productSearchQuery.trim()) return productsList;
@@ -531,7 +458,6 @@ const CreateProject = ({ route, navigation, onNavigate, onBack, routeData }) => 
         otherCosts: otherCosts,
         notes: notes.trim(),
         description: notes.trim(),
-        dealId: projectType === 'DEAL' && selectedDeal ? selectedDeal._id || selectedDeal.id : undefined,
       };
 
       const res = await createProject(payload);
@@ -600,80 +526,7 @@ const CreateProject = ({ route, navigation, onNavigate, onBack, routeData }) => 
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Project Source (Independent / From Deal) */}
-        <View style={styles.sectionWrap}>
-          <Text style={styles.sectionTitle}>Project Source</Text>
-          <View style={styles.typeCardsRow}>
-            <TouchableOpacity
-              style={[styles.typeCard, projectType === 'INDEPENDENT' && styles.typeCardSelected]}
-              onPress={() => setProjectType('INDEPENDENT')}
-              activeOpacity={0.8}
-            >
-              {projectType === 'INDEPENDENT' && (
-                <View style={styles.selectedCheckBadge}>
-                  <Check size={10} color="#FFFFFF" strokeWidth={3} />
-                </View>
-              )}
-              <View style={styles.typeCardIconBox}>
-                <Box size={20} color="#2563EB" strokeWidth={1.8} />
-              </View>
-              <Text style={[styles.typeCardTitle, projectType === 'INDEPENDENT' && styles.typeCardTitleSelected]}>
-                Factory Floor
-              </Text>
-              <Text style={styles.typeCardDesc}>Direct production batch</Text>
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.typeCard, projectType === 'DEAL' && styles.typeCardSelected]}
-              onPress={() => {
-                setProjectType('DEAL');
-                if (!selectedDeal) setShowDealModal(true);
-              }}
-              activeOpacity={0.8}
-            >
-              {projectType === 'DEAL' && (
-                <View style={styles.selectedCheckBadge}>
-                  <Check size={10} color="#FFFFFF" strokeWidth={3} />
-                </View>
-              )}
-              <View style={styles.typeCardIconBox}>
-                <FileText size={20} color={projectType === 'DEAL' ? '#2563EB' : '#64748B'} strokeWidth={1.8} />
-              </View>
-              <Text style={[styles.typeCardTitle, projectType === 'DEAL' && styles.typeCardTitleSelected]}>
-                From Trade Deal
-              </Text>
-              <Text style={styles.typeCardDesc}>Link a contract / sauda</Text>
-            </TouchableOpacity>
-          </View>
-
-          {projectType === 'DEAL' && (
-            <View style={styles.dealSelectorWrap}>
-              <View style={styles.columnLabelRow}>
-                <Briefcase size={14} color="#2563EB" />
-                <Text style={styles.columnLabelText}>Linked Deal</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.dropdownBox}
-                onPress={() => setShowDealModal(true)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.dropdownLeftContent}>
-                  <Briefcase size={15} color="#475569" />
-                  <Text style={styles.dropdownValueText} numberOfLines={1}>
-                    {selectedDeal
-                      ? `${selectedDeal.saudaNumber || selectedDeal.dealNumber || 'Deal'} • ${
-                          selectedDeal.commodity || selectedDeal.title || 'Contract'
-                        }`
-                      : loadingDeals
-                      ? 'Loading deals...'
-                      : 'Choose a deal to link...'}
-                  </Text>
-                </View>
-                <ChevronDown size={15} color="#2563EB" />
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
 
         {/* Company Selection (if multiple) */}
         {companiesList.length > 1 && (
@@ -1660,82 +1513,7 @@ const CreateProject = ({ route, navigation, onNavigate, onBack, routeData }) => 
         </View>
       </Modal>
 
-      {/* 8. DEALS MODAL */}
-      <Modal
-        visible={showDealModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowDealModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFillObject}
-            activeOpacity={1}
-            onPress={() => setShowDealModal(false)}
-          />
-          <View style={styles.bottomSheetCard}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeaderRow}>
-              <View style={styles.sheetTitleGroup}>
-                <Briefcase size={17} color="#2563EB" />
-                <Text style={styles.sheetMainTitle}>Select Trade Deal</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowDealModal(false)} style={styles.sheetCloseBtn}>
-                <X size={17} color="#64748B" />
-              </TouchableOpacity>
-            </View>
 
-            <View style={styles.dealSearchBar}>
-              <Search size={15} color="#94A3B8" />
-              <TextInput
-                style={styles.dealSearchInput}
-                placeholder="Search deals by code or commodity..."
-                placeholderTextColor="#94A3B8"
-                value={dealSearchQuery}
-                onChangeText={setDealSearchQuery}
-              />
-            </View>
-
-            <ScrollView style={styles.dealsListScroll} showsVerticalScrollIndicator={false}>
-              {filteredDeals.length === 0 ? (
-                <View style={styles.emptyBox}>
-                  <Text style={styles.emptyBoxText}>No trade deals found.</Text>
-                </View>
-              ) : (
-                filteredDeals.map((deal) => {
-                  const dealId = deal._id || deal.id;
-                  const isSel = String(selectedDeal?._id || selectedDeal?.id) === String(dealId);
-                  const dealCode = deal.saudaNumber || deal.dealNumber || deal.dealNo || `#${String(dealId).slice(-6)}`;
-                  const comm = deal.commodity || deal.title || 'Trade Deal';
-                  const statusCfg = getDealStatusConfig(deal.status);
-
-                  return (
-                    <TouchableOpacity
-                      key={dealId}
-                      style={[styles.dealItemCard, isSel && styles.dealItemCardSelected]}
-                      onPress={() => {
-                        setSelectedDeal(deal);
-                        if (!name.trim()) setName(`${dealCode} - ${comm}`);
-                        setShowDealModal(false);
-                      }}
-                    >
-                      <View style={styles.dealItemLeft}>
-                        <View style={styles.dealCodeBadge}>
-                          <Text style={styles.dealCodeBadgeText}>{dealCode}</Text>
-                        </View>
-                        <Text style={styles.dealItemTitle}>{comm}</Text>
-                      </View>
-                      <View style={[styles.dealStatusBadge, { backgroundColor: statusCfg.bg, borderColor: statusCfg.border }]}>
-                        <Text style={[styles.dealStatusText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -1804,54 +1582,7 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     marginBottom: 8,
   },
-  typeCardsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  typeCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 12,
-    position: 'relative',
-  },
-  typeCardSelected: {
-    borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1.5,
-  },
-  selectedCheckBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  typeCardIconBox: {
-    marginBottom: 6,
-  },
-  typeCardTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 2,
-  },
-  typeCardTitleSelected: {
-    color: '#2563EB',
-  },
-  typeCardDesc: {
-    fontSize: 10.5,
-    color: '#64748B',
-  },
-  dealSelectorWrap: {
-    marginTop: 10,
-  },
+
 
   /* Field Sections */
   fieldSection: {
@@ -2737,85 +2468,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-  },
-
-  /* Deals Selector Modal */
-  dealSearchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    height: 38,
-    marginTop: 10,
-    marginBottom: 6,
-    gap: 6,
-  },
-  dealSearchInput: {
-    flex: 1,
-    fontSize: 12.5,
-    color: '#0F172A',
-    paddingVertical: 0,
-  },
-  dealsListScroll: {
-    maxHeight: 300,
-    marginTop: 4,
-  },
-  emptyBox: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  emptyBoxText: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  dealItemCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 10,
-    marginBottom: 6,
-  },
-  dealItemCardSelected: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#2563EB',
-  },
-  dealItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  dealCodeBadge: {
-    backgroundColor: '#EEF2FF',
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  dealCodeBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#2563EB',
-  },
-  dealItemTitle: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#0F172A',
-    flex: 1,
-  },
-  dealStatusBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  dealStatusText: {
-    fontSize: 10.5,
-    fontWeight: '700',
   },
 });
 

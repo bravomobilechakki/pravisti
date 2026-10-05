@@ -255,7 +255,7 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentUser?._id, currentUser?.id, currentUser?.name, currentUser?.mobileNumber, currentUser?.phone]);
+  }, [currentUser?._id, currentUser?.id, currentUser?.name, currentUser?.mobileNumber, currentUser?.phone, currentUser?.company, currentUser?.companyId]);
 
   useEffect(() => {
     fetchStaffData();
@@ -387,42 +387,44 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
     }
   };
 
-  // Cycle status: TODO -> IN_PROGRESS -> DONE -> TODO
+  // Cycle status: TODO -> IN_PROGRESS -> COMPLETED -> TODO
   const handleCycleTaskStatus = async (task) => {
     const cycle = {
       TODO: 'IN_PROGRESS',
-      IN_PROGRESS: 'DONE',
+      IN_PROGRESS: 'COMPLETED',
       DONE: 'TODO',
+      COMPLETED: 'TODO',
       BLOCKED: 'IN_PROGRESS',
+      ON_HOLD: 'IN_PROGRESS',
+      PENDING: 'IN_PROGRESS',
     };
     const nextStatus = cycle[task.status] || 'IN_PROGRESS';
-    const taskId = task._id || task.id;
-    const projectId = task.projectId;
+    const taskId = task._id || task.id || task.taskId;
+    const projectId = task.projectId || task.project?._id || task.project;
+    const effectiveCompId =
+      task.companyId?._id ||
+      task.companyId ||
+      currentUser?.companyId?._id ||
+      currentUser?.companyId ||
+      currentUser?.company?._id ||
+      currentUser?.company;
 
-    if (!projectId || !taskId) {
-      Alert.alert('Status Updated', `Task status set to ${nextStatus}`);
-      setTasks((prev) =>
-        prev.map((t) => (t._id === taskId ? { ...t, status: nextStatus } : t))
-      );
+    if (!taskId) {
       return;
     }
 
     try {
       setUpdatingTaskId(taskId);
       const token = await AsyncStorage.getItem('userToken');
-      const res = await updateProjectTaskStatus(projectId, taskId, nextStatus, token);
-      if (res?.success) {
-        setTasks((prev) =>
-          prev.map((t) => (t._id === taskId ? { ...t, status: nextStatus } : t))
-        );
-      } else {
-        setTasks((prev) =>
-          prev.map((t) => (t._id === taskId ? { ...t, status: nextStatus } : t))
-        );
-      }
-    } catch (e) {
+      const res = await updateProjectTaskStatus(projectId, taskId, nextStatus, token, null, effectiveCompId);
+      const updatedStatus = res?.data?.status || nextStatus;
       setTasks((prev) =>
-        prev.map((t) => (t._id === taskId ? { ...t, status: nextStatus } : t))
+        prev.map((t) => ((t._id || t.id || t.taskId) === taskId ? { ...t, status: updatedStatus } : t))
+      );
+    } catch (e) {
+      console.warn('Error updating task status:', e);
+      setTasks((prev) =>
+        prev.map((t) => ((t._id || t.id || t.taskId) === taskId ? { ...t, status: nextStatus } : t))
       );
     } finally {
       setUpdatingTaskId(null);
@@ -432,6 +434,9 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
   // Filter tasks
   const filteredTasks = useMemo(() => {
     if (activeFilter === 'ALL') return tasks;
+    if (activeFilter === 'DONE' || activeFilter === 'COMPLETED') {
+      return tasks.filter((t) => t.status === 'DONE' || t.status === 'COMPLETED');
+    }
     return tasks.filter((t) => t.status === activeFilter);
   }, [tasks, activeFilter]);
 
@@ -439,8 +444,8 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
   const stats = useMemo(() => {
     const total = tasks.length;
     const inProgress = tasks.filter((t) => t.status === 'IN_PROGRESS').length;
-    const done = tasks.filter((t) => t.status === 'DONE').length;
-    const pending = tasks.filter((t) => t.status === 'TODO' || !t.status).length;
+    const done = tasks.filter((t) => t.status === 'DONE' || t.status === 'COMPLETED').length;
+    const pending = tasks.filter((t) => t.status === 'TODO' || t.status === 'PENDING' || !t.status).length;
     return { total, inProgress, done, pending };
   }, [tasks]);
 
@@ -467,6 +472,7 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
   const getStatusBadgeConfig = (status) => {
     switch (status) {
       case 'DONE':
+      case 'COMPLETED':
         return {
           label: 'DONE',
           bg: '#DCFCE7',
@@ -492,6 +498,7 @@ export const StaffDashboard = ({ onNavigate, routeData }) => {
           iconColor: '#DC2626',
         };
       case 'TODO':
+      case 'PENDING':
       default:
         return {
           label: 'TODO',

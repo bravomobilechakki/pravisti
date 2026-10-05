@@ -1026,7 +1026,17 @@ export const addProjectTask = async (id, stageId, milestoneId, taskData, token =
 };
 
 export const updateProjectTaskStatus = async (id, taskId, statusOrPayload, token = null, delayReason = null, companyId = null) => {
+  const effectiveTaskId = taskId || id;
   let activeCompanyId = companyId;
+  if (!activeCompanyId) {
+    try {
+      const userInfoStr = await AsyncStorage.getItem('userInfo');
+      if (userInfoStr) {
+        const u = JSON.parse(userInfoStr);
+        activeCompanyId = u?.companyId?._id || u?.companyId || u?.company?._id || u?.company;
+      }
+    } catch (e) { }
+  }
   if (!activeCompanyId) {
     try {
       activeCompanyId = (await AsyncStorage.getItem('selectedCompanyId')) ||
@@ -1051,14 +1061,26 @@ export const updateProjectTaskStatus = async (id, taskId, statusOrPayload, token
     }
   }
 
+  // 1. Primary: PATCH /api/production/tasks/:taskId/status?companyId=...
   try {
-    return await putRequest(SummaryApi.updateProductionTask(taskId, activeCompanyId), payload, token, headers);
+    return await patchRequest(SummaryApi.updateProductionTaskStatus(effectiveTaskId, activeCompanyId), payload, token, headers);
   } catch (error) {
+    // 2. Fallback: PUT /api/production/tasks/:taskId/status?companyId=...
     try {
-      return await patchRequest(SummaryApi.updateProjectTaskStatus(id, taskId), payload, token, headers);
-    } catch (fallbackErr) {
-      console.error('Error updating task status:', error.message || fallbackErr.message);
-      throw error;
+      return await putRequest(SummaryApi.updateProductionTaskStatus(effectiveTaskId, activeCompanyId), payload, token, headers);
+    } catch (putStatusErr) {
+      // 3. Fallback: PUT /api/production/tasks/:taskId?companyId=...
+      try {
+        return await putRequest(SummaryApi.updateProductionTask(effectiveTaskId, activeCompanyId), payload, token, headers);
+      } catch (putErr) {
+        // 4. Fallback: PATCH /api/projects/:id/tasks/:taskId/status
+        try {
+          return await patchRequest(SummaryApi.updateProjectTaskStatus(id, effectiveTaskId), payload, token, headers);
+        } catch (fallbackErr) {
+          console.error('Error updating task status:', error.message || fallbackErr.message);
+          throw error;
+        }
+      }
     }
   }
 };
@@ -1091,23 +1113,57 @@ export const deleteProjectMaterial = async (projectId, materialId, token = null)
 };
 
 export const raiseMaterialDemand = async (projectId, demandData, token = null) => {
-  try {
-    return await postRequest(SummaryApi.raiseProjectDemand(projectId), demandData, token);
-  } catch (error) {
+  let companyId = demandData?.companyId;
+  if (!companyId) {
     try {
-      const prodPayload = {
-        projectId,
-        materialId: demandData.materialId || demandData.rawMaterialId,
-        materialName: demandData.materialName,
-        quantity: Number(demandData.quantityRequested || demandData.quantity || 0),
-        unit: demandData.unit || 'Kg',
-        reason: demandData.reason,
-        urgency: demandData.urgency,
-      };
-      return await postRequest(SummaryApi.raiseProductionDemand, prodPayload, token);
-    } catch (fallbackErr) {
-      console.error('Error raising material demand:', error.message || fallbackErr.message);
-      throw error;
+      companyId = (await AsyncStorage.getItem('selectedCompanyId')) ||
+        (await AsyncStorage.getItem('activeCompanyId'));
+    } catch (e) { }
+  }
+  if (typeof companyId === 'object' && companyId !== null) {
+    companyId = companyId._id || companyId.id || null;
+  }
+  const headers = companyId ? { 'x-company-id': companyId } : {};
+
+  // 1. Try Staff Transactions Demand endpoint (/api/production/transactions/demand)
+  try {
+    const transactionPayload = {
+      ...(companyId ? { companyId } : {}),
+      projectId: projectId || demandData?.projectId,
+      milestoneId: demandData?.milestoneId,
+      rawMaterialId: demandData?.rawMaterialId || demandData?.materialId,
+      materialName: demandData?.materialName,
+      requestedQuantity: Number(demandData?.requestedQuantity || demandData?.quantityRequested || demandData?.quantity || 0),
+      quantity: Number(demandData?.requestedQuantity || demandData?.quantityRequested || demandData?.quantity || 0),
+      requiredByDate: demandData?.requiredByDate,
+      urgency: (demandData?.urgency || 'HIGH').toUpperCase(),
+      notes: demandData?.notes || demandData?.reason || 'Required for production execution',
+    };
+    return await postRequest(SummaryApi.staffRaiseMaterialDemand, transactionPayload, token, headers);
+  } catch (txErr) {
+    // 2. Try Project Demands endpoint (/api/projects/:id/demands)
+    try {
+      if (projectId) {
+        return await postRequest(SummaryApi.raiseProjectDemand(projectId), demandData, token, headers);
+      }
+    } catch (error) {
+      // 3. Try general Production Demands endpoint (/api/production/demands)
+      try {
+        const prodPayload = {
+          projectId,
+          materialId: demandData?.materialId || demandData?.rawMaterialId,
+          materialName: demandData?.materialName,
+          quantity: Number(demandData?.quantityRequested || demandData?.requestedQuantity || demandData?.quantity || 0),
+          unit: demandData?.unit || 'Kg',
+          reason: demandData?.reason || demandData?.notes,
+          urgency: demandData?.urgency,
+          companyId,
+        };
+        return await postRequest(SummaryApi.raiseProductionDemand, prodPayload, token, headers);
+      } catch (fallbackErr) {
+        console.error('Error raising material demand:', error.message || fallbackErr.message);
+        throw error;
+      }
     }
   }
 };
@@ -2802,10 +2858,19 @@ export const adjustProductionStock = async (adjustmentData, token = null) => {
 export const getProjectProductionSummary = async (projectId, companyId = null, token = null) => {
   try {
     const headers = companyId ? { 'x-company-id': companyId } : {};
-    return await getRequest(SummaryApi.getProjectProductionSummary(projectId, companyId), token, null, headers);
+    const res = await getRequest(SummaryApi.getProjectProductionSummary(projectId, companyId), token, null, headers);
+    if (res?.success && res.data) {
+      return res;
+    }
+    // Try costing endpoint fallback
+    return await getProjectLaborCosting(projectId, companyId, token);
   } catch (error) {
-    console.warn('Notice fetching project production summary:', error.message || error);
-    return { success: false, message: error.message };
+    try {
+      return await getProjectLaborCosting(projectId, companyId, token);
+    } catch (costingErr) {
+      console.warn('Notice fetching project production summary:', error.message || costingErr.message);
+      return { success: false, message: error.message };
+    }
   }
 };
 
@@ -2933,6 +2998,26 @@ export const getProductionStaffAssignments = async (params = {}, token = null) =
   }
 };
 
+export const updateProductionStaffAssignment = async (id, companyId, updateData, token = null) => {
+  try {
+    const headers = companyId ? { 'x-company-id': companyId } : {};
+    return await putRequest(SummaryApi.updateProductionStaffAssignment(id, companyId), updateData, token, headers);
+  } catch (error) {
+    console.error('Error updating production staff assignment:', error.message || error);
+    throw error;
+  }
+};
+
+export const deleteProductionStaffAssignment = async (id, companyId, token = null) => {
+  try {
+    const headers = companyId ? { 'x-company-id': companyId } : {};
+    return await deleteRequest(SummaryApi.deleteProductionStaffAssignment(id, companyId), token, headers);
+  } catch (error) {
+    console.error('Error deleting production staff assignment:', error.message || error);
+    throw error;
+  }
+};
+
 /* ================= PRODUCTION TASKS APIs ================= */
 
 export const getProductionTasks = async (params = {}, token = null) => {
@@ -3010,6 +3095,133 @@ export const deleteProductionTask = async (id, companyId, token = null) => {
   } catch (error) {
     console.error('Error deleting production task:', error.message || error);
     throw error;
+  }
+};
+
+/* ================= AUTH ME & UNIFIED STAFF LOGIN ================= */
+
+export const getAuthMeProfile = async (token = null) => {
+  try {
+    return await getRequest(SummaryApi.authMe, token);
+  } catch (error) {
+    console.warn('Notice fetching auth/me profile:', error.message || error);
+    return { success: false, message: error.message };
+  }
+};
+
+export const authStaffLogin = async (mobileNumber, password) => {
+  const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').slice(-10);
+  const cleanPass = String(password || '').trim() || cleanMobile;
+  try {
+    return await postRequest(SummaryApi.authStaffLogin, {
+      mobileNumber: cleanMobile,
+      password: cleanPass,
+    });
+  } catch (error) {
+    console.error('Error in authStaffLogin:', error.message || error);
+    throw error;
+  }
+};
+
+/* ================= PRODUCTION TIME LOGS APIs ================= */
+
+export const createProductionTimeLog = async (timeLogData, token = null) => {
+  try {
+    const headers = timeLogData?.companyId ? { 'x-company-id': timeLogData.companyId } : {};
+    return await postRequest(SummaryApi.createProductionTimeLog, timeLogData, token, headers);
+  } catch (error) {
+    console.error('Error creating production time log:', error.message || error);
+    throw error;
+  }
+};
+
+export const getProductionTimeLogs = async (params = {}, token = null) => {
+  try {
+    let companyId = params?.companyId;
+    if (!companyId) {
+      try {
+        companyId = (await AsyncStorage.getItem('selectedCompanyId')) ||
+          (await AsyncStorage.getItem('activeCompanyId'));
+      } catch (e) { }
+    }
+    if (typeof companyId === 'object' && companyId !== null) {
+      companyId = companyId._id || companyId.id || null;
+    }
+    const finalParams = {
+      ...params,
+      ...(companyId ? { companyId } : {}),
+    };
+    const headers = companyId ? { 'x-company-id': companyId } : {};
+    return await getRequest(SummaryApi.getProductionTimeLogs(finalParams), token, null, headers);
+  } catch (error) {
+    console.warn('Notice fetching production time logs:', error.message || error);
+    return { success: true, data: [] };
+  }
+};
+
+export const updateProductionTimeLog = async (id, companyId, updateData, token = null) => {
+  try {
+    const headers = companyId ? { 'x-company-id': companyId } : {};
+    return await putRequest(SummaryApi.updateProductionTimeLog(id, companyId), updateData, token, headers);
+  } catch (error) {
+    console.error('Error updating production time log:', error.message || error);
+    throw error;
+  }
+};
+
+export const deleteProductionTimeLog = async (id, companyId, token = null) => {
+  try {
+    const headers = companyId ? { 'x-company-id': companyId } : {};
+    return await deleteRequest(SummaryApi.deleteProductionTimeLog(id, companyId), token, headers);
+  } catch (error) {
+    console.error('Error deleting production time log:', error.message || error);
+    throw error;
+  }
+};
+
+/* ================= STAFF MATERIAL DEMANDS & ISSUANCE APIs ================= */
+
+export const staffRaiseMaterialDemand = async (demandData, token = null) => {
+  try {
+    const headers = demandData?.companyId ? { 'x-company-id': demandData.companyId } : {};
+    return await postRequest(SummaryApi.staffRaiseMaterialDemand, demandData, token, headers);
+  } catch (error) {
+    // Fallback to general production demand endpoint
+    try {
+      const headers = demandData?.companyId ? { 'x-company-id': demandData.companyId } : {};
+      return await postRequest(SummaryApi.raiseProductionDemand, demandData, token, headers);
+    } catch (fallbackErr) {
+      console.error('Error raising staff material demand:', error.message || fallbackErr.message);
+      throw error;
+    }
+  }
+};
+
+export const staffIssueMaterial = async (issueData, token = null) => {
+  try {
+    const headers = issueData?.companyId ? { 'x-company-id': issueData.companyId } : {};
+    return await postRequest(SummaryApi.staffIssueMaterial, issueData, token, headers);
+  } catch (error) {
+    // Fallback to general production issue endpoint
+    try {
+      const headers = issueData?.companyId ? { 'x-company-id': issueData.companyId } : {};
+      return await postRequest(SummaryApi.issueProductionMaterial, issueData, token, headers);
+    } catch (fallbackErr) {
+      console.error('Error issuing material to staff:', error.message || fallbackErr.message);
+      throw error;
+    }
+  }
+};
+
+/* ================= STAFF LABOR COSTING BREAKDOWN APIs ================= */
+
+export const getProjectLaborCosting = async (projectId, companyId = null, token = null) => {
+  try {
+    const headers = companyId ? { 'x-company-id': companyId } : {};
+    return await getRequest(SummaryApi.getProjectLaborCosting(projectId, companyId), token, null, headers);
+  } catch (error) {
+    console.warn('Notice fetching project labor costing:', error.message || error);
+    return { success: false, message: error.message };
   }
 };
 

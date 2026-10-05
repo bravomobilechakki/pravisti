@@ -19,7 +19,7 @@ const SummaryApi = {
   },
 
   staffLogin: {
-    url: `${backendDomain}/api/staff/login`,
+    url: `${backendDomain}/api/production/staff/login`,
     method: "post",
   },
   staffOnboard: {
@@ -874,6 +874,14 @@ const SummaryApi = {
     url: `${backendDomain}/api/production/staff/login`,
     method: "post",
   },
+  authStaffLogin: {
+    url: `${backendDomain}/api/auth/staff-login`,
+    method: "post",
+  },
+  authMe: {
+    url: `${backendDomain}/api/auth/me`,
+    method: "get",
+  },
   productionStaffOnboard: {
     url: `${backendDomain}/api/production/staff/onboard`,
     method: "post",
@@ -882,15 +890,16 @@ const SummaryApi = {
     const query = new URLSearchParams();
     if (params.companyId) query.append('companyId', params.companyId);
     if (params.status) query.append('status', params.status);
+    if (params.role) query.append('role', params.role);
     if (params.search) query.append('search', params.search);
     const qs = query.toString();
     return {
-      url: `${backendDomain}/api/production/staff-assignments/staff-members${qs ? `?${qs}` : ''}`,
+      url: `${backendDomain}/api/production/staff/members${qs ? `?${qs}` : ''}`,
       method: "get",
     };
   },
   getStaffMembers: (companyId) => ({
-    url: `${backendDomain}/api/production/staff-assignments/staff-members${companyId ? `?companyId=${companyId}` : ''}`,
+    url: `${backendDomain}/api/production/staff/members${companyId ? `?companyId=${companyId}` : ''}`,
     method: "get",
   }),
   updateProductionStaffMember: (id, companyId) => ({
@@ -910,6 +919,7 @@ const SummaryApi = {
     if (params.companyId) query.append('companyId', params.companyId);
     if (params.projectId) query.append('projectId', params.projectId);
     if (params.stageId) query.append('stageId', params.stageId);
+    if (params.milestoneId) query.append('milestoneId', params.milestoneId);
     if (params.staffId) query.append('staffId', params.staffId);
     if (params.status) query.append('status', params.status);
     const qs = query.toString();
@@ -918,6 +928,14 @@ const SummaryApi = {
       method: "get",
     };
   },
+  updateProductionStaffAssignment: (id, companyId) => ({
+    url: `${backendDomain}/api/production/staff-assignments/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "put",
+  }),
+  deleteProductionStaffAssignment: (id, companyId) => ({
+    url: `${backendDomain}/api/production/staff-assignments/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "delete",
+  }),
   getProductionProjects: (params = {}) => {
     const query = new URLSearchParams();
     if (params.companyId) query.append('companyId', params.companyId);
@@ -1029,9 +1047,59 @@ const SummaryApi = {
     url: `${backendDomain}/api/production/tasks/${id}${companyId ? `?companyId=${companyId}` : ''}`,
     method: "put",
   }),
+  updateProductionTaskStatus: (id, companyId) => ({
+    url: `${backendDomain}/api/production/tasks/${id}/status${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "patch",
+  }),
   deleteProductionTask: (id, companyId) => ({
     url: `${backendDomain}/api/production/tasks/${id}${companyId ? `?companyId=${companyId}` : ''}`,
     method: "delete",
+  }),
+
+  /* ================= PRODUCTION TIME TRACKING & LABOR LOGS ================= */
+  createProductionTimeLog: {
+    url: `${backendDomain}/api/production/time-logs`,
+    method: "post",
+  },
+  getProductionTimeLogs: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.companyId) query.append('companyId', params.companyId);
+    if (params.staffId) query.append('staffId', params.staffId);
+    if (params.projectId) query.append('projectId', params.projectId);
+    if (params.stageId) query.append('stageId', params.stageId);
+    if (params.milestoneId) query.append('milestoneId', params.milestoneId);
+    if (params.taskId) query.append('taskId', params.taskId);
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    const qs = query.toString();
+    return {
+      url: `${backendDomain}/api/production/time-logs${qs ? `?${qs}` : ''}`,
+      method: "get",
+    };
+  },
+  updateProductionTimeLog: (id, companyId) => ({
+    url: `${backendDomain}/api/production/time-logs/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "put",
+  }),
+  deleteProductionTimeLog: (id, companyId) => ({
+    url: `${backendDomain}/api/production/time-logs/${id}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "delete",
+  }),
+
+  /* ================= STAFF MATERIAL DEMAND & ISSUANCE ================= */
+  staffRaiseMaterialDemand: {
+    url: `${backendDomain}/api/production/transactions/demand`,
+    method: "post",
+  },
+  staffIssueMaterial: {
+    url: `${backendDomain}/api/production/transactions/issue`,
+    method: "post",
+  },
+
+  /* ================= STAFF ANALYTICS & LABOR COSTING ================= */
+  getProjectLaborCosting: (projectId, companyId) => ({
+    url: `${backendDomain}/api/production/summary/costing/${projectId}${companyId ? `?companyId=${companyId}` : ''}`,
+    method: "get",
   }),
 };
 

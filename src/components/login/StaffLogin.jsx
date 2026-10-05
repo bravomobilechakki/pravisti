@@ -29,7 +29,7 @@ import {
   AlertCircle,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { staffLoginUser, productionStaffLogin, getUserProfile } from '../../services/api';
+import { staffLoginUser, productionStaffLogin } from '../../services/api';
 
 
 // now we have to work on staff mannagement so i have shareing you documnt of complete requirement buz staff manangement  is completly different like trader nd broker role so use the flow depend on roles trader/broker/staff you have oky so you  you ahve to cartee teh staff flow ui very easy to user unerstand in steps dont make ui complicated  nd to muchb conetct in one scr een this feature work like crm. to mannge companies staff crm in phone so you have to create like this to unsetand suer easily how ita work 
@@ -83,7 +83,7 @@ const StaffLogin = ({ onNavigate, routeData }) => {
     const cleanDigits = trimmedId.replace(/\D/g, '');
 
     if (!trimmedId) {
-      setErrorMessage('Please enter your Employee ID or Email');
+      setErrorMessage('Please enter your Mobile Number or Staff ID');
       return;
     }
 
@@ -102,6 +102,7 @@ const StaffLogin = ({ onNavigate, routeData }) => {
           response = await staffLoginUser(loginPayloadMobile, effectivePassword);
         } catch (apiErr) {
           console.warn('staffLogin notice:', apiErr?.message || apiErr);
+          response = { success: false, message: apiErr?.message || prodErr?.message || 'Login failed' };
         }
       }
 
@@ -117,53 +118,28 @@ const StaffLogin = ({ onNavigate, routeData }) => {
 
         if (staffObj) {
           await AsyncStorage.setItem('userInfo', JSON.stringify(staffObj));
-        } else if (token) {
-          try {
-            const profileRes = await getUserProfile(token);
-            if (profileRes && profileRes.success && profileRes.data) {
-              await AsyncStorage.setItem('userInfo', JSON.stringify(profileRes.data));
-            }
-          } catch (e) { }
         }
 
+        setErrorMessage('');
         if (onNavigate) {
-          onNavigate('StaffDashboard', {
-            user: staffObj || { mobileNumber: loginPayloadMobile, role: 'staff' },
-            token,
-            replace: true,
-          });
+          onNavigate(
+            'StaffDashboard',
+            {
+              user: staffObj || { mobileNumber: loginPayloadMobile, role: 'staff', isStaff: true },
+              role: 'staff',
+              token,
+            },
+            { replace: true }
+          );
         }
-        if (response?.message) {
-          setErrorMessage(response.message);
-        } else {
-          // Fallback session to allow staff entry smoothly
-          await AsyncStorage.setItem('userRole', 'staff');
-          await AsyncStorage.setItem('staff_mobile', loginPayloadMobile);
-
-          const staffUserData = {
-            name: trimmedId || 'Staff Member',
-            mobileNumber: loginPayloadMobile,
-            role: 'staff',
-            designation: 'Operations Specialist',
-          };
-          await AsyncStorage.setItem('userInfo', JSON.stringify(staffUserData));
-
-          if (onNavigate) {
-            onNavigate('StaffDashboard', {
-              user: staffUserData,
-              replace: true,
-            });
-          }
-        }
+        return;
+      } else {
+        const errMsg = response?.message || 'Invalid staff credentials. Please check your mobile number and password.';
+        setErrorMessage(errMsg);
       }
     } catch (err) {
-      await AsyncStorage.setItem('userRole', 'staff');
-      if (onNavigate) {
-        onNavigate('StaffDashboard', {
-          user: { name: trimmedId || 'Staff Member', role: 'staff' },
-          replace: true,
-        });
-      }
+      console.error('Staff login error:', err);
+      setErrorMessage(err?.message || 'Failed to connect to server. Please try again.');
     } finally {
       setIsLoading(false);
     }

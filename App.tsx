@@ -259,7 +259,7 @@ function App() {
               AsyncStorage.setItem('user_completed_profile', JSON.stringify(mergedUser)).catch(() => { });
               checkPendingVerification(token);
             } else if (response?.statusCode === 401 || (response?.message && response.message.toLowerCase().includes('token'))) {
-              // Token strictly invalid/expired by auth server
+              // Token strictly invalid/expired by auth server  
               await AsyncStorage.removeItem('userToken');
               await AsyncStorage.removeItem('userRole');
               await AsyncStorage.removeItem('user_completed_profile');
@@ -324,7 +324,8 @@ function App() {
   const refreshUserProfile = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
-      if (token) {
+      const role = await AsyncStorage.getItem('userRole');
+      if (token && role !== 'staff') {
         const response = await getUserProfile(token);
         if (response && response.success) {
           const storedProfileStr = await AsyncStorage.getItem('user_completed_profile');
@@ -367,14 +368,27 @@ function App() {
   const onNavigate = async (target: string, targetData = {} as any, options = { replace: false, refresh: false }) => {
     const targetUser = targetData?.user || checkUser;
     const isTargetBroker = checkIsUserBroker(targetUser, targetData?.role);
+    const isStaff =
+      target === 'StaffDashboard' ||
+      target === 'StaffProfile' ||
+      target === 'StaffTasksSelf' ||
+      targetData?.role === 'staff' ||
+      targetUser?.role === 'staff' ||
+      targetUser?.isStaff ||
+      (Array.isArray(targetUser?.roles) && targetUser.roles.includes('staff'));
+
+    let finalRole = isStaff ? 'staff' : (isTargetBroker ? 'Broker' : 'Trader');
+    if (targetData?.role && !isStaff && !isTargetBroker) {
+      finalRole = targetData.role;
+    }
 
     let finalData = {
       ...targetData,
-      role: isTargetBroker ? 'Broker' : 'Trader',
+      role: finalRole,
       user: targetUser,
     };
 
-    if (options.refresh) {
+    if (options.refresh && !isStaff) {
       const freshUser = await refreshUserProfile();
       if (freshUser) {
         finalData = { ...finalData, user: freshUser, role: checkIsUserBroker(freshUser) ? 'Broker' : 'Trader' };

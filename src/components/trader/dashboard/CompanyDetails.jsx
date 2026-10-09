@@ -299,51 +299,25 @@ const checkBannerMatchesCompany = (banner, comp) => {
     ''
   ).toLowerCase().trim();
 
-  const bannerTitle = String(banner.title || '').toLowerCase().trim();
-
-  // Direct ID match
-  if (targetIndId && bannerIndId && targetIndId === bannerIndId) {
-    return true;
+  // 1. Direct ID match (Highest Priority)
+  if (targetIndId && bannerIndId) {
+    return targetIndId === bannerIndId;
   }
 
-  // Direct exact or substring match
+  // 2. Direct Name match
   if (targetIndName && bannerIndName) {
-    if (targetIndName === bannerIndName || targetIndName.includes(bannerIndName) || bannerIndName.includes(targetIndName)) {
-      return true;
-    }
+    return targetIndName === bannerIndName ||
+      targetIndName.includes(bannerIndName) ||
+      bannerIndName.includes(targetIndName);
   }
 
-  // Match banner title with target industry
-  if (targetIndName && bannerTitle) {
-    if (targetIndName.includes(bannerTitle) || bannerTitle.includes(targetIndName)) {
-      return true;
-    }
+  // 3. If banner has an industry ID or Name specified, but company did not match it, reject
+  if (bannerIndId || bannerIndName) {
+    return false;
   }
 
-  // Keyword & root stem matching (e.g. "agri", "farm", "jewel", "tech", "food", "health", "bank", "edu", "retail")
-  const commonStems = [
-    ['agri', 'farm', 'crop', 'grain', 'mandi'],
-    ['jewel', 'precious', 'gold', 'silver', 'diamond'],
-    ['tech', 'software', 'it', 'computer'],
-    ['food', 'beverage', 'snack', 'spice'],
-    ['health', 'pharma', 'med'],
-    ['bank', 'finan', 'money', 'loan'],
-    ['edu', 'school', 'learn', 'college'],
-    ['retail', 'ecom', 'shop', 'market', 'store'],
-  ];
-
-  const allTargetText = `${targetIndName} ${comp.name || ''} ${comp.description || ''}`.toLowerCase();
-  const allBannerText = `${bannerIndName} ${bannerTitle} ${banner.description || ''}`.toLowerCase();
-
-  for (const stemGroup of commonStems) {
-    const targetHasStem = stemGroup.some((s) => allTargetText.includes(s));
-    const bannerHasStem = stemGroup.some((s) => allBannerText.includes(s));
-    if (targetHasStem && bannerHasStem) {
-      return true;
-    }
-  }
-
-  return false;
+  // 4. Global generic banner (no industry attached)
+  return banner.isGlobal === true || (!bannerIndId && !bannerIndName);
 };
 
 // Dedicated Banner Card Item with Image loading state, Error resilience and Create Deal button
@@ -952,88 +926,7 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
   }, []);
 
   const bannerMatchesCompanyIndustry = React.useCallback((banner, comp) => {
-    if (!banner || !comp) return false;
-
-    // 1. Target company industry ID & name & company details
-    const compIndObj = typeof comp.industry === 'object' && comp.industry !== null ? comp.industry : null;
-    const compIndIdObj = typeof comp.industryId === 'object' && comp.industryId !== null ? comp.industryId : null;
-
-    const targetIndId = String(
-      compIndObj?._id || compIndObj?.id ||
-      compIndIdObj?._id || compIndIdObj?.id ||
-      (typeof comp.industryId === 'string' ? comp.industryId : '') ||
-      (typeof comp.industry === 'string' && comp.industry.match(/^[0-9a-fA-F]{24}$/) ? comp.industry : '')
-    ).toLowerCase().trim();
-
-    const targetIndName = String(
-      compIndObj?.name ||
-      compIndIdObj?.name ||
-      comp.industryName ||
-      (typeof comp.industry === 'string' && !comp.industry.match(/^[0-9a-fA-F]{24}$/) ? comp.industry : '') ||
-      comp.type ||
-      ''
-    ).toLowerCase().trim();
-
-    // 2. Banner industry ID, name & title
-    const bannerInd = banner.industryId || banner.industry;
-    const bannerIndObj = typeof bannerInd === 'object' && bannerInd !== null ? bannerInd : null;
-
-    const bannerIndId = String(
-      bannerIndObj?._id || bannerIndObj?.id ||
-      (typeof bannerInd === 'string' ? bannerInd : '')
-    ).toLowerCase().trim();
-
-    const bannerIndName = String(
-      bannerIndObj?.name ||
-      banner.industryName ||
-      ''
-    ).toLowerCase().trim();
-
-    const bannerTitle = String(banner.title || '').toLowerCase().trim();
-
-    // Direct ID match
-    if (targetIndId && bannerIndId && targetIndId === bannerIndId) {
-      return true;
-    }
-
-    // Direct exact or substring match
-    if (targetIndName && bannerIndName) {
-      if (targetIndName === bannerIndName || targetIndName.includes(bannerIndName) || bannerIndName.includes(targetIndName)) {
-        return true;
-      }
-    }
-
-    // Match banner title with target industry
-    if (targetIndName && bannerTitle) {
-      if (targetIndName.includes(bannerTitle) || bannerTitle.includes(targetIndName)) {
-        return true;
-      }
-    }
-
-    // Keyword & root stem matching (e.g. "agri", "farm", "jewel", "tech", "food", "health", "bank", "edu", "retail")
-    const commonStems = [
-      ['agri', 'farm', 'crop', 'grain', 'mandi'],
-      ['jewel', 'precious', 'gold', 'silver', 'diamond'],
-      ['tech', 'software', 'it', 'computer'],
-      ['food', 'beverage', 'snack', 'spice'],
-      ['health', 'pharma', 'med'],
-      ['bank', 'finan', 'money', 'loan'],
-      ['edu', 'school', 'learn', 'college'],
-      ['retail', 'ecom', 'shop', 'market', 'store'],
-    ];
-
-    const allTargetText = `${targetIndName} ${comp.name || ''} ${comp.description || ''}`.toLowerCase();
-    const allBannerText = `${bannerIndName} ${bannerTitle} ${banner.description || ''}`.toLowerCase();
-
-    for (const stemGroup of commonStems) {
-      const targetHasStem = stemGroup.some((s) => allTargetText.includes(s));
-      const bannerHasStem = stemGroup.some((s) => allBannerText.includes(s));
-      if (targetHasStem && bannerHasStem) {
-        return true;
-      }
-    }
-
-    return false;
+    return checkBannerMatchesCompany(banner, comp);
   }, []);
 
   const fetchBanners = React.useCallback(async (targetComp) => {
@@ -1044,13 +937,17 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
       const indId = getActiveIndustryId(c);
       const cacheKey = indId ? `@banners_cache_${indId}` : `@banners_cache_${c._id || c.id || 'comp'}`;
 
-      // 1. Immediately read from AsyncStorage cache for instant 0ms UI rendering
+      // 1. Read from AsyncStorage cache for instant UI rendering
       try {
         const cached = await AsyncStorage.getItem(cacheKey);
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setBanners((prev) => (prev.length > 0 ? prev : parsed));
+            // Verify cached banners match current company
+            const validCached = parsed.filter((b) => checkBannerMatchesCompany(b, c));
+            if (validCached.length > 0) {
+              setBanners((prev) => (prev.length > 0 ? prev : validCached));
+            }
           }
         }
       } catch {
@@ -1088,11 +985,27 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
         }
       }
 
-      // 3. Match banners for THIS company's industry
-      const matchingBanners = rawBanners.filter((b) => checkBannerMatchesCompany(b, c));
+      // 3. Match banners for THIS company's industry specifically
+      const industryMatchingBanners = rawBanners.filter((b) => {
+        const bannerInd = b.industryId || b.industry;
+        const bIndId = String(bannerInd?._id || bannerInd?.id || (typeof bannerInd === 'string' ? bannerInd : '')).toLowerCase().trim();
+        const bIndName = String(bannerInd?.name || b.industryName || '').toLowerCase().trim();
+        return checkBannerMatchesCompany(b, c) && (bIndId || bIndName);
+      });
 
-      // 4. Use matching banners if found; otherwise fallback to the active platform banners
-      const bannersToDisplay = matchingBanners.length > 0 ? matchingBanners : rawBanners;
+      // 4. If industry-specific banners exist, use only those! Otherwise fallback to truly global banners
+      let bannersToDisplay = [];
+      if (industryMatchingBanners.length > 0) {
+        bannersToDisplay = industryMatchingBanners;
+      } else {
+        const globalBanners = rawBanners.filter((b) => {
+          const bannerInd = b.industryId || b.industry;
+          const bIndId = String(bannerInd?._id || bannerInd?.id || (typeof bannerInd === 'string' ? bannerInd : '')).toLowerCase().trim();
+          const bIndName = String(bannerInd?.name || b.industryName || '').toLowerCase().trim();
+          return b.isGlobal === true || (!bIndId && !bIndName);
+        });
+        bannersToDisplay = globalBanners;
+      }
 
       if (bannersToDisplay.length > 0) {
         const sorted = [...bannersToDisplay].sort((a, b) => (Number(a.order) || 999) - (Number(b.order) || 999));
@@ -1105,10 +1018,12 @@ const CompanyDetails = ({ onNavigate, routeData }) => {
           }
         });
         AsyncStorage.setItem(cacheKey, JSON.stringify(sorted)).catch(() => { });
+      } else {
+        setBanners([]);
+        AsyncStorage.removeItem(cacheKey).catch(() => { });
       }
     } catch (err) {
       console.warn('Failed to load active banners:', err);
-      // NEVER setBanners([]) on error! Retain current banners!
     }
   }, [getActiveIndustryId, routeData?.company]);
 
